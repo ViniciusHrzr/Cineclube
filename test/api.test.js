@@ -440,7 +440,7 @@ test('deletes a review and reports 404 afterwards', async () => {
   assert.ok(!all.body.reviews.some(r => r.id === body.id));
 });
 
-test('you cannot delete someone else review, but the admin can', async () => {
+test('a take is only ever deleted by the person who gave it, admin included', async () => {
   const owner = await newReviewer('Dono da Nota');
   const other = await newReviewer('Xereta');
   const admin = await newAdmin();
@@ -450,7 +450,25 @@ test('you cannot delete someone else review, but the admin can', async () => {
   }, owner.cookie);
 
   assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, other.cookie)).status, 403);
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, admin.cookie)).status, 204);
+  // The admin removes accounts, not opinions.
+  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, admin.cookie)).status, 403);
+  assert.ok((await req('GET', '/api/reviews')).body.reviews.some(r => r.id === body.id));
+
+  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, owner.cookie)).status, 204);
+});
+
+test('rating a film someone else rated adds a take, it does not touch theirs', async () => {
+  const owner = await newReviewer('Primeiro');
+  const other = await newReviewer('Segundo');
+  const m = movie({ title: 'O Mesmo Filme' });
+
+  const first = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 4) }, owner.cookie);
+  const second = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 9) }, other.cookie);
+
+  assert.notEqual(first.body.id, second.body.id);
+  const mine = (await req('GET', '/api/reviews')).body.reviews.filter(r => r.movieId === m.id);
+  assert.equal(mine.length, 2);
+  assert.equal(mine.find(r => r.reviewerId === owner.id).final, first.body.final);
 });
 
 /* ── watchlist ───────────────────────────────────────────────────────── */

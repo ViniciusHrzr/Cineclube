@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
 import { cn, norm } from '@/lib/utils';
@@ -116,6 +116,47 @@ export function ReviewsScreen() {
   );
 }
 
+/* ── what you may do with a take ──────────────────────────────────────────
+   A take belongs to whoever gave it. Yours is yours to change or to unsay;
+   somebody else's is not, and the screen used to offer "Editar" on every one of
+   them. That button did not edit theirs — it could not, the server signs a take
+   with the session — it opened your own card for that film, which means the
+   only thing it ever did was mislead.
+
+   In its place, on a film you have not rated: an invitation. On one you already
+   have, nothing at all — you have said your piece, and the record showing you
+   somebody else's take is not a prompt to do anything about it. */
+function TakeActions({ r, onDelete, className }: { r: Review; onDelete: () => void; className?: string }) {
+  const club = useClub();
+  const mine = r.reviewerId === club.me.id;
+  const rated = club.reviews.some(x => x.reviewerId === club.me.id && x.movieId === r.movieId);
+
+  if (mine) {
+    return (
+      <div className={cn('flex gap-2', className)}>
+        <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
+          <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Editar
+        </Key>
+        <IconKey aria-label={`Excluir sua avaliação de ${r.movieTitle}`} onClick={onDelete}>
+          <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+        </IconKey>
+      </div>
+    );
+  }
+
+  if (rated) return null;
+
+  return (
+    <div className={cn('flex gap-2', className)}>
+      <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
+        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+        Avaliar também
+      </Key>
+    </div>
+  );
+}
+
 /* ── the drawer ───────────────────────────────────────────────────────────
    Opening used to animate height from 0 to `auto`, which cannot be done without
    measuring: the panel mounts, its full height is read, and only then does the
@@ -229,7 +270,6 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
 }
 
 function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onToggle: () => void; onDelete: () => void }) {
-  const club = useClub();
   return (
     /* A card per film, instead of hairlines dividing one long sheet. The rows
        are what the club actually points at — "that one" — and a divider only
@@ -259,26 +299,20 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
           <Breakdown rows={r.breakdown} comment={r.comment} />
-          <div className="mt-4 flex gap-2">
-            <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
-              <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
-              Editar
-            </Key>
-            <IconKey aria-label={`Excluir avaliação de ${r.movieTitle}`} onClick={onDelete}>
-              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-            </IconKey>
-          </div>
+          <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
       </Drawer>
     </div>
   );
 }
 
-/* ── where the club split ─────────────────────────────────────────────────
-   Every reviewer's mark for a criterion on one shared 0–10 track, so a
-   disagreement reads as distance instead of as a number you compute by
-   flipping between two lists. Δ lights when the gap is wide; it uses the beam,
-   not the red, because a disagreement is information and not a fault. */
+/* ── the film, and everyone who sat through it ────────────────────────────
+   One card per film, holding each person's take, opened one at a time or side
+   by side. There was a chart above them once, plotting every reviewer's mark
+   for every criterion on a shared 0–10 line with the spread called out beside
+   it. It answered a question nobody was asking: the disagreement is legible by
+   opening two takes and reading them, and the chart was a second, harder way to
+   say the same thing — one that had to be decoded before it could be read. */
 function ByMovie({
   reviews,
   openIds,
@@ -292,7 +326,6 @@ function ByMovie({
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
-  const club = useClub();
   /* Grouped by film and by film alone. The club watches together on Discord but
      rates whenever each person gets to it, so two people rating the same movie a
      week apart are still the same conversation — keying this by date used to
@@ -334,75 +367,6 @@ function ByMovie({
               <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
             </div>
 
-            {items.length > 1 ? (
-              <div className="px-3 pb-4">
-                <div className="mb-2 flex flex-wrap items-baseline gap-3">
-                  <span className="legend">Onde o clube divergiu</span>
-                  <span className="q text-[10.5px] text-ink-dim">Δ = distância entre a maior e a menor nota</span>
-                </div>
-                <div className="mb-1 hidden grid-cols-[130px_minmax(0,1fr)_58px] gap-3 sm:grid">
-                  <span />
-                  <span className="q flex justify-between text-[10px] text-ink-dim">
-                    <i className="not-italic">0</i>
-                    <i className="not-italic">5</i>
-                    <i className="not-italic">10</i>
-                  </span>
-                  <span />
-                </div>
-                {head.breakdown.map(k => {
-                  const marks = items.map(r => ({
-                    v: r.breakdown.find(b => b.key === k.key)?.value ?? 0,
-                    color: reelColor(r.reviewerDot, r.reviewerId),
-                    who: r.reviewerName,
-                  }));
-                  const values = marks.map(m => m.v);
-                  const gap = Math.max(...values) - Math.min(...values);
-                  return (
-                    <div
-                      key={k.key}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 py-1.5 sm:grid-cols-[130px_minmax(0,1fr)_58px] sm:items-center"
-                    >
-                      <span className={cn('text-[12px] sm:order-1', k.w === 2 ? 'text-ink' : 'text-ink-dim')}>{k.name}</span>
-                      <span className="relative order-last col-span-2 h-[18px] sm:order-2 sm:col-span-1" aria-hidden="true">
-                        <span className="absolute inset-x-0 top-2 h-[2px] rounded bg-white/[0.08]" />
-                        <span
-                          className="absolute inset-x-0 top-3 h-1"
-                          style={{
-                            backgroundImage:
-                              'repeating-linear-gradient(90deg, rgba(255,233,196,0.22) 0 1px, transparent 1px 10%)',
-                          }}
-                        />
-                        {marks.map((m, idx) => (
-                          <span
-                            key={idx}
-                            title={`${m.who}: ${fmt(m.v)}`}
-                            className="absolute top-0.5 h-[14px] w-[3px] -translate-x-[1.5px] rounded-[1px] mix-blend-screen ring-1 ring-black/60"
-                            style={{ left: `${(m.v / 10) * 100}%`, background: m.color }}
-                          />
-                        ))}
-                      </span>
-                      <span
-                        className={cn('q text-right text-[11px] sm:order-3', gap >= 2 ? 'text-beam' : 'text-ink-dim')}
-                      >
-                        {gap > 0 ? `Δ ${fmt(gap)}` : '—'}
-                      </span>
-                      <span className="sr-only">
-                        {marks.map(m => `${m.who} ${fmt(m.v)}`).join(', ')}. Diferença {fmt(gap)}.
-                      </span>
-                    </div>
-                  );
-                })}
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {items.map(r => (
-                    <span key={r.id} className="flex items-center gap-1.5 text-[11.5px] text-ink-dim">
-                      <span className="h-2.5 w-2.5 rounded-[1px]" style={{ background: reelColor(r.reviewerDot, r.reviewerId) }} />
-                      {r.reviewerName}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             <div className="flex flex-col">
               {sorted.map(r => (
                 <div key={r.id} className="border-t border-white/[0.06]">
@@ -423,15 +387,7 @@ function ByMovie({
                   <Drawer open={openIds.has(r.id)}>
                     <div className="px-3 pb-4 pt-1">
                       <Breakdown rows={r.breakdown} comment={r.comment} />
-                    </div>
-                    <div className="flex gap-2 px-3 pb-4">
-                      <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
-                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        Editar
-                      </Key>
-                      <IconKey aria-label={`Excluir avaliação de ${r.reviewerName}`} onClick={() => onDelete(r)}>
-                        <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                      </IconKey>
+                      <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" />
                     </div>
                   </Drawer>
                 </div>

@@ -110,13 +110,17 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
   res.status(201).json(toReviewDTO(saved));
 }));
 
-/* Your own take is yours to delete; the admin can delete anyone's. Without
-   this check any signed-in member could quietly erase somebody else's rating,
-   which is the one destructive action this club actually cares about. */
+/* A take belongs to whoever gave it, and to nobody else — not to the admin
+   either. Removing a rating is not moderation, it is unsaying an opinion, and
+   the one thing this club's record is for is that each person's opinion stands
+   as they left it. Writing is already closed the same way: the session signs
+   the take, so there is no request anyone can send that edits somebody else's.
+   Without this check any signed-in member could quietly erase another's
+   rating. */
 router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
   const row = await ownerStmt.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });
-  if (row.reviewer_id !== req.session.reviewer_id && !req.session.is_admin) {
+  if (row.reviewer_id !== req.session.reviewer_id) {
     return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });
   }
   await deleteStmt.run(row.id);
