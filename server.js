@@ -35,10 +35,26 @@ app.use((err, req, res, next) => {
 });
 
 // The club's administrator. Runs once: it only acts on an account that has no
-// PIN yet, so it can never overwrite a PIN Vinicius has since chosen, and it
+// PIN yet, so it can never overwrite a PIN the owner has since chosen, and it
 // never demotes or promotes anyone on later boots.
 const CLUB_ADMIN = process.env.CINECLUBE_ADMIN || 'Vinicius';
-const CLUB_ADMIN_PIN = process.env.CINECLUBE_ADMIN_PIN || '1646';
+
+/* ── the first PIN is never written down ──────────────────────────────────
+   A PIN in the source is a PIN for everyone who can read the source, and this
+   source is public. It used to carry one as a fallback, which meant the
+   repository documented a way into the club for anyone who found the address.
+
+   The convenience it bought was real, though, and only local: a machine
+   running this against its own throwaway database wants to get in without
+   being configured first. So the fallback survives exactly there. Anywhere the
+   club could actually be reached — which is anywhere the session cookie is
+   marked Secure, so anywhere behind HTTPS — there is no fallback: the
+   environment supplies the PIN or no PIN is set at all, and an account with no
+   PIN is an account nobody can sign in to.
+
+   Deployment is unaffected: CINECLUBE_ADMIN_PIN is already required there. */
+const CLUB_ADMIN_PIN =
+  process.env.CINECLUBE_ADMIN_PIN || (process.env.CINECLUBE_HTTPS ? null : '1646');
 
 /* The database is remote now, so everything the app needs before its first
    request — the schema, the seeds, the admin — is a promise. Nothing listens
@@ -65,8 +81,15 @@ async function boot() {
       console.log(`[server] ${adminRow.name} definido como administrador do clube`);
     }
     if (!adminRow.pin_hash) {
-      await auth.setPin(adminRow.id, CLUB_ADMIN_PIN);
-      console.log(`[server] PIN inicial definido para ${adminRow.name}. Troque-o pelo app.`);
+      if (CLUB_ADMIN_PIN) {
+        await auth.setPin(adminRow.id, CLUB_ADMIN_PIN);
+        console.log(`[server] PIN inicial definido para ${adminRow.name}. Troque-o pelo app.`);
+      } else {
+        console.warn(
+          `[server] ${adminRow.name} está sem PIN e CINECLUBE_ADMIN_PIN não foi definido. ` +
+            'Defina a variável e reinicie — nenhum PIN é inventado em produção.'
+        );
+      }
     }
   }
 }

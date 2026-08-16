@@ -14,3 +14,6 @@ data/*.db-journal
 data/*.db-shm
 data/*.db-wal
 *.log
+
+# O nome do servico e a URL publica. Fica so na maquina.
+render.yaml
