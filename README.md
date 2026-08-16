@@ -217,29 +217,6 @@ ele, e um cartão só re-renderiza quando algo daquele filme mudou.
 </details>
 
 <details>
-<summary><b>Por que a parede fica parada no Firefox</b></summary>
-
-<br>
-
-O Gecko só roda uma animação de `transform` fora da thread principal se
-conseguir pré-renderizar o elemento inteiro, e mede isso contra os limites
-*transformados*. Uma tira aqui é mais alta que o viewport, fica num campo com
-12% de sangria, esse campo é girado, e a tira ainda percorre um quadro ou dois —
-o retângulo que o Gecko precisa dimensionar dá quase o dobro do viewport, onde o
-limite dele é um oitavo acima.
-
-Recusado o compositor, ele anima na thread principal e repinta só a região que
-precisa: o pedaço sob o halo volta rasterizado num instante da animação enquanto
-os pixels ao redor ainda são de outro. A costura anda com a borda da luz.
-
-Duas hipóteses foram gastas antes da conclusão — a cópia acesa saindo de
-sincronia (não era: o Gecko já recebe uma parede só) e `will-change` nas tiras
-(não resolve). No Blink, que promove `transform` animado sozinho, a parede corre.
-No Gecko ela fica parada. O motivo está escrito por extenso em `client/src/index.css`.
-
-</details>
-
-<details>
 <summary><b>Um telefone não constrói o que só um mouse pode usar</b></summary>
 
 <br>
