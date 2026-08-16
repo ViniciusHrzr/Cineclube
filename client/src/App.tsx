@@ -329,11 +329,8 @@ function Marquee({
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <a href="#rate" className="mr-auto flex items-baseline gap-3 no-underline">
+        <a href="#rate" className="mr-auto flex items-baseline no-underline">
           <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
-          <span className="q hidden text-[10px] tracking-[0.08em] text-ink-dim sm:inline">
-            10 critérios · 12 pesos · nota /10
-          </span>
         </a>
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map(t => {

@@ -86,17 +86,25 @@ type Plane = {
       "in front" too, so half the strips near the eye appeared to be lying flat
       against the wall. What sorts the planes is not whether there is a shadow
       but how far it is thrown and how soft it has gone — a strip further back
-      is closer to what it falls on. */
+      is closer to what it falls on.
+
+      The spread is always larger than the horizontal offset, and that is the
+      whole rule. An outer shadow is clipped to outside the box it comes from,
+      so once the offset exceeds the spread the shadow's own edge retreats
+      inside the strip on the upwind side, and all that survives there is the
+      weak half of a blur. A heavy shadow on one flank and nothing on the other
+      does not read as light coming from a direction; it reads as broken. Every
+      strip here darkens both its neighbours, one of them more. */
   shade: string;
 };
 
 const PLANES: Plane[] = [
   // nearest: widest, brightest, fastest, and the shadow thrown furthest
-  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '14px 18px 48px 9px rgba(2,3,7,0.82)' },
-  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '6px 8px 24px 4px rgba(2,3,7,0.5)' }, // far
-  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '10px 13px 36px 6px rgba(2,3,7,0.68)' }, // mid
+  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 30px 7px rgba(2,3,7,0.55)' },
+  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '1px 2px 15px 3px rgba(2,3,7,0.34)' }, // far
+  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 22px 5px rgba(2,3,7,0.45)' }, // mid
   // furthest: barely there, barely moves, and its shadow lands on the wall itself
-  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: '3px 4px 14px 2px rgba(2,3,7,0.34)' },
+  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: '1px 1px 9px 2px rgba(2,3,7,0.22)' },
 ];
 
 /* Celluloid, built the way the material actually is: one length of 35mm as one
@@ -114,10 +122,19 @@ const PLANES: Plane[] = [
 
    `fill` is the base the strip is printed on, and it is the reason the shadows
    read at all. A strip made only of hairlines is very nearly a hole in the
-   wall: a shadow falling across it has almost nothing to darken but the black
-   of the room, which is already black. The wash is barely a hundredth of an
-   alpha — it does not lighten the wall in any way a contrast meter notices —
-   but it gives the celluloid a body, and a body is what takes a shadow. */
+   wall: a shadow falling across it has nothing to darken but the black of the
+   room, which is already black — 82% of nothing is still nothing, and every
+   shadow on this wall was invisible for exactly that reason.
+
+   So the celluloid gets a body. Physically it is the right answer and not a
+   trick: film hung on a dark wall reflects some light back, which is why you
+   can see it at all, and being lighter than the wall is precisely the condition
+   under which a shadow falling across it becomes visible. The wash is what a
+   strip loses when its neighbour blocks the beam.
+
+   The wall stays far darker than the type in front of it: at full strength a
+   strip reads #101319 and, through the scrim, #0d1016 — cream text over that is
+   about 14.9:1, where the floor for body copy is 4.5:1. */
 function stripFace(line: string, edge: string, perf: string, fill: string, s: number) {
   const strip = STRIP * s;
   const cell = CELL * s;
@@ -309,7 +326,7 @@ export function HolographicWall({
         line="rgba(184,200,224,0.075)"
         edge="rgba(184,200,224,0.13)"
         perf="rgba(184,200,224,0.11)"
-        fill="rgba(184,200,224,0.014)"
+        fill="rgba(184,200,224,0.05)"
       />
 
       {/* the lit wall: the same strip in tungsten, revealed only where the beam
@@ -327,7 +344,7 @@ export function HolographicWall({
           line="rgba(255,214,150,0.66)"
           edge="rgba(255,228,175,0.85)"
           perf="rgba(255,244,220,0.9)"
-          fill="rgba(255,214,150,0.05)"
+          fill="rgba(255,214,150,0.13)"
         />
       </motion.div>
 

@@ -1,15 +1,27 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
-import { Blank, IconKey, Key, Poster, Reel, Strip } from '@/components/bits';
+import { Blank, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, norm } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function ReviewsScreen() {
   const club = useClub();
   const [view, setView] = useState<'reviewer' | 'movie'>('reviewer');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  /* Title or person, in one field. This screen is the club's record and it is
+     read two ways — "what did we think of that one" and "what has she rated" —
+     so a search that only matched films would answer half the questions asked
+     of it. Both views filter from the same set, so switching between them
+     while searching keeps the same answer on screen. */
+  const filtering = query.trim().length > 0;
+  const q = norm(query.trim());
+  const shown = filtering
+    ? club.reviews.filter(r => norm(r.movieTitle).includes(q) || norm(r.reviewerName).includes(q))
+    : club.reviews;
 
   async function remove(r: Review) {
     if (!confirm(`Excluir a avaliação de "${r.movieTitle}"? Essa ação não pode ser desfeita.`)) return;
@@ -28,9 +40,22 @@ export function ReviewsScreen() {
       <header className="mb-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">Avaliados</h1>
         <p className="q mt-2 text-[12.5px] text-ink-dim">
-          {club.reviews.length} avaliações · {club.reviewers.length} avaliadores
+          {filtering
+            ? `${shown.length} de ${club.reviews.length} avaliações`
+            : `${club.reviews.length} avaliações · ${club.reviewers.length} avaliadores`}
         </p>
       </header>
+
+      {club.reviews.length ? (
+        <div className="mb-5 max-w-[440px]">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por filme ou avaliador…"
+            hint={filtering ? 'busca no que o clube já gravou, não no TMDB' : undefined}
+          />
+        </div>
+      ) : null}
 
       <div className="mb-6 flex flex-wrap gap-2">
         {(['reviewer', 'movie'] as const).map(v => (
@@ -42,7 +67,7 @@ export function ReviewsScreen() {
             className={cn(
               'rounded-cell px-3 py-1.5 font-display text-[12.5px] uppercase tracking-[0.12em] ring-1 transition-colors duration-150',
               view === v
-                ? 'bg-dye-cyan/10 text-dye-cyan ring-dye-cyan/60'
+                ? 'bg-dye-red/10 text-dye-red-lit ring-dye-red-lit/60'
                 : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/20'
             )}
           >
@@ -51,12 +76,20 @@ export function ReviewsScreen() {
         ))}
       </div>
 
-      {view === 'reviewer' ? (
+      {filtering && !shown.length ? (
+        <Blank title="Nenhuma avaliação com esse nome">
+          A busca cobre o título do filme e o nome de quem avaliou. Limpe o campo para ver o registro inteiro.
+        </Blank>
+      ) : view === 'reviewer' ? (
         club.reviewers.length ? (
-          club.reviewers.map(p => {
-            const items = club.reviews.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
-            const mean = items.length ? items.reduce((s, r) => s + r.final, 0) / items.length : 0;
-            return (
+          club.reviewers
+            /* A search hides the people it did not match: a column of empty
+               names is not an answer to "what did she rate". */
+            .filter(p => !filtering || shown.some(r => r.reviewerId === p.id))
+            .map(p => {
+              const items = shown.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
+              const mean = items.length ? items.reduce((s, r) => s + r.final, 0) / items.length : 0;
+              return (
               <div key={p.id} className="mb-9">
                 <div className="mb-3 flex items-center gap-3">
                   <Reel color={reelColor(p.dot, p.id)}>{initialsOf(p.name)}</Reel>
@@ -80,7 +113,7 @@ export function ReviewsScreen() {
           <Blank title="Nenhum avaliador cadastrado">Cadastre as pessoas do clube na seção Avaliadores.</Blank>
         )
       ) : (
-        <ByMovie openId={openId} onToggle={toggle} onDelete={r => void remove(r)} />
+        <ByMovie reviews={shown} openId={openId} onToggle={toggle} onDelete={r => void remove(r)} />
       )}
     </section>
   );
@@ -155,10 +188,14 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
    flipping between two lists. Δ lights when the gap is wide; it uses the beam,
    not the red, because a disagreement is information and not a fault. */
 function ByMovie({
+  reviews,
   openId,
   onToggle,
   onDelete,
 }: {
+  /* Already filtered by the search upstairs, so this view never has to know
+     one is running. */
+  reviews: Review[];
   openId: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
@@ -169,7 +206,7 @@ function ByMovie({
      week apart are still the same conversation — keying this by date used to
      split one film into unrelated cards. */
   const map: Record<string, Review[]> = {};
-  club.reviews.forEach(r => {
+  reviews.forEach(r => {
     (map[String(r.movieId)] ||= []).push(r);
   });
   const groups = Object.values(map).sort((a, b) => {

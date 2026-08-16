@@ -199,7 +199,7 @@ export function ProjectionSheet({
                 {movie.director ? ` · dir. ${movie.director}` : ''}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-cyan ring-1 ring-dye-cyan/50">
+                <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
                   {movie.genre}
                 </span>
                 {clubAvg != null ? (
