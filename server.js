@@ -68,8 +68,32 @@ app.ready = ready;
 // listen on an ephemeral port of their own.
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
+  // Explicitly every interface. A process listening only on loopback is
+  // invisible to the proxy sitting in front of it, which then has nothing to
+  // route a request to and answers as if the service were down.
+  const HOST = process.env.HOST || '0.0.0.0';
+
+  // A process that dies without saying why turns a five minute fix into an
+  // afternoon. These keep the default behaviour — the process still exits —
+  // but name the cause on the way out.
+  process.on('unhandledRejection', err => {
+    console.error('[server] promessa rejeitada sem tratamento:', err);
+    process.exit(1);
+  });
+  process.on('uncaughtException', err => {
+    console.error('[server] exceção não capturada:', err);
+    process.exit(1);
+  });
+
   ready.then(
-    () => app.listen(PORT, () => console.log(`Cineclube rodando em http://localhost:${PORT}`)),
+    () => {
+      const server = app.listen(PORT, HOST, () => {
+        // The bound address, not the one we hoped for: this line is the whole
+        // difference between guessing and knowing when routing misbehaves.
+        const { address, port } = server.address();
+        console.log(`Cineclube ouvindo em ${address}:${port}`);
+      });
+    },
     err => {
       console.error('[server] falha ao preparar o banco:', err);
       process.exit(1);
