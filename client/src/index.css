@@ -211,12 +211,8 @@
 
    It is a transform and not the background-position this used to be: a moving
    background repaints a full-screen element on every frame, while a transform
-   on a strip is handed to the compositor and costs nothing to run.
-
-   A poster floats the way a frame weaves in the gate — a real property of
-   projected film, not a decorative bob. Two pixels and a fraction of a degree,
-   over twenty seconds, with the phase offset per card so a grid never pulses in
-   lockstep. */
+   on a strip is handed to the compositor and costs nothing to run — as long as
+   the compositor agrees to take it, which is a budget and not a promise. */
 @keyframes strip-creep {
   from {
     transform: translate3d(0, 0, 0);
@@ -230,26 +226,8 @@
   animation-delay: var(--phase, 0s);
 }
 
-@keyframes gate-weave {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  33% {
-    transform: translate3d(1.5px, -2px, 0) rotate(0.18deg);
-  }
-  66% {
-    transform: translate3d(-1.5px, 1.5px, 0) rotate(-0.15deg);
-  }
-}
-.gate-weave {
-  animation: gate-weave 20s ease-in-out infinite;
-  animation-delay: calc(var(--weave, 0) * -2.6s);
-  will-change: transform;
-}
-
 /* Reduced motion is an intentional alternative, not a kill switch. What goes is
-   travel that plays on its own: entrances, the weave. What stays is feedback the
+   travel that plays on its own: the entrances. What stays is feedback the
    visitor causes — the film wall still lights under the cursor, because that
    light is a response to an action, not a performance. Killing it outright is
    the bug this replaced: the whole backdrop went inert for anyone whose system
@@ -267,9 +245,9 @@
    Kept as one media query rather than scattered checks, so what a phone does
    not build is written down in one place:
 
-   The creep and the weave are perpetual compositor work — a promoted layer per
-   strip and per poster, running for as long as the tab is open, for motion
-   nobody on a phone is sitting still enough to notice.
+   The creep is perpetual compositor work — a promoted layer per strip, running
+   for as long as the tab is open, for motion nobody on a phone is sitting still
+   enough to notice.
 
    The text shadow was put on every glyph in the product to survive the beam
    crossing behind it. No beam, no reason: it was two shadows, one of them a
@@ -286,8 +264,7 @@
   body {
     text-shadow: none;
   }
-  .strip-creep,
-  .gate-weave {
+  .strip-creep {
     animation: none !important;
   }
 }
@@ -303,8 +280,7 @@
   }
   .animate-frame-in,
   .animate-beam-in,
-  .animate-flicker,
-  .gate-weave {
+  .animate-flicker {
     animation: none !important;
   }
 }

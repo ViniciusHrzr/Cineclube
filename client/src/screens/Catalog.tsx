@@ -166,11 +166,10 @@ export function CatalogScreen() {
         </div>
       ) : items.length ? (
         <Bin>
-          {items.map((m, i) => (
+          {items.map(m => (
             <FilmCell
               key={m.id}
               movie={m}
-              weave={i % 7}
               avg={club.averages[m.id]?.avg}
               count={club.averages[m.id]?.count}
               inWatchlist={club.inWatchlist(m.id)}
@@ -510,8 +509,7 @@ export function WatchlistScreen() {
                     </span>
                     <FilmCell
                       movie={w as Movie}
-                      weave={i % 7}
-                      onOpen={() => club.openSheet(w.id)}
+                              onOpen={() => club.openSheet(w.id)}
                       onRate={() => club.rateMovie(w.id)}
                       onRemove={() => void remove(w.id)}
                     />

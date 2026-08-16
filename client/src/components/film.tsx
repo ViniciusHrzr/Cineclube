@@ -17,7 +17,6 @@ export function FilmCell({
   avg,
   count,
   inWatchlist,
-  weave = 0,
   onOpen,
   onRate,
   onToggleWatch,
@@ -27,8 +26,6 @@ export function FilmCell({
   avg?: number;
   count?: number;
   inWatchlist?: boolean;
-  /** Phase offset for the gate weave, so a grid never floats in lockstep. */
-  weave?: number;
   onOpen: () => void;
   onRate: () => void;
   onToggleWatch?: () => void;
@@ -46,11 +43,18 @@ export function FilmCell({
           >
             {/* The strip is hidden by a translate, so it has to live inside a
                 positioned box that clips it — otherwise it resolves against a
-                far ancestor and sits permanently over the title. */}
-            <span
-              className="gate-weave relative block overflow-hidden rounded-cell"
-              style={{ '--weave': weave } as React.CSSProperties}
-            >
+                far ancestor and sits permanently over the title.
+
+                This box used to weave like a frame in the gate: two pixels and
+                a fifth of a degree, over twenty seconds. It was the right idea
+                and the wrong budget — one perpetually animated element per
+                poster, twenty per page, each asking the browser for a
+                compositor layer of its own. Chrome grants them all; Gecko has a
+                ceiling, and past it it stops promoting and animates on the main
+                thread instead, repainting every frame whether or not anything
+                is happening. Twenty layers for two pixels nobody consciously
+                sees is not a trade worth making. */}
+            <span className="relative block overflow-hidden rounded-cell">
               <Poster src={movie.poster} className="aspect-[2/3] w-full" />
               <span className="pointer-events-none absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center gap-1.5 bg-beam px-2 py-2 font-display text-[11px] uppercase tracking-[0.14em] text-house-deep transition-transform duration-200 ease-beam group-hover/cell:translate-y-0 group-focus-visible/cell:translate-y-0 motion-reduce:transition-none">
                 <Info className="h-3.5 w-3.5" strokeWidth={2} />

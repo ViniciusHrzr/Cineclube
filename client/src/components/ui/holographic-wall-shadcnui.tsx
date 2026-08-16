@@ -38,7 +38,11 @@ type HolographicWallProps = {
    room should be a size larger than the thing standing in front of it, or the
    frames start to compete with the cards for the same grain of attention. One
    knob, and the whole material follows it. */
-const GAUGE = 1.7;
+/* Also, quietly, a performance knob: every strip is an element animating for as
+   long as the tab is open, and there is a ceiling on how many of those a browser
+   will hand to the compositor. Wider film means fewer lengths of it on screen —
+   about seven per copy instead of ten — for the same wall. */
+const GAUGE = 2.1;
 
 const CELL = 46 * GAUGE;     // px — one frame, top to bottom
 const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge
@@ -98,13 +102,20 @@ type Plane = {
   shade: string;
 };
 
+/* The blurs are half what they were, and the two planes at the back cast
+   nothing at all. A blurred shadow has to be rasterised into the layer that
+   carries it, and these layers are the height of the screen and never stop
+   moving; thirty pixels of blur on every one of them is a bill paid on every
+   device, for a gradient of shadow that reads the same at fourteen. What sorts
+   the planes was never the shadow's size anyway — it is that the near ones
+   throw and the far ones do not. */
 const PLANES: Plane[] = [
-  // nearest: widest, brightest, fastest, and the shadow thrown furthest
-  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 30px 7px rgba(2,3,7,0.55)' },
-  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '1px 2px 15px 3px rgba(2,3,7,0.34)' }, // far
-  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 22px 5px rgba(2,3,7,0.45)' }, // mid
-  // furthest: barely there, barely moves, and its shadow lands on the wall itself
-  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: '1px 1px 9px 2px rgba(2,3,7,0.22)' },
+  // nearest: widest, brightest, fastest, and the only shadow thrown far
+  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 14px 5px rgba(2,3,7,0.55)' },
+  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: 'none' }, // far
+  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 10px 3px rgba(2,3,7,0.45)' }, // mid
+  // furthest: barely there, barely moves, and casts nothing
+  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: 'none' },
 ];
 
 /* Celluloid, built the way the material actually is: one length of 35mm as one
