@@ -134,10 +134,10 @@ Disso sai tudo o resto:
   sobre as outras. Ela corre devagar e acende onde o cursor está.
 - **A cor.** Tricromia Technicolor — vermelho, ciano e o creme do facho — e
   nada mais. Nenhum acento neon sobre cinza: a cor vem do meio, não da moda.
-- **A tipografia.** Cinzel faz o papel de cartela de título — capitulares romanas,
-  a mesma tradição que cartaz e crédito de cinema citam há décadas. Poppins,
-  geométrica e redonda, carrega todo o resto: o contraste entre as duas é o que
-  separa o que o filme anuncia do que o clube escreveu sobre ele.
+- **A tipografia.** Bebas Neue faz o papel de cartela de título: capitulares
+  condensadas, a voz de uma marquise. Poppins, geométrica e redonda, carrega
+  todo o resto — o contraste entre as duas é o que separa o que o filme anuncia
+  do que o clube escreveu sobre ele.
 - **Os controles.** Cada critério é uma tira de filme correndo por um projetor,
   e a marca é a janela onde o quadro é lido. Por baixo continua sendo um
   `<input type="range">` nativo — o teclado, o leitor de tela e o passo de 0,5
