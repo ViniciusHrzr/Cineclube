@@ -49,8 +49,21 @@ export default {
         },
       },
       fontFamily: {
-        // Bebas is the title card: condensed caps, the voice of a marquee.
-        display: ['"Bebas Neue"', 'system-ui', 'sans-serif'],
+        /* Cinzel is the title card. Roman capitals cut in the tradition of
+           inscriptional lettering, which is the tradition a film poster and a
+           credit roll have been quoting for forty years — it is the most
+           literal answer there is to "make it look like cinema".
+
+           It replaces a condensed grotesque, and the two are opposites: Bebas
+           was narrow and needed tracking to breathe, while these are wide and
+           come letterspaced by convention. Every size and every tracking in
+           the interface was set against the narrow one, so the display face is
+           now the widest thing on the page wherever it appears — which is the
+           first place to look if something crowds.
+
+           400 is the weight the room uses; 600 and 700 are loaded so a title
+           can be given more voice without a second round trip. */
+        display: ['Cinzel', 'Georgia', 'serif'],
         /* Poppins carries every label, control and paragraph. Geometric and
            round where the display face is condensed and hard, which is the
            contrast a title card wants against the copy under it.
