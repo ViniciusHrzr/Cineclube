@@ -252,27 +252,26 @@ export function WatchlistScreen() {
     ? club.watchlist.filter(w => norm(w.title).includes(norm(query.trim())))
     : club.watchlist;
 
-  /* ── the queue, twenty at a time ────────────────────────────────────────
-     A queue is a thing you arrange, and arranging happens between films that
-     are on screen together. Past a certain length the page stops being a queue
-     and becomes a scroll, and every reorder turns into a hunt.
+  /* ── the queue, twenty-four at a time ───────────────────────────────────
+     The same shape the catalogue uses, for the same reason: a long queue is a
+     long scroll before it is anything else, and nobody asked to see the
+     fiftieth film to deal with the third.
 
-     The page is clamped rather than reset: removing the last film of the last
-     page should land you on the page before it, not back at the top of a queue
-     you were working at the end of. */
-  const PER_PAGE = 20;
-  const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
-  const [page, setPage] = useState(0);
-  const current = Math.min(page, pages - 1);
-  if (current !== page) setPage(current);
-  const pageStart = current * PER_PAGE;
-  const paged = shown.slice(pageStart, pageStart + PER_PAGE);
+     What is shown is always a *prefix* — the first N of the queue, never a
+     window into the middle of it. That is what keeps the drag honest: every
+     card on screen and every place it could land are the same set, and the
+     index of a slot is the index in the queue with nothing to convert. */
+  const STEP = 24;
+  const [visible, setVisible] = useState(STEP);
+  const paged = shown.slice(0, visible);
+  const rest = shown.length - paged.length;
 
-  /* A search re-cuts the whole list, so the page it was on means nothing. */
+  /* A search re-cuts the whole list, so how far the old one had been opened
+     means nothing to it. */
   const lastQuery = useRef(query);
   if (lastQuery.current !== query) {
     lastQuery.current = query;
-    if (page !== 0) setPage(0);
+    if (visible !== STEP) setVisible(STEP);
   }
 
   /* Stable, because it is handed to a hundred memoized cards: a new function
@@ -310,9 +309,10 @@ export function WatchlistScreen() {
     }
   }
 
-  /* The keyboard moves through the whole queue and not just this page, which
-     makes it the one way to send a film a long way. The page follows the film
-     rather than the film disappearing off the edge of the page. */
+  /* The keyboard moves through the whole queue and not only what is loaded,
+     which makes it the one way to send a film a long way. If it lands past the
+     end of what is on screen, the screen opens far enough to keep it in sight
+     — a film that vanishes when you move it reads as a film you lost. */
   function moveTo(id: number, targetIndex: number) {
     const list = [...club.watchlist];
     const from = list.findIndex(w => w.id === id);
@@ -322,7 +322,7 @@ export function WatchlistScreen() {
     const [item] = list.splice(from, 1);
     list.splice(to, 0, item);
     void persist(list);
-    setPage(Math.floor(to / PER_PAGE));
+    setVisible(v => Math.max(v, to + 1));
   }
 
   /* Pointer events rather than HTML5 drag-and-drop, which does not exist on a
@@ -341,15 +341,15 @@ export function WatchlistScreen() {
        instead of the grid — and held relative to the grid, whose own position
        is read fresh every frame. That is what makes a scroll mid-drag need no
        bookkeeping: the boxes move because the grid did. */
-    /* Only the boxes on this page. The drag rearranges what is on screen, so
-       what it measures is what is on screen — and because every landing slot
-       belongs to this page, a card can be moved anywhere within it and never
-       out of it. Crossing pages is the keyboard's job, below, which is the one
-       way to move a film a long distance without being able to see where it
-       is going. */
+    /* Only the boxes that were built. The drag rearranges what is on screen,
+       so what it measures is what is on screen — and because what is on screen
+       is the front of the queue, slot 3 is position 3 and there is nothing to
+       convert. Sending a film past the end of what is loaded is the keyboard's
+       job, below: it is the one way to move something a long distance without
+       being able to see where it is going. */
     const grid = host.parentElement;
-    const pageItems = order.current.slice(pageStart, pageStart + PER_PAGE);
-    const els = pageItems.map(w => cellRefs.current.get(w.id));
+    const loaded = order.current.slice(0, visible);
+    const els = loaded.map(w => cellRefs.current.get(w.id));
     if (!grid || els.some(el => !el)) return;
     const rooted = grid === host.offsetParent;
     const gx = rooted ? 0 : grid.offsetLeft;
@@ -410,14 +410,11 @@ export function WatchlistScreen() {
           best = i;
         }
       });
-      /* The slot is where the card landed on this page; the queue it is being
-         spliced into is the whole thing. One offset converts between them. */
       const from = order.current.findIndex(w => w.id === id);
-      const target = pageStart + best;
-      if (from < 0 || target === from) return;
+      if (from < 0 || best === from) return;
       const next = [...order.current];
       const [item] = next.splice(from, 1);
-      next.splice(target, 0, item);
+      next.splice(best, 0, item);
       order.current = next;
       club.reload({ watchlist: next });
     };
@@ -450,7 +447,7 @@ export function WatchlistScreen() {
 
       /* The card is flown into the box it earned rather than blinked back into
          the grid, so the eye keeps hold of it the whole way down. */
-      const slot = slots.current[order.current.findIndex(w => w.id === id) - pageStart];
+      const slot = slots.current[order.current.findIndex(w => w.id === id)];
       const settle = () => {
         setLift(null);
         setLanding(false);
@@ -482,7 +479,7 @@ export function WatchlistScreen() {
           {filtering
             ? `${shown.length} de ${plural(club.watchlist.length, 'filme', 'filmes')}`
             : `${plural(club.watchlist.length, 'filme', 'filmes')} na fila do clube`}
-          {pages > 1 ? ` · página ${current + 1} de ${pages}` : ''}
+          {rest > 0 ? ` · mostrando ${paged.length}` : ''}
         </p>
       </header>
 
@@ -495,8 +492,8 @@ export function WatchlistScreen() {
             hint={
               filtering
                 ? 'a ordem só pode ser mudada com a fila inteira à vista'
-                : pages > 1
-                ? 'arraste pela alça para reordenar nesta página · as setas movem pela fila toda'
+                : rest > 0
+                ? 'arraste pela alça para reordenar o que está à vista · as setas movem pela fila toda'
                 : 'arraste pela alça para reordenar'
             }
           />
@@ -556,10 +553,7 @@ export function WatchlistScreen() {
                       </button>
                     ) : null}
                     <span className="q absolute right-1.5 top-1.5 z-20 rounded-cell bg-house-deep/85 px-1.5 py-0.5 text-[10px] text-ink-dim ring-1 ring-white/10">
-                      {/* The place in the queue, never the place on the page —
-                          the number under a poster is what the club points at
-                          when they say "that one is next". */}
-                      {filtering ? club.watchlist.findIndex(x => x.id === w.id) + 1 : pageStart + i + 1}
+                      {filtering ? club.watchlist.findIndex(x => x.id === w.id) + 1 : i + 1}
                     </span>
                     <FilmCell
                       movie={w as Movie}
@@ -594,22 +588,18 @@ export function WatchlistScreen() {
         </Blank>
       )}
 
-      {/* Pages, not a "load more": the queue is arranged, and a button that
-          only ever grows the list would put it back where it started. Hidden
-          entirely while there is only one page — a control that can do nothing
-          is a question the reader has to answer before ignoring it. */}
-      {pages > 1 ? (
-        <nav aria-label="Páginas da fila" className="mt-8 flex items-center justify-center gap-3">
-          <Key tone="flush" disabled={current === 0} onClick={() => setPage(current - 1)}>
-            Anterior
+      {/* The same control the catalogue ends with, in the same place. It says
+          what is left rather than only offering more, because the number is
+          the thing that tells you whether pressing it is worth it. */}
+      {rest > 0 ? (
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Key tone="flush" onClick={() => setVisible(v => v + STEP)}>
+            Carregar mais
           </Key>
-          <span aria-live="polite" className="q font-display text-[13px] uppercase tracking-[0.14em] text-ink-dim">
-            {current + 1} / {pages}
+          <span aria-live="polite" className="q text-[11.5px] text-ink-dim">
+            {paged.length} de {shown.length} · faltam {rest}
           </span>
-          <Key tone="flush" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>
-            Próxima
-          </Key>
-        </nav>
+        </div>
       ) : null}
 
       {/* The card in the air. It lives on the body rather than in the grid: a
