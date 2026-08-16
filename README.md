@@ -14,7 +14,7 @@ projeção onde cada pessoa defende o que achou, com o número aberto embaixo.
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-43b8c6?style=for-the-badge&labelColor=07090e)
 ![Express](https://img.shields.io/badge/Express-4-ffe9c4?style=for-the-badge&labelColor=07090e)
 ![libSQL](https://img.shields.io/badge/libSQL-SQLite-ffe9c4?style=for-the-badge&labelColor=07090e)
-![Testes](https://img.shields.io/badge/63_testes-passando-d12a20?style=for-the-badge&labelColor=07090e)
+
 
 <br>
 
