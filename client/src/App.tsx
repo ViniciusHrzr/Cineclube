@@ -1,0 +1,380 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
+import { ProjectionSheet } from '@/components/film';
+import { Fault } from '@/components/bits';
+import {
+  api,
+  auth,
+  del,
+  initialsOf,
+  post,
+  reelColor,
+  type Criterion,
+  type Movie,
+  type Reviewer,
+  type Review,
+  type SessionUser,
+  type WatchItem,
+} from '@/lib/api';
+import { Reel } from '@/components/bits';
+import { SignIn } from '@/screens/SignIn';
+import { cn } from '@/lib/utils';
+import { RateScreen } from '@/screens/Rate';
+import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
+import { ReviewsScreen } from '@/screens/Reviews';
+import { PeopleScreen } from '@/screens/People';
+
+export const TABS = [
+  { id: 'rate', label: 'Avaliar' },
+  { id: 'catalog', label: 'Catálogo' },
+  { id: 'watchlist', label: 'Quero ver' },
+  { id: 'reviews', label: 'Avaliados' },
+  { id: 'people', label: 'Avaliadores' },
+] as const;
+export type TabId = (typeof TABS)[number]['id'];
+
+type Club = {
+  /** Who is signed in. The session is the authority on this, not the client. */
+  me: SessionUser;
+  signOut: () => void;
+  refreshReviewers: () => Promise<void>;
+  reviewers: Reviewer[];
+  reviews: Review[];
+  watchlist: WatchItem[];
+  criteria: Record<string, Criterion[]>;
+  genres: string[];
+  reload: (patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => void;
+  criteriaFor: (genre: string) => Criterion[];
+  averages: Record<number, { avg: number; count: number }>;
+  inWatchlist: (id: number) => boolean;
+  toggleWatch: (m: Movie | WatchItem) => Promise<void>;
+  goTab: (t: TabId) => void;
+  openSheet: (id: number) => void;
+  rateMovie: (id: number) => void;
+  fault: (msg: string) => void;
+};
+
+const ClubContext = createContext<Club | null>(null);
+export function useClub() {
+  const c = useContext(ClubContext);
+  if (!c) throw new Error('useClub precisa estar dentro do App');
+  return c;
+}
+
+function tabFromHash(): TabId | null {
+  const h = (location.hash || '').replace(/^#/, '');
+  return (TABS as readonly { id: string }[]).some(t => t.id === h) ? (h as TabId) : null;
+}
+
+export default function App() {
+  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'rate');
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
+  const [criteria, setCriteria] = useState<Record<string, Criterion[]>>({});
+  const [genres, setGenres] = useState<string[]>([]);
+  const [booted, setBooted] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [me, setMe] = useState<SessionUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [sheetId, setSheetId] = useState<number | null>(null);
+  const [pendingRate, setPendingRate] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  /* The session decides whether the app renders at all, so it is asked first
+     and separately: a signed-out visitor should reach the sign-in screen
+     without waiting on the catalog. */
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await auth.me();
+      setMe(res.reviewer);
+    } catch {
+      setMe(null);
+    } finally {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkAuth();
+  }, [checkAuth]);
+
+  const boot = useCallback(async () => {
+    setBootError(null);
+    try {
+      const [rv, rs, cr, wl] = await Promise.all([
+        api<{ reviewers: Reviewer[] }>('/api/reviewers'),
+        api<{ reviews: Review[] }>('/api/reviews'),
+        api<{ genres: string[]; criteria: Record<string, Criterion[]> }>('/api/catalog/criteria-all'),
+        api<{ watchlist: WatchItem[] }>('/api/watchlist'),
+      ]);
+      setReviewers(rv.reviewers);
+      setReviews(rs.reviews);
+      setCriteria(cr.criteria);
+      setGenres(cr.genres);
+      setWatchlist(wl.watchlist);
+      setBooted(true);
+    } catch (e) {
+      setBootError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (me) void boot();
+  }, [me, boot]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await auth.logout();
+    } catch {
+      /* the cookie is gone either way; falling through logs the browser out */
+    }
+    setMe(null);
+    setBooted(false);
+  }, []);
+
+  const refreshReviewers = useCallback(async () => {
+    const rv = await api<{ reviewers: Reviewer[] }>('/api/reviewers');
+    setReviewers(rv.reviewers);
+  }, []);
+
+  useEffect(() => {
+    const onHash = () => {
+      const t = tabFromHash();
+      if (t) setTab(t);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const goTab = useCallback((t: TabId) => {
+    setTab(t);
+    if (tabFromHash() !== t) location.hash = t;
+  }, []);
+
+  const fault = useCallback((msg: string) => {
+    // A 24h session ends quietly mid-use; drop to the sign-in screen instead of
+    // showing an error the visitor cannot act on.
+    if (/Entre com seu PIN/i.test(msg)) {
+      setMe(null);
+      setBooted(false);
+      return;
+    }
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 6000);
+  }, []);
+
+  const averages = useMemo(() => {
+    const acc: Record<number, number[]> = {};
+    reviews.forEach(r => {
+      (acc[r.movieId] ||= []).push(r.final);
+    });
+    const out: Record<number, { avg: number; count: number }> = {};
+    for (const id in acc) {
+      const list = acc[Number(id)];
+      out[Number(id)] = { avg: list.reduce((s, v) => s + v, 0) / list.length, count: list.length };
+    }
+    return out;
+  }, [reviews]);
+
+  const inWatchlist = useCallback((id: number) => watchlist.some(w => String(w.id) === String(id)), [watchlist]);
+
+  const toggleWatch = useCallback(
+    async (m: Movie | WatchItem) => {
+      const has = watchlist.some(w => String(w.id) === String(m.id));
+      try {
+        if (has) {
+          await del(`/api/watchlist/${m.id}`);
+          setWatchlist(list => list.filter(w => String(w.id) !== String(m.id)));
+        } else {
+          await post('/api/watchlist', {
+            movie: { id: m.id, title: m.title, year: m.year, genre: m.genre, poster: m.poster },
+          });
+          setWatchlist(list => [
+            ...list,
+            { id: m.id, title: m.title, year: m.year, genre: m.genre, poster: m.poster },
+          ]);
+        }
+      } catch (e) {
+        fault('Não foi possível atualizar a fila: ' + (e as Error).message);
+      }
+    },
+    [watchlist, fault]
+  );
+
+  const rateMovie = useCallback(
+    (id: number) => {
+      setSheetId(null);
+      setPendingRate(id);
+      goTab('rate');
+    },
+    [goTab]
+  );
+
+  if (!authChecked) {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative flex min-h-dvh items-center justify-center">
+          <span className="legend animate-flicker">Acendendo o projetor</span>
+        </div>
+      </>
+    );
+  }
+
+  if (!me) return <SignIn onSignedIn={setMe} />;
+
+  const club: Club = {
+    me,
+    signOut: () => void signOut(),
+    refreshReviewers,
+    reviewers,
+    reviews,
+    watchlist,
+    criteria,
+    genres,
+    reload: patch => {
+      if (patch.reviewers) setReviewers(patch.reviewers);
+      if (patch.reviews) setReviews(patch.reviews);
+      if (patch.watchlist) setWatchlist(patch.watchlist);
+    },
+    criteriaFor: (genre: string) => criteria[genre] ?? criteria['Drama'] ?? [],
+    averages,
+    inWatchlist,
+    toggleWatch,
+    goTab,
+    openSheet: setSheetId,
+    rateMovie,
+    fault,
+  };
+
+  return (
+    <ClubContext.Provider value={club}>
+      {/* The wall behind everything. It is the room, not decoration: it is what
+          tells you the lights are down before you read a single word. */}
+      <HolographicWall asBackdrop />
+
+      <div className="relative flex min-h-dvh flex-col">
+        <Marquee tab={tab} onTab={goTab} me={me} onSignOut={() => void signOut()} />
+
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
+          {bootError ? (
+            <section>
+              <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">A sessão não começou</h1>
+              <div className="mt-5 max-w-[60ch]">
+                <Fault detail={bootError}>Não foi possível carregar os dados do Cineclube.</Fault>
+                <p className="mt-4 text-[13.5px] text-ink-dim">
+                  Confira se o servidor está rodando (<span className="q">node server.js</span>) e tente de novo.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void boot()}
+                  className="mt-4 rounded-cell px-4 py-2.5 font-display text-[13px] uppercase tracking-[0.14em] text-ink ring-1 ring-house-rail hover:text-dye-cyan hover:ring-dye-cyan"
+                >
+                  Tentar de novo
+                </button>
+              </div>
+            </section>
+          ) : !booted ? (
+            <div className="flex flex-col gap-3 py-16">
+              <span className="legend animate-flicker">Acendendo o projetor</span>
+            </div>
+          ) : (
+            <div key={tab} className="animate-frame-in">
+              {tab === 'rate' && (
+                <RateScreen pendingRate={pendingRate} onConsumedPending={() => setPendingRate(null)} />
+              )}
+              {tab === 'catalog' && <CatalogScreen />}
+              {tab === 'watchlist' && <WatchlistScreen />}
+              {tab === 'reviews' && <ReviewsScreen />}
+              {tab === 'people' && <PeopleScreen />}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <ProjectionSheet
+        movieId={sheetId}
+        clubAvg={sheetId != null ? averages[sheetId]?.avg : undefined}
+        clubCount={sheetId != null ? averages[sheetId]?.count : undefined}
+        inWatchlist={sheetId != null ? inWatchlist(sheetId) : false}
+        onClose={() => setSheetId(null)}
+        onRate={rateMovie}
+        onToggleWatch={m => void toggleWatch(m)}
+      />
+
+      {toast ? (
+        <div className="fixed inset-x-0 bottom-4 z-50 mx-auto w-fit max-w-[92vw] px-4">
+          <Fault>{toast}</Fault>
+        </div>
+      ) : null}
+    </ClubContext.Provider>
+  );
+}
+
+/* ── the marquee ──────────────────────────────────────────────────────────
+   The header of a cinema is its marquee: the name in lights and what is
+   playing. The current section is the lit one. */
+function Marquee({
+  tab,
+  onTab,
+  me,
+  onSignOut,
+}: {
+  tab: TabId;
+  onTab: (t: TabId) => void;
+  me: SessionUser;
+  onSignOut: () => void;
+}) {
+  return (
+    <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/80 backdrop-blur-md">
+      <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+        <a href="#rate" className="mr-auto flex items-baseline gap-3 no-underline">
+          <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
+          <span className="q hidden text-[10px] tracking-[0.08em] text-ink-dim sm:inline">
+            10 critérios · 12 pesos · nota /10
+          </span>
+        </a>
+        <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {TABS.map(t => {
+            const on = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                aria-current={on ? 'page' : undefined}
+                onClick={() => onTab(t.id)}
+                className={cn(
+                  'relative flex-none rounded-cell px-3 py-2 font-display text-[14px] uppercase leading-none tracking-[0.12em] transition-colors duration-150',
+                  on ? 'text-beam' : 'text-ink-dim hover:text-ink'
+                )}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    'absolute inset-x-2 -bottom-[1px] h-[2px] transition-opacity duration-150',
+                    on ? 'bg-dye-red opacity-100' : 'opacity-0'
+                  )}
+                />
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-2" title={me.isAdmin ? 'Administrador do clube' : undefined}>
+            <Reel color={reelColor(me.dot, me.id)}>{initialsOf(me.name)}</Reel>
+            <span className="hidden text-[13px] text-ink-dim sm:inline">{me.name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}

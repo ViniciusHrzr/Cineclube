@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ── the interface's own scale ──────────────────────────────────────────
+     The product was drawn at 125%, and that is where it should open — the
+     cards read at the size a poster wants to be read at, and a row of six
+     across a laptop is a shelf rather than a contact sheet.
+
+     `zoom` and not a root font size: every size in this design is stated in
+     pixels, deliberately, so a root em would move the spacing and leave the
+     type behind. Zoom is the one property that scales the whole layout the
+     way the browser's own control does, reflow included — nothing here is
+     stretched, it is re-laid-out one and a quarter times larger.
+
+     What it costs: client coordinates (pointer events, client rects) stay in
+     screen pixels while CSS lengths become zoomed pixels, so the two are no
+     longer the same unit. Everywhere the interface measures the screen and
+     writes back a CSS length — the beam that follows the cursor, the card in
+     the air over the queue, the tilt of a poster — the ratio is measured and
+     divided out. It is derived from the element itself (a client width over a
+     layout width) rather than from this number, so it stays right if the
+     visitor zooms the browser on top of it. */
+  :root {
+    zoom: 1.25;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-house text-ink font-sans antialiased;
+    margin: 0;
+  }
+  /* The browser surfaces nobody draws still belong to the design. */
+  ::selection {
+    background: theme('colors.dye.red');
+    color: theme('colors.beam.hot');
+  }
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.dye.cyan');
+    outline-offset: 2px;
+  }
+  * {
+    scrollbar-color: theme('colors.house.rail') theme('colors.house.DEFAULT');
+    scrollbar-width: thin;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: theme('colors.house.DEFAULT');
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.house.rail');
+    border: 3px solid theme('colors.house.DEFAULT');
+  }
+}
+
+@layer components {
+  /* A marquee legend: the small tracked caps that name a region. */
+  .legend {
+    @apply font-display text-[13px] tracking-[0.18em] text-ink-dim uppercase leading-none;
+  }
+  /* Quantities are measured, so they align in columns. */
+  .q {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  /* A raised surface in the room. Square, because a film cell is square. */
+  .plate {
+    @apply bg-house-seat rounded-plate ring-1 ring-white/[0.06];
+  }
+
+  /* ── the criterion slider ───────────────────────────────────────────────
+     A native <input type="range"> dressed as a length of film running through
+     a gate: the track is the strip, the thumb is the gate marking the frame
+     that is being read. Native so the keyboard, the screen reader and the
+     0,5 step keep working — the styling never replaces the control. */
+  .film-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 34px;
+    background: transparent;
+    cursor: pointer;
+    display: block;
+  }
+  .film-range::-webkit-slider-runnable-track {
+    height: 10px;
+    border-radius: 1px;
+    background-color: theme('colors.house.deep');
+    background-image: radial-gradient(circle at 6px 50%, rgba(255, 233, 196, 0.14) 0 1.5px, transparent 2px);
+    background-size: 12px 10px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85);
+  }
+  .film-range::-moz-range-track {
+    height: 10px;
+    border-radius: 1px;
+    background-color: theme('colors.house.deep');
+    background-image: radial-gradient(circle at 6px 50%, rgba(255, 233, 196, 0.14) 0 1.5px, transparent 2px);
+    background-size: 12px 10px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85);
+  }
+  .film-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 30px;
+    margin-top: -10px;
+    border-radius: 2px;
+    border: 1px solid #05060a;
+    background: linear-gradient(180deg, #f6ecd8, #cbbfa6);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75), 0 0 12px rgba(255, 214, 150, 0.28);
+  }
+  .film-range::-moz-range-thumb {
+    width: 14px;
+    height: 28px;
+    border-radius: 2px;
+    border: 1px solid #05060a;
+    background: linear-gradient(180deg, #f6ecd8, #cbbfa6);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75), 0 0 12px rgba(255, 214, 150, 0.28);
+  }
+  .film-range:active::-webkit-slider-thumb {
+    background: linear-gradient(180deg, #fff6e6, #e0d3b8);
+  }
+}
+
+/* ── ambient motion ───────────────────────────────────────────────────────
+   The room is never quite still. Two loops, both far below the speed at which
+   motion competes for attention.
+
+   The wall runs. Each length of film creeps steadily up or down, its
+   neighbours creeping the other way, and none of them ever turns back. An
+   earlier version had them swing up and down on an ease — it was wrong, and
+   obviously so once seen: nothing made of celluloid oscillates, and the whole
+   wall came to a halt twice a minute to change its mind. Film only ever
+   advances.
+
+   That it can advance forever without a seam is a property of the material.
+   The pattern repeats every frame, so a strip that travels a whole number of
+   frames per loop arrives exactly where it started, and `linear` + `infinite`
+   is then a creep with no beginning and no end. `--creep` is that distance and
+   the direction, `--dur` the time it takes, `--phase` an offset so that strips
+   sharing a plane are never in step across the wall.
+
+   It is a transform and not the background-position this used to be: a moving
+   background repaints a full-screen element on every frame, while a transform
+   on a strip is handed to the compositor and costs nothing to run.
+
+   A poster floats the way a frame weaves in the gate — a real property of
+   projected film, not a decorative bob. Two pixels and a fraction of a degree,
+   over twenty seconds, with the phase offset per card so a grid never pulses in
+   lockstep. */
+@keyframes strip-creep {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, var(--creep, 46px), 0);
+  }
+}
+.strip-creep {
+  animation: strip-creep var(--dur, 60s) linear infinite;
+  animation-delay: var(--phase, 0s);
+}
+
+@keyframes gate-weave {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(1.5px, -2px, 0) rotate(0.18deg);
+  }
+  66% {
+    transform: translate3d(-1.5px, 1.5px, 0) rotate(-0.15deg);
+  }
+}
+.gate-weave {
+  animation: gate-weave 20s ease-in-out infinite;
+  animation-delay: calc(var(--weave, 0) * -2.6s);
+  will-change: transform;
+}
+
+/* Reduced motion is an intentional alternative, not a kill switch. What goes is
+   travel that plays on its own: entrances, the weave. What stays is feedback the
+   visitor causes — the film wall still lights under the cursor, because that
+   light is a response to an action, not a performance. Killing it outright is
+   the bug this replaced: the whole backdrop went inert for anyone whose system
+   asks for less motion.
+
+   The one exception is the drift of the strips, kept by an explicit decision of
+   the product's owner: the wall is the room, and a room that has stopped is a
+   different product. It is the slowest thing on the page by an order of
+   magnitude and it carries no information, so nothing is lost by not reading it
+   — but it is a preference being overridden, and it should be named as one.
+   The blanket iteration-count above would otherwise stop it dead after a single
+   pass, which is why the exemption has to be spelled out twice. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+  }
+  .strip-creep {
+    animation-iteration-count: infinite !important;
+  }
+  .animate-frame-in,
+  .animate-beam-in,
+  .animate-flicker,
+  .gate-weave {
+    animation: none !important;
+  }
+}

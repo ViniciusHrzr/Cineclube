@@ -1,0 +1,87 @@
+import type { Config } from 'tailwindcss';
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SALA DE PROJEÇÃO — the design system.
+
+   A dark auditorium, not a piece of equipment. The image arrives as light
+   thrown through celluloid, so the palette is the one film itself is made of:
+   three-strip Technicolor dye — red, cyan, cream — over the blue-black of a
+   room with the house lights down. Nothing here is a neon accent on grey; the
+   colour comes from the medium.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export default {
+  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        // the room
+        house: {
+          DEFAULT: '#07090e', // the auditorium with the lights down
+          deep: '#04050a',    // the screen surround, deeper than the room
+          seat: '#0e121b',    // a raised surface: panels, rows, the slate
+          rail: '#18202e',    // edges and dividers
+        },
+        // the beam: tungsten through film, warm at the core
+        beam: {
+          DEFAULT: '#ffe9c4',
+          hot: '#fff6e6',
+          dim: '#8d8574',
+        },
+        /* Technicolor dye. Red has two jobs and they need two values: a dye
+           bright enough to read as text on the dark room is too bright to put
+           cream lettering on top of, and the commit key is the most-pressed
+           control in the product. `red` fills surfaces (cream on it: 4.8:1);
+           `red-lit` is red used AS text (5.5:1 on a plate). Using the wrong one
+           is how the primary button ended up at 4.14:1. */
+        dye: {
+          red: '#d12a20',      // fills: the commit key, the REC lamp, the curtain
+          'red-lit': '#f2564a', // red as text: links, destructive hover
+          'red-deep': '#8c1e18',
+          cyan: '#43b8c6',     // state, selection, the cool half of the frame
+          'cyan-deep': '#1d5f68',
+        },
+        ink: {
+          DEFAULT: '#eae4d8',  // text on the room
+          dim: '#9d9686',      // 5.4:1 on house — the floor for real text
+          faint: '#5b564c',    // perforations, ticks, unlit cells. Never text.
+        },
+      },
+      fontFamily: {
+        // Bebas is the title card: condensed caps, the voice of a marquee.
+        display: ['"Bebas Neue"', 'system-ui', 'sans-serif'],
+        // Manrope carries every label, control and quantity, with tabular figures.
+        sans: ['Manrope', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        cell: '2px',   // a film cell is square
+        plate: '6px',
+      },
+      transitionTimingFunction: {
+        beam: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      },
+      keyframes: {
+        'frame-in': {
+          from: { opacity: '0', transform: 'translateY(12px)' },
+          to: { opacity: '1', transform: 'none' },
+        },
+        'beam-in': {
+          from: { opacity: '0', transform: 'scale(0.985) translateY(10px)' },
+          to: { opacity: '1', transform: 'none' },
+        },
+        flicker: {
+          '0%, 100%': { opacity: '1' },
+          '48%': { opacity: '0.86' },
+          '52%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'frame-in': 'frame-in 320ms cubic-bezier(0.16,1,0.3,1) backwards',
+        'beam-in': 'beam-in 260ms cubic-bezier(0.16,1,0.3,1)',
+        flicker: 'flicker 4s ease-in-out infinite',
+      },
+    },
+  },
+  plugins: [],
+} satisfies Config;

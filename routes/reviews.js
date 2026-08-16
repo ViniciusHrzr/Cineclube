@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('node:crypto');
 const db = require('../db');
+const auth = require('../auth');
 const { critsFor, finalOf, GENRES } = require('../criteria');
 
 const router = express.Router();
@@ -62,9 +63,13 @@ router.get('/averages', (req, res) => {
   res.json({ averages: out });
 });
 
-router.post('/', (req, res) => {
-  const { reviewerId, movie, scores, comment } = req.body || {};
-  if (!reviewerId || !reviewerExistsStmt.get(reviewerId)) {
+/* A take is signed by whoever is signed in. The body may still name a reviewer
+   — the client sends it — but the session is the authority, so nobody can post
+   a rating under someone else's name by editing a request. */
+router.post('/', auth.requireSession, (req, res) => {
+  const { movie, scores, comment } = req.body || {};
+  const reviewerId = req.session.reviewer_id;
+  if (!reviewerExistsStmt.get(reviewerId)) {
     return res.status(400).json({ error: 'Avaliador inválido.' });
   }
   if (!movie || !movie.id || !movie.title) {
@@ -102,9 +107,16 @@ router.post('/', (req, res) => {
   res.status(201).json(toReviewDTO(saved));
 });
 
-router.delete('/:id', (req, res) => {
-  if (!getByIdStmt.get(req.params.id)) return res.status(404).json({ error: 'Avaliação não encontrada.' });
-  deleteStmt.run(req.params.id);
+/* Your own take is yours to delete; the admin can delete anyone's. Without
+   this check any signed-in member could quietly erase somebody else's rating,
+   which is the one destructive action this club actually cares about. */
+router.delete('/:id', auth.requireSession, (req, res) => {
+  const row = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });
+  if (row.reviewer_id !== req.session.reviewer_id && !req.session.is_admin) {
+    return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });
+  }
+  deleteStmt.run(row.id);
   res.status(204).end();
 });
 

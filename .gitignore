@@ -1,5 +1,14 @@
 node_modules/
 .env
+
+# Ferramentas de agente e configuração de máquina: não são o produto.
+.agents/
+.augment/
+.claude/
+.mcp.json
+
+# O TypeScript reconstrói isto a cada build.
+client/tsconfig.tsbuildinfo
 data/*.db
 data/*.db-journal
 data/*.db-shm
