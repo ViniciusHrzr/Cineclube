@@ -38,7 +38,7 @@ type HolographicWallProps = {
    room should be a size larger than the thing standing in front of it, or the
    frames start to compete with the cards for the same grain of attention. One
    knob, and the whole material follows it. */
-const GAUGE = 1.15;
+const GAUGE = 1.7;
 
 const CELL = 46 * GAUGE;     // px — one frame, top to bottom
 const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge

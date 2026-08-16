@@ -154,9 +154,14 @@ function Drawer({ open, children }: { open: boolean; children: React.ReactNode }
 }
 
 /* ── one take, criterion by criterion ─────────────────────────────────────
-   One plate per take, holding the whole card: ten criteria and whatever was
-   written underneath them. The unit that deserves an edge is the film someone
-   sat through, not each individual number — boxing every criterion separately
+   The detail is a recess, not a second plate. Now that the film itself carries
+   a card, stacking another raised surface inside it would be two boxes doing
+   the same job at the same height; sunk into the card instead — darker than
+   what holds it — it reads as a compartment of that record rather than as a
+   separate object sitting on top of it.
+
+   Whatever the depth, the unit that gets an edge is the film someone sat
+   through, not each individual number: boxing every criterion separately
    turned one record into ten little tickets.
 
    Inside it, a criterion and its mark stay close. The name column used to be
@@ -175,7 +180,7 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
        height — flush against that container's top edge, the outer 1px lands
        outside the clip and the plate loses its lid. Drawn inside, it cannot be
        cropped by whatever it is opened in. */
-    <div className="rounded-cell bg-house-seat/80 px-3 py-2.5 ring-1 ring-inset ring-white/[0.06]">
+    <div className="rounded-cell bg-house-deep/60 px-3 py-2.5 ring-1 ring-inset ring-white/[0.05]">
       {/* Filled down the columns rather than across the rows. The two criteria
           the genre weighs double are the last two on the card, and read across
           they landed diagonally apart — one at the end of a row, the other alone
@@ -226,12 +231,20 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
 function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onToggle: () => void; onDelete: () => void }) {
   const club = useClub();
   return (
-    <div className="border-t border-white/[0.07] last:border-b">
+    /* A card per film, instead of hairlines dividing one long sheet. The rows
+       are what the club actually points at — "that one" — and a divider only
+       says where one ends; a surface says the thing has edges. It also gives
+       the title and the score a ground of their own, which they did not have
+       while the wall ran behind them.
+
+       `overflow-hidden` so the hover wash and the drawer both stop at the
+       rounded corner instead of squaring it off. */
+    <div className="mb-2 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-beam/[0.05]"
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-beam/[0.05]"
       >
         <Poster src={r.moviePoster} className="h-[52px] w-[35px] flex-none" />
         <span className="min-w-0 flex-1">
@@ -244,7 +257,7 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         <ChevronDown className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', open && 'rotate-180')} strokeWidth={1.7} />
       </button>
       <Drawer open={open}>
-        <div className="px-1 pb-5 pt-1">
+        <div className="px-3 pb-4 pt-1">
           <Breakdown rows={r.breakdown} comment={r.comment} />
           <div className="mt-4 flex gap-2">
             <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
@@ -304,8 +317,13 @@ function ByMovie({
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
         const sorted = [...items].sort((a, b) => b.final - a.final);
         return (
-          <div key={head.movieId} className="mb-7 border-y border-white/[0.07]">
-            <div className="flex items-center gap-3 px-1 py-3">
+          /* Here the card is the film and every take on it — the group is the
+             unit, so the surface goes around the group. */
+          <div
+            key={head.movieId}
+            className="mb-4 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]"
+          >
+            <div className="flex items-center gap-3 px-3 py-3">
               <Poster src={head.moviePoster} className="h-[68px] w-[45px] flex-none" />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-[15px] font-semibold">{head.movieTitle}</h2>
@@ -317,7 +335,7 @@ function ByMovie({
             </div>
 
             {items.length > 1 ? (
-              <div className="px-1 pb-4">
+              <div className="px-3 pb-4">
                 <div className="mb-2 flex flex-wrap items-baseline gap-3">
                   <span className="legend">Onde o clube divergiu</span>
                   <span className="q text-[10.5px] text-ink-dim">Δ = distância entre a maior e a menor nota</span>
@@ -392,7 +410,7 @@ function ByMovie({
                     type="button"
                     onClick={() => onToggle(r.id)}
                     aria-expanded={openIds.has(r.id)}
-                    className="flex w-full items-center gap-3 px-1 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
                   >
                     <Reel color={reelColor(r.reviewerDot, r.reviewerId)}>{initialsOf(r.reviewerName)}</Reel>
                     <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
@@ -403,10 +421,10 @@ function ByMovie({
                     />
                   </button>
                   <Drawer open={openIds.has(r.id)}>
-                    <div className="px-1 pb-4 pt-1">
+                    <div className="px-3 pb-4 pt-1">
                       <Breakdown rows={r.breakdown} comment={r.comment} />
                     </div>
-                    <div className="flex gap-2 px-1 pb-4">
+                    <div className="flex gap-2 px-3 pb-4">
                       <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
                         <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
                         Editar
