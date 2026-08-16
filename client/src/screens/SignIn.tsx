@@ -31,7 +31,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   }, []);
 
   return (
-    <div className="relative flex min-h-dvh flex-col">
+    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
       <HolographicWall asBackdrop />
 
       <div className="relative mx-auto flex w-full max-w-[900px] flex-1 flex-col justify-center px-5 py-14">

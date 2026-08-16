@@ -23,7 +23,14 @@
      layout width) rather than from this number, so it stays right if the
      visitor zooms the browser on top of it. */
   :root {
-    zoom: 1.25;
+    /* Kept as a variable because anything measured against the viewport has to
+       divide by it. A viewport unit resolves to the window's real height and is
+       only then scaled by the zoom, so `100dvh` under this becomes a quarter
+       taller than the window: a scrollbar over nothing, and everything centred
+       in a box bigger than the screen it is centred on. `min-h-dvh` is written
+       as `calc(100dvh/var(--ui-zoom))` wherever it appears. */
+    --ui-zoom: 1.25;
+    zoom: var(--ui-zoom);
   }
   html {
     -webkit-text-size-adjust: 100%;

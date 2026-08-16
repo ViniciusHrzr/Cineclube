@@ -42,10 +42,18 @@ export function RateScreen({
       try {
         const m = await api<Movie>(`/api/catalog/movie/${id}`);
         setMovie(m);
+        /* A film this person already rated opens on the marks they gave it, not
+           on a fresh card. "Editar" led here too, and it used to hand back ten
+           fives — which is not an edit, it is the same form with the previous
+           answer thrown away, and it silently invited someone to overwrite a
+           take they only meant to adjust. Five stays the opening position for a
+           film nobody here has seen yet, and for any criterion the old take has
+           no mark for. */
+        const mine = club.reviews.find(r => r.reviewerId === club.me.id && r.movieId === m.id);
         const fresh: Record<string, number> = {};
-        club.criteriaFor(m.genre).forEach(c => (fresh[c.key] = 5));
+        club.criteriaFor(m.genre).forEach(c => (fresh[c.key] = mine?.scores?.[c.key] ?? 5));
         setScores(fresh);
-        setComment('');
+        setComment(mine?.comment ?? '');
         setSaved(false);
       } catch (e) {
         setMovieError((e as Error).message);

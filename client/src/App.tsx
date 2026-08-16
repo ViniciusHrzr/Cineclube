@@ -215,7 +215,7 @@ export default function App() {
     return (
       <>
         <HolographicWall asBackdrop />
-        <div className="relative flex min-h-dvh items-center justify-center">
+        <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
           <span className="legend animate-flicker">Acendendo o projetor</span>
         </div>
       </>
@@ -254,7 +254,7 @@ export default function App() {
           tells you the lights are down before you read a single word. */}
       <HolographicWall asBackdrop />
 
-      <div className="relative flex min-h-dvh flex-col">
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
         <Marquee tab={tab} onTab={goTab} me={me} onSignOut={() => void signOut()} />
 
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
