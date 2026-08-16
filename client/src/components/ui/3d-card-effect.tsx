@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn, useFinePointer } from "@/lib/utils";
 
 import React, {
   createContext,
@@ -25,6 +25,7 @@ export const CardContainer = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMouseEntered, setIsMouseEntered] = useState(false);
+  const fine = useFinePointer();
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -51,6 +52,24 @@ export const CardContainer = ({
     containerRef.current.style.transform = `rotateY(0deg) rotateX(0deg)`;
   };
 
+  /* Without a mouse there is nothing to tip toward, so none of the machinery is
+     built: no perspective, no preserve-3d, no transitions, no handlers. That is
+     not a small saving. A card in a 3D context is a card the browser may not
+     flatten or squash with its neighbours — every layer stands on its own plane
+     — and this component puts one on the container, one on the body, one on
+     each of the body's children and one per item. Twenty posters is a hundred
+     and twenty boxes held in 3D so that a pointer which does not exist can tilt
+     them. */
+  if (!fine) {
+    return (
+      <MouseEnterContext.Provider value={[isMouseEntered, setIsMouseEntered]}>
+        <div className={cn("flex items-center justify-center", containerClassName)}>
+          <div className={cn("relative flex items-center justify-center", className)}>{children}</div>
+        </div>
+      </MouseEnterContext.Provider>
+    );
+  }
+
   return (
     <MouseEnterContext.Provider value={[isMouseEntered, setIsMouseEntered]}>
       <div
@@ -63,7 +82,9 @@ export const CardContainer = ({
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           className={cn(
-            "relative flex items-center justify-center transition-all duration-200 ease-linear",
+            /* Transform only. `transition-all` here meant every animatable
+               property on the card was watched for change, on every card. */
+            "relative flex items-center justify-center transition-transform duration-200 ease-linear",
             className
           )}
           style={{ transformStyle: "preserve-3d" }}

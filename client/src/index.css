@@ -262,6 +262,36 @@
    — but it is a preference being overridden, and it should be named as one.
    The blanket iteration-count above would otherwise stop it dead after a single
    pass, which is why the exemption has to be spelled out twice. */
+/* ── the room on a phone ──────────────────────────────────────────────────
+   Everything below exists to answer a pointer, and a touch screen has none.
+   Kept as one media query rather than scattered checks, so what a phone does
+   not build is written down in one place:
+
+   The creep and the weave are perpetual compositor work — a promoted layer per
+   strip and per poster, running for as long as the tab is open, for motion
+   nobody on a phone is sitting still enough to notice.
+
+   The text shadow was put on every glyph in the product to survive the beam
+   crossing behind it. No beam, no reason: it was two shadows, one of them a
+   10px blur, on every letter on the page.
+
+   And the interface's own zoom comes off. A phone at 1.25 is laying out at
+   about 256 CSS pixels of width — the design is being asked to fit a screen
+   narrower than any it was drawn for, and the browser paints the whole thing
+   scaled on top of that. */
+@media (hover: none), (pointer: coarse) {
+  :root {
+    --ui-zoom: 1;
+  }
+  body {
+    text-shadow: none;
+  }
+  .strip-creep,
+  .gate-weave {
+    animation: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

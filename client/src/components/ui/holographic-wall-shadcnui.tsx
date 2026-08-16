@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, useFinePointer } from "@/lib/utils";
 
 type HolographicWallProps = {
   intensity?: number;
@@ -244,6 +244,7 @@ export function HolographicWall({
   const next = useRef<{ x: number; y: number } | null>(null);
   const [calm, setCalm] = useState(false);
   const [width, setWidth] = useState(() => window.innerWidth);
+  const fine = useFinePointer();
 
   useEffect(() => {
     const host = hostRef.current;
@@ -271,8 +272,29 @@ export function HolographicWall({
     // the cursor is direct feedback, not an animation playing at the visitor.
     // What the preference removes is the easing of the beam — see `calm`. The
     // creep of the strips is deliberately exempt; the reason is in index.css.
-    const fine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
     if (!fine) return;
+
+    /* The box is measured when it changes, not when the mouse moves. The
+       pointer arrives in screen pixels and leaves as a CSS length inside a
+       zoomed page, and those are not the same unit — the element reports both
+       of its own widths and the ratio converts one to the other, which also
+       keeps it right if the visitor zooms the browser on top of everything.
+
+       That conversion used to be computed inside the move handler, where a
+       client rect and an offset width are two forced synchronous layouts. A
+       mouse can fire hundreds of events a second, and the handler was making
+       the browser stop and re-measure the page on every one of them — the
+       single most expensive thing in this file, and it cost exactly nothing to
+       move it here, because a fixed full-screen box only changes on resize. */
+    const box = { left: 0, top: 0, k: 1 };
+    const measure = () => {
+      const r = host.getBoundingClientRect();
+      const k = host.offsetWidth ? r.width / host.offsetWidth : 1;
+      box.left = r.left;
+      box.top = r.top;
+      box.k = k;
+    };
+    measure();
 
     const paint = () => {
       frame.current = 0;
@@ -284,13 +306,7 @@ export function HolographicWall({
 
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
-      /* The pointer arrives in screen pixels and leaves as a CSS length inside
-         a zoomed page, which are not the same unit. The element reports both of
-         its own widths, so the ratio between them is the conversion — and it
-         stays correct if the visitor zooms the browser as well. */
-      const r = host.getBoundingClientRect();
-      const k = host.offsetWidth ? r.width / host.offsetWidth : 1;
-      next.current = { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k };
+      next.current = { x: (e.clientX - box.left) / box.k, y: (e.clientY - box.top) / box.k };
       if (!lit) setLit(true);
       if (!frame.current) frame.current = requestAnimationFrame(paint);
     };
@@ -299,12 +315,14 @@ export function HolographicWall({
     const target: Window | HTMLElement = asBackdrop ? window : host;
     target.addEventListener("pointermove", onMove as EventListener, { passive: true });
     target.addEventListener("pointerleave", onLeave as EventListener);
+    window.addEventListener('resize', measure, { passive: true });
     return () => {
       target.removeEventListener("pointermove", onMove as EventListener);
       target.removeEventListener("pointerleave", onLeave as EventListener);
+      window.removeEventListener('resize', measure);
       if (frame.current) cancelAnimationFrame(frame.current);
     };
-  }, [asBackdrop, lit]);
+  }, [asBackdrop, lit, fine]);
 
   const mask = `radial-gradient(${radius}px circle at var(--mx, -1000px) var(--my, -1000px), #000 0%, #000 22%, rgba(0,0,0,0.6) 52%, transparent 78%)`;
 
@@ -329,10 +347,16 @@ export function HolographicWall({
         fill="rgba(184,200,224,0.05)"
       />
 
-      {/* the lit wall: the same strip in tungsten, revealed only where the beam
+      {/* The lit wall: the same strip in tungsten, revealed only where the beam
           falls. The mask must stay in the viewport's own coordinate space or the
           beam drifts away from the cursor, so the wrapper carries the mask and
-          only the pattern inside it is rotated. */}
+          only the pattern inside it is rotated.
+
+          It exists only for a cursor, so on a touch screen it is not built at
+          all. It used to be: a second full set of strips, every one of them
+          animating, behind a full-screen mask, on a phone that could never
+          light a single one of them. Same for the halo below. */}
+      {fine ? (
       <motion.div
         className="absolute inset-0"
         animate={{ opacity: lit ? intensity : 0 }}
@@ -347,6 +371,7 @@ export function HolographicWall({
           fill="rgba(255,214,150,0.13)"
         />
       </motion.div>
+      ) : null}
 
       {/* The halo: light scattering in the air of the room. Held well under the
           reveal, because the two do different amounts of damage to the text
@@ -354,7 +379,7 @@ export function HolographicWall({
           while the halo is a flat wash across everything the cursor is near,
           and a wash is what actually lifts a background off the page. */}
       <AnimatePresence>
-        {lit && (
+        {fine && lit && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: intensity * 0.6 }}

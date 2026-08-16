@@ -327,7 +327,11 @@ function Marquee({
   onSignOut: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/80 backdrop-blur-md">
+    /* No backdrop blur. It sat over the wall, and the wall never stops moving —
+       so the browser was re-blurring a full-width strip of a live background on
+       every single frame, on every device, whether or not anyone was scrolling.
+       A more opaque bar reads almost the same and costs nothing. */
+    <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         <a href="#rate" className="mr-auto flex items-baseline no-underline">
           <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
