@@ -7,7 +7,10 @@ import { useClub } from '@/App';
 
 export function ReviewsScreen() {
   const club = useClub();
-  const [view, setView] = useState<'reviewer' | 'movie'>('reviewer');
+  /* By film, not by person. What the club comes here asking is "what did we
+     think of that one", and the answer to that is a film with everyone's takes
+     under it. */
+  const [view, setView] = useState<'reviewer' | 'movie'>('movie');
   /* A set and not a single id: two takes on the same film, or the same film
      under two people, is exactly the comparison this screen exists for, and
      opening the second one used to close the first. */

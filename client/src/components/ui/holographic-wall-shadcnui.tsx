@@ -38,16 +38,41 @@ type HolographicWallProps = {
    room should be a size larger than the thing standing in front of it, or the
    frames start to compete with the cards for the same grain of attention. One
    knob, and the whole material follows it. */
-/* Also, quietly, a performance knob: every strip is an element animating for as
-   long as the tab is open, and there is a ceiling on how many of those a browser
-   will hand to the compositor. Wider film means fewer lengths of it on screen —
-   about seven per copy instead of ten — for the same wall. */
-const GAUGE = 2.1;
+const GAUGE = 1.7;
+
+/* ── the second wall, and where it cannot go ──────────────────────────────
+   The beam works by drawing the wall twice: once dark, once in tungsten, with
+   the second copy revealed only inside a mask that follows the cursor. The two
+   copies have to creep in exact step, or the light shows a wall that does not
+   line up with the wall it is lighting.
+
+   In Gecko they do not stay in step. Every strip is its own animation, and once
+   there are more of them than the engine will keep off the main thread, some
+   run on the compositor and the rest on the main thread — two clocks. The
+   copies drift apart and the wall appears doubled: same frame lines, same
+   angle, a few pixels out. The doubling and the jank are one fault seen twice,
+   which is why fixing the look and fixing the speed is the same fix.
+
+   So on Gecko the room keeps one wall. The cursor still lights it — the halo is
+   a real light in the air — it just does not open a second length of celluloid
+   to do it. Detected by a property only Gecko implements, rather than by
+   reading the user agent string, which is a claim and not a capability. */
+const GECKO =
+  typeof document !== 'undefined' && 'MozAppearance' in document.documentElement.style;
 
 const CELL = 46 * GAUGE;     // px — one frame, top to bottom
 const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge
 const PERF_IN = 10 * GAUGE;  // px — the sprocket column, inset from the edge
 const HOLE = 2 * GAUGE;      // px — the radius of one perforation
+
+/** One plane's geometry. Fractional on purpose: the film's proportions come
+    first, and snapping these to whole pixels was tried as a cure for the
+    doubling Gecko shows. It cured nothing and it changed the wall — a frame on
+    the furthest plane went from 51.6px to 48, seven per cent denser, which is
+    visible. */
+function geo(s: number) {
+  return { w: STRIP * s, cell: CELL * s, inset: PERF_IN * s, hole: HOLE * s };
+}
 
 /* ── depth ────────────────────────────────────────────────────────────────
    The strips hang at four distances from the room, interleaved so no two
@@ -102,20 +127,13 @@ type Plane = {
   shade: string;
 };
 
-/* The blurs are half what they were, and the two planes at the back cast
-   nothing at all. A blurred shadow has to be rasterised into the layer that
-   carries it, and these layers are the height of the screen and never stop
-   moving; thirty pixels of blur on every one of them is a bill paid on every
-   device, for a gradient of shadow that reads the same at fourteen. What sorts
-   the planes was never the shadow's size anyway — it is that the near ones
-   throw and the far ones do not. */
 const PLANES: Plane[] = [
-  // nearest: widest, brightest, fastest, and the only shadow thrown far
-  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 14px 5px rgba(2,3,7,0.55)' },
-  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: 'none' }, // far
-  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 10px 3px rgba(2,3,7,0.45)' }, // mid
-  // furthest: barely there, barely moves, and casts nothing
-  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: 'none' },
+  // nearest: widest, brightest, fastest, and the shadow thrown furthest
+  { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 30px 7px rgba(2,3,7,0.55)' },
+  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '1px 2px 15px 3px rgba(2,3,7,0.34)' }, // far
+  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 22px 5px rgba(2,3,7,0.45)' }, // mid
+  // furthest: barely there, barely moves, and its shadow lands on the wall itself
+  { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: '1px 1px 9px 2px rgba(2,3,7,0.22)' },
 ];
 
 /* Celluloid, built the way the material actually is: one length of 35mm as one
@@ -147,10 +165,7 @@ const PLANES: Plane[] = [
    strip reads #101319 and, through the scrim, #0d1016 — cream text over that is
    about 14.9:1, where the floor for body copy is 4.5:1. */
 function stripFace(line: string, edge: string, perf: string, fill: string, s: number) {
-  const strip = STRIP * s;
-  const cell = CELL * s;
-  const hole = HOLE * s;
-  const inset = PERF_IN * s;
+  const { w: strip, cell, hole, inset } = geo(s);
   return {
     backgroundImage: [
       `radial-gradient(circle at ${inset}px 50%, ${perf} 0 ${hole}px, transparent ${hole * 1.3}px)`,
@@ -178,7 +193,7 @@ function layOut(width: number) {
   for (let x = 0, i = 0; x < field; i++) {
     const plane = PLANES[i % PLANES.length];
     out.push({ x, plane });
-    x += STRIP * plane.s;
+    x += geo(plane.s).w;
   }
   return out;
 }
@@ -209,8 +224,10 @@ function Reel({
     <div className="absolute -inset-[12%] origin-center -rotate-[1.5deg]">
       {strips.map(({ x, plane }, i) => {
         /* A whole number of frames, so the loop closes on itself and the creep
-           has no seam to catch the eye. */
-        const travel = plane.cells * CELL * plane.s;
+           has no seam to catch the eye — and whole pixels, so the frames it
+           travels are the same frames the strip is printed with. */
+        const { w, cell } = geo(plane.s);
+        const travel = plane.cells * cell;
         return (
           <div
             key={i}
@@ -220,7 +237,7 @@ function Reel({
             style={
               {
                 left: x,
-                width: STRIP * plane.s,
+                width: w,
                 opacity: plane.alpha,
                 zIndex: plane.z,
                 boxShadow: plane.shade,
@@ -367,7 +384,7 @@ export function HolographicWall({
           all. It used to be: a second full set of strips, every one of them
           animating, behind a full-screen mask, on a phone that could never
           light a single one of them. Same for the halo below. */}
-      {fine ? (
+      {fine && !GECKO ? (
       <motion.div
         className="absolute inset-0"
         animate={{ opacity: lit ? intensity : 0 }}
@@ -393,7 +410,9 @@ export function HolographicWall({
         {fine && lit && (
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: intensity * 0.6 }}
+            /* Carries the beam alone where the second wall cannot be drawn, so
+               it is given back the strength that copy would have added. */
+            animate={{ opacity: intensity * (GECKO ? 1 : 0.6) }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
             className="absolute inset-0"

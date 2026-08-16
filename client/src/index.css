@@ -269,6 +269,28 @@
   }
 }
 
+/* ── the wall stands still in Gecko ───────────────────────────────────────
+   Firefox will only run a transform animation off the main thread if it can
+   pre-render the whole element, and it measures that against the element's
+   *transformed* bounds. A strip here is taller than the viewport, sits inside a
+   field overscanned by 12%, and that field is rotated — so the box Gecko has to
+   size up is far bigger than the strip looks. Past its limit it stops
+   pre-rendering and animates on the main thread instead: the page repaints
+   continuously whether or not anything is happening, and a partially
+   invalidated repaint is what shows up as the wall drawn twice, a few pixels
+   apart. One cause, both symptoms.
+
+   Blink pre-renders these without complaint, so it keeps the creep. Gecko gets
+   the same wall, standing still. Everything else — the depth, the beam, the
+   halo — is untouched.
+
+   Matched by a property only Gecko implements. */
+@supports (-moz-appearance: none) {
+  .strip-creep {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

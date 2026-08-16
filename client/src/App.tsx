@@ -67,7 +67,10 @@ function tabFromHash(): TabId | null {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'rate');
+  /* The catalogue is where the room opens. Rating is what you do about a film
+     you have already picked, so it is the second step, not the front door — and
+     a link shared with a section in it still wins over the default. */
+  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'catalog');
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -333,7 +336,8 @@ function Marquee({
        A more opaque bar reads almost the same and costs nothing. */
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <a href="#rate" className="mr-auto flex items-baseline no-underline">
+        {/* The marquee is the way home, and home is the catalogue. */}
+        <a href="#catalog" className="mr-auto flex items-baseline no-underline">
           <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
         </a>
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
