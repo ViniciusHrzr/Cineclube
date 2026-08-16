@@ -95,11 +95,20 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                   transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(i, 8) * 0.045 }}
                   className="group flex w-[120px] flex-col items-center gap-3 sm:w-[136px]"
                 >
+                  {/* The face where the initials were. The tile keeps its own
+                      shape, its ring and the lift it takes under the cursor —
+                      the picture fills it rather than replacing it, so a club
+                      where only some people have a portrait still reads as one
+                      row of the same thing. */}
                   <span
-                    className="flex aspect-square w-full items-center justify-center rounded-plate font-display text-[38px] tracking-[0.06em] text-house-deep ring-1 ring-white/10 transition-transform duration-200 ease-beam group-hover:scale-[1.05] group-focus-visible:scale-[1.05]"
+                    className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-plate font-display text-[38px] tracking-[0.06em] text-house-deep ring-1 ring-white/10 transition-transform duration-200 ease-beam group-hover:scale-[1.05] group-focus-visible:scale-[1.05]"
                     style={{ background: reelColor(r.dot, r.id) }}
                   >
-                    {initialsOf(r.name)}
+                    {r.avatar ? (
+                      <img src={r.avatar} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      initialsOf(r.name)
+                    )}
                   </span>
                   <span className="text-center text-[14px] text-ink-dim transition-colors group-hover:text-beam">
                     {r.name}
@@ -174,7 +183,9 @@ function PinEntry({
   return (
     <div className="plate p-6 text-center">
       <div className="mb-5 flex items-center justify-center gap-3">
-        <Reel color={reelColor(reviewer.dot, reviewer.id)}>{initialsOf(reviewer.name)}</Reel>
+        <Reel color={reelColor(reviewer.dot, reviewer.id)} src={reviewer.avatar}>
+          {initialsOf(reviewer.name)}
+        </Reel>
         <span className="font-display text-[20px] uppercase tracking-[0.1em] text-beam">{reviewer.name}</span>
       </div>
 

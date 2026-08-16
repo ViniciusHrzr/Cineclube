@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Camera, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { Blank, Fault, IconKey, Key, Reel } from '@/components/bits';
 import { auth, del, initialsOf, post, profile, reelColor, type Reviewer } from '@/lib/api';
-import { squarePortrait } from '@/lib/image';
+import { PortraitGate } from '@/components/portrait';
 import { cn } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -41,6 +41,8 @@ function MyProfile() {
   const [name, setName] = useState(club.me.name);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<'name' | 'photo' | null>(null);
+  /** The file waiting to be framed. Nothing is uploaded while this is set. */
+  const [pending, setPending] = useState<File | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
   /* The field is seeded from the account and then owned by the hand typing in
@@ -78,11 +80,20 @@ function MyProfile() {
     }
   }
 
-  async function savePhoto(picked: File) {
+  /* Picking a file opens the gate; nothing is sent until the framing is
+     decided. Clearing the input here rather than after is what lets somebody
+     pick the same file again after cancelling — a file input fires no change
+     event when the value it is given is the value it already has. */
+  function pick(picked: File) {
     setMsg(null);
+    setPending(picked);
+    if (file.current) file.current.value = '';
+  }
+
+  async function savePhoto(avatar: string) {
+    setPending(null);
     setBusy('photo');
     try {
-      const avatar = await squarePortrait(picked);
       await profile.update({ avatar });
       await Promise.all([club.refreshMe(), club.refreshReviewers()]);
       setMsg({ ok: true, text: 'Foto atualizada.' });
@@ -90,7 +101,6 @@ function MyProfile() {
       setMsg({ ok: false, text: (e as Error).message });
     } finally {
       setBusy(null);
-      if (file.current) file.current.value = '';
     }
   }
 
@@ -133,7 +143,7 @@ function MyProfile() {
             className="hidden"
             onChange={e => {
               const picked = e.target.files?.[0];
-              if (picked) void savePhoto(picked);
+              if (picked) pick(picked);
             }}
           />
           <Key
@@ -188,6 +198,14 @@ function MyProfile() {
 
       {msg ? (
         <p className={cn('mt-4 text-[13px]', msg.ok ? 'text-dye-cyan' : 'text-dye-red-lit')}>{msg.text}</p>
+      ) : null}
+
+      {pending ? (
+        <PortraitGate
+          file={pending}
+          onCancel={() => setPending(null)}
+          onDone={avatar => void savePhoto(avatar)}
+        />
       ) : null}
     </div>
   );
