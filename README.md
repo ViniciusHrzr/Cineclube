@@ -209,7 +209,7 @@ app/
 
 ---
 
-## Rodando local
+## Instalação
 
 Precisa de **Node 22.5+** e de um *API Read Access Token* (v4) do
 [TMDB](https://www.themoviedb.org/settings/api) — gratuito.
