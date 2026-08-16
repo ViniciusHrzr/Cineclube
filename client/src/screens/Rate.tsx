@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useSpring,
+  useTransform,
+  useVelocity,
+} from 'framer-motion';
 import { Check, Play, Search } from 'lucide-react';
 import { Blank, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
 import {
@@ -380,6 +387,35 @@ function Channel({
   value: number;
   onChange: (key: string, value: number) => void;
 }) {
+  /* ── the gate and the light ─────────────────────────────────────────────
+     The exposed length of film is the mark. It is not animated, and that is the
+     point: a filled track is not an object with mass, it is the value drawn as
+     a length, and a value that arrives after the hand that set it makes the
+     control feel broken. It was a spring here first, running up the strip half
+     a beat behind the gate, and it read as lag because it was lag.
+
+     What is animated is the flare at the gate — the beam blooming as film runs
+     through it. Position is exact and instant; only the intensity moves, driven
+     by how fast the mark is travelling and decaying to nothing when it stops.
+     Nothing lags, because nothing about where anything is is being animated.
+
+     The number is left alone. It used to swell on a spring, which meant text
+     redrawn at fractional scale on every frame — that is what was flickering,
+     and no amount of tuning fixes it, because rasterised type at 1.06× is
+     simply a blurred version of itself. */
+  const gate = useMotionValue(value);
+  useEffect(() => {
+    gate.set(value);
+  }, [value, gate]);
+
+  const rush = useVelocity(gate);
+  const flare = useSpring(useTransform(rush, [-16, 0, 16], [1, 0, 1]), {
+    stiffness: 240,
+    damping: 28,
+  });
+  const bloom = useTransform(flare, [0, 1], [0, 0.9]);
+  const spread = useTransform(flare, [0, 1], [0.9, 1.85]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -401,17 +437,54 @@ function Channel({
           {fmt(value)}
         </span>
       </div>
-      <input
-        type="range"
-        min={0}
-        max={10}
-        step={0.5}
-        value={value}
-        onChange={e => onChange(c.key, parseFloat(e.target.value))}
-        aria-label={`${c.name}, peso ${c.w}`}
-        aria-describedby={`hint-${c.key}`}
-        className="film-range mt-2 w-full"
-      />
+
+      {/* Everything visible is drawn here; the input is invisible and on top,
+          where it still takes the drag, the arrow keys and the screen reader.
+          It comes first in the DOM so the drawn parts can react to it as its
+          siblings — held, focused — and z-10 puts it back over them for the
+          pointer. The mark can only land on a half point, but nothing drawn
+          here has to arrive in one frame: the light, the gate and the flare all
+          glide the 5% between two steps on the same 130ms curve. */}
+      <div className="relative mt-2 h-[34px]">
+        <input
+          type="range"
+          min={0}
+          max={10}
+          step={0.5}
+          value={value}
+          onChange={e => onChange(c.key, parseFloat(e.target.value))}
+          aria-label={`${c.name}, peso ${c.w}`}
+          aria-describedby={`hint-${c.key}`}
+          className="peer film-range absolute inset-0 z-10 w-full"
+        />
+
+        {/* Inset by half the grab area, so 0% and 100% land under the middle of
+            the gate rather than off the end of the strip. */}
+        <span aria-hidden className="pointer-events-none absolute inset-x-2 top-3 h-[10px]">
+          <span className="film-strip absolute inset-0" />
+          {/* Width, not scaleX: scaling stretches the rasterised gradient and
+              the inner glow with it, and the smeared edge shimmering frame to
+              frame was half of what looked like flicker. */}
+          <span className="film-strip-lit absolute inset-y-0 left-0" style={{ width: `${value * 10}%` }} />
+          <motion.span
+            style={{ left: `${value * 10}%`, marginLeft: -13, opacity: bloom, scale: spread }}
+            className="absolute -top-[7px] h-[24px] w-[26px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,231,180,0.9),transparent_70%)] transition-[left] duration-[130ms] ease-beam"
+          />
+        </span>
+
+        {/* The gate. Held, it grows in the frame and burns hotter; focused by
+            keyboard, it takes the ring the input gave up. */}
+        <span
+          aria-hidden
+          style={{ left: `calc(0.5rem + (100% - 1rem) * ${value / 10})` }}
+          className={cn(
+            'film-gate pointer-events-none absolute top-1 -ml-[2px] h-[26px] w-[4px]',
+            'transition-[left,transform,box-shadow] duration-[130ms] ease-beam',
+            'peer-active:scale-y-[1.16] peer-active:shadow-[0_0_0_1px_rgba(4,5,10,0.9),0_2px_10px_rgba(0,0,0,0.8),0_0_22px_rgba(255,214,150,0.7)]',
+            'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.cyan),0_0_18px_rgba(255,214,150,0.5)]'
+          )}
+        />
+      </div>
       <p id={`hint-${c.key}`} className="mt-2 max-w-[70ch] text-[12px] leading-relaxed text-ink-dim">
         {c.hint}
       </p>

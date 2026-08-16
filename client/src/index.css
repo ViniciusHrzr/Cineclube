@@ -113,42 +113,81 @@
     cursor: pointer;
     display: block;
   }
+  /* The track is drawn behind the control now, not by it — a pseudo-element
+     cannot be animated from JS, and the light running up the strip has to be.
+     What stays native is the part that matters: the thumb, the arrow keys, the
+     half-point step and the role the screen reader announces. */
   .film-range::-webkit-slider-runnable-track {
     height: 10px;
-    border-radius: 1px;
-    background-color: theme('colors.house.deep');
-    background-image: radial-gradient(circle at 6px 50%, rgba(255, 233, 196, 0.14) 0 1.5px, transparent 2px);
-    background-size: 12px 10px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85);
+    background: transparent;
   }
   .film-range::-moz-range-track {
     height: 10px;
+    background: transparent;
+  }
+
+  /* Unexposed film: the strip before the beam reaches it. */
+  .film-strip {
     border-radius: 1px;
     background-color: theme('colors.house.deep');
     background-image: radial-gradient(circle at 6px 50%, rgba(255, 233, 196, 0.14) 0 1.5px, transparent 2px);
     background-size: 12px 10px;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85);
   }
+
+  /* The exposed length, scaled from the left. A flat wash and a gradient rather
+     than a second run of perforations: a repeating pattern stretched by scaleX
+     would smear its own holes, while this lets the holes of the strip beneath
+     show straight through the light — which is what actually happens when film
+     is lit from behind. */
+  .film-strip-lit {
+    border-radius: 1px;
+    background-image: linear-gradient(90deg, rgba(255, 214, 150, 0.1), rgba(255, 214, 150, 0.28));
+    box-shadow: inset 0 0 10px rgba(255, 214, 150, 0.22);
+    /* The scale is stepped, the light is not. The mark can only land on a half
+       point, but nothing says the beam has to arrive there in one frame — it
+       glides the 5% between two steps. Short and hard on the ease-out, so it is
+       still under the hand: at 130ms it reads as the light running to catch the
+       gate, and any longer starts reading as the lag this replaced. */
+    transition: width 130ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* The native thumb is kept at full size and made invisible. It is still what
+     the hand grabs, what the arrow keys move and what the screen reader reports
+     — it just does not draw anything, because a native thumb jumps from step to
+     step and no CSS can smooth that. The gate you see is drawn below, where a
+     transition can reach it. Keeping the invisible one 16px wide also keeps the
+     grab area generous while the mark itself is a hairline. */
   .film-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 16px;
     height: 30px;
     margin-top: -10px;
-    border-radius: 2px;
-    border: 1px solid #05060a;
-    background: linear-gradient(180deg, #f6ecd8, #cbbfa6);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75), 0 0 12px rgba(255, 214, 150, 0.28);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
   .film-range::-moz-range-thumb {
-    width: 14px;
-    height: 28px;
-    border-radius: 2px;
-    border: 1px solid #05060a;
-    background: linear-gradient(180deg, #f6ecd8, #cbbfa6);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75), 0 0 12px rgba(255, 214, 150, 0.28);
+    width: 16px;
+    height: 30px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
-  .film-range:active::-webkit-slider-thumb {
-    background: linear-gradient(180deg, #fff6e6, #e0d3b8);
+  /* The focus ring belongs on the gate, not as a rectangle around the whole
+     34px control. */
+  .film-range:focus-visible {
+    outline: none;
+  }
+
+  /* The gate: the mark the frame is read against. A hairline of hot beam rather
+     than a moulded handle — the control is a length of film, and what marks a
+     frame on film is a line, not a knob. The dark ring is what keeps it legible
+     once it is standing on the lit half of the strip. */
+  .film-gate {
+    border-radius: 1px;
+    background: linear-gradient(180deg, #fff6e6, #f2e6ca 55%, #cbbfa6);
+    box-shadow: 0 0 0 1px rgba(4, 5, 10, 0.9), 0 2px 8px rgba(0, 0, 0, 0.7),
+      0 0 14px rgba(255, 214, 150, 0.45);
   }
 }
 

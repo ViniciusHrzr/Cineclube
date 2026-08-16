@@ -47,21 +47,29 @@ export function Strip({
   const filled = Math.max(0, Math.min(cells, value / per));
   return (
     <div className={cn('flex gap-[2px]', className)} role="img" aria-label={`${fmt(value)} de 10`}>
-      {Array.from({ length: cells }, (_, i) => {
-        const n = i + 1;
-        const full = filled >= n;
-        const part = !full && filled > n - 1;
-        return (
+      {Array.from({ length: cells }, (_, i) => (
+        /* Two layers per cell, and only one number changes: the unlit cell is
+           always there underneath, and the beam is laid over it at the exact
+           fraction of that cell the score reaches.
+
+           It was one layer before, with the class deciding the colour and an
+           inline opacity deciding the fraction — which made opacity mean two
+           different things. Leaving the partial cell dropped the inline value,
+           so opacity snapped back to 1 while the background was still 100ms
+           into fading out, and for that moment the cell sat fully opaque over a
+           half-lit colour. That was the blink, and it fired on the way up and
+           on the way back down. Here nothing switches class and nothing
+           reverts: one opacity, from 0 to 1, meaning one thing. */
+        <span key={i} className="relative flex-1 rounded-[1px] bg-white/[0.07]">
           <span
-            key={i}
             className={cn(
-              'flex-1 rounded-[1px] transition-[background-color,opacity] duration-100',
-              full || part ? (live ? 'bg-beam' : 'bg-beam/45') : 'bg-white/[0.07]'
+              'absolute inset-0 rounded-[1px] transition-opacity duration-100',
+              live ? 'bg-beam' : 'bg-beam/45'
             )}
-            style={part ? { opacity: filled - (n - 1) } : undefined}
+            style={{ opacity: Math.max(0, Math.min(1, filled - i)) }}
           />
-        );
-      })}
+        </span>
+      ))}
     </div>
   );
 }
