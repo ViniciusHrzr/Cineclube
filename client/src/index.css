@@ -278,16 +278,37 @@
    Firefox will only run a transform animation off the main thread if it can
    pre-render the whole element, and it measures that against the element's
    *transformed* bounds. A strip here is taller than the viewport, sits inside a
-   field overscanned by 12%, and that field is rotated — so the box Gecko has to
-   size up is far bigger than the strip looks. Past its limit it stops
-   pre-rendering and animates on the main thread instead: the page repaints
-   continuously whether or not anything is happening, and a partially
-   invalidated repaint is what shows up as the wall drawn twice, a few pixels
-   apart. One cause, both symptoms.
+   field overscanned by 12%, that field is rotated, and the strip travels a
+   frame or two on top of all that — so the box Gecko has to size up is close to
+   twice the viewport, where its limit is an eighth over. Past it, Gecko refuses
+   the compositor and animates on the main thread: it invalidates as the
+   transform goes, and repaints only the region it has to, so the patch under
+   the halo comes back rasterised at one moment of the animation while the
+   pixels around it are still from an earlier one. That seam, riding the edge of
+   the moving light, is what gets reported as the wall being drawn twice.
 
-   Blink pre-renders these without complaint, so it keeps the creep. Gecko gets
-   the same wall, standing still. Everything else — the depth, the beam, the
-   halo — is untouched.
+   Two things were tried here and neither is worth trying again.
+
+   The first was to blame the second wall. A lit copy drifting out of step with
+   the unlit one is a real way to double a wall, and it was assumed to be this
+   one — but Gecko is already given a single wall (see GECKO in
+   holographic-wall) and the seam is there anyway. It is a repaint fault, not a
+   synchronisation fault, and it shows up exactly where the beam is and nowhere
+   else because that is the only region being repainted.
+
+   The second was `will-change: transform` on each strip, on the reasoning that
+   a strip with a layer of its own would move an already-rasterised texture
+   instead of dirtying the pixels under the beam. It does not help: the seam
+   survives it. Whatever Gecko is doing under the halo, a layerisation hint is
+   not what stops it, and eight forced layers is not a free thing to leave in
+   for nothing.
+
+   What is left is the honest answer. Blink promotes an animated transform by
+   itself and has been running this wall on the compositor all along, so it
+   keeps the creep. Gecko gets the same wall, standing still — the room is the
+   room whether or not the film is advancing, and a wall that tears under the
+   cursor is worse than a wall that is patient. Everything else — the depth, the
+   beam, the halo — is untouched.
 
    Matched by a property only Gecko implements. */
 @supports (-moz-appearance: none) {
