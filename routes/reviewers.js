@@ -23,7 +23,7 @@ const listStmt = db.prepare(`
 const countStmt = db.prepare('SELECT COUNT(*) AS n FROM reviewers');
 const insertStmt = db.prepare('INSERT INTO reviewers (id, name, dot) VALUES (?, ?, ?)');
 const deleteStmt = db.prepare('DELETE FROM reviewers WHERE id = ?');
-const getStmt = db.prepare('SELECT id, name FROM reviewers WHERE id = ?');
+const getStmt = db.prepare('SELECT id, name, is_admin FROM reviewers WHERE id = ?');
 
 function toDTO(row) {
   return {
@@ -61,21 +61,31 @@ router.post('/', wrap(async (req, res) => {
   res.status(201).json({ id, name, dot, isAdmin: false, hasPin: true, review_count: 0 });
 }));
 
-/* Leaving, or being removed. You may delete yourself; the admin may delete
-   anyone. Reviews go with the account (ON DELETE CASCADE), which is why the
+/* Being removed. Only the admin removes anyone, and the admin is not removable
+   — not even by themselves.
+
+   Deleting used to be allowed on your own account, which is friendlier and is
+   also how the club could lose its only administrator with one click: the seat
+   is held by a flag on a row, so deleting that row leaves nobody able to reset
+   a PIN or remove anyone, and no route grants the flag back. The rule is
+   enforced here rather than by hiding a button, because a button is not a
+   permission — anyone can call the route directly.
+
+   Reviews go with the account (ON DELETE CASCADE), which is why the
    confirmation in the client spells out how many. */
 router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
   const target = await getStmt.get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Avaliador não encontrado.' });
 
-  const isSelf = req.session.reviewer_id === target.id;
-  if (!isSelf && !req.session.is_admin) {
-    return res.status(403).json({ error: 'Só o administrador do clube pode remover outro avaliador.' });
+  if (!req.session.is_admin) {
+    return res.status(403).json({ error: 'Só o administrador do clube pode remover um avaliador.' });
+  }
+  if (target.is_admin) {
+    return res.status(403).json({ error: 'O administrador do clube não pode ser removido.' });
   }
 
   await auth.destroyAllSessions(target.id);
   await deleteStmt.run(target.id);
-  if (isSelf) auth.clearSessionCookie(res);
   res.status(204).end();
 }));
 

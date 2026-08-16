@@ -181,12 +181,10 @@ function Roster() {
 
   async function remove(p: Reviewer) {
     const n = club.reviews.filter(r => r.reviewerId === p.id).length;
-    const isSelf = p.id === club.me.id;
     const warn = n ? ` As ${n} avaliação(ões) dessa pessoa também serão apagadas.` : '';
-    if (!confirm(`${isSelf ? 'Sair do clube e apagar sua conta' : `Remover ${p.name}`}?${warn}`)) return;
+    if (!confirm(`Remover ${p.name}?${warn}`)) return;
     try {
       await del(`/api/reviewers/${p.id}`);
-      if (isSelf) return club.signOut();
       club.reload({
         reviewers: club.reviewers.filter(x => x.id !== p.id),
         reviews: club.reviews.filter(r => r.reviewerId !== p.id),
@@ -219,7 +217,11 @@ function Roster() {
         club.reviewers.map(p => {
           const n = club.reviews.filter(r => r.reviewerId === p.id).length;
           const isSelf = p.id === club.me.id;
-          const canRemove = isSelf || club.me.isAdmin;
+          /* The same rule the route enforces, said again here only so the
+             interface does not offer what the server will refuse. The seat is a
+             flag on a row and no route grants it back, so removing it would
+             leave the club with nobody able to reset a PIN or remove anyone. */
+          const canRemove = club.me.isAdmin && !p.isAdmin;
           return (
             <div key={p.id} className="border-b border-white/[0.06] py-3">
               <div className="flex items-center gap-3 px-1">
@@ -256,7 +258,7 @@ function Roster() {
                 ) : null}
 
                 {canRemove ? (
-                  <IconKey aria-label={isSelf ? 'Sair do clube' : `Remover ${p.name}`} onClick={() => void remove(p)}>
+                  <IconKey aria-label={`Remover ${p.name}`} onClick={() => void remove(p)}>
                     <Trash2 className="h-4 w-4" strokeWidth={1.7} />
                   </IconKey>
                 ) : null}

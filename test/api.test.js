@@ -152,15 +152,43 @@ test('deleting an unknown reviewer is a 404', async () => {
 test('deleting a reviewer cascades to their reviews', async () => {
   // Guards PRAGMA foreign_keys = ON, which SQLite applies per connection and
   // silently ignores if it is ever dropped from db.js.
+  const admin = await newAdmin();
   const reviewer = await newReviewer();
   const m = movie();
   await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
 
-  const del = await req('DELETE', `/api/reviewers/${reviewer.id}`, null, reviewer.cookie);
+  const del = await req('DELETE', `/api/reviewers/${reviewer.id}`, null, admin.cookie);
   assert.equal(del.status, 204);
 
   const reviews = await req('GET', '/api/reviews');
   assert.equal(reviews.body.reviews.filter(r => r.reviewerId === reviewer.id).length, 0);
+});
+
+test('only the admin removes a reviewer, and never their own account', async () => {
+  const admin = await newAdmin();
+  const member = await newReviewer();
+  const other = await newReviewer();
+
+  // Not the admin: no removing anyone, including yourself. Self-deletion was
+  // allowed once, which is how the club could end up with no administrator.
+  assert.equal((await req('DELETE', `/api/reviewers/${other.id}`, null, member.cookie)).status, 403);
+  assert.equal((await req('DELETE', `/api/reviewers/${member.id}`, null, member.cookie)).status, 403);
+
+  // The seat itself is not removable, by anyone.
+  assert.equal((await req('DELETE', `/api/reviewers/${admin.id}`, null, member.cookie)).status, 403);
+  assert.equal((await req('DELETE', `/api/reviewers/${admin.id}`, null, admin.cookie)).status, 403);
+
+  // Everyone survived every one of those.
+  const list = (await req('GET', '/api/reviewers')).body.reviewers.map(r => r.id);
+  assert.ok(list.includes(admin.id) && list.includes(member.id) && list.includes(other.id));
+
+  // And the admin can still remove someone else.
+  assert.equal((await req('DELETE', `/api/reviewers/${member.id}`, null, admin.cookie)).status, 204);
+});
+
+test('removing a reviewer needs a session at all', async () => {
+  const member = await newReviewer();
+  assert.equal((await req('DELETE', `/api/reviewers/${member.id}`)).status, 401);
 });
 
 test('review_count reflects saved reviews', async () => {
