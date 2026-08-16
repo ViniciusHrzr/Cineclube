@@ -17,6 +17,16 @@ app.use('/api/reviewers', require('./routes/reviewers'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/watchlist', require('./routes/watchlist'));
 
+/* The build stamps a content hash into every asset's name, so a file under
+   /assets can never change without changing its URL — which is exactly the
+   condition under which a browser may keep it forever and stop asking. Without
+   this, every visit revalidated a 350kB bundle that had not moved since the
+   last deploy. index.html is deliberately left out: it is the one file whose
+   name never changes, and it is what points at the hashed ones. */
+app.use(
+  '/assets',
+  express.static(path.join(__dirname, 'public', 'assets'), { immutable: true, maxAge: '1y' })
+);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use((err, req, res, next) => {

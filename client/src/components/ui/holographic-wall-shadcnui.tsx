@@ -1,7 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { cn, useFinePointer } from "@/lib/utils";
 
 type HolographicWallProps = {
@@ -202,18 +201,24 @@ function layOut(width: number) {
    tungsten behind the beam's mask — and the two copies have to stay registered
    with each other, so every strip's phase comes from its index rather than from
    when it happened to mount. */
-function Reel({
+const Reel = memo(function Reel({
   width,
   line,
   edge,
   perf,
   fill,
+  cast = true,
 }: {
   width: number;
   line: string;
   edge: string;
   perf: string;
   fill: string;
+  /** Whether the strips throw their shadow. The lit copy does not: it is only
+      ever seen through a hole the size of the beam, where the light is what the
+      eye is reading, and a blurred 30px shadow on every strip of a second wall
+      is the most expensive thing on it for the least visible return. */
+  cast?: boolean;
 }) {
   const strips = useMemo(() => layOut(width), [width]);
   return (
@@ -240,7 +245,7 @@ function Reel({
                 width: w,
                 opacity: plane.alpha,
                 zIndex: plane.z,
-                boxShadow: plane.shade,
+                boxShadow: cast ? plane.shade : undefined,
                 '--creep': `${plane.dir * travel}px`,
                 '--dur': `${(travel / plane.speed).toFixed(1)}s`,
                 /* Strips of the same plane repeat every fourth column; without
@@ -255,9 +260,9 @@ function Reel({
       })}
     </div>
   );
-}
+});
 
-export function HolographicWall({
+function Wall({
   /* Dimmer than it was, twice over: the wall should suggest itself, not
      announce itself. The halo is taken from this same number, so the whole
      beam — reveal and scatter — comes down together. */
@@ -267,17 +272,31 @@ export function HolographicWall({
   asBackdrop = false,
 }: HolographicWallProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [lit, setLit] = useState(false);
+  /* The three things the pointer moves. None of them is React state: a light
+     following a cursor is sixty writes a second, and a component that
+     re-rendered on each of them would be reconciling the whole wall to move a
+     highlight. */
+  const beamRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLDivElement>(null);
+  const haloRef = useRef<HTMLDivElement>(null);
   const frame = useRef(0);
   const next = useRef<{ x: number; y: number } | null>(null);
   const [calm, setCalm] = useState(false);
-  const [width, setWidth] = useState(() => window.innerWidth);
+  const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const fine = useFinePointer();
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ro = new ResizeObserver(() => setWidth(host.clientWidth));
+    const ro = new ResizeObserver(() => {
+      // Same numbers, same wall: a resize observer fires more often than the box
+      // actually changes, and every spurious update re-lays a hundred strips.
+      setSize(s =>
+        s.w === host.clientWidth && s.h === host.clientHeight
+          ? s
+          : { w: host.clientWidth, h: host.clientHeight }
+      );
+    });
     ro.observe(host);
     return () => ro.disconnect();
   }, []);
@@ -324,21 +343,61 @@ export function HolographicWall({
     };
     measure();
 
+    /* ── moving light without repainting anything ─────────────────────────
+       The beam used to be a mask whose centre was a CSS variable on this
+       element, and the halo a full-screen gradient with the same variable in
+       it. Both were wrong in the same way, and it is the fault behind the
+       report of a fast machine dropping frames on this page.
+
+       Writing a custom property on the host invalidates style for everything
+       under it — the whole wall, every strip and its inline geometry — sixty
+       times a second. Then a gradient whose centre has moved is a gradient that
+       has to be rasterised again: a full-viewport repaint per frame for the
+       halo, and for the beam a full-viewport mask re-rendered over a subtree of
+       animating layers.
+
+       Nothing here is drawn where the cursor is any more; it is *carried*
+       there. The beam is a box the size of the beam with a fixed mask in the
+       middle of it, and inside that box the lit wall is pushed back by exactly
+       the distance the box was pushed forward — so the two translations cancel
+       and the celluloid stays registered with the wall behind it, to the pixel,
+       while the hole moves. The halo is one gradient, rasterised once, moved.
+
+       Every one of those is a transform on a promoted layer, which is the one
+       thing a browser can do per frame for free. No style recalc, no paint. */
+    const beamOffset = radius;
+    const haloOffset = radius * 1.9;
+
     const paint = () => {
       frame.current = 0;
       const p = next.current;
       if (!p) return;
-      host.style.setProperty('--mx', `${p.x}px`);
-      host.style.setProperty('--my', `${p.y}px`);
+      const bx = p.x - beamOffset;
+      const by = p.y - beamOffset;
+      if (beamRef.current) beamRef.current.style.transform = `translate3d(${bx}px, ${by}px, 0)`;
+      if (backRef.current) backRef.current.style.transform = `translate3d(${-bx}px, ${-by}px, 0)`;
+      if (haloRef.current)
+        haloRef.current.style.transform = `translate3d(${p.x - haloOffset}px, ${p.y - haloOffset}px, 0)`;
+    };
+
+    /* On and off is a class away, not a render away — the wall does not need to
+       be reconciled because a light came on. */
+    let on = false;
+    const show = (v: boolean) => {
+      if (on === v) return;
+      on = v;
+      if (beamRef.current) beamRef.current.parentElement!.style.opacity = v ? String(intensity) : '0';
+      if (haloRef.current)
+        haloRef.current.style.opacity = v ? String(intensity * (GECKO ? 1 : 0.6)) : '0';
     };
 
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
       next.current = { x: (e.clientX - box.left) / box.k, y: (e.clientY - box.top) / box.k };
-      if (!lit) setLit(true);
+      show(true);
       if (!frame.current) frame.current = requestAnimationFrame(paint);
     };
-    const onLeave = () => setLit(false);
+    const onLeave = () => show(false);
 
     const target: Window | HTMLElement = asBackdrop ? window : host;
     target.addEventListener("pointermove", onMove as EventListener, { passive: true });
@@ -349,10 +408,16 @@ export function HolographicWall({
       target.removeEventListener("pointerleave", onLeave as EventListener);
       window.removeEventListener('resize', measure);
       if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
     };
-  }, [asBackdrop, lit, fine]);
+  }, [asBackdrop, fine, intensity, radius]);
 
-  const mask = `radial-gradient(${radius}px circle at var(--mx, -1000px) var(--my, -1000px), #000 0%, #000 22%, rgba(0,0,0,0.6) 52%, transparent 78%)`;
+  /* Fixed, in the middle of its own box, and therefore rasterised exactly once
+     for the life of the page. */
+  const beamBox = radius * 2;
+  const haloBox = radius * 1.9 * 2;
+  const mask = `radial-gradient(${radius}px circle at 50% 50%, #000 0%, #000 22%, rgba(0,0,0,0.6) 52%, transparent 78%)`;
+  const fade = `opacity ${calm ? 0 : 350}ms cubic-bezier(0.16, 1, 0.3, 1)`;
 
   return (
     <div
@@ -368,60 +433,83 @@ export function HolographicWall({
     >
       {/* the unlit wall: celluloid you can just make out in a dark room */}
       <Reel
-        width={width}
+        width={size.w}
         line="rgba(184,200,224,0.075)"
         edge="rgba(184,200,224,0.13)"
         perf="rgba(184,200,224,0.11)"
         fill="rgba(184,200,224,0.05)"
       />
 
-      {/* The lit wall: the same strip in tungsten, revealed only where the beam
-          falls. The mask must stay in the viewport's own coordinate space or the
-          beam drifts away from the cursor, so the wrapper carries the mask and
-          only the pattern inside it is rotated.
+      {/* The lit wall: the same strip in tungsten, seen through a hole the size
+          of the beam. Three boxes, and each one has exactly one job — the outer
+          fades the whole thing in and out, the middle carries the hole and is
+          what travels with the cursor, and the inner is the wall itself, pushed
+          back by the distance the hole came forward so that it never actually
+          moves. What the eye sees is a light passing over a still wall, which is
+          what it is.
 
           It exists only for a cursor, so on a touch screen it is not built at
           all. It used to be: a second full set of strips, every one of them
           animating, behind a full-screen mask, on a phone that could never
           light a single one of them. Same for the halo below. */}
       {fine && !GECKO ? (
-      <motion.div
-        className="absolute inset-0"
-        animate={{ opacity: lit ? intensity : 0 }}
-        transition={{ duration: calm ? 0 : 0.35, ease: [0.16, 1, 0.3, 1] }}
-        style={{ WebkitMaskImage: mask, maskImage: mask }}
-      >
-        <Reel
-          width={width}
-          line="rgba(255,214,150,0.66)"
-          edge="rgba(255,228,175,0.85)"
-          perf="rgba(255,244,220,0.9)"
-          fill="rgba(255,214,150,0.13)"
-        />
-      </motion.div>
+        <div className="absolute inset-0" style={{ opacity: 0, transition: fade }}>
+          <div
+            ref={beamRef}
+            className="absolute left-0 top-0 overflow-hidden"
+            style={{
+              width: beamBox,
+              height: beamBox,
+              transform: 'translate3d(-9999px, -9999px, 0)',
+              willChange: 'transform',
+              WebkitMaskImage: mask,
+              maskImage: mask,
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+            }}
+          >
+            <div
+              ref={backRef}
+              className="absolute left-0 top-0"
+              style={{ width: size.w, height: size.h, willChange: 'transform' }}
+            >
+              <Reel
+                width={size.w}
+                line="rgba(255,214,150,0.66)"
+                edge="rgba(255,228,175,0.85)"
+                perf="rgba(255,244,220,0.9)"
+                fill="rgba(255,214,150,0.13)"
+                cast={false}
+              />
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {/* The halo: light scattering in the air of the room. Held well under the
           reveal, because the two do different amounts of damage to the text
           over them — the reveal is hairlines, which the type reads between,
           while the halo is a flat wash across everything the cursor is near,
-          and a wash is what actually lifts a background off the page. */}
-      <AnimatePresence>
-        {fine && lit && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            /* Carries the beam alone where the second wall cannot be drawn, so
-               it is given back the strength that copy would have added. */
-            animate={{ opacity: intensity * (GECKO ? 1 : 0.6) }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="absolute inset-0"
-            style={{
-              background: `radial-gradient(${radius * 1.9}px circle at var(--mx, -1000px) var(--my, -1000px), rgba(255,205,140,0.22) 0%, rgba(255,180,110,0.09) 38%, transparent 72%)`,
-            }}
-          />
-        )}
-      </AnimatePresence>
+          and a wash is what actually lifts a background off the page.
+
+          Where the second wall cannot be drawn it carries the beam alone, so it
+          is given back the strength that copy would have added. */}
+      {fine ? (
+        <div
+          ref={haloRef}
+          className="absolute left-0 top-0"
+          style={{
+            width: haloBox,
+            height: haloBox,
+            opacity: 0,
+            transform: 'translate3d(-9999px, -9999px, 0)',
+            willChange: 'transform, opacity',
+            transition: fade,
+            background:
+              'radial-gradient(closest-side circle at 50% 50%, rgba(255,205,140,0.22) 0%, rgba(255,180,110,0.09) 38%, transparent 72%)',
+          }}
+        />
+      ) : null}
 
       {/* The screen surround: the room falls off toward its edges. It is also
           the legibility floor, and that is the more important of its two jobs —
@@ -442,5 +530,10 @@ export function HolographicWall({
     </div>
   );
 }
+
+/* The room does not change because the app did. Without this, every toast,
+   every tab, every list that came back from the server re-rendered a hundred
+   strips of celluloid that had not moved. */
+export const HolographicWall = memo(Wall);
 
 export default HolographicWall;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -14,18 +14,27 @@ export function cn(...inputs: ClassValue[]) {
 
    This is the switch that lets the interface not build what it cannot use. It
    is a media query and not a user-agent guess, so a laptop with a touchscreen
-   keeps the mouse behaviour and a tablet with a trackpad gets it too. */
+   keeps the mouse behaviour and a tablet with a trackpad gets it too.
+
+   One query for the whole page, not one per component. Every poster on the wall
+   asks this — a hundred cards on a loaded catalogue meant a hundred MediaQueryList
+   objects and a hundred listeners for a single fact that is the same for all of
+   them, and each one held its own copy of it in React state. The fact lives here
+   once and the components subscribe to it. */
+const FINE = '(hover: hover) and (pointer: fine)';
+const fineQuery = typeof window === 'undefined' ? null : window.matchMedia(FINE);
+
+function subscribeFine(onChange: () => void) {
+  fineQuery?.addEventListener('change', onChange);
+  return () => fineQuery?.removeEventListener('change', onChange);
+}
+
 export function useFinePointer() {
-  const query = '(hover: hover) and (pointer: fine)';
-  const [fine, setFine] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const q = window.matchMedia(query);
-    const sync = () => setFine(q.matches);
-    sync();
-    q.addEventListener('change', sync);
-    return () => q.removeEventListener('change', sync);
-  }, []);
-  return fine;
+  return useSyncExternalStore(
+    subscribeFine,
+    () => fineQuery?.matches ?? false,
+    () => false
+  );
 }
 
 /* Accent- and case-insensitive, so "cacador" finds "Caçador" and "orfa" finds

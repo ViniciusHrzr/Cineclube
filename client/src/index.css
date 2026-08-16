@@ -28,7 +28,12 @@
        only then scaled by the zoom, so `100dvh` under this becomes a quarter
        taller than the window: a scrollbar over nothing, and everything centred
        in a box bigger than the screen it is centred on. `min-h-dvh` is written
-       as `calc(100dvh/var(--ui-zoom))` wherever it appears. */
+       as `calc(100dvh/var(--ui-zoom))` wherever it appears.
+
+       The number below is no longer the whole story: index.html measures the
+       window and writes this property on the root, so the interface holds the
+       same proportions on any monitor. What is left here is the value that
+       stands before that script runs, and the one a touch screen keeps. */
     --ui-zoom: 1.25;
     zoom: var(--ui-zoom);
   }

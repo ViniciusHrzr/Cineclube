@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
@@ -12,7 +12,13 @@ import { cn } from '@/lib/utils';
    effect doing the work it was written for. The face opens the projection
    sheet; the action row underneath is its own set of controls, so no button
    is ever nested inside another. */
-export function FilmCell({
+/* The handlers take the film rather than closing over it. A bin holds a hundred
+   of these and every one of them is a 3D card with its own layers, so the whole
+   grid used to be rebuilt on each keystroke in the search field above it — an
+   arrow function per card per render is enough to defeat any memo. Given the
+   film as an argument, the callbacks are the same functions on every render and
+   a card only re-renders when something about that film changed. */
+export const FilmCell = memo(function FilmCell({
   movie,
   avg,
   count,
@@ -26,10 +32,10 @@ export function FilmCell({
   avg?: number;
   count?: number;
   inWatchlist?: boolean;
-  onOpen: () => void;
-  onRate: () => void;
-  onToggleWatch?: () => void;
-  onRemove?: () => void;
+  onOpen: (id: number) => void;
+  onRate: (id: number) => void;
+  onToggleWatch?: (m: Movie) => void;
+  onRemove?: (id: number) => void;
 }) {
   return (
     <CardContainer containerClassName="block h-full w-full" className="h-full w-full">
@@ -37,7 +43,7 @@ export function FilmCell({
         <CardItem translateZ={60} className="w-full">
           <button
             type="button"
-            onClick={onOpen}
+            onClick={() => onOpen(movie.id)}
             aria-label={`Ver ficha de ${movie.title}`}
             className="group/cell block w-full text-left"
           >
@@ -83,7 +89,7 @@ export function FilmCell({
         </CardItem>
 
         <CardItem translateZ={18} className="mt-auto flex w-full gap-2 pt-3">
-          <Key tone="flush" className="flex-1 px-2" onClick={onRate}>
+          <Key tone="flush" className="flex-1 px-2" onClick={() => onRate(movie.id)}>
             Avaliar
           </Key>
           {onToggleWatch ? (
@@ -91,13 +97,13 @@ export function FilmCell({
               active={inWatchlist}
               aria-pressed={inWatchlist}
               aria-label={inWatchlist ? 'Remover de Quero ver' : 'Adicionar a Quero ver'}
-              onClick={onToggleWatch}
+              onClick={() => onToggleWatch(movie)}
             >
               <Bookmark className="h-4 w-4" fill={inWatchlist ? 'currentColor' : 'none'} strokeWidth={1.7} />
             </IconKey>
           ) : null}
           {onRemove ? (
-            <IconKey aria-label="Tirar da fila" onClick={onRemove}>
+            <IconKey aria-label="Tirar da fila" onClick={() => onRemove(movie.id)}>
               <Trash2 className="h-4 w-4" strokeWidth={1.7} />
             </IconKey>
           ) : null}
@@ -105,7 +111,7 @@ export function FilmCell({
       </CardBody>
     </CardContainer>
   );
-}
+});
 
 /* ── the projection sheet ─────────────────────────────────────────────────
    A film opened from the bin, shown whole: poster, synopsis, cast, trailer.
@@ -260,9 +266,8 @@ export function ProjectionSheet({
 
 /* A grid of cells, with the list stagger capped so a twenty-poster page never
    feels like it is loading twice. */
-export function Bin({ children, empty }: { children: React.ReactNode; empty?: React.ReactNode }) {
+export function Bin({ children }: { children: React.ReactNode }) {
   const items = Array.isArray(children) ? children : [children];
-  if (!items.length && empty) return <>{empty}</>;
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5 sm:grid-cols-[repeat(auto-fill,minmax(178px,1fr))]">
       <AnimatePresence initial={false}>

@@ -12,6 +12,46 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&display=swap"
     />
+    <!-- ── the room is always the same size ──────────────────────────────────
+         This design was drawn against one window: 1536 CSS pixels of width, the
+         reference below. Everything in it is stated in pixels, so on a wider
+         monitor the same layout used to sit in the middle of a growing field of
+         nothing, and on a narrower one it crowded.
+
+         So the interface is scaled to the window instead of laid out against it:
+         the zoom is the window's width over the width this was drawn for, which
+         makes a poster take the same share of the screen — and the shelf the
+         same number of posters — on every monitor. `zoom` and not a transform,
+         because the page still has to reflow and stay selectable and scrollable;
+         it is the same knob the design already used, now measured rather than
+         guessed. The default in the stylesheet stands until this runs.
+
+         Read from window.innerWidth, which is the one width the root's own zoom
+         cannot change — documentElement.clientWidth is reported in zoomed units,
+         so feeding it back in would chase its own tail.
+
+         The bounds are where proportion stops being the right answer: under
+         ~1150px real width the design would be shrinking itself out of
+         legibility, and the responsive rules it already carries do a better job;
+         over ~3070px it would be scaling past any type size anyone asked for.
+
+         Touch screens keep the stylesheet's own rule (no zoom at all) — the
+         property is removed rather than set, so the media query wins. -->
+    <script>
+      (function () {
+        var BASE = 1536, MIN = 0.75, MAX = 2;
+        var root = document.documentElement;
+        var coarse = window.matchMedia('(hover: none), (pointer: coarse)');
+        function fit() {
+          if (coarse.matches) return root.style.removeProperty('--ui-zoom');
+          var z = Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+          root.style.setProperty('--ui-zoom', z.toFixed(4));
+        }
+        fit();
+        addEventListener('resize', fit, { passive: true });
+        coarse.addEventListener('change', fit);
+      })();
+    </script>
   </head>
   <body>
     <!--

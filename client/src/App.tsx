@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { ProjectionSheet } from '@/components/film';
 import { Fault } from '@/components/bits';
@@ -182,9 +182,15 @@ export default function App() {
 
   const inWatchlist = useCallback((id: number) => watchlist.some(w => String(w.id) === String(id)), [watchlist]);
 
+  /* The queue as of now, for handlers that must not be rebuilt when it changes.
+     Every poster in the catalogue is handed `toggleWatch`, and a new function
+     each time somebody bookmarks a film is a new prop on all hundred of them. */
+  const watchRef = useRef(watchlist);
+  watchRef.current = watchlist;
+
   const toggleWatch = useCallback(
     async (m: Movie | WatchItem) => {
-      const has = watchlist.some(w => String(w.id) === String(m.id));
+      const has = watchRef.current.some(w => String(w.id) === String(m.id));
       try {
         if (has) {
           await del(`/api/watchlist/${m.id}`);
@@ -202,7 +208,18 @@ export default function App() {
         fault('Não foi possível atualizar a fila: ' + (e as Error).message);
       }
     },
-    [watchlist, fault]
+    [fault]
+  );
+
+  const reload = useCallback((patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => {
+    if (patch.reviewers) setReviewers(patch.reviewers);
+    if (patch.reviews) setReviews(patch.reviews);
+    if (patch.watchlist) setWatchlist(patch.watchlist);
+  }, []);
+
+  const criteriaFor = useCallback(
+    (genre: string) => criteria[genre] ?? criteria['Drama'] ?? [],
+    [criteria]
   );
 
   const rateMovie = useCallback(
@@ -212,6 +229,53 @@ export default function App() {
       goTab('rate');
     },
     [goTab]
+  );
+
+  /* One object for the whole club, rebuilt only when something in it actually
+     changed. It used to be a fresh object on every render of this component,
+     which meant opening a film's sheet, or a toast appearing for six seconds,
+     re-rendered every screen and every card that reads from it. */
+  const club = useMemo<Club | null>(
+    () =>
+      me
+        ? {
+            me,
+            signOut: () => void signOut(),
+            refreshReviewers,
+            reviewers,
+            reviews,
+            watchlist,
+            criteria,
+            genres,
+            reload,
+            criteriaFor,
+            averages,
+            inWatchlist,
+            toggleWatch,
+            goTab,
+            openSheet: setSheetId,
+            rateMovie,
+            fault,
+          }
+        : null,
+    [
+      me,
+      signOut,
+      refreshReviewers,
+      reviewers,
+      reviews,
+      watchlist,
+      criteria,
+      genres,
+      reload,
+      criteriaFor,
+      averages,
+      inWatchlist,
+      toggleWatch,
+      goTab,
+      rateMovie,
+      fault,
+    ]
   );
 
   if (!authChecked) {
@@ -225,31 +289,7 @@ export default function App() {
     );
   }
 
-  if (!me) return <SignIn onSignedIn={setMe} />;
-
-  const club: Club = {
-    me,
-    signOut: () => void signOut(),
-    refreshReviewers,
-    reviewers,
-    reviews,
-    watchlist,
-    criteria,
-    genres,
-    reload: patch => {
-      if (patch.reviewers) setReviewers(patch.reviewers);
-      if (patch.reviews) setReviews(patch.reviews);
-      if (patch.watchlist) setWatchlist(patch.watchlist);
-    },
-    criteriaFor: (genre: string) => criteria[genre] ?? criteria['Drama'] ?? [],
-    averages,
-    inWatchlist,
-    toggleWatch,
-    goTab,
-    openSheet: setSheetId,
-    rateMovie,
-    fault,
-  };
+  if (!me || !club) return <SignIn onSignedIn={setMe} />;
 
   return (
     <ClubContext.Provider value={club}>

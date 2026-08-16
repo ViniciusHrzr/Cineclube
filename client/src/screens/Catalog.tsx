@@ -173,9 +173,9 @@ export function CatalogScreen() {
               avg={club.averages[m.id]?.avg}
               count={club.averages[m.id]?.count}
               inWatchlist={club.inWatchlist(m.id)}
-              onOpen={() => club.openSheet(m.id)}
-              onRate={() => club.rateMovie(m.id)}
-              onToggleWatch={() => void club.toggleWatch(m)}
+              onOpen={club.openSheet}
+              onRate={club.rateMovie}
+              onToggleWatch={club.toggleWatch}
             />
           ))}
         </Bin>
@@ -252,14 +252,21 @@ export function WatchlistScreen() {
     ? club.watchlist.filter(w => norm(w.title).includes(norm(query.trim())))
     : club.watchlist;
 
-  async function remove(id: number) {
-    try {
-      await del(`/api/watchlist/${id}`);
-      club.reload({ watchlist: club.watchlist.filter(w => String(w.id) !== String(id)) });
-    } catch (e) {
-      club.fault('Não foi possível remover: ' + (e as Error).message);
-    }
-  }
+  /* Stable, because it is handed to a hundred memoized cards: a new function
+     here on every render is a new prop on every card. It reads the queue off
+     the ref the drag already keeps live rather than off this render. */
+  const remove = useCallback(
+    async (id: number) => {
+      try {
+        await del(`/api/watchlist/${id}`);
+        club.reload({ watchlist: order.current.filter(w => String(w.id) !== String(id)) });
+      } catch (e) {
+        club.fault('Não foi possível remover: ' + (e as Error).message);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [club.reload, club.fault]
+  );
 
   /* The new order is applied locally first so the queue answers the hand at
      once, then sent whole. If the server refuses, its copy is authoritative and
@@ -509,9 +516,9 @@ export function WatchlistScreen() {
                     </span>
                     <FilmCell
                       movie={w as Movie}
-                              onOpen={() => club.openSheet(w.id)}
-                      onRate={() => club.rateMovie(w.id)}
-                      onRemove={() => void remove(w.id)}
+                      onOpen={club.openSheet}
+                      onRate={club.rateMovie}
+                      onRemove={remove}
                     />
                   </motion.div>
 

@@ -27,30 +27,91 @@ export const CardContainer = ({
   const [isMouseEntered, setIsMouseEntered] = useState(false);
   const fine = useFinePointer();
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return;
-    const { left, top, width, height } =
-      containerRef.current.getBoundingClientRect();
+  /* ── the card's own box, measured once ──────────────────────────────────
+     The tilt needs to know where the card is and how big it is. Reading that
+     from a client rect inside the move handler was a forced synchronous layout
+     on every mouse event — and the handler had just written a transform, so the
+     layout was always dirty and the browser always had to redo it. Read, write,
+     read, write, hundreds of times a second, over a grid of a hundred posters.
+     That is layout thrashing, and it is the kind that only shows up when
+     someone actually moves the mouse across the catalogue.
+
+     The box is measured when the pointer arrives instead, and again only if
+     something that could have moved it happened while the pointer was still
+     over the card. Between those, a move is one write and nothing else. */
+  const box = useRef({ left: 0, top: 0, width: 0, height: 0, k: 1 });
+  const stale = useRef(true);
+  const frame = useRef(0);
+  const at = useRef({ x: 0, y: 0 });
+
+  const measure = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
     /* Degrees per pixel, where the pixel has to be the card's own — the page is
        zoomed, so a client rect is wider than the box that drew it, and without
        this the tilt steepens by exactly the zoom factor. */
-    const k = containerRef.current.offsetWidth
-      ? width / containerRef.current.offsetWidth
-      : 1;
-    const x = (e.clientX - left - width / 2) / (25 * k);
-    const y = (e.clientY - top - height / 2) / (25 * k);
-    containerRef.current.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
+    const k = el.offsetWidth ? r.width / el.offsetWidth : 1;
+    box.current = { left: r.left, top: r.top, width: r.width, height: r.height, k };
+    stale.current = false;
+  };
+
+  const paint = () => {
+    frame.current = 0;
+    const el = containerRef.current;
+    if (!el) return;
+    if (stale.current) measure();
+    const b = box.current;
+    const x = (at.current.x - b.left - b.width / 2) / (25 * b.k);
+    const y = (at.current.y - b.top - b.height / 2) / (25 * b.k);
+    el.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    at.current = { x: e.clientX, y: e.clientY };
+    if (!frame.current) frame.current = requestAnimationFrame(paint);
   };
 
   const handleMouseEnter = () => {
+    measure();
     setIsMouseEntered(true);
   };
 
   const handleMouseLeave = () => {
-    if (!containerRef.current) return;
+    if (frame.current) {
+      cancelAnimationFrame(frame.current);
+      frame.current = 0;
+    }
+    stale.current = true;
     setIsMouseEntered(false);
-    containerRef.current.style.transform = `rotateY(0deg) rotateX(0deg)`;
+    if (containerRef.current)
+      containerRef.current.style.transform = `rotateY(0deg) rotateX(0deg)`;
   };
+
+  /* A scroll or a resize moves the card out from under a rect that was taken
+     when the pointer arrived — the wheel under a hovering hand is the ordinary
+     way to browse this grid. The listeners exist only while a card is held, and
+     they do no work: they mark the measurement stale and the next frame that
+     needs it takes a fresh one. */
+  useEffect(() => {
+    if (!isMouseEntered) return;
+    const drop = () => {
+      stale.current = true;
+    };
+    window.addEventListener("scroll", drop, { passive: true, capture: true });
+    window.addEventListener("resize", drop, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", drop, { capture: true });
+      window.removeEventListener("resize", drop);
+    };
+  }, [isMouseEntered]);
+
+  useEffect(
+    () => () => {
+      if (frame.current) cancelAnimationFrame(frame.current);
+    },
+    []
+  );
 
   /* Without a mouse there is nothing to tip toward, so none of the machinery is
      built: no perspective, no preserve-3d, no transitions, no handlers. That is
@@ -115,51 +176,38 @@ export const CardBody = ({
   );
 };
 
-export const CardItem = ({
-  as: Tag = "div",
+/* A layer of the card, standing at its own depth. Only the depth is ever asked
+   for here, so only the depth is offered: the six axes this carried are five
+   more than the product uses, and each of them was a prop compared on every
+   render of every layer of every poster.
+
+   The transform is a style, not an effect. Writing it from a useEffect meant a
+   render, then a commit, then a second pass over the DOM to say the thing the
+   render already knew. */
+export function CardItem({
   children,
   className,
-  translateX = 0,
-  translateY = 0,
   translateZ = 0,
-  rotateX = 0,
-  rotateY = 0,
-  rotateZ = 0,
   ...rest
-}: {
-  as?: React.ElementType;
+}: React.HTMLAttributes<HTMLDivElement> & {
   children: React.ReactNode;
   className?: string;
-  translateX?: number | string;
-  translateY?: number | string;
-  translateZ?: number | string;
-  rotateX?: number | string;
-  rotateY?: number | string;
-  rotateZ?: number | string;
-  [key: string]: any;
-}) => {
-  const ref = useRef<HTMLDivElement>(null);
+  translateZ?: number;
+}) {
   const [isMouseEntered] = useMouseEnter();
-
-  useEffect(() => {
-    if (!ref.current) return;
-    if (isMouseEntered) {
-      ref.current.style.transform = `translateX(${translateX}px) translateY(${translateY}px) translateZ(${translateZ}px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg)`;
-    } else {
-      ref.current.style.transform = `translateX(0px) translateY(0px) translateZ(0px) rotateX(0deg) rotateY(0deg) rotateZ(0deg)`;
-    }
-  }, [isMouseEntered, translateX, translateY, translateZ, rotateX, rotateY, rotateZ]);
-
   return (
-    <Tag
-      ref={ref}
-      className={cn("transition duration-200 ease-linear", className)}
+    <div
+      className={cn("transition-transform duration-200 ease-linear", className)}
+      /* No transform at all at rest, rather than a transform that happens to be
+         zero: a card nobody is pointing at should not be asking for a plane of
+         its own. */
+      style={isMouseEntered ? { transform: `translateZ(${translateZ}px)` } : undefined}
       {...rest}
     >
       {children}
-    </Tag>
+    </div>
   );
-};
+}
 
 // Create a hook to use the context
 export const useMouseEnter = () => {
