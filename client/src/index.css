@@ -4,9 +4,9 @@
 
 @layer base {
   /* ── the interface's own scale ──────────────────────────────────────────
-     The product was drawn at 125%, and that is where it should open — the
-     cards read at the size a poster wants to be read at, and a row of six
-     across a laptop is a shelf rather than a contact sheet.
+     The product opens a notch above browser default — enough that the cards
+     read at the size a poster wants to be read at, and a row across a laptop
+     is a shelf rather than a contact sheet.
 
      `zoom` and not a root font size: every size in this design is stated in
      pixels, deliberately, so a root em would move the spacing and leave the
@@ -23,7 +23,7 @@
      layout width) rather than from this number, so it stays right if the
      visitor zooms the browser on top of it. */
   :root {
-    zoom: 1.25;
+    zoom: 1.1;
   }
   html {
     -webkit-text-size-adjust: 100%;
