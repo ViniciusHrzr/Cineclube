@@ -2,7 +2,6 @@
 
 # CINECLUBE
 
-**Um clube de cinema entre amigos — onde a nota é levada a sério.**
 
 Dez critérios, dois deles pesando o dobro conforme o gênero, e o resultado
 guardado como registro do grupo. Não é um app de estrelinhas: é uma sala de
