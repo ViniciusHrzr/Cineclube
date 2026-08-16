@@ -147,36 +147,6 @@ Disso sai tudo o resto:
 
 ---
 
-## Decisões de engenharia
-
-As partes que deram trabalho de verdade.
-
-<details open>
-<summary><b>A luz é carregada até o cursor, não desenhada onde ele está</b></summary>
-
-<br>
-
-O facho começou como uma máscara cuja posição vivia numa variável CSS no
-elemento pai, e o halo como um gradiente de viewport inteiro com a mesma
-variável. Ambos errados do mesmo jeito: escrever uma *custom property* no
-elemento invalida o estilo de tudo abaixo dele, e um gradiente que se moveu
-precisa ser rasterizado de novo. Recálculo de estilo da parede inteira mais
-repintura de tela cheia, sessenta vezes por segundo.
-
-A solução não move a luz — move o buraco. O facho é uma caixa do tamanho do
-facho com a máscara **parada** no meio dela, e dentro da caixa a parede acesa é
-empurrada exatamente a distância que a caixa avançou. As duas translações se
-cancelam: o celuloide fica registrado ao pixel com a parede de trás, e só o
-buraco anda. O halo é um gradiente rasterizado uma vez e transladado.
-
-Tudo `transform` em camada promovida — zero recálculo de estilo, zero repintura.
-
-</details>
-
-
-
----
-
 ## Arquitetura
 
 ```mermaid
