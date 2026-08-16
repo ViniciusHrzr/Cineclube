@@ -91,8 +91,12 @@ export function Strip({
    is decided here, once, instead of at each call site where only one of them
    would be in front of whoever is editing. */
 const REEL_SIZE = {
+  /** Beside a line of text, where it is a signature and not a face. */
   sm: { photo: 'h-5 w-5', tag: 'h-5 min-w-[28px] px-1.5 text-[10.5px]' },
-  md: { photo: 'h-7 w-7', tag: 'h-7 min-w-[36px] px-2 text-[12px]' },
+  /** In a list of takes, where the person is half of what the row is about. */
+  md: { photo: 'h-6 w-6', tag: 'h-6 min-w-[32px] px-1.5 text-[11px]' },
+  /** Where the person is the subject: the marquee, the roster. */
+  lg: { photo: 'h-7 w-7', tag: 'h-7 min-w-[36px] px-2 text-[12px]' },
 } as const;
 
 export function Reel({

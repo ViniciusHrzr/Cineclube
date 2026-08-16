@@ -51,8 +51,17 @@ export default {
       fontFamily: {
         // Bebas is the title card: condensed caps, the voice of a marquee.
         display: ['"Bebas Neue"', 'system-ui', 'sans-serif'],
-        // Manrope carries every label, control and quantity, with tabular figures.
-        sans: ['Manrope', 'system-ui', 'sans-serif'],
+        /* Poppins carries every label, control and paragraph. Geometric and
+           round where the display face is condensed and hard, which is the
+           contrast a title card wants against the copy under it.
+
+           One thing it does not bring is a tabular figure set: `.q` asks for
+           `font-variant-numeric: tabular-nums` so the scores line up in a
+           column, and Poppins has no `tnum` feature for the browser to switch
+           on. Its digits are near enough to the same width that the columns
+           still read, and the request is left in place — it costs nothing and
+           it starts working the day the family ships one. */
+        sans: ['Poppins', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         cell: '2px',   // a film cell is square

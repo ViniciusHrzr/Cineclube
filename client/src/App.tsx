@@ -432,7 +432,7 @@ function Marquee({
 
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-2" title={me.isAdmin ? 'Administrador do clube' : undefined}>
-            <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="md">
+            <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
               {initialsOf(me.name)}
             </Reel>
             <span className="hidden text-[13px] text-ink-dim sm:inline">{me.name}</span>

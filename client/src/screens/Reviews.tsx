@@ -92,7 +92,9 @@ export function ReviewsScreen() {
               return (
               <div key={p.id} className="mb-9">
                 <div className="mb-3 flex items-center gap-3">
-                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar}>{initialsOf(p.name)}</Reel>
+                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
+                    {initialsOf(p.name)}
+                  </Reel>
                   <h2 className="font-display text-[19px] uppercase tracking-[0.1em] text-ink">{p.name}</h2>
                   <span className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
                   <span className="q text-[11px] text-ink-dim">
@@ -415,7 +417,7 @@ function ByMovie({
                     aria-expanded={openIds.has(r.id)}
                     className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
                   >
-                    <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)}>
+                    <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
                       {initialsOf(r.reviewerName)}
                     </Reel>
                     <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
