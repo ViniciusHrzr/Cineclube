@@ -20,7 +20,7 @@ import {
   type Movie,
   type Review,
 } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function RateScreen({
@@ -117,27 +117,6 @@ export function RateScreen({
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="min-w-0 space-y-7">
-          <AnimatePresence>
-            {saved ? (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                role="status"
-                className="flex flex-wrap items-center gap-3 rounded-cell bg-dye-red/10 px-4 py-3 text-[13px] ring-1 ring-dye-red/40"
-              >
-                <span className="h-2 w-2 flex-none rounded-full bg-dye-red shadow-[0_0_10px_rgba(209,42,32,0.9)]" />
-                <span className="flex-1">
-                  <strong className="font-semibold">Gravado.</strong> Sua nota entrou no histórico do clube.
-                  Mexer nos critérios e gravar de novo substitui esta avaliação.
-                </span>
-                <Key tone="ghost" onClick={() => club.goTab('reviews')}>
-                  Ver no histórico
-                </Key>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
           <Bay legend="Filme">
             {loadingMovie ? (
               <div className="flex gap-4">
@@ -192,7 +171,9 @@ export function RateScreen({
           sum={sum}
           canSave={!!movie && !!reviewerId && !saving}
           saving={saving}
+          saved={saved}
           isUpdate={!!existing}
+          onSeeHistory={() => club.goTab('reviews')}
           onSave={() => void save()}
           onReset={() => {
             if (!movie) return;
@@ -279,7 +260,9 @@ function MovieSearch({ onPick }: { onPick: (id: number) => void }) {
         query.trim() ? `/api/catalog/search?q=${encodeURIComponent(query.trim())}` : '/api/catalog/popular'
       );
       setResults(data.results.slice(0, 8));
-      setNote(query.trim() ? `${data.results.length} resultado(s)` : 'populares do momento');
+      setNote(
+        query.trim() ? plural(data.results.length, 'resultado', 'resultados') : 'populares do momento'
+      );
     } catch (e) {
       setResults([]);
       setNote('Erro ao buscar: ' + (e as Error).message);
@@ -502,18 +485,22 @@ function MasterCard({
   sum,
   canSave,
   saving,
+  saved,
   isUpdate,
   onSave,
   onReset,
+  onSeeHistory,
 }: {
   hasMovie: boolean;
   final: number;
   sum: number;
   canSave: boolean;
   saving: boolean;
+  saved: boolean;
   isUpdate: boolean;
   onSave: () => void;
   onReset: () => void;
+  onSeeHistory: () => void;
 }) {
   return (
     <aside className="plate sticky bottom-0 z-20 -mx-4 rounded-none p-4 sm:-mx-6 sm:px-6 lg:top-24 lg:bottom-auto lg:mx-0 lg:rounded-plate lg:p-6">
@@ -550,6 +537,40 @@ function MasterCard({
           Zerar
         </Key>
       </div>
+
+      {/* ── the receipt, where the hand is ──────────────────────────────────
+          It used to be printed at the top of the page. The button that produces
+          it is here — sticky at the foot of a phone, sticky at the side of a
+          laptop — so the confirmation appeared entirely off-screen, and the
+          only way to learn that anything had happened was to scroll up and
+          look. A message about an action belongs where the action was. */}
+      <AnimatePresence>
+        {saved ? (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            role="status"
+            className="mt-4 rounded-cell bg-dye-red/10 px-3 py-2.5 text-[12.5px] leading-relaxed ring-1 ring-dye-red/40"
+          >
+            <span className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 flex-none rounded-full bg-dye-red shadow-[0_0_10px_rgba(209,42,32,0.9)]" />
+              <strong className="font-semibold">Gravado.</strong>
+            </span>
+            <p className="mt-1 text-ink-dim">
+              Sua nota entrou no histórico do clube. Mexer nos critérios e gravar de novo substitui esta
+              avaliação.
+            </p>
+            <button
+              type="button"
+              onClick={onSeeHistory}
+              className="mt-2 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit underline underline-offset-4 transition-colors hover:text-[#ff7a6e]"
+            >
+              Ver no histórico
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </aside>
   );
 }

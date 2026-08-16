@@ -9,10 +9,18 @@ export type Reviewer = {
   isAdmin?: boolean;
   /** false means the account exists but nobody has set a PIN for it yet. */
   hasPin?: boolean;
+  /** URL of the portrait, versioned so it can be cached forever. Null: none. */
+  avatar?: string | null;
   review_count?: number;
 };
 
-export type SessionUser = { id: string; name: string; dot: string; isAdmin: boolean };
+export type SessionUser = {
+  id: string;
+  name: string;
+  dot: string;
+  isAdmin: boolean;
+  avatar?: string | null;
+};
 
 export const auth = {
   me: () => api<{ reviewer: SessionUser | null }>('/api/auth/me'),
@@ -23,6 +31,18 @@ export const auth = {
     post<{ ok: true }>('/api/auth/pin', { currentPin, newPin }),
   resetPin: (reviewerId: string, newPin: string) =>
     post<{ ok: true }>('/api/auth/pin/reset', { reviewerId, newPin }),
+};
+
+/* Your own name and your own portrait. The route takes no id — it edits
+   whoever the session says you are, which is why there is no way to ask it to
+   edit somebody else. */
+export const profile = {
+  update: (patch: { name?: string; avatar?: string | null }) =>
+    api<{ reviewer: SessionUser }>('/api/reviewers/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
 };
 
 export type Criterion = { key: string; name: string; hint: string; w: number };

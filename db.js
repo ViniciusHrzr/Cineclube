@@ -154,6 +154,24 @@ async function migrate() {
   await addReviewerCol('pin_attempts', 'pin_attempts INTEGER NOT NULL DEFAULT 0');
   await addReviewerCol('locked_until', 'locked_until TEXT');
 
+  /* ── the portrait ───────────────────────────────────────────────────────
+     Kept in the row, as base64, and not on disk: the machine this runs on
+     throws its filesystem away at every deploy, so a file written there is a
+     file that exists until the next push. An object store would be the answer
+     at another scale; at four members and a picture each it would be a second
+     service, a second set of credentials and a second thing to be down.
+
+     The client shrinks every image to a small square before sending, so what
+     lands here is tens of kilobytes, not the four megabytes a phone camera
+     produces. The route refuses anything larger regardless — the client is
+     convenience, not enforcement.
+
+     `avatar_rev` changes with every upload and rides in the URL, which is what
+     lets the picture be cached forever and still change the moment it does. */
+  await addReviewerCol('avatar', 'avatar TEXT');
+  await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
+  await addReviewerCol('avatar_rev', 'avatar_rev TEXT');
+
   // The queue is something the club arranges, not just a bag of films, so it
   // carries an explicit order. Existing rows are backfilled from added_at so the
   // list people already have keeps the order they already saw.

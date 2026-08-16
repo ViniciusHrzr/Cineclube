@@ -270,6 +270,7 @@ function NewReviewer({ onCancel, onCreated }: { onCancel: () => void; onCreated:
         <span className="legend mb-2 block">PIN de 4 dígitos</span>
         <input
           value={pin}
+          type="password"
           inputMode="numeric"
           maxLength={4}
           onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -281,6 +282,7 @@ function NewReviewer({ onCancel, onCreated }: { onCancel: () => void; onCreated:
         <span className="legend mb-2 block">Repita o PIN</span>
         <input
           value={confirmPin}
+          type="password"
           inputMode="numeric"
           maxLength={4}
           onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}

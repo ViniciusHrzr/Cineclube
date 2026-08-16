@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
-import { cn, norm } from '@/lib/utils';
+import { cn, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function ReviewsScreen() {
@@ -92,7 +92,7 @@ export function ReviewsScreen() {
               return (
               <div key={p.id} className="mb-9">
                 <div className="mb-3 flex items-center gap-3">
-                  <Reel color={reelColor(p.dot, p.id)}>{initialsOf(p.name)}</Reel>
+                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar}>{initialsOf(p.name)}</Reel>
                   <h2 className="font-display text-[19px] uppercase tracking-[0.1em] text-ink">{p.name}</h2>
                   <span className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
                   <span className="q text-[11px] text-ink-dim">
@@ -129,7 +129,20 @@ export function ReviewsScreen() {
    In its place, on a film you have not rated: an invitation. On one you already
    have, nothing at all — you have said your piece, and the record showing you
    somebody else's take is not a prompt to do anything about it. */
-function TakeActions({ r, onDelete, className }: { r: Review; onDelete: () => void; className?: string }) {
+function TakeActions({
+  r,
+  onDelete,
+  className,
+  invite = true,
+}: {
+  r: Review;
+  onDelete: () => void;
+  className?: string;
+  /* Where the film's own card already carries the invitation — the by-film
+     view — this one stays quiet. Saying it twice on the same screen would make
+     the reader check whether the two are different things. */
+  invite?: boolean;
+}) {
   const club = useClub();
   const mine = r.reviewerId === club.me.id;
   const rated = club.reviews.some(x => x.reviewerId === club.me.id && x.movieId === r.movieId);
@@ -148,7 +161,7 @@ function TakeActions({ r, onDelete, className }: { r: Review; onDelete: () => vo
     );
   }
 
-  if (rated) return null;
+  if (rated || !invite) return null;
 
   return (
     <div className={cn('flex gap-2', className)}>
@@ -157,6 +170,26 @@ function TakeActions({ r, onDelete, className }: { r: Review; onDelete: () => vo
         Avaliar também
       </Key>
     </div>
+  );
+}
+
+/* ── the invitation, where the film is ────────────────────────────────────
+   It used to live inside the drawer, which meant the club only found out they
+   could weigh in by opening somebody else's take first — the one action the
+   screen wants to offer was behind the one interaction nobody had a reason to
+   perform. It belongs next to the film's own score, in the open.
+
+   The rule it carries is unchanged: on a film you have already rated there is
+   nothing to invite, so nothing is drawn. */
+function Invite({ movieId, className }: { movieId: number; className?: string }) {
+  const club = useClub();
+  const rated = club.reviews.some(x => x.reviewerId === club.me.id && x.movieId === movieId);
+  if (rated) return null;
+  return (
+    <Key tone="flush" className={cn('px-3 py-2', className)} onClick={() => club.rateMovie(movieId)}>
+      <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+      Avaliar também
+    </Key>
   );
 }
 
@@ -329,6 +362,7 @@ function ByMovie({
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
+  const { avatarOf } = useClub();
   /* Grouped by film and by film alone. The club watches together on Discord but
      rates whenever each person gets to it, so two people rating the same movie a
      week apart are still the same conversation — keying this by date used to
@@ -359,15 +393,17 @@ function ByMovie({
             key={head.movieId}
             className="mb-4 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]"
           >
-            <div className="flex items-center gap-3 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3">
               <Poster src={head.moviePoster} className="h-[68px] w-[45px] flex-none" />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-[15px] font-semibold">{head.movieTitle}</h2>
                 <p className="q text-[11px] text-ink-dim">
-                  {head.movieYear ?? '—'} · {head.movieGenre} · {items.length} avaliação(ões)
+                  {head.movieYear ?? '—'} · {head.movieGenre} · {plural(items.length, 'avaliação', 'avaliações')}
                 </p>
               </div>
+              {/* The club's number, and the way in beside it. */}
               <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
+              <Invite movieId={head.movieId} />
             </div>
 
             <div className="flex flex-col">
@@ -379,7 +415,9 @@ function ByMovie({
                     aria-expanded={openIds.has(r.id)}
                     className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
                   >
-                    <Reel color={reelColor(r.reviewerDot, r.reviewerId)}>{initialsOf(r.reviewerName)}</Reel>
+                    <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)}>
+                      {initialsOf(r.reviewerName)}
+                    </Reel>
                     <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
                     <span className="q text-[17px]">{fmt(r.final)}</span>
                     <ChevronDown
@@ -390,7 +428,7 @@ function ByMovie({
                   <Drawer open={openIds.has(r.id)}>
                     <div className="px-3 pb-4 pt-1">
                       <Breakdown rows={r.breakdown} comment={r.comment} />
-                      <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" />
+                      <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
                     </div>
                   </Drawer>
                 </div>

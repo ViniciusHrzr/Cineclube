@@ -4,7 +4,7 @@ import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import { Fault, IconKey, Key, Poster, Skeleton, Strip } from '@/components/bits';
 import { api, fmt, type Movie } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 
 /* ── the film cell ────────────────────────────────────────────────────────
    A film in the bin is a cell of celluloid on the wall: it tips toward the
@@ -216,7 +216,7 @@ export function ProjectionSheet({
                   <span className="flex items-center gap-2">
                     <Strip value={clubAvg} cells={10} className="h-[5px] w-[70px]" />
                     <span className="q text-[12px] text-beam">
-                      {fmt(clubAvg)} · {clubCount} avaliação(ões)
+                      {fmt(clubAvg)} · {plural(clubCount ?? 0, 'avaliação', 'avaliações')}
                     </span>
                   </span>
                 ) : (

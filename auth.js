@@ -99,7 +99,7 @@ async function readSession(token) {
   if (!token) return null;
   const row = await db
     .prepare(
-      `SELECT s.reviewer_id, r.name, r.dot, r.is_admin
+      `SELECT s.reviewer_id, r.name, r.dot, r.is_admin, r.avatar_rev
        FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
        WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
     )

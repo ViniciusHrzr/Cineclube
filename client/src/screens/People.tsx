@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Camera, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { Blank, Fault, IconKey, Key, Reel } from '@/components/bits';
-import { auth, del, initialsOf, post, reelColor, type Reviewer } from '@/lib/api';
+import { auth, del, initialsOf, post, profile, reelColor, type Reviewer } from '@/lib/api';
+import { squarePortrait } from '@/lib/image';
 import { cn } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -19,10 +20,176 @@ export function PeopleScreen() {
         </h1>
       </header>
 
+      <MyProfile />
       <MyPin />
       <NewMember />
       <Roster />
     </section>
+  );
+}
+
+/* ── who I am here ────────────────────────────────────────────────────────
+   A name and a face sit next to everything a person ever said in this club, so
+   they belong to that person and to nobody else — the route takes no id at all,
+   it edits whoever the session is. The admin is not an exception: resetting a
+   forgotten PIN is letting someone back in, renaming them is speaking for them.
+
+   The portrait is cut to a square in the browser before it is sent. A phone
+   photo is four megabytes of something drawn here at twenty pixels across. */
+function MyProfile() {
+  const club = useClub();
+  const [name, setName] = useState(club.me.name);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState<'name' | 'photo' | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+
+  /* The field is seeded from the account and then owned by the hand typing in
+     it — but the account can change underneath it, and then the two disagree
+     with nobody having typed anything. A session cookie belongs to the whole
+     browser, so signing in as somebody else in another tab does exactly that:
+     the marquee updates, and this field is left holding the previous person's
+     name and offering to save it onto the new one.
+
+     Re-seeding on a change of account is the standard adjustment, made during
+     the render that noticed rather than in an effect afterwards — an effect
+     would let one frame paint the wrong name into the box. */
+  const seeded = useRef(club.me.name);
+  if (seeded.current !== club.me.name) {
+    seeded.current = club.me.name;
+    setName(club.me.name);
+  }
+
+  const dirty = name.trim() !== club.me.name && name.trim().length > 0;
+
+  async function saveName() {
+    setMsg(null);
+    const value = name.trim();
+    if (!value) return setMsg({ ok: false, text: 'O nome não pode ficar vazio.' });
+    setBusy('name');
+    try {
+      await profile.update({ name: value });
+      // The roster draws it too, and the reviews carry it by join.
+      await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+      setMsg({ ok: true, text: 'Nome atualizado.' });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function savePhoto(picked: File) {
+    setMsg(null);
+    setBusy('photo');
+    try {
+      const avatar = await squarePortrait(picked);
+      await profile.update({ avatar });
+      await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+      setMsg({ ok: true, text: 'Foto atualizada.' });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+      if (file.current) file.current.value = '';
+    }
+  }
+
+  async function removePhoto() {
+    setMsg(null);
+    setBusy('photo');
+    try {
+      await profile.update({ avatar: null });
+      await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+      setMsg({ ok: true, text: 'Foto removida.' });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="plate mb-6 p-5">
+      <div className="mb-4 flex items-center gap-3">
+        <Camera className="h-4 w-4 text-ink-dim" strokeWidth={1.8} />
+        <span className="legend">Meu perfil</span>
+      </div>
+
+      <div className="flex flex-wrap items-start gap-5">
+        {/* The portrait at the size it is worth looking at, in the same square
+            frame the small one uses everywhere else. */}
+        <div className="flex flex-col items-center gap-2">
+          <Reel
+            color={reelColor(club.me.dot, club.me.id)}
+            src={club.me.avatar}
+            className={cn('h-[76px] w-[76px] text-[24px]', !club.me.avatar && 'min-w-0')}
+          >
+            {initialsOf(club.me.name)}
+          </Reel>
+          <input
+            ref={file}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => {
+              const picked = e.target.files?.[0];
+              if (picked) void savePhoto(picked);
+            }}
+          />
+          <Key
+            tone="ghost"
+            className="px-2 py-1 text-[11px]"
+            disabled={busy === 'photo'}
+            onClick={() => file.current?.click()}
+          >
+            {busy === 'photo' ? 'Enviando…' : club.me.avatar ? 'Trocar' : 'Enviar foto'}
+          </Key>
+          {club.me.avatar ? (
+            <button
+              type="button"
+              disabled={busy === 'photo'}
+              onClick={() => void removePhoto()}
+              className="text-[11px] text-ink-dim underline underline-offset-4 transition-colors hover:text-dye-red-lit disabled:opacity-40"
+            >
+              remover
+            </button>
+          ) : null}
+        </div>
+
+        <div className="min-w-[220px] flex-1">
+          <label className="block">
+            <span className="legend mb-1.5 block">Meu nome</span>
+            <input
+              value={name}
+              maxLength={40}
+              autoComplete="off"
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && dirty) void saveName();
+              }}
+              className={FIELD}
+            />
+          </label>
+          <p className="q mt-2 text-[11px] text-ink-dim">
+            É como você aparece em todas as suas avaliações. Só você pode mudar.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Key tone="flush" disabled={!dirty || busy === 'name'} onClick={() => void saveName()}>
+              {busy === 'name' ? 'Salvando…' : 'Salvar nome'}
+            </Key>
+            {dirty ? (
+              <Key tone="ghost" onClick={() => setName(club.me.name)}>
+                Desfazer
+              </Key>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {msg ? (
+        <p className={cn('mt-4 text-[13px]', msg.ok ? 'text-dye-cyan' : 'text-dye-red-lit')}>{msg.text}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -63,7 +230,9 @@ function MyPin() {
         <KeyRound className="h-4 w-4 text-ink-dim" strokeWidth={1.8} />
         <span className="legend">Meu PIN</span>
         <span className="ml-auto flex items-center gap-2 text-[13px] text-ink-dim">
-          <Reel color={reelColor(club.me.dot, club.me.id)}>{initialsOf(club.me.name)}</Reel>
+          <Reel color={reelColor(club.me.dot, club.me.id)} src={club.me.avatar}>
+            {initialsOf(club.me.name)}
+          </Reel>
           {club.me.name}
         </span>
       </div>
@@ -72,6 +241,7 @@ function MyPin() {
           <span className="legend mb-1.5 block">PIN atual</span>
           <input
             value={currentPin}
+            type="password"
             inputMode="numeric"
             maxLength={4}
             placeholder="••••"
@@ -83,6 +253,7 @@ function MyPin() {
           <span className="legend mb-1.5 block">Novo</span>
           <input
             value={newPin}
+            type="password"
             inputMode="numeric"
             maxLength={4}
             placeholder="••••"
@@ -94,6 +265,7 @@ function MyPin() {
           <span className="legend mb-1.5 block">Repita</span>
           <input
             value={confirmPin}
+            type="password"
             inputMode="numeric"
             maxLength={4}
             placeholder="••••"
@@ -154,6 +326,7 @@ function NewMember() {
         />
         <input
           value={pin}
+          type="password"
           inputMode="numeric"
           maxLength={4}
           placeholder="PIN"
@@ -181,7 +354,9 @@ function Roster() {
 
   async function remove(p: Reviewer) {
     const n = club.reviews.filter(r => r.reviewerId === p.id).length;
-    const warn = n ? ` As ${n} avaliação(ões) dessa pessoa também serão apagadas.` : '';
+    const warn = n
+      ? ` ${n === 1 ? 'A avaliação' : `As ${n} avaliações`} dessa pessoa também ${n === 1 ? 'será apagada' : 'serão apagadas'}.`
+      : '';
     if (!confirm(`Remover ${p.name}?${warn}`)) return;
     try {
       await del(`/api/reviewers/${p.id}`);
@@ -225,7 +400,7 @@ function Roster() {
           return (
             <div key={p.id} className="border-b border-white/[0.06] py-3">
               <div className="flex items-center gap-3 px-1">
-                <Reel color={reelColor(p.dot, p.id)}>{initialsOf(p.name)}</Reel>
+                <Reel color={reelColor(p.dot, p.id)} src={p.avatar}>{initialsOf(p.name)}</Reel>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-[15px] font-medium">
                     <span className="truncate">{p.name}</span>
@@ -269,6 +444,7 @@ function Roster() {
                   <input
                     autoFocus
                     value={resetPin}
+                    type="password"
                     inputMode="numeric"
                     maxLength={4}
                     placeholder="Novo PIN"

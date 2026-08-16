@@ -7,7 +7,12 @@ const db = require('./db');
 const auth = require('./auth');
 
 const app = express();
-app.use(express.json());
+/* A megabyte, where the default is a tenth of that. The one thing this app
+   accepts that is not a handful of fields is a profile picture, which arrives
+   as base64 — already shrunk to a small square by the browser, but base64 costs
+   a third more than the bytes it carries, and a member on a phone deserves some
+   slack. The picture route enforces its own, much lower, ceiling. */
+app.use(express.json({ limit: '1mb' }));
 // Every request learns who is signed in; individual routes decide if they care.
 app.use(auth.attachSession);
 
@@ -27,7 +32,21 @@ app.use(
   '/assets',
   express.static(path.join(__dirname, 'public', 'assets'), { immutable: true, maxAge: '1y' })
 );
-app.use(express.static(path.join(__dirname, 'public')));
+/* Everything else, and index.html above all: revalidate every time.
+
+   It carries no hash in its name — it is the file that names the hashed ones —
+   so a browser holding an old copy is a browser running the previous release
+   in full, and it has no way to find out otherwise. Without a Cache-Control
+   header a browser is free to invent a freshness lifetime of its own, and it
+   does. `no-cache` does not mean "do not store": it means "ask first", which
+   costs one conditional request and answers 304 the moment nothing changed. */
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  })
+);
 
 app.use((err, req, res, next) => {
   console.error('[server] erro não tratado:', err);
@@ -74,9 +93,15 @@ async function boot() {
     console.log('[server] avaliadores iniciais criados: Ana Reis, Bruno Sá, Clara Lima');
   }
 
+  /* The seat is granted by name, once, and only while the club has nobody in
+     it. Members can rename themselves now, and without this the grant would be
+     a door left open: whoever took the old name would be handed the club at the
+     next restart. A club that already has an administrator is never re-seated
+     by this code — the flag is a column, and the only way to move it is here. */
+  const seated = await db.prepare('SELECT COUNT(*) AS n FROM reviewers WHERE is_admin = 1').get();
   const adminRow = await db.prepare('SELECT * FROM reviewers WHERE name = ? COLLATE NOCASE').get(CLUB_ADMIN);
   if (adminRow) {
-    if (!adminRow.is_admin) {
+    if (!adminRow.is_admin && !seated.n) {
       await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(adminRow.id);
       console.log(`[server] ${adminRow.name} definido como administrador do clube`);
     }

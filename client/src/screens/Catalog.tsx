@@ -14,7 +14,7 @@ import { GripVertical } from 'lucide-react';
 import { Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { api, del, type Movie, type WatchItem } from '@/lib/api';
-import { cn, norm } from '@/lib/utils';
+import { cn, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 type Page = { items: Movie[]; page: number; totalPages: number };
@@ -122,10 +122,10 @@ export function CatalogScreen() {
           {firstLoad
             ? 'carregando…'
             : searchMode
-            ? `${items.length} resultado(s) para “${query.trim()}”`
+            ? `${plural(items.length, 'resultado', 'resultados')} para “${query.trim()}”`
             : sort === 'club'
-            ? `${items.length} filme(s) já avaliados pelo clube`
-            : `${items.length} filme(s) · fonte TMDB`}
+            ? `${plural(items.length, 'filme já avaliado', 'filmes já avaliados')} pelo clube`
+            : `${plural(items.length, 'filme', 'filmes')} · fonte TMDB`}
         </p>
       </header>
 
@@ -443,8 +443,8 @@ export function WatchlistScreen() {
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">Quero ver</h1>
         <p className="q mt-2 text-[12.5px] text-ink-dim">
           {filtering
-            ? `${shown.length} de ${club.watchlist.length} filme(s)`
-            : `${club.watchlist.length} filme(s) na fila do clube`}
+            ? `${shown.length} de ${plural(club.watchlist.length, 'filme', 'filmes')}`
+            : `${plural(club.watchlist.length, 'filme', 'filmes')} na fila do clube`}
         </p>
       </header>
 

@@ -75,8 +75,41 @@ export function Strip({
 }
 
 /* ── reel tag ─────────────────────────────────────────────────────────────
-   Who signed a take. A reel label, not an avatar bubble. */
-export function Reel({ color, children, className }: { color: string; children: React.ReactNode; className?: string }) {
+   Who signed a take. A reel label, not an avatar bubble.
+
+   With a portrait it stays a reel: the frame goes square and the picture sits
+   inside it, cropped like a film cell, with the same hard 1px corner the rest
+   of the room uses. Not a circle — a circle is every other product's avatar,
+   and a round portrait next to square everything would be the one element in
+   this interface that came from somewhere else.
+
+   Without one, nothing changes: the coloured tag with initials, which is still
+   what most of the club will look like. */
+export function Reel({
+  color,
+  src,
+  children,
+  className,
+}: {
+  color: string;
+  /** The portrait, if this person has one. */
+  src?: string | null;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (src) {
+    return (
+      <span
+        className={cn(
+          'inline-flex h-5 w-5 flex-none overflow-hidden rounded-[1px] ring-1 ring-white/15',
+          className
+        )}
+        style={{ background: color }}
+      >
+        <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+      </span>
+    );
+  }
   return (
     <span
       className={cn(

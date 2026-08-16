@@ -38,6 +38,10 @@ type Club = {
   me: SessionUser;
   signOut: () => void;
   refreshReviewers: () => Promise<void>;
+  /** Re-reads the session after the person edits their own name or portrait. */
+  refreshMe: () => Promise<void>;
+  /** The portrait of whoever signed a take, looked up by id. */
+  avatarOf: (reviewerId: string) => string | null;
   reviewers: Reviewer[];
   reviews: Review[];
   watchlist: WatchItem[];
@@ -141,6 +145,22 @@ export default function App() {
     setReviewers(rv.reviewers);
   }, []);
 
+  /* A name and a portrait live in two places at once: the roster, and the
+     session that draws them in the marquee. Editing your own has to move both,
+     and the session is the one the server is authoritative about. */
+  const refreshMe = useCallback(async () => {
+    const res = await auth.me();
+    if (res.reviewer) setMe(res.reviewer);
+  }, []);
+
+  /* A review carries the name and the colour of whoever gave it, but not their
+     picture — that would put a URL on every one of them for something that
+     changes per person, not per review. The roster already knows. */
+  const avatarOf = useCallback(
+    (reviewerId: string) => reviewers.find(r => r.id === reviewerId)?.avatar ?? null,
+    [reviewers]
+  );
+
   useEffect(() => {
     const onHash = () => {
       const t = tabFromHash();
@@ -242,6 +262,8 @@ export default function App() {
             me,
             signOut: () => void signOut(),
             refreshReviewers,
+            refreshMe,
+            avatarOf,
             reviewers,
             reviews,
             watchlist,
@@ -262,6 +284,8 @@ export default function App() {
       me,
       signOut,
       refreshReviewers,
+      refreshMe,
+      avatarOf,
       reviewers,
       reviews,
       watchlist,
@@ -408,7 +432,7 @@ function Marquee({
 
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-2" title={me.isAdmin ? 'Administrador do clube' : undefined}>
-            <Reel color={reelColor(me.dot, me.id)}>{initialsOf(me.name)}</Reel>
+            <Reel color={reelColor(me.dot, me.id)} src={me.avatar}>{initialsOf(me.name)}</Reel>
             <span className="hidden text-[13px] text-ink-dim sm:inline">{me.name}</span>
           </span>
           <button

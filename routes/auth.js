@@ -7,9 +7,20 @@ const router = express.Router();
 
 const getReviewer = db.prepare('SELECT * FROM reviewers WHERE id = ?');
 
+/* The picture travels as a URL for the same reason it does in the roster: the
+   bytes belong in one cacheable request, not in every response that happens to
+   mention a person. `rev` is what makes that cache safe. */
+const avatarUrl = (id, rev) => (rev ? `/api/reviewers/${id}/avatar?v=${rev}` : null);
+
 /** Never leak the hash, the salt, or the lock bookkeeping. */
 function publicReviewer(r) {
-  return { id: r.id, name: r.name, dot: r.dot, isAdmin: !!r.is_admin };
+  return {
+    id: r.id,
+    name: r.name,
+    dot: r.dot,
+    isAdmin: !!r.is_admin,
+    avatar: avatarUrl(r.id, r.avatar_rev),
+  };
 }
 
 /* Who am I? The client asks this on boot to decide between the sign-in screen
@@ -22,6 +33,7 @@ router.get('/me', (req, res) => {
       name: req.session.name,
       dot: req.session.dot,
       isAdmin: !!req.session.is_admin,
+      avatar: avatarUrl(req.session.reviewer_id, req.session.avatar_rev),
     },
   });
 });

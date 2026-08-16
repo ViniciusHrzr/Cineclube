@@ -37,6 +37,17 @@ export function useFinePointer() {
   );
 }
 
+/* ── counting things out loud ─────────────────────────────────────────────
+   "1 avaliação(ões)" is a form pretending to be a sentence. It is what a
+   program writes when it does not want to decide, and the reader pays for that
+   indecision every time — they have to look at the number, pick the ending
+   themselves and discard the other one.
+
+   The number is right there. Deciding is one comparison. */
+export function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 /* Accent- and case-insensitive, so "cacador" finds "Caçador" and "orfa" finds
    "Órfã". Nobody reaches for the dead keys to filter a list they can see. */
 export function norm(s: string) {
