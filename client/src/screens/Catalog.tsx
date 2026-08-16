@@ -11,7 +11,7 @@ import {
   useVelocity,
 } from 'framer-motion';
 import { GripVertical } from 'lucide-react';
-import { Blank, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
+import { Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { api, del, type Movie, type WatchItem } from '@/lib/api';
 import { cn, norm } from '@/lib/utils';
@@ -584,24 +584,3 @@ export function WatchlistScreen() {
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        'rounded-cell px-3 py-1.5 font-display text-[12.5px] uppercase tracking-[0.12em] ring-1 transition-colors duration-150',
-        /* The same red the marquee underlines the open section with: one colour
-           means "this is the one you are on", wherever it is said. Red as text
-           has to be `red-lit` and not the `red` of that bar — the dye that is
-           right under cream lettering is too dark to be cream lettering. */
-        on
-          ? 'bg-dye-red/10 text-dye-red-lit ring-dye-red-lit/60'
-          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/20'
-      )}
-    >
-      {children}
-    </button>
-  );
-}

@@ -101,12 +101,20 @@ export function Key({
         'disabled:cursor-not-allowed disabled:opacity-40',
         tone === 'commit' &&
           'bg-dye-red text-beam-hot ring-1 ring-dye-red hover:bg-[#e2352a] disabled:bg-house-seat disabled:text-ink-dim disabled:ring-house-rail',
-        /* Cream on hover, like the ghost keys and the icon keys it stands next
+        /* The chip's surface, for the chip's reason: these keys sit on the film
+           wall too — under every poster in the bin, and at the foot of the
+           catalogue — and a ring around nothing leaves the lettering to fend for
+           itself against a lit, moving background. Seven tenths, so the room
+           still comes through and the key stays part of it. Even with a frame
+           line burning behind it at full beam, the label holds 5:1.
+
+           Cream on hover, like the ghost keys and the icon keys it stands next
            to. Not red: `commit` fills with red and `danger` goes red on hover,
            and if the ordinary key did the same, the two colours the room keeps
            for "this writes something" and "this destroys something" would stop
            meaning anything. */
-        tone === 'flush' && 'ring-1 ring-house-rail text-ink hover:ring-beam/70 hover:text-beam',
+        tone === 'flush' &&
+          'bg-house-seat/70 ring-1 ring-house-rail text-ink hover:ring-beam/70 hover:text-beam',
         tone === 'ghost' && 'text-ink-dim hover:text-beam',
         tone === 'danger' && 'ring-1 ring-house-rail text-ink-dim hover:text-dye-red-lit hover:ring-dye-red-lit/60',
         className
@@ -128,12 +136,55 @@ export function IconKey({
     <button
       type="button"
       className={cn(
-        'inline-flex h-[38px] w-[38px] flex-none items-center justify-center rounded-cell ring-1 ring-house-rail',
+        /* Same surface as the key it stands beside — under a poster they are one
+           row of controls, and one of them floating on the wall while the other
+           sits on a plate would read as two different kinds of thing. */
+        'inline-flex h-[38px] w-[38px] flex-none items-center justify-center rounded-cell',
+        'bg-house-seat/70 ring-1 ring-house-rail',
         'transition-colors duration-150 active:translate-y-px',
         active ? 'text-dye-red-lit' : 'text-ink-dim hover:text-beam',
         className
       )}
       {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ── the chip ─────────────────────────────────────────────────────────────
+   A filter that is either on or off. It carries an opaque surface, and that is
+   not decoration: these sit straight on the film wall, in tracked caps at
+   12.5px, and the wall is lit and moving underneath them — a ring alone left
+   the dim ink reading against whatever happened to be behind it that second.
+   On the seat colour it holds 6.4:1 unlit and lit alike, because the surface no
+   longer lets the room through.
+
+   Both states share that surface. What marks the chosen one is the red of the
+   marquee's underline, said twice — in the lettering and in the ring — over an
+   inner glow of the same dye. Filling it with a tenth of red instead, as it was,
+   meant the selected chip was the one place the wall still showed through. */
+export function Chip({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        'rounded-cell bg-house-seat/70 px-3 py-1.5 font-display text-[12.5px] uppercase tracking-[0.12em]',
+        'ring-1 transition-colors duration-150',
+        on
+          ? 'text-dye-red-lit ring-dye-red-lit/70 shadow-[inset_0_0_14px_rgba(209,42,32,0.22)]'
+          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+      )}
     >
       {children}
     </button>

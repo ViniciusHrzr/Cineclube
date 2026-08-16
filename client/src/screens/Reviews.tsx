@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
-import { Blank, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
+import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
 import { cn, norm } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -67,20 +67,9 @@ export function ReviewsScreen() {
 
       <div className="mb-6 flex flex-wrap gap-2">
         {(['reviewer', 'movie'] as const).map(v => (
-          <button
-            key={v}
-            type="button"
-            aria-pressed={view === v}
-            onClick={() => setView(v)}
-            className={cn(
-              'rounded-cell px-3 py-1.5 font-display text-[12.5px] uppercase tracking-[0.12em] ring-1 transition-colors duration-150',
-              view === v
-                ? 'bg-dye-red/10 text-dye-red-lit ring-dye-red-lit/60'
-                : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/20'
-            )}
-          >
+          <Chip key={v} on={view === v} onClick={() => setView(v)}>
             {v === 'reviewer' ? 'Por avaliador' : 'Por filme'}
-          </button>
+          </Chip>
         ))}
       </div>
 
