@@ -49,15 +49,20 @@ export default {
         },
       },
       fontFamily: {
-        /* Bebas is the title card: condensed caps, the voice of a marquee.
+        /* Staatliches is the title card: condensed capitals with the weight and
+           the hard corners of a screen-printed poster — the voice of a marquee,
+           with more of an accent than the face it replaces.
 
-           Cinzel was tried here — Roman capitals, the most literal answer to
-           "make it look like cinema" — and it was wrong in the room. The two
-           are opposites, and every size and tracking in this interface was set
-           against a narrow face: swapping in a wide one made the display type
-           the widest thing on every screen it appears on. A display face
-           cannot be changed here alone; it comes with the whole scale. */
-        display: ['"Bebas Neue"', 'system-ui', 'sans-serif'],
+           It is narrow, and that is a requirement and not a preference. This
+           name is not only on the page titles: it is on every button label,
+           every chip, every tab and every small tracked caption in the room,
+           and all of those sit in boxes sized against a condensed face. Cinzel
+           was tried here first — Roman capitals, the most literal answer to
+           "make it look like cinema" — and being wide made the display type
+           the widest thing on every screen it appeared on. The lesson is that
+           this line cannot be changed alone: a display face comes with the
+           whole scale, or it comes with a rewrite of it. */
+        display: ['Staatliches', '"Bebas Neue"', 'system-ui', 'sans-serif'],
         /* Poppins carries every label, control and paragraph. Geometric and
            round where the display face is condensed and hard, which is the
            contrast a title card wants against the copy under it.
