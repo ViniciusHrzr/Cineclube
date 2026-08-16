@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { Blank, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
@@ -9,7 +8,10 @@ import { useClub } from '@/App';
 export function ReviewsScreen() {
   const club = useClub();
   const [view, setView] = useState<'reviewer' | 'movie'>('reviewer');
-  const [openId, setOpenId] = useState<string | null>(null);
+  /* A set and not a single id: two takes on the same film, or the same film
+     under two people, is exactly the comparison this screen exists for, and
+     opening the second one used to close the first. */
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState('');
 
   /* Title or person, in one field. This screen is the club's record and it is
@@ -33,7 +35,13 @@ export function ReviewsScreen() {
     }
   }
 
-  const toggle = (id: string) => setOpenId(o => (o === id ? null : id));
+  const toggle = (id: string) =>
+    setOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <section>
@@ -101,7 +109,7 @@ export function ReviewsScreen() {
                 </div>
                 {items.length ? (
                   items.map(r => (
-                    <Take key={r.id} r={r} open={openId === r.id} onToggle={() => toggle(r.id)} onDelete={() => void remove(r)} />
+                    <Take key={r.id} r={r} open={openIds.has(r.id)} onToggle={() => toggle(r.id)} onDelete={() => void remove(r)} />
                   ))
                 ) : (
                   <Blank title="Ainda não avaliou nenhum filme" />
@@ -113,9 +121,93 @@ export function ReviewsScreen() {
           <Blank title="Nenhum avaliador cadastrado">Cadastre as pessoas do clube na seção Avaliadores.</Blank>
         )
       ) : (
-        <ByMovie reviews={shown} openId={openId} onToggle={toggle} onDelete={r => void remove(r)} />
+        <ByMovie reviews={shown} openIds={openIds} onToggle={toggle} onDelete={r => void remove(r)} />
       )}
     </section>
+  );
+}
+
+/* ── the drawer ───────────────────────────────────────────────────────────
+   Opening used to animate height from 0 to `auto`, which cannot be done without
+   measuring: the panel mounts, its full height is read, and only then does the
+   animation start from zero. If the browser paints in between — and it does —
+   one frame lands at full height, and everything below the panel jumps down and
+   comes straight back. That was the flick.
+
+   A grid row measured in fractions needs no measurement. `0fr` to `1fr`
+   interpolates natively, the browser resolves the content's height itself on
+   every frame, and there is never a frame at the wrong size. The content stays
+   mounted, so `visibility` is what closes it to the keyboard and to a screen
+   reader — it is transitioned rather than switched, which lets it turn visible
+   at the start of the opening and stay visible until the closing has finished. */
+function Drawer({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      /* No `motion-reduce` escape here, by the owner's standing decision: this
+         is the same call as the wall's drift. Opening a drawer is a response to
+         a click and not a performance played at the reader, and the height it
+         travels is the only thing that says where the panel came from. */
+      className={cn(
+        'grid transition-[grid-template-rows] duration-[240ms] ease-beam',
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+      )}
+    >
+      <div
+        className={cn(
+          'overflow-hidden transition-[visibility] duration-[240ms]',
+          open ? 'visible' : 'invisible'
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ── one take, criterion by criterion ─────────────────────────────────────
+   One plate per take, holding the whole card: ten criteria and whatever was
+   written underneath them. The unit that deserves an edge is the film someone
+   sat through, not each individual number — boxing every criterion separately
+   turned one record into ten little tickets.
+
+   Inside it, a criterion and its mark stay close. The name column used to be
+   fluid, which stretched it to fill its share of the grid and left a hand's
+   width of nothing between "Direção" and the 7,0 that belongs to it; at that
+   distance the eye reads two lists instead of one pair. It is now capped, so
+   the marks still line up down the grid without the gap.
+
+   The plate is also what these numbers were missing: sitting on nothing but the
+   wall, with the beam moving behind them, they read as loose type rather than
+   as a record. */
+function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: string }) {
+  return (
+    /* The ring is inset. A Tailwind ring is a shadow cast outside the box, and
+       this plate opens inside a container that clips its overflow to animate the
+       height — flush against that container's top edge, the outer 1px lands
+       outside the clip and the plate loses its lid. Drawn inside, it cannot be
+       cropped by whatever it is opened in. */
+    <div className="rounded-cell bg-house-seat/80 px-3 py-2.5 ring-1 ring-inset ring-white/[0.06]">
+      {/* Every row measures the same — a capped name, a fixed strip, a fixed
+          number — so centring them in their columns keeps them in register with
+          each other while the block as a whole sits in the middle of the plate
+          instead of hugging its left edge. */}
+      <div className="grid justify-items-center gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+        {rows.map(b => (
+          <div key={b.key} className="grid w-fit grid-cols-[minmax(0,124px)_58px_34px] items-center gap-2 py-1">
+            <span className={cn('truncate text-[12.5px]', b.w === 2 ? 'text-ink' : 'text-ink-dim')}>
+              {b.name} <span className="q text-[10px] text-ink-faint">×{b.w}</span>
+            </span>
+            <Strip value={b.value} cells={10} className="h-[5px]" />
+            <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
+          </div>
+        ))}
+      </div>
+      {comment ? (
+        <p className="mt-2 border-t border-white/[0.06] pt-2.5 text-[13px] italic leading-relaxed text-ink-dim">
+          “{comment}”
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -133,51 +225,26 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold">{r.movieTitle}</span>
           <span className="q block text-[11px] text-ink-dim">
-            {r.movieYear ?? '—'} · {r.movieGenre} · {r.date}
+            {r.movieYear ?? '—'} · {r.movieGenre}
           </span>
         </span>
         <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
         <ChevronDown className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', open && 'rotate-180')} strokeWidth={1.7} />
       </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="px-1 pb-5">
-              <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-                {r.breakdown.map(b => (
-                  <div key={b.key} className="grid grid-cols-[1fr_62px_36px] items-center gap-2 py-1">
-                    <span className={cn('truncate text-[12.5px]', b.w === 2 ? 'text-ink' : 'text-ink-dim')}>
-                      {b.name} <span className="q text-[10px] text-ink-faint">×{b.w}</span>
-                    </span>
-                    <Strip value={b.value} cells={10} className="h-[5px]" />
-                    <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
-                  </div>
-                ))}
-              </div>
-              {r.comment ? (
-                <p className="mt-4 border-t border-white/[0.06] pt-3 text-[13px] leading-relaxed text-ink-dim">
-                  “{r.comment}”
-                </p>
-              ) : null}
-              <div className="mt-4 flex gap-2">
-                <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
-                  <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  Editar
-                </Key>
-                <IconKey aria-label={`Excluir avaliação de ${r.movieTitle}`} onClick={onDelete}>
-                  <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                </IconKey>
-              </div>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <Drawer open={open}>
+        <div className="px-1 pb-5 pt-1">
+          <Breakdown rows={r.breakdown} comment={r.comment} />
+          <div className="mt-4 flex gap-2">
+            <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Editar
+            </Key>
+            <IconKey aria-label={`Excluir avaliação de ${r.movieTitle}`} onClick={onDelete}>
+              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+            </IconKey>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 }
@@ -189,14 +256,14 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
    not the red, because a disagreement is information and not a fault. */
 function ByMovie({
   reviews,
-  openId,
+  openIds,
   onToggle,
   onDelete,
 }: {
   /* Already filtered by the search upstairs, so this view never has to know
      one is running. */
   reviews: Review[];
-  openId: string | null;
+  openIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
@@ -224,9 +291,6 @@ function ByMovie({
         const head = items[0];
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
         const sorted = [...items].sort((a, b) => b.final - a.final);
-        const dates = items.map(r => r.date).sort();
-        const when =
-          dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} a ${dates[dates.length - 1]}`;
         return (
           <div key={head.movieId} className="mb-7 border-y border-white/[0.07]">
             <div className="flex items-center gap-3 px-1 py-3">
@@ -234,7 +298,7 @@ function ByMovie({
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-[15px] font-semibold">{head.movieTitle}</h2>
                 <p className="q text-[11px] text-ink-dim">
-                  {head.movieYear ?? '—'} · {head.movieGenre} · {items.length} avaliação(ões) · {when}
+                  {head.movieYear ?? '—'} · {head.movieGenre} · {items.length} avaliação(ões)
                 </p>
               </div>
               <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
@@ -315,52 +379,31 @@ function ByMovie({
                   <button
                     type="button"
                     onClick={() => onToggle(r.id)}
-                    aria-expanded={openId === r.id}
+                    aria-expanded={openIds.has(r.id)}
                     className="flex w-full items-center gap-3 px-1 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
                   >
                     <Reel color={reelColor(r.reviewerDot, r.reviewerId)}>{initialsOf(r.reviewerName)}</Reel>
                     <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
                     <span className="q text-[17px]">{fmt(r.final)}</span>
                     <ChevronDown
-                      className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', openId === r.id && 'rotate-180')}
+                      className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', openIds.has(r.id) && 'rotate-180')}
                       strokeWidth={1.7}
                     />
                   </button>
-                  <AnimatePresence initial={false}>
-                    {openId === r.id ? (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                        className="overflow-hidden"
-                      >
-                        <div className="grid gap-x-6 gap-y-1 px-1 pb-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {r.breakdown.map(b => (
-                            <div key={b.key} className="grid grid-cols-[1fr_62px_36px] items-center gap-2 py-1">
-                              <span className={cn('truncate text-[12.5px]', b.w === 2 ? 'text-ink' : 'text-ink-dim')}>
-                                {b.name} <span className="q text-[10px] text-ink-faint">×{b.w}</span>
-                              </span>
-                              <Strip value={b.value} cells={10} className="h-[5px]" />
-                              <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        {r.comment ? (
-                          <p className="px-1 pb-3 text-[13px] italic leading-relaxed text-ink-dim">“{r.comment}”</p>
-                        ) : null}
-                        <div className="flex gap-2 px-1 pb-4">
-                          <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
-                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
-                            Editar
-                          </Key>
-                          <IconKey aria-label={`Excluir avaliação de ${r.reviewerName}`} onClick={() => onDelete(r)}>
-                            <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                          </IconKey>
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
+                  <Drawer open={openIds.has(r.id)}>
+                    <div className="px-1 pb-4 pt-1">
+                      <Breakdown rows={r.breakdown} comment={r.comment} />
+                    </div>
+                    <div className="flex gap-2 px-1 pb-4">
+                      <Key tone="flush" onClick={() => club.rateMovie(r.movieId)}>
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        Editar
+                      </Key>
+                      <IconKey aria-label={`Excluir avaliação de ${r.reviewerName}`} onClick={() => onDelete(r)}>
+                        <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+                      </IconKey>
+                    </div>
+                  </Drawer>
                 </div>
               ))}
             </div>

@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
+const wrap = require('../wrap');
 const { critsFor, finalOf, GENRES } = require('../criteria');
 
 const router = express.Router();
@@ -26,8 +27,13 @@ const averagesStmt = db.prepare(`
   FROM reviews
   GROUP BY movie_id
 `);
+const savedStmt = db.prepare(`
+  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot
+  FROM reviews rv JOIN reviewers r ON r.id = rv.reviewer_id
+  WHERE rv.reviewer_id = ? AND rv.movie_id = ?
+`);
+const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
 const deleteStmt = db.prepare('DELETE FROM reviews WHERE id = ?');
-const getByIdStmt = db.prepare('SELECT id FROM reviews WHERE id = ?');
 const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
 
 function toReviewDTO(row) {
@@ -53,23 +59,25 @@ function toReviewDTO(row) {
   };
 }
 
-router.get('/', (req, res) => {
-  res.json({ reviews: listStmt.all().map(toReviewDTO) });
-});
+router.get('/', wrap(async (req, res) => {
+  const rows = await listStmt.all();
+  res.json({ reviews: rows.map(toReviewDTO) });
+}));
 
-router.get('/averages', (req, res) => {
+router.get('/averages', wrap(async (req, res) => {
   const out = {};
-  for (const row of averagesStmt.all()) out[row.movie_id] = { avg: row.avg, count: row.count };
+  for (const row of await averagesStmt.all()) out[row.movie_id] = { avg: row.avg, count: row.count };
   res.json({ averages: out });
-});
+}));
 
 /* A take is signed by whoever is signed in. The body may still name a reviewer
    — the client sends it — but the session is the authority, so nobody can post
    a rating under someone else's name by editing a request. */
-router.post('/', auth.requireSession, (req, res) => {
+router.post('/', auth.requireSession, wrap(async (req, res) => {
   const { movie, scores, comment } = req.body || {};
   const reviewerId = req.session.reviewer_id;
-  if (!reviewerExistsStmt.get(reviewerId)) {
+  const exists = await reviewerExistsStmt.get(reviewerId);
+  if (!exists) {
     return res.status(400).json({ error: 'Avaliador inválido.' });
   }
   if (!movie || !movie.id || !movie.title) {
@@ -90,34 +98,29 @@ router.post('/', auth.requireSession, (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
   const cleanComment = typeof comment === 'string' ? comment.trim().slice(0, 2000) : null;
 
-  upsertStmt.run({
+  await upsertStmt.run({
     id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
     moviePoster: movie.poster ?? null, movieDirector: movie.director ?? null,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
-  deleteWatchlistStmt.run(movie.id);
+  await deleteWatchlistStmt.run(movie.id);
 
-  const saved = db.prepare(`
-    SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot
-    FROM reviews rv JOIN reviewers r ON r.id = rv.reviewer_id
-    WHERE rv.reviewer_id = ? AND rv.movie_id = ?
-  `).get(reviewerId, movie.id);
-
+  const saved = await savedStmt.get(reviewerId, movie.id);
   res.status(201).json(toReviewDTO(saved));
-});
+}));
 
 /* Your own take is yours to delete; the admin can delete anyone's. Without
    this check any signed-in member could quietly erase somebody else's rating,
    which is the one destructive action this club actually cares about. */
-router.delete('/:id', auth.requireSession, (req, res) => {
-  const row = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?').get(req.params.id);
+router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
+  const row = await ownerStmt.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });
   if (row.reviewer_id !== req.session.reviewer_id && !req.session.is_admin) {
     return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });
   }
-  deleteStmt.run(row.id);
+  await deleteStmt.run(row.id);
   res.status(204).end();
-});
+}));
 
 module.exports = router;

@@ -31,6 +31,22 @@
   body {
     @apply bg-house text-ink font-sans antialiased;
     margin: 0;
+    /* ── legibility over the wall ─────────────────────────────────────────
+       Most of this product's text sits straight on the film wall with no plate
+       under it, and the wall is not a still image: the beam lights the celluloid
+       wherever the cursor goes. Over an unlit room the dim ink reads at 5.4:1,
+       but a glyph crossing a frame line with the beam on it falls to about
+       3.4:1, under the 4.5:1 floor — which is exactly the moment the text goes
+       soft, and it goes soft only where the reader is looking.
+
+       So every glyph carries its own piece of the dark room with it. The shadow
+       is the room's own colour, which makes it invisible against the room and
+       visible only where something has lit up behind the text — it costs
+       nothing where nothing is wrong, and it is a hard edge back around the
+       letterforms exactly where the beam falls. Cheaper and truer than dimming
+       the beam, which would fix the text by removing the thing the text is
+       sitting on. */
+    text-shadow: 0 1px 2px rgba(4, 5, 10, 0.95), 0 0 10px rgba(4, 5, 10, 0.8);
   }
   /* The browser surfaces nobody draws still belong to the design. */
   ::selection {

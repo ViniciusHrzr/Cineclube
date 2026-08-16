@@ -302,10 +302,6 @@ function NewReviewer({ onCancel, onCreated }: { onCancel: () => void; onCreated:
           Voltar
         </Key>
       </div>
-      <p className="text-[12px] leading-relaxed text-ink-dim">
-        O PIN fica guardado com hash e salt — nem o administrador consegue lê-lo. Se você esquecer, ele pode
-        definir um novo.
-      </p>
     </div>
   );
 }

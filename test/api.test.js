@@ -17,6 +17,9 @@ let baseUrl;
 let server;
 
 test.before(async () => {
+  // The schema, the seeds and the admin are async now; nothing may hit the API
+  // before they land.
+  await app.ready;
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -25,10 +28,12 @@ test.before(async () => {
 test.after(async () => {
   await new Promise(resolve => server.close(resolve));
   // Windows keeps the file locked while the connection is open.
-  require('../db').close();
-  // WAL mode leaves -shm/-wal siblings behind.
+  db.close();
+  // WAL mode leaves -shm/-wal siblings behind. Windows can still hold the
+  // handle for a moment after close(), and a temp file we failed to delete is
+  // not a reason to fail a green run.
   for (const suffix of ['', '-shm', '-wal']) {
-    fs.rmSync(dbPath + suffix, { force: true });
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
   }
 });
 
@@ -69,7 +74,7 @@ async function newReviewer(name, pin = PIN) {
 /** An account with the admin flag set, which no API grants on purpose. */
 async function newAdmin(name) {
   const admin = await newReviewer(name || `Chefe ${++seq}`);
-  db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(admin.id);
+  await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(admin.id);
   const login = await req('POST', '/api/auth/login', { reviewerId: admin.id, pin: admin.pin });
   return { ...admin, cookie: sessionCookie(login.setCookie) };
 }

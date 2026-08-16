@@ -348,12 +348,16 @@ export function HolographicWall({
         />
       </motion.div>
 
-      {/* the halo: light scattering in the air of the room */}
+      {/* The halo: light scattering in the air of the room. Held well under the
+          reveal, because the two do different amounts of damage to the text
+          over them — the reveal is hairlines, which the type reads between,
+          while the halo is a flat wash across everything the cursor is near,
+          and a wash is what actually lifts a background off the page. */}
       <AnimatePresence>
         {lit && (
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: intensity * 0.9 }}
+            animate={{ opacity: intensity * 0.6 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
             className="absolute inset-0"

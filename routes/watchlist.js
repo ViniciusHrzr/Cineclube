@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
+const wrap = require('../wrap');
 const { GENRES } = require('../criteria');
 
 const router = express.Router();
@@ -16,9 +17,10 @@ const insertStmt = db.prepare(`
           (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist))
   ON CONFLICT(movie_id) DO NOTHING
 `);
-const setPositionStmt = db.prepare('UPDATE watchlist SET position = ? WHERE movie_id = ?');
 const idsStmt = db.prepare('SELECT movie_id FROM watchlist');
 const deleteStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
+
+const SET_POSITION = 'UPDATE watchlist SET position = ? WHERE movie_id = ?';
 
 function toDTO(row) {
   return {
@@ -31,50 +33,52 @@ function toDTO(row) {
   };
 }
 
-router.get('/', (req, res) => {
-  res.json({ watchlist: listStmt.all().map(toDTO) });
-});
+router.get('/', wrap(async (req, res) => {
+  const rows = await listStmt.all();
+  res.json({ watchlist: rows.map(toDTO) });
+}));
 
 // The queue is shared, so changing it is a club action and needs a member.
-router.post('/', auth.requireSession, (req, res) => {
+router.post('/', auth.requireSession, wrap(async (req, res) => {
   const { movie } = req.body || {};
   if (!movie || !movie.id || !movie.title) {
     return res.status(400).json({ error: 'Filme inválido.' });
   }
   const genre = GENRES.includes(movie.genre) ? movie.genre : 'Drama';
-  insertStmt.run({
+  await insertStmt.run({
     movieId: movie.id, movieTitle: movie.title, movieYear: movie.year ?? null,
     movieGenre: genre, moviePoster: movie.poster ?? null
   });
   res.status(201).json({ ok: true });
-});
+}));
 
 /* Reordering the queue. The client sends the whole order it wants, which is
    simpler to reason about than a from/to pair and cannot leave a gap: anything
    the client omits keeps its relative place at the end, so a stale tab cannot
    drop a film somebody else just added. */
-router.put('/order', auth.requireSession, (req, res) => {
+router.put('/order', auth.requireSession, wrap(async (req, res) => {
   const ids = req.body?.ids;
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'Ordem inválida.' });
 
-  const known = new Set(idsStmt.all().map(r => Number(r.movie_id)));
+  const rows = await idsStmt.all();
+  const known = new Set(rows.map(r => Number(r.movie_id)));
   const wanted = ids.map(Number).filter(id => known.has(id));
   const rest = [...known].filter(id => !wanted.includes(id));
 
-  db.exec('BEGIN');
-  try {
-    [...wanted, ...rest].forEach((id, i) => setPositionStmt.run(i, id));
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+  // batch runs the whole thing in one transaction: either the queue moves or
+  // nothing does.
+  const ordered = [...wanted, ...rest];
+  if (ordered.length) {
+    await db.batch(ordered.map((id, i) => ({ sql: SET_POSITION, args: [i, id] })));
   }
-  res.json({ watchlist: listStmt.all().map(toDTO) });
-});
 
-router.delete('/:movieId', auth.requireSession, (req, res) => {
-  deleteStmt.run(Number(req.params.movieId));
+  const listed = await listStmt.all();
+  res.json({ watchlist: listed.map(toDTO) });
+}));
+
+router.delete('/:movieId', auth.requireSession, wrap(async (req, res) => {
+  await deleteStmt.run(Number(req.params.movieId));
   res.status(204).end();
-});
+}));
 
 module.exports = router;

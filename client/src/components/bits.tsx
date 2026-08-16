@@ -101,7 +101,12 @@ export function Key({
         'disabled:cursor-not-allowed disabled:opacity-40',
         tone === 'commit' &&
           'bg-dye-red text-beam-hot ring-1 ring-dye-red hover:bg-[#e2352a] disabled:bg-house-seat disabled:text-ink-dim disabled:ring-house-rail',
-        tone === 'flush' && 'ring-1 ring-house-rail text-ink hover:ring-dye-cyan hover:text-dye-cyan',
+        /* Cream on hover, like the ghost keys and the icon keys it stands next
+           to. Not red: `commit` fills with red and `danger` goes red on hover,
+           and if the ordinary key did the same, the two colours the room keeps
+           for "this writes something" and "this destroys something" would stop
+           meaning anything. */
+        tone === 'flush' && 'ring-1 ring-house-rail text-ink hover:ring-beam/70 hover:text-beam',
         tone === 'ghost' && 'text-ink-dim hover:text-beam',
         tone === 'danger' && 'ring-1 ring-house-rail text-ink-dim hover:text-dye-red-lit hover:ring-dye-red-lit/60',
         className

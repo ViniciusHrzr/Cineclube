@@ -14,6 +14,8 @@ const db = require('./db');
       for a growing pause, so an online guessing run stops being practical.
    3. The session cookie carries a random token; the database stores only its
       SHA-256. Reading the table does not let anyone impersonate a member.
+
+   Everything that touches the database is async — see db.js.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const SESSION_COOKIE = 'cc_session';
@@ -35,46 +37,46 @@ function makeSalt() {
   return crypto.randomBytes(16).toString('hex');
 }
 
-function setPin(reviewerId, pin) {
+async function setPin(reviewerId, pin) {
   const salt = makeSalt();
-  db.prepare(
+  await db.prepare(
     'UPDATE reviewers SET pin_hash = ?, pin_salt = ?, pin_attempts = 0, locked_until = NULL WHERE id = ?'
   ).run(hashPin(pin, salt), salt, reviewerId);
 }
 
 /** Constant-time check. Returns one of: 'ok' | 'bad' | 'unset' | 'locked'. */
-function checkPin(reviewer, pin) {
+async function checkPin(reviewer, pin) {
   if (!reviewer.pin_hash || !reviewer.pin_salt) return 'unset';
   if (reviewer.locked_until) {
-    const stillLocked = db
+    const row = await db
       .prepare("SELECT datetime('now') < ? AS locked")
-      .get(reviewer.locked_until).locked;
-    if (stillLocked) return 'locked';
+      .get(reviewer.locked_until);
+    if (row.locked) return 'locked';
   }
   const expected = Buffer.from(reviewer.pin_hash, 'hex');
   const actual = Buffer.from(hashPin(pin, reviewer.pin_salt), 'hex');
   const ok = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 
   if (ok) {
-    db.prepare('UPDATE reviewers SET pin_attempts = 0, locked_until = NULL WHERE id = ?').run(reviewer.id);
+    await db.prepare('UPDATE reviewers SET pin_attempts = 0, locked_until = NULL WHERE id = ?').run(reviewer.id);
     return 'ok';
   }
 
   const attempts = (reviewer.pin_attempts || 0) + 1;
   if (attempts >= MAX_ATTEMPTS) {
     const pause = LOCK_SECONDS * (attempts - MAX_ATTEMPTS + 1);
-    db.prepare(
+    await db.prepare(
       `UPDATE reviewers SET pin_attempts = ?, locked_until = datetime('now', '+' || ? || ' seconds') WHERE id = ?`
     ).run(attempts, pause, reviewer.id);
   } else {
-    db.prepare('UPDATE reviewers SET pin_attempts = ? WHERE id = ?').run(attempts, reviewer.id);
+    await db.prepare('UPDATE reviewers SET pin_attempts = ? WHERE id = ?').run(attempts, reviewer.id);
   }
   return 'bad';
 }
 
-function lockedSecondsLeft(reviewer) {
+async function lockedSecondsLeft(reviewer) {
   if (!reviewer?.locked_until) return 0;
-  const row = db
+  const row = await db
     .prepare("SELECT CAST((julianday(?) - julianday('now')) * 86400 AS INTEGER) AS s")
     .get(reviewer.locked_until);
   return Math.max(0, row.s || 0);
@@ -84,34 +86,33 @@ function lockedSecondsLeft(reviewer) {
 
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 
-function createSession(reviewerId) {
+async function createSession(reviewerId) {
   const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sessions (token_hash, reviewer_id, expires_at)
      VALUES (?, ?, datetime('now', '+${SESSION_HOURS} hours'))`
   ).run(sha(token), reviewerId);
   return token;
 }
 
-function readSession(token) {
+async function readSession(token) {
   if (!token) return null;
-  return (
-    db
-      .prepare(
-        `SELECT s.reviewer_id, r.name, r.dot, r.is_admin
-         FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
-         WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
-      )
-      .get(sha(token)) || null
-  );
+  const row = await db
+    .prepare(
+      `SELECT s.reviewer_id, r.name, r.dot, r.is_admin
+       FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
+       WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
+    )
+    .get(sha(token));
+  return row || null;
 }
 
-function destroySession(token) {
-  if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha(token));
+async function destroySession(token) {
+  if (token) await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha(token));
 }
 
-function destroyAllSessions(reviewerId) {
-  db.prepare('DELETE FROM sessions WHERE reviewer_id = ?').run(reviewerId);
+async function destroyAllSessions(reviewerId) {
+  await db.prepare('DELETE FROM sessions WHERE reviewer_id = ?').run(reviewerId);
 }
 
 /* ── cookie plumbing ──────────────────────────────────────────────────────
@@ -130,8 +131,8 @@ function readCookie(req, name) {
 }
 
 function sendSessionCookie(res, token) {
-  // `secure` only behind TLS: the club runs this over plain http on a LAN or a
-  // tunnel, and a Secure cookie there would simply never be sent back.
+  // `secure` only behind TLS: in development this runs over plain http, and a
+  // Secure cookie there would simply never be sent back.
   const secure = process.env.CINECLUBE_HTTPS === '1' ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
@@ -146,10 +147,15 @@ function clearSessionCookie(res) {
 /* ── middleware ───────────────────────────────────────────────────────── */
 
 /** Attaches req.session when a valid cookie is present. Never rejects. */
-function attachSession(req, _res, next) {
-  req.sessionToken = readCookie(req, SESSION_COOKIE);
-  req.session = readSession(req.sessionToken);
-  next();
+async function attachSession(req, _res, next) {
+  try {
+    req.sessionToken = readCookie(req, SESSION_COOKIE);
+    req.session = await readSession(req.sessionToken);
+    next();
+  } catch (e) {
+    // A database failure here is a server error, not a signed-out visitor.
+    next(e);
+  }
 }
 
 function requireSession(req, res, next) {

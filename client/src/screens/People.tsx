@@ -17,10 +17,6 @@ export function PeopleScreen() {
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
           Avaliadores
         </h1>
-        <p className="mt-3 max-w-[60ch] text-[13.5px] leading-relaxed text-ink-dim">
-          Cada pessoa entra com um PIN de 4 dígitos e recebe uma cor de rolo, que identifica suas notas em
-          todas as telas. A sessão dura 24 horas.
-        </p>
       </header>
 
       <MyPin />
@@ -62,7 +58,9 @@ function MyPin() {
   return (
     <div className="plate mb-6 p-5">
       <div className="mb-4 flex items-center gap-3">
-        <KeyRound className="h-4 w-4 text-dye-cyan" strokeWidth={1.8} />
+        {/* The icon labels the section; it is not a state, so it takes the
+            colour of the legend beside it rather than a colour of its own. */}
+        <KeyRound className="h-4 w-4 text-ink-dim" strokeWidth={1.8} />
         <span className="legend">Meu PIN</span>
         <span className="ml-auto flex items-center gap-2 text-[13px] text-ink-dim">
           <Reel color={reelColor(club.me.dot, club.me.id)}>{initialsOf(club.me.name)}</Reel>
@@ -296,9 +294,11 @@ function Roster() {
       {note ? <p className="mt-4 text-[13px] text-ink-dim">{note}</p> : null}
 
       {!club.me.isAdmin ? (
-        <p className="mt-5 text-[12.5px] leading-relaxed text-ink-dim">
-          Esqueceu o PIN? Só o administrador do clube pode definir um novo — nem ele consegue ler o antigo,
-          porque o PIN é guardado com hash.
+        /* Kept, and cut to its useful half: someone locked out needs to know
+           who can let them back in. How the PIN is stored is not their
+           problem. */
+        <p className="mt-5 text-[12.5px] text-ink-dim">
+          Esqueceu o PIN? Só o administrador do clube pode definir um novo.
         </p>
       ) : null}
     </div>

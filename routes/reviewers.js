@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
+const wrap = require('../wrap');
 
 const router = express.Router();
 
@@ -35,14 +36,15 @@ function toDTO(row) {
   };
 }
 
-router.get('/', (req, res) => {
-  res.json({ reviewers: listStmt.all().map(toDTO) });
-});
+router.get('/', wrap(async (req, res) => {
+  const rows = await listStmt.all();
+  res.json({ reviewers: rows.map(toDTO) });
+}));
 
 /* Joining the club. Open by design — this is a room of friends, not a service
    with a signup funnel — but a profile without a PIN is a profile anyone can
    wear, so the PIN is required at creation. */
-router.post('/', (req, res) => {
+router.post('/', wrap(async (req, res) => {
   const name = (req.body?.name || '').trim();
   const pin = req.body?.pin;
   if (!name) return res.status(400).json({ error: 'Nome é obrigatório.' });
@@ -51,19 +53,19 @@ router.post('/', (req, res) => {
   }
 
   const id = 'p' + crypto.randomUUID();
-  const n = countStmt.get().n;
+  const { n } = await countStmt.get();
   const dot = DOTS[n % DOTS.length];
-  insertStmt.run(id, name, dot);
-  auth.setPin(id, pin);
+  await insertStmt.run(id, name, dot);
+  await auth.setPin(id, pin);
 
   res.status(201).json({ id, name, dot, isAdmin: false, hasPin: true, review_count: 0 });
-});
+}));
 
 /* Leaving, or being removed. You may delete yourself; the admin may delete
    anyone. Reviews go with the account (ON DELETE CASCADE), which is why the
    confirmation in the client spells out how many. */
-router.delete('/:id', auth.requireSession, (req, res) => {
-  const target = getStmt.get(req.params.id);
+router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
+  const target = await getStmt.get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Avaliador não encontrado.' });
 
   const isSelf = req.session.reviewer_id === target.id;
@@ -71,10 +73,10 @@ router.delete('/:id', auth.requireSession, (req, res) => {
     return res.status(403).json({ error: 'Só o administrador do clube pode remover outro avaliador.' });
   }
 
-  auth.destroyAllSessions(target.id);
-  deleteStmt.run(target.id);
+  await auth.destroyAllSessions(target.id);
+  await deleteStmt.run(target.id);
   if (isSelf) auth.clearSessionCookie(res);
   res.status(204).end();
-});
+}));
 
 module.exports = router;

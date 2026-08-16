@@ -98,10 +98,6 @@ export function RateScreen({
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
           Avaliar filme
         </h1>
-        <p className="mt-3 max-w-[66ch] text-[13.5px] leading-relaxed text-ink-dim">
-          Oito critérios técnicos com peso ×1 e dois critérios do gênero com peso ×2. A soma passa sempre
-          pelos mesmos 12 pesos, então qualquer filme fica comparável com qualquer outro.
-        </p>
       </header>
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
