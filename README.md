@@ -173,66 +173,7 @@ Tudo `transform` em camada promovida — zero recálculo de estilo, zero repintu
 
 </details>
 
-<details>
-<summary><b>A interface tem o mesmo tamanho em qualquer monitor</b></summary>
 
-<br>
-
-O layout foi desenhado contra uma janela de 1536 px e escrito inteiro em pixels.
-Fora dessa janela ele não segurava a própria escala: num monitor maior sobrava
-sala vazia, num menor apertava.
-
-Agora a janela é medida e o `zoom` da raiz sai dela dividido pela largura de
-referência, preso entre 0,75 e 2. Um pôster ocupa a mesma fração da tela em toda
-máquina, e a grade abre o mesmo número de colunas.
-
-O custo, que é a parte interessante: sob `zoom`, coordenadas de cliente (eventos
-de ponteiro, *client rects*) continuam em pixels de tela enquanto comprimentos
-CSS viram pixels ampliados — deixam de ser a mesma unidade. Em todo lugar onde a
-interface mede a tela e escreve de volta um comprimento CSS — o facho que segue
-o cursor, o cartão no ar sobre a fila, a inclinação de um pôster — a razão é
-medida a partir do próprio elemento e dividida fora.
-
-</details>
-
-<details>
-<summary><b>A grade de pôsteres parou de se reconstruir a cada tecla</b></summary>
-
-<br>
-
-Três defeitos que só aparecem com o catálogo cheio:
-
-O efeito 3D lia um *client rect* dentro do `mousemove`, logo depois de escrever
-um `transform` — layout forçado por evento, com o mouse disparando centenas de
-eventos por segundo sobre uma grade de até cem cartões. Passou a medir na
-entrada do ponteiro, e a remedir só se algo que pudesse ter movido o cartão
-aconteceu enquanto o ponteiro ainda estava sobre ele.
-
-O objeto de contexto do clube nascia novo a cada render, então um aviso
-aparecendo por seis segundos re-renderizava todas as telas. E os cartões
-recebiam funções novas a cada tecla digitada na busca, o que derrota qualquer
-`memo`. Hoje os callbacks recebem o filme como argumento em vez de fechar sobre
-ele, e um cartão só re-renderiza quando algo daquele filme mudou.
-
-</details>
-
-<details>
-<summary><b>Um telefone não constrói o que só um mouse pode usar</b></summary>
-
-<br>
-
-A parede acesa, o halo, a inclinação dos cartões e as camadas 3D existem para
-responder a um ponteiro. Sem ponteiro, nada disso é construído — não é escondido
-com CSS, é ausente da árvore. Um cartão em contexto 3D é um cartão que o
-navegador não pode achatar junto com os vizinhos, e este componente colocava um
-plano no contêiner, um no corpo, um em cada filho e um por item: vinte pôsteres
-eram cento e vinte caixas mantidas em 3D para um cursor que não existe.
-
-A checagem é uma media query (`hover: hover` e `pointer: fine`), não um palpite
-de user agent — um notebook com tela sensível ao toque mantém o comportamento de
-mouse, e um tablet com trackpad ganha ele.
-
-</details>
 
 ---
 
