@@ -85,15 +85,27 @@ export function Strip({
 
    Without one, nothing changes: the coloured tag with initials, which is still
    what most of the club will look like. */
+/* Both branches are listed side by side on purpose. A row where one person has
+   a portrait and the next has initials is the ordinary case, and the two have
+   to stand the same height or the row reads as broken — so the pair of sizes
+   is decided here, once, instead of at each call site where only one of them
+   would be in front of whoever is editing. */
+const REEL_SIZE = {
+  sm: { photo: 'h-5 w-5', tag: 'h-5 min-w-[28px] px-1.5 text-[10.5px]' },
+  md: { photo: 'h-7 w-7', tag: 'h-7 min-w-[36px] px-2 text-[12px]' },
+} as const;
+
 export function Reel({
   color,
   src,
+  size = 'sm',
   children,
   className,
 }: {
   color: string;
   /** The portrait, if this person has one. */
   src?: string | null;
+  size?: keyof typeof REEL_SIZE;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -101,7 +113,8 @@ export function Reel({
     return (
       <span
         className={cn(
-          'inline-flex h-5 w-5 flex-none overflow-hidden rounded-[1px] ring-1 ring-white/15',
+          'inline-flex flex-none overflow-hidden rounded-[1px] ring-1 ring-white/15',
+          REEL_SIZE[size].photo,
           className
         )}
         style={{ background: color }}
@@ -113,7 +126,8 @@ export function Reel({
   return (
     <span
       className={cn(
-        'inline-flex h-5 min-w-[28px] flex-none items-center justify-center rounded-[1px] px-1.5 text-[10.5px] font-bold tracking-[0.08em] text-house-deep',
+        'inline-flex flex-none items-center justify-center rounded-[1px] font-bold tracking-[0.08em] text-house-deep',
+        REEL_SIZE[size].tag,
         className
       )}
       style={{ background: color }}

@@ -418,7 +418,9 @@ function Roster() {
           return (
             <div key={p.id} className="border-b border-white/[0.06] py-3">
               <div className="flex items-center gap-3 px-1">
-                <Reel color={reelColor(p.dot, p.id)} src={p.avatar}>{initialsOf(p.name)}</Reel>
+                <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
+                  {initialsOf(p.name)}
+                </Reel>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-[15px] font-medium">
                     <span className="truncate">{p.name}</span>
