@@ -187,11 +187,34 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
        outside the clip and the plate loses its lid. Drawn inside, it cannot be
        cropped by whatever it is opened in. */
     <div className="rounded-cell bg-house-seat/80 px-3 py-2.5 ring-1 ring-inset ring-white/[0.06]">
-      {/* Every row measures the same — a capped name, a fixed strip, a fixed
-          number — so centring them in their columns keeps them in register with
-          each other while the block as a whole sits in the middle of the plate
-          instead of hugging its left edge. */}
-      <div className="grid justify-items-center gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Filled down the columns rather than across the rows. The two criteria
+          the genre weighs double are the last two on the card, and read across
+          they landed diagonally apart — one at the end of a row, the other alone
+          on the next — which is the least cohesive place two halves of a pair
+          can be. Read down, they finish in the same column, one under the other.
+
+          The row count is the criteria divided by the columns at that width, so
+          this holds if a genre is ever given a third criterion. The DOM order
+          never changes, so a screen reader still hears the card as it is written.
+
+          Every row measures the same — a capped name, a fixed strip, a fixed
+          number — so centring them in equal columns keeps them in register with
+          each other and the block centred on the plate. */}
+      <div
+        style={
+          {
+            '--rows-1': rows.length,
+            '--rows-2': Math.ceil(rows.length / 2),
+            '--rows-3': Math.ceil(rows.length / 3),
+          } as React.CSSProperties
+        }
+        className={cn(
+          'grid grid-flow-col auto-cols-fr justify-items-center gap-x-4 gap-y-0.5',
+          'grid-rows-[repeat(var(--rows-1),auto)]',
+          'sm:grid-rows-[repeat(var(--rows-2),auto)]',
+          'lg:grid-rows-[repeat(var(--rows-3),auto)]'
+        )}
+      >
         {rows.map(b => (
           <div key={b.key} className="grid w-fit grid-cols-[minmax(0,124px)_58px_34px] items-center gap-2 py-1">
             <span className={cn('truncate text-[12.5px]', b.w === 2 ? 'text-ink' : 'text-ink-dim')}>
