@@ -351,6 +351,9 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
    it. It answered a question nobody was asking: the disagreement is legible by
    opening two takes and reading them, and the chart was a second, harder way to
    say the same thing — one that had to be decoded before it could be read. */
+/** How many takes a film card shows before it folds the rest away. */
+const FOLD = 3;
+
 function ByMovie({
   reviews,
   openIds,
@@ -365,6 +368,18 @@ function ByMovie({
   onDelete: (r: Review) => void;
 }) {
   const { avatarOf } = useClub();
+
+  /* Which films are showing every take. Per film, and kept here rather than in
+     the card, because the card is redrawn whenever anything in the record
+     changes and state that lives inside it would fold itself back up. */
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleGroup = (movieId: number) =>
+    setOpen(prev => {
+      const next = new Set(prev);
+      if (next.has(movieId)) next.delete(movieId);
+      else next.add(movieId);
+      return next;
+    });
   /* Grouped by film and by film alone. The club watches together on Discord but
      rates whenever each person gets to it, so two people rating the same movie a
      week apart are still the same conversation — keying this by date used to
@@ -388,6 +403,24 @@ function ByMovie({
         const head = items[0];
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
         const sorted = [...items].sort((a, b) => b.final - a.final);
+
+        /* ── the takes that do not fit ────────────────────────────────────
+           A film with three takes is a card. A film with nine is a wall of
+           names between one film and the next, and the screen stops being a
+           record you can scan and becomes a list you have to scroll past.
+
+           So the card keeps the highest few and folds the rest. Highest and
+           not newest, because the fold has to be the same list every time it
+           is opened, and because the top of the range and the bottom of it are
+           what the club argues about — the disagreement is at the ends.
+
+           A single hidden row is not folded: a button that reveals one thing
+           costs the reader more than the row it saved. */
+        const expanded = open.has(head.movieId);
+        const folds = sorted.length > FOLD + 1;
+        const listed = folds && !expanded ? sorted.slice(0, FOLD) : sorted;
+        const folded = sorted.slice(listed.length);
+
         return (
           /* Here the card is the film and every take on it — the group is the
              unit, so the surface goes around the group. */
@@ -409,7 +442,7 @@ function ByMovie({
             </div>
 
             <div className="flex flex-col">
-              {sorted.map(r => (
+              {listed.map(r => (
                 <div key={r.id} className="border-t border-white/[0.06]">
                   <button
                     type="button"
@@ -435,6 +468,43 @@ function ByMovie({
                   </Drawer>
                 </div>
               ))}
+
+              {/* The fold, which says who is behind it. A count alone makes the
+                  reader open it to find out whether the person they came for is
+                  in there; the reels answer that without the click. */}
+              {folds ? (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(head.movieId)}
+                  aria-expanded={expanded}
+                  className="flex w-full items-center gap-3 border-t border-white/[0.06] px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
+                >
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+                      expanded && 'rotate-180'
+                    )}
+                    strokeWidth={1.7}
+                  />
+                  <span className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim">
+                    {expanded ? 'Mostrar menos' : `Mais ${plural(folded.length, 'avaliação', 'avaliações')}`}
+                  </span>
+                  {!expanded ? (
+                    <span className="flex flex-wrap items-center gap-1">
+                      {folded.map(r => (
+                        <Reel
+                          key={r.id}
+                          color={reelColor(r.reviewerDot, r.reviewerId)}
+                          src={avatarOf(r.reviewerId)}
+                          className="opacity-70"
+                        >
+                          {initialsOf(r.reviewerName)}
+                        </Reel>
+                      ))}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
             </div>
           </div>
         );
