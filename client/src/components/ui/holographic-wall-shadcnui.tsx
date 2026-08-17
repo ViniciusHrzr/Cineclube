@@ -282,10 +282,16 @@ const Reel = memo(function Reel({
 });
 
 function Wall({
-  /* Dimmer than it was, twice over: the wall should suggest itself, not
-     announce itself. The halo is taken from this same number, so the whole
-     beam — reveal and scatter — comes down together. */
-  intensity = 0.49,
+  /* Dimmer than it was, three times over now: the wall should suggest itself,
+     not announce itself. The halo is taken from this same number, so the whole
+     beam — reveal and scatter — comes down together, which is the only way to
+     dim it without the two halves of the light drifting apart in weight.
+
+     It has been going one direction the whole time, and that is worth reading
+     as a finding rather than as taste: every time this was looked at with
+     fresh eyes it was too bright. A light in a dark room is convincing at the
+     level where you are not sure whether it is on. */
+  intensity = 0.38,
   /* ── how big the light is, and what that costs ─────────────────────────
      This number sizes both moving surfaces: the beam is a box of `2r`, the
      halo a box of `2 × 1.9r`. Area goes with its square, so coming down from
