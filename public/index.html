@@ -52,8 +52,50 @@
         coarse.addEventListener('change', fit);
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-BAvEYX7G.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DH8NDQoL.css">
+
+    <!-- ── is there a GPU behind this page? ───────────────────────────────────
+         Everything the room is made of assumes there is: a wall of layers that
+         creep forever, a second wall revealed under a moving mask, a light that
+         travels by transform. All of that is close to free on a compositor and
+         none of it is free on a CPU, and a browser with hardware acceleration
+         switched off — by a setting, by a driver the browser distrusts, by a
+         machine with no usable GPU — draws every one of those frames in
+         software. It is not a rare state: it is one checkbox, and it turned up
+         on the first machine outside this project that opened the site.
+
+         So the page asks. WebGL is the only thing a browser will answer
+         honestly about: with acceleration off, Chrome hands back SwiftShader
+         and says so, and where it hands back nothing at all there is certainly
+         no fast path. The context is thrown away immediately — this is a
+         question, not a feature.
+
+         The answer becomes an attribute on the root, before the first paint, so
+         both the stylesheet and the interface can read it. What they do with it
+         is written where they use it: the wall stands still, and the beam stops
+         opening a second copy of it. -->
+    <script>
+      (function () {
+        var software = true;
+        try {
+          var canvas = document.createElement('canvas');
+          var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+          if (gl) {
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            // No way to ask is not a reason to assume the worst: a browser that
+            // hides the renderer for privacy is usually an accelerated one.
+            var name = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '') : '';
+            software = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i.test(name);
+            var lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();
+          }
+        } catch (e) {
+          /* asking failed, which is itself an answer */
+        }
+        if (software) document.documentElement.setAttribute('data-render', 'software');
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Dx6sSCg8.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C5_y-1n1.css">
   </head>
   <body>
     <!--

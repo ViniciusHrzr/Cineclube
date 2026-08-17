@@ -317,6 +317,19 @@
   }
 }
 
+/* ── and the same wall, standing still, with no GPU ───────────────────────
+   The creep is eight promoted layers moving forever. On a compositor that is
+   the cheapest kind of motion there is; in software it is eight large surfaces
+   recomposited sixty times a second for as long as the tab is open, whether or
+   not anybody is looking at it or touching anything. It is the one thing on
+   this page that costs continuously while nothing is happening, which makes it
+   the first thing to go when there is nothing to run it on.
+
+   Set from index.html, before the first paint, so the wall never starts. */
+[data-render='software'] .strip-creep {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

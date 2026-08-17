@@ -59,6 +59,25 @@ const GAUGE = 1.7;
 const GECKO =
   typeof document !== 'undefined' && 'MozAppearance' in document.documentElement.style;
 
+/* ── and the same decision, for a machine with no GPU to spare ────────────
+   The second wall is the most expensive thing this component builds: a masked
+   render surface with a second full set of animating strips inside it, blended
+   under a moving hole on every frame the pointer produces. With a compositor
+   that is a transform and a texture. In software it is a large area of pixels
+   composited by the CPU sixty times a second, and it is exactly what a machine
+   with hardware acceleration switched off cannot afford.
+
+   So it is not built there either. The room keeps one wall and the halo — the
+   cursor still lights it, the light is still real, it just no longer opens a
+   second length of celluloid to do it. index.html decides this and writes it
+   on the root before the first paint; the reasoning is there. */
+const SOFTWARE =
+  typeof document !== 'undefined' &&
+  document.documentElement.getAttribute('data-render') === 'software';
+
+/** One wall, not two: on Gecko for a registration fault, here for a budget. */
+const ONE_WALL = GECKO || SOFTWARE;
+
 const CELL = 46 * GAUGE;     // px — one frame, top to bottom
 const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge
 const PERF_IN = 10 * GAUGE;  // px — the sprocket column, inset from the edge
@@ -267,7 +286,16 @@ function Wall({
      announce itself. The halo is taken from this same number, so the whole
      beam — reveal and scatter — comes down together. */
   intensity = 0.49,
-  radius = 340,
+  /* ── how big the light is, and what that costs ─────────────────────────
+     This number sizes both moving surfaces: the beam is a box of `2r`, the
+     halo a box of `2 × 1.9r`. Area goes with its square, so coming down from
+     340 to 240 does not make the light thirty per cent smaller to pay for —
+     it halves what has to be blended on every frame the pointer produces.
+
+     Smaller also reads better here. At 340 the pool of light was wide enough
+     to be a lit region of the page; at 240 it is a torch, which is what the
+     room was always describing. */
+  radius = 240,
   className,
   asBackdrop = false,
 }: HolographicWallProps) {
@@ -388,7 +416,7 @@ function Wall({
       on = v;
       if (beamRef.current) beamRef.current.parentElement!.style.opacity = v ? String(intensity) : '0';
       if (haloRef.current)
-        haloRef.current.style.opacity = v ? String(intensity * (GECKO ? 1 : 0.6)) : '0';
+        haloRef.current.style.opacity = v ? String(intensity * (ONE_WALL ? 1 : 0.6)) : '0';
     };
 
     const onMove = (e: PointerEvent) => {
@@ -452,7 +480,7 @@ function Wall({
           all. It used to be: a second full set of strips, every one of them
           animating, behind a full-screen mask, on a phone that could never
           light a single one of them. Same for the halo below. */}
-      {fine && !GECKO ? (
+      {fine && !ONE_WALL ? (
         <div className="absolute inset-0" style={{ opacity: 0, transition: fade }}>
           <div
             ref={beamRef}
