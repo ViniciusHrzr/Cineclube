@@ -71,7 +71,10 @@ export type Movie = {
   id: number;
   title: string;
   year: number | null;
+  /** The genre it opens on: the first of `genres`. */
   genre: string;
+  /** Every genre in the club's taxonomy this film carries, most specific first. */
+  genres?: string[];
   poster: string | null;
   director?: string | null;
   overview?: string | null;

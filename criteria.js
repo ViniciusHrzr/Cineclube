@@ -73,16 +73,31 @@ const GENRE_PRIORITY = [
   'Drama'
 ];
 
-function genreFromTmdbIds(ids) {
+/**
+ * Every genre in this taxonomy that a film carries, most specific first.
+ *
+ * A film is rarely one thing, and the club knows which one it just watched
+ * better than a priority list does. So the list is what gets offered: the
+ * person rating picks, and the two ×2 criteria follow the pick. What the order
+ * below is for is deciding which one is offered first — a default, not a
+ * verdict.
+ *
+ * Never empty: a film carrying nothing this taxonomy recognises still has to
+ * be rateable, and Drama is where that lands.
+ */
+function genresFromTmdbIds(ids) {
   const carried = new Set();
   for (const id of ids || []) {
     const genre = TMDB_GENRE_MAP[id];
     if (genre) carried.add(genre);
   }
-  for (const genre of GENRE_PRIORITY) {
-    if (carried.has(genre)) return genre;
-  }
-  return 'Drama';
+  const found = GENRE_PRIORITY.filter(genre => carried.has(genre));
+  return found.length ? found : ['Drama'];
+}
+
+/** The one a film opens on when nobody has chosen yet. */
+function genreFromTmdbIds(ids) {
+  return genresFromTmdbIds(ids)[0];
 }
 
 // Reverse of TMDB_GENRE_MAP, for server-side discovery ("filmes de Terror").
@@ -112,4 +127,4 @@ function finalOf(genre, scores) {
   return sum / 12;
 }
 
-module.exports = { TECH, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB, genreFromTmdbIds, critsFor, finalOf };
+module.exports = { TECH, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB, genreFromTmdbIds, genresFromTmdbIds, critsFor, finalOf };

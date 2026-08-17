@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   TECH, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB,
-  genreFromTmdbIds, critsFor, finalOf, GENRE_PRIORITY
+  genreFromTmdbIds, genresFromTmdbIds, critsFor, finalOf, GENRE_PRIORITY
 } = require('../criteria');
 
 /* ── the /12 invariant ───────────────────────────────────────────────────
@@ -131,6 +131,42 @@ test('a film carrying several genres is rated as the most specific one', () => {
 test('genreFromTmdbIds does not depend on the order TMDB sent', () => {
   assert.equal(genreFromTmdbIds([27, 14, 18]), genreFromTmdbIds([18, 14, 27]));
   assert.equal(genreFromTmdbIds([35, 16]), genreFromTmdbIds([16, 35]));
+});
+
+/* The single genre is a default now, not a verdict: what the rating screen
+   offers is every genre the film carries, and the person watching decides. */
+test('genresFromTmdbIds returns every genre the film carries', () => {
+  assert.deepEqual(genresFromTmdbIds([18, 14, 27]), ['Terror', 'Drama']); // Frewaka
+  assert.deepEqual(genresFromTmdbIds([16, 35]), ['Animação', 'Comédia']);
+  assert.deepEqual(genresFromTmdbIds([27]), ['Terror']);
+});
+
+test('genresFromTmdbIds sorts by the club priority, whatever TMDB sent', () => {
+  assert.deepEqual(genresFromTmdbIds([18, 27]), genresFromTmdbIds([27, 18]));
+  assert.deepEqual(genresFromTmdbIds([35, 99, 18]), ['Documentário', 'Comédia', 'Drama']);
+});
+
+test('genresFromTmdbIds never answers with an empty list', () => {
+  // A film has to be rateable even when nothing it carries is in the taxonomy.
+  assert.deepEqual(genresFromTmdbIds([10402]), ['Drama']); // Music
+  assert.deepEqual(genresFromTmdbIds([]), ['Drama']);
+  assert.deepEqual(genresFromTmdbIds(undefined), ['Drama']);
+});
+
+test('the single genre is the first of the list', () => {
+  for (const ids of [[18, 14, 27], [16, 35], [10402], [], [99, 18]]) {
+    assert.equal(genreFromTmdbIds(ids), genresFromTmdbIds(ids)[0]);
+  }
+});
+
+/* Rating the same film as two different genres has to give two usable cards:
+   the eight technical criteria never move, and only the pair at the end does. */
+test('every genre keeps the same eight technical criteria', () => {
+  const techOf = g => critsFor(g).filter(c => c.w === 1).map(c => c.key);
+  const base = techOf('Drama');
+  for (const genre of GENRES) {
+    assert.deepEqual(techOf(genre), base, `${genre} mudou os critérios técnicos`);
+  }
 });
 
 /* A genre added to the taxonomy without a place in the priority list would be

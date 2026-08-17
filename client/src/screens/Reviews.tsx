@@ -439,8 +439,14 @@ function ByMovie({
                   <span className="block truncate text-[15px] font-semibold transition-colors group-hover:text-beam">
                     {head.movieTitle}
                   </span>
+                  {/* The genres these takes were given under, not the film's.
+                      Two members can rate the same film as different things —
+                      one watched a horror, the other watched a drama — and
+                      naming only the first would hide that the scores under
+                      this average answered different questions. */}
                   <span className="q block text-[11px] text-ink-dim">
-                    {head.movieYear ?? '—'} · {head.movieGenre} ·{' '}
+                    {head.movieYear ?? '—'} ·{' '}
+                    {[...new Set(items.map(r => r.movieGenre))].join(' · ')} ·{' '}
                     {plural(items.length, 'avaliação', 'avaliações')}
                   </span>
                 </span>

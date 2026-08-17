@@ -168,6 +168,16 @@ async function migrate() {
 
      `avatar_rev` changes with every upload and rides in the URL, which is what
      lets the picture be cached forever and still change the moment it does. */
+  /* A film is rated under one genre chosen from the several it carries, so the
+     cache has to remember the several. Stored as a comma-joined list because
+     none of these names contains a comma and nothing here ever queries inside
+     it — it is read whole or not at all. Rows cached before this column existed
+     have it empty, and the reader falls back to the single genre they do have. */
+  const movieCols = await columnsOf('movies_cache');
+  if (!movieCols.includes('genres')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN genres TEXT');
+  }
+
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');

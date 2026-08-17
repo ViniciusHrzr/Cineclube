@@ -209,8 +209,19 @@ export function ProjectionSheet({
                 {movie.director ? ` · dir. ${movie.director}` : ''}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
-                  {movie.genre}
+                {/* Every genre the film carries, and not only the one it would
+                    open on. Which of them a take is rated under is that take's
+                    own decision, so the sheet states what is on offer rather
+                    than pretending the film is one thing. */}
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {(movie.genres?.length ? movie.genres : [movie.genre]).map(g => (
+                    <span
+                      key={g}
+                      className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50"
+                    >
+                      {g}
+                    </span>
+                  ))}
                 </span>
                 {clubAvg != null ? (
                   <span className="flex items-center gap-2">

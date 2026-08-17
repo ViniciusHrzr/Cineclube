@@ -1,4 +1,4 @@
-const { genreFromTmdbIds } = require('./criteria');
+const { genreFromTmdbIds, genresFromTmdbIds } = require('./criteria');
 
 const API_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p/w342';
@@ -31,12 +31,16 @@ function posterUrl(path) {
   return path ? IMG_BASE + path : null;
 }
 
+/* `genre` is the one it opens on; `genres` is everything it could be rated as.
+   Both travel, because a poster in a grid only needs the first and the rating
+   screen needs all of them. */
 function normalizeListItem(m) {
   return {
     id: m.id,
     title: m.title,
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds(m.genre_ids),
+    genres: genresFromTmdbIds(m.genre_ids),
     poster: posterUrl(m.poster_path)
   };
 }
@@ -84,6 +88,7 @@ async function movieDetails(id) {
     title: m.title,
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds((m.genres || []).map(g => g.id)),
+    genres: genresFromTmdbIds((m.genres || []).map(g => g.id)),
     poster: posterUrl(m.poster_path),
     director: director ? director.name : null,
     overview: m.overview || null,

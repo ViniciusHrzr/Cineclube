@@ -39,8 +39,23 @@ export function RateScreen({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /* ── which genre this film is being rated as ────────────────────────────
+     Almost no film is one genre. TMDB gave Frewaka drama, fantasy and horror,
+     and until now something had to choose — a priority list did, and it was
+     guessing at what the person watching already knows. So the choice moves to
+     them: every genre the film carries is offered, and the two ×2 criteria
+     follow the one they pick.
 
-  const criteria = useMemo(() => (movie ? club.criteriaFor(movie.genre) : []), [movie, club]);
+     It is held here rather than read off the film because it is a decision
+     about this take and not a fact about the film. Two members can rate the
+     same film as different things, and both are right about what they watched
+     it for. */
+  const [genre, setGenre] = useState<string>('');
+
+  const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
+
+  /** Every genre offered for a film, and never an empty list. */
+  const choices = movie ? (movie.genres?.length ? movie.genres : [movie.genre]) : [];
 
   const selectMovie = useCallback(
     async (id: number | string) => {
@@ -55,10 +70,16 @@ export function RateScreen({
            answer thrown away, and it silently invited someone to overwrite a
            take they only meant to adjust. Five stays the opening position for a
            film nobody here has seen yet, and for any criterion the old take has
-           no mark for. */
+           no mark for.
+
+           It opens on the genre of that take too, for the same reason: the
+           marks they gave answer those criteria, and opening on a different
+           genre would show their numbers under questions they never saw. */
         const mine = club.reviews.find(r => r.reviewerId === club.me.id && r.movieId === m.id);
+        const opening = mine?.movieGenre ?? m.genre;
+        setGenre(opening);
         const fresh: Record<string, number> = {};
-        club.criteriaFor(m.genre).forEach(c => (fresh[c.key] = mine?.scores?.[c.key] ?? 5));
+        club.criteriaFor(opening).forEach(c => (fresh[c.key] = mine?.scores?.[c.key] ?? 5));
         setScores(fresh);
         setComment(mine?.comment ?? '');
         setSaved(false);
@@ -67,6 +88,27 @@ export function RateScreen({
       } finally {
         setLoadingMovie(false);
       }
+    },
+    [club]
+  );
+
+  /* Switching genre keeps every mark that still has a question to answer. The
+     eight technical criteria are the same in every genre and never move; of the
+     two that change, one sometimes survives — Terror and Suspense both ask
+     about atmosfera — and whatever is new opens at five.
+
+     Seeding matters more than it looks: a criterion with no entry reads as five
+     on its slider and counts as zero in the total, so leaving one unseeded
+     would show a card that does not add up to its own score. */
+  const pickGenre = useCallback(
+    (next: string) => {
+      setGenre(next);
+      setScores(prev => {
+        const seeded: Record<string, number> = {};
+        club.criteriaFor(next).forEach(c => (seeded[c.key] = prev[c.key] ?? 5));
+        return seeded;
+      });
+      setSaved(false);
     },
     [club]
   );
@@ -89,7 +131,10 @@ export function RateScreen({
     try {
       // The server signs the take with the session, so no reviewer travels in
       // the body: whoever is logged in is who rated it.
-      const rec = await post<Review>('/api/reviews', { movie, scores, comment });
+      // The genre travels as the one that was chosen, not the one the film
+      // opened on: it is what decides which two criteria these marks answer,
+      // and the record has to keep the pair the person actually saw.
+      const rec = await post<Review>('/api/reviews', { movie: { ...movie, genre }, scores, comment });
       club.reload({
         reviews: club.reviews
           .filter(r => !(r.reviewerId === rec.reviewerId && r.movieId === rec.movieId))
@@ -129,7 +174,19 @@ export function RateScreen({
             ) : movieError ? (
               <Fault detail={movieError}>Não foi possível carregar este filme.</Fault>
             ) : movie ? (
-              <Slate movie={movie} onSwap={() => { setMovie(null); setScores({}); setComment(''); setSaved(false); }} />
+              <Slate
+                movie={movie}
+                genre={genre}
+                choices={choices}
+                onGenre={pickGenre}
+                onSwap={() => {
+                  setMovie(null);
+                  setGenre('');
+                  setScores({});
+                  setComment('');
+                  setSaved(false);
+                }}
+              />
             ) : (
               <MovieSearch onPick={id => void selectMovie(id)} />
             )}
@@ -141,7 +198,7 @@ export function RateScreen({
                 <Channels
                   criteria={criteria}
                   scores={scores}
-                  genre={movie.genre}
+                  genre={genre}
                   onChange={(k, v) => {
                     setScores(s => ({ ...s, [k]: v }));
                     setSaved(false);
@@ -200,7 +257,19 @@ function Bay({ legend, note, children }: { legend: string; note?: string; childr
   );
 }
 
-function Slate({ movie, onSwap }: { movie: Movie; onSwap: () => void }) {
+function Slate({
+  movie,
+  genre,
+  choices,
+  onGenre,
+  onSwap,
+}: {
+  movie: Movie;
+  genre: string;
+  choices: string[];
+  onGenre: (g: string) => void;
+  onSwap: () => void;
+}) {
   return (
     <div>
       <div className="flex items-start gap-4">
@@ -211,14 +280,47 @@ function Slate({ movie, onSwap }: { movie: Movie; onSwap: () => void }) {
             {movie.year ?? '—'}
             {movie.director ? ` · dir. ${movie.director}` : ''}
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
-              {movie.genre}
-            </span>
+
+          {/* ── what this film is being rated as ──────────────────────────
+              A film with one genre states it; a film with several asks. The
+              two ×2 criteria below change with the answer, so this is not a
+              label — it is the second half of the form, and it is placed
+              before the criteria because it decides what they are. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {choices.length > 1 ? (
+              choices.map(g => {
+                const on = g === genre;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onGenre(g)}
+                    className={cn(
+                      'rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] ring-1 transition-colors duration-150',
+                      on
+                        ? 'text-dye-red-lit ring-dye-red-lit/70 shadow-[inset_0_0_12px_rgba(209,42,32,0.2)]'
+                        : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+                    )}
+                  >
+                    {g}
+                  </button>
+                );
+              })
+            ) : (
+              <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
+                {genre || movie.genre}
+              </span>
+            )}
             <button type="button" onClick={onSwap} className="text-[12.5px] text-ink-dim underline underline-offset-4 hover:text-beam">
               trocar de filme
             </button>
           </div>
+          {choices.length > 1 ? (
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-dim">
+              Este filme é de mais de um gênero. O escolhido decide os dois critérios que valem dobro.
+            </p>
+          ) : null}
         </div>
       </div>
       {movie.overview || movie.cast?.length || movie.trailerUrl ? (
