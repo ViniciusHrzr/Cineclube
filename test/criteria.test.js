@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   TECH, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB,
-  genreFromTmdbIds, critsFor, finalOf
+  genreFromTmdbIds, critsFor, finalOf, GENRE_PRIORITY
 } = require('../criteria');
 
 /* ── the /12 invariant ───────────────────────────────────────────────────
@@ -108,10 +108,39 @@ test('genreFromTmdbIds falls back to Drama for unknown or empty input', () => {
   assert.equal(genreFromTmdbIds(null), 'Drama');
 });
 
-test('genreFromTmdbIds takes the first id it recognizes', () => {
-  // TMDB returns ids roughly by relevance; unknown ones must not shadow the
-  // known one that follows them.
+test('genreFromTmdbIds ignores ids it does not know', () => {
   assert.equal(genreFromTmdbIds([10402, 27]), 'Terror');
+});
+
+/* This is the fault the priority list exists for. Frewaka arrives from TMDB as
+   [18, 14, 27] — drama, fantasy, horror — and reading that left to right filed
+   an Irish folk horror as a drama, which decides which two criteria the club
+   is asked for. TMDB's order is not a ranking; ours is. */
+test('a film carrying several genres is rated as the most specific one', () => {
+  assert.equal(genreFromTmdbIds([18, 14, 27]), 'Terror'); // Frewaka
+  assert.equal(genreFromTmdbIds([18, 99]), 'Documentário');
+  assert.equal(genreFromTmdbIds([16, 35]), 'Animação');
+  assert.equal(genreFromTmdbIds([28, 878]), 'Ficção científica');
+  assert.equal(genreFromTmdbIds([18, 10749]), 'Romance');
+  // Drama still answers when it is the only thing the film is.
+  assert.equal(genreFromTmdbIds([18]), 'Drama');
+});
+
+/* The order of the ids must not change the answer: two films tagged with the
+   same genres in different orders are the same kind of film. */
+test('genreFromTmdbIds does not depend on the order TMDB sent', () => {
+  assert.equal(genreFromTmdbIds([27, 14, 18]), genreFromTmdbIds([18, 14, 27]));
+  assert.equal(genreFromTmdbIds([35, 16]), genreFromTmdbIds([16, 35]));
+});
+
+/* A genre added to the taxonomy without a place in the priority list would be
+   unreachable — every film carrying it would fall through to Drama. */
+test('every genre has a place in the priority order', () => {
+  for (const genre of GENRES) {
+    assert.ok(GENRE_PRIORITY.includes(genre), `${genre} não está na ordem de prioridade`);
+  }
+  assert.equal(GENRE_PRIORITY.length, GENRES.length);
+  assert.equal(GENRE_PRIORITY[GENRE_PRIORITY.length - 1], 'Drama', 'Drama precisa ser o último');
 });
 
 test('every genre resolves to something TMDB /discover accepts', () => {

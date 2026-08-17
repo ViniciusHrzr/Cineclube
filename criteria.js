@@ -38,9 +38,49 @@ const TMDB_GENRE_MAP = {
   10749: 'Romance'
 };
 
+/* ── which genre wins when a film carries several ─────────────────────────
+   Almost every film does. TMDB gave Frewaka [18, 14, 27] — drama, fantasy,
+   horror — and this used to answer with whichever it recognised first, which
+   made it Drama: an Irish folk horror filed under the criteria for a family
+   saga, rated on densidade dramática and impacto emocional while atmosfera and
+   terror, the two things it was actually built to do, were never asked about.
+
+   The bug is not that Drama was chosen. It is that TMDB's order was treated as
+   a ranking. It is not one — it is roughly the order the ids were added — and
+   Drama in particular is both a real genre here and the bucket everything
+   unrecognised falls into, so letting it win a tie means it wins constantly.
+
+   So the order below is the club's, and it is read as a priority: the first
+   one a film has is the one it is rated as. What sorts it is how much a genre
+   determines the questions worth asking of a film. A documentary is judged as
+   a documentary whatever it is about. Animation brings its own craft with it.
+   Horror and science fiction name what a film is trying to do to you, action
+   and comedy name what it is made of, and romance and suspense are more often
+   worn alongside something else than alone.
+
+   Drama is last, and that is the whole fix. It is the widest word here and the
+   default for anything unrecognised, so it should only be reached when nothing
+   more specific was on offer. */
+const GENRE_PRIORITY = [
+  'Documentário',
+  'Animação',
+  'Terror',
+  'Ficção científica',
+  'Ação',
+  'Comédia',
+  'Romance',
+  'Suspense',
+  'Drama'
+];
+
 function genreFromTmdbIds(ids) {
+  const carried = new Set();
   for (const id of ids || []) {
-    if (TMDB_GENRE_MAP[id]) return TMDB_GENRE_MAP[id];
+    const genre = TMDB_GENRE_MAP[id];
+    if (genre) carried.add(genre);
+  }
+  for (const genre of GENRE_PRIORITY) {
+    if (carried.has(genre)) return genre;
   }
   return 'Drama';
 }
@@ -72,4 +112,4 @@ function finalOf(genre, scores) {
   return sum / 12;
 }
 
-module.exports = { TECH, GENRE_CRIT, GENRES, TMDB_GENRE_MAP, GENRE_TO_TMDB, genreFromTmdbIds, critsFor, finalOf };
+module.exports = { TECH, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB, genreFromTmdbIds, critsFor, finalOf };
