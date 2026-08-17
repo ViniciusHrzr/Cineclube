@@ -351,9 +351,6 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
    it. It answered a question nobody was asking: the disagreement is legible by
    opening two takes and reading them, and the chart was a second, harder way to
    say the same thing — one that had to be decoded before it could be read. */
-/** How many takes a film card shows before it folds the rest away. */
-const FOLD = 3;
-
 function ByMovie({
   reviews,
   openIds,
@@ -369,9 +366,13 @@ function ByMovie({
 }) {
   const { avatarOf } = useClub();
 
-  /* Which films are showing every take. Per film, and kept here rather than in
+  /* Which films are showing their takes. Per film, and kept here rather than in
      the card, because the card is redrawn whenever anything in the record
-     changes and state that lives inside it would fold itself back up. */
+     changes and state that lives inside it would fold itself back up.
+
+     Everything starts closed. A record of forty films is read by looking for
+     one of them, and the one being looked for is not helped by the other
+     thirty-nine being open. */
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const toggleGroup = (movieId: number) =>
     setOpen(prev => {
@@ -404,22 +405,16 @@ function ByMovie({
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
         const sorted = [...items].sort((a, b) => b.final - a.final);
 
-        /* ── the takes that do not fit ────────────────────────────────────
-           A film with three takes is a card. A film with nine is a wall of
-           names between one film and the next, and the screen stops being a
-           record you can scan and becomes a list you have to scroll past.
+        /* ── the card is closed until it is asked ─────────────────────────
+           Every take on every film, all open at once, is a wall of names
+           between one film and the next: the screen stops being a record you
+           can scan and becomes a list you scroll past. So a film arrives as a
+           film — poster, title, the club's number — and the people who gave
+           that number are one press away.
 
-           So the card keeps the highest few and folds the rest. Highest and
-           not newest, because the fold has to be the same list every time it
-           is opened, and because the top of the range and the bottom of it are
-           what the club argues about — the disagreement is at the ends.
-
-           A single hidden row is not folded: a button that reveals one thing
-           costs the reader more than the row it saved. */
+           Two levels, and they mean different things. Opening the film asks
+           who; opening a person asks what they gave each criterion. */
         const expanded = open.has(head.movieId);
-        const folds = sorted.length > FOLD + 1;
-        const listed = folds && !expanded ? sorted.slice(0, FOLD) : sorted;
-        const folded = sorted.slice(listed.length);
 
         return (
           /* Here the card is the film and every take on it — the group is the
@@ -429,83 +424,71 @@ function ByMovie({
             className="mb-4 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]"
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3">
-              <Poster src={head.moviePoster} className="h-[68px] w-[45px] flex-none" />
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-[15px] font-semibold">{head.movieTitle}</h2>
-                <p className="q text-[11px] text-ink-dim">
-                  {head.movieYear ?? '—'} · {head.movieGenre} · {plural(items.length, 'avaliação', 'avaliações')}
-                </p>
-              </div>
-              {/* The club's number, and the way in beside it. */}
-              <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
+              {/* The film opens the film. `Avaliar também` stays outside this
+                  button rather than inside it: a control nested in another
+                  control is not a thing a browser will build, and pressing
+                  "rate this too" should never also fold a card open. */}
+              <button
+                type="button"
+                onClick={() => toggleGroup(head.movieId)}
+                aria-expanded={expanded}
+                className="group flex min-w-0 flex-1 items-center gap-3 text-left"
+              >
+                <Poster src={head.moviePoster} className="h-[68px] w-[45px] flex-none" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-semibold transition-colors group-hover:text-beam">
+                    {head.movieTitle}
+                  </span>
+                  <span className="q block text-[11px] text-ink-dim">
+                    {head.movieYear ?? '—'} · {head.movieGenre} ·{' '}
+                    {plural(items.length, 'avaliação', 'avaliações')}
+                  </span>
+                </span>
+                <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+                    expanded && 'rotate-180'
+                  )}
+                  strokeWidth={1.7}
+                />
+              </button>
               <Invite movieId={head.movieId} />
             </div>
 
-            <div className="flex flex-col">
-              {listed.map(r => (
-                <div key={r.id} className="border-t border-white/[0.06]">
-                  <button
-                    type="button"
-                    onClick={() => onToggle(r.id)}
-                    aria-expanded={openIds.has(r.id)}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
-                  >
-                    <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
-                      {initialsOf(r.reviewerName)}
-                    </Reel>
-                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
-                    <span className="q text-[17px]">{fmt(r.final)}</span>
-                    <ChevronDown
-                      className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', openIds.has(r.id) && 'rotate-180')}
-                      strokeWidth={1.7}
-                    />
-                  </button>
-                  <Drawer open={openIds.has(r.id)}>
-                    <div className="px-3 pb-4 pt-1">
-                      <Breakdown rows={r.breakdown} comment={r.comment} />
-                      <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
-                    </div>
-                  </Drawer>
-                </div>
-              ))}
-
-              {/* The fold, which says who is behind it. A count alone makes the
-                  reader open it to find out whether the person they came for is
-                  in there; the reels answer that without the click. */}
-              {folds ? (
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(head.movieId)}
-                  aria-expanded={expanded}
-                  className="flex w-full items-center gap-3 border-t border-white/[0.06] px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
-                >
-                  <ChevronDown
-                    className={cn(
-                      'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
-                      expanded && 'rotate-180'
-                    )}
-                    strokeWidth={1.7}
-                  />
-                  <span className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim">
-                    {expanded ? 'Mostrar menos' : `Mais ${plural(folded.length, 'avaliação', 'avaliações')}`}
-                  </span>
-                  {!expanded ? (
-                    <span className="flex flex-wrap items-center gap-1">
-                      {folded.map(r => (
-                        <Reel
-                          key={r.id}
-                          color={reelColor(r.reviewerDot, r.reviewerId)}
-                          src={avatarOf(r.reviewerId)}
-                          className="opacity-70"
-                        >
-                          {initialsOf(r.reviewerName)}
-                        </Reel>
-                      ))}
-                    </span>
-                  ) : null}
-                </button>
-              ) : null}
-            </div>
+            <Drawer open={expanded}>
+              <div className="flex flex-col">
+                {sorted.map(r => (
+                  <div key={r.id} className="border-t border-white/[0.06]">
+                    <button
+                      type="button"
+                      onClick={() => onToggle(r.id)}
+                      aria-expanded={openIds.has(r.id)}
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
+                    >
+                      <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
+                        {initialsOf(r.reviewerName)}
+                      </Reel>
+                      <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
+                      <span className="q text-[17px]">{fmt(r.final)}</span>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+                          openIds.has(r.id) && 'rotate-180'
+                        )}
+                        strokeWidth={1.7}
+                      />
+                    </button>
+                    <Drawer open={openIds.has(r.id)}>
+                      <div className="px-3 pb-4 pt-1">
+                        <Breakdown rows={r.breakdown} comment={r.comment} />
+                        <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
+                      </div>
+                    </Drawer>
+                  </div>
+                ))}
+              </div>
+            </Drawer>
           </div>
         );
       })}
