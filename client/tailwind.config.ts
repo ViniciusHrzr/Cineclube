@@ -41,6 +41,18 @@ export default {
           'red-deep': '#8c1e18',
           cyan: '#43b8c6',     // state, selection, the cool half of the frame
           'cyan-deep': '#1d5f68',
+          /* Green belongs here more than it looks like it should. Three-strip
+             Technicolor separates an image onto three records — red, green and
+             blue — and the room was already using two of them; this is the one
+             that was missing, not a success colour borrowed from somewhere
+             else. It has one job: saying that something was written. Red says
+             the opposite, and the confirmation of a saved rating was wearing it.
+
+             Two values for the same reason red has two: `green` fills and
+             marks (the lamp, the tint, the ring), `green-lit` is green used AS
+             text, where it reads 9.9:1 on a plate. */
+          green: '#2f9e44',
+          'green-lit': '#5fd48a',
         },
         ink: {
           DEFAULT: '#eae4d8',  // text on the room

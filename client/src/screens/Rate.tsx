@@ -551,10 +551,14 @@ function MasterCard({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             role="status"
-            className="mt-4 rounded-cell bg-dye-red/10 px-3 py-2.5 text-[12.5px] leading-relaxed ring-1 ring-dye-red/40"
+            /* Green, because this is the one message in the product that says
+               something went right. It was wearing the red the destructive
+               actions wear, which made a saved rating look like a warning
+               about a saved rating. */
+            className="mt-4 rounded-cell bg-dye-green/10 px-3 py-2.5 text-[12.5px] leading-relaxed ring-1 ring-dye-green/40"
           >
             <span className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 flex-none rounded-full bg-dye-red shadow-[0_0_10px_rgba(209,42,32,0.9)]" />
+              <span className="h-1.5 w-1.5 flex-none rounded-full bg-dye-green shadow-[0_0_10px_rgba(47,158,68,0.9)]" />
               <strong className="font-semibold">Gravado.</strong>
             </span>
             <p className="mt-1 text-ink-dim">
@@ -564,7 +568,7 @@ function MasterCard({
             <button
               type="button"
               onClick={onSeeHistory}
-              className="mt-2 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit underline underline-offset-4 transition-colors hover:text-[#ff7a6e]"
+              className="mt-2 font-display text-[11px] uppercase tracking-[0.14em] text-dye-green-lit underline underline-offset-4 transition-colors hover:text-beam"
             >
               Ver no histórico
             </button>

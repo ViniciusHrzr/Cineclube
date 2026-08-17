@@ -1,6 +1,6 @@
 const TECH = [
   ['direcao', 'Direção', 'Encenação, condução dos atores, escolha dos planos, movimentos de câmera e ritmo das cenas.'],
-  ['roteiro', 'Roteiro', 'Estrutura narrativa, personagens, diálogos, conflitos, progressão dramática e resolução.'],
+  ['roteiro', 'Roteiro', 'Enredo, estrutura narrativa, personagens, diálogos, conflitos, progressão dramática e resolução.'],
   ['fotografia', 'Fotografia', 'Iluminação, composição, enquadramento, cores, lentes, exposição e profundidade.'],
   ['montagem', 'Montagem', 'Ritmo, cortes, continuidade, elipses e a ordem em que a informação chega.'],
   ['som', 'Som & Trilha', 'Trilha, sound design, diálogos, ruídos, silêncio e a relação entre som e imagem.'],

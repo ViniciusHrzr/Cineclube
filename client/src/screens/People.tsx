@@ -197,7 +197,7 @@ function MyProfile() {
       </div>
 
       {msg ? (
-        <p className={cn('mt-4 text-[13px]', msg.ok ? 'text-dye-cyan' : 'text-dye-red-lit')}>{msg.text}</p>
+        <p className={cn('mt-4 text-[13px]', msg.ok ? 'text-dye-green-lit' : 'text-dye-red-lit')}>{msg.text}</p>
       ) : null}
 
       {pending ? (
@@ -296,7 +296,7 @@ function MyPin() {
         </label>
       </div>
       {msg ? (
-        <p className={cn('mt-3 text-[13px]', msg.ok ? 'text-dye-cyan' : 'text-dye-red-lit')}>{msg.text}</p>
+        <p className={cn('mt-3 text-[13px]', msg.ok ? 'text-dye-green-lit' : 'text-dye-red-lit')}>{msg.text}</p>
       ) : null}
       <div className="mt-4">
         <Key tone="flush" disabled={busy} onClick={() => void change()}>
