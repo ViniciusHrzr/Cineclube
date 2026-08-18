@@ -431,12 +431,19 @@ function Marquee({
         </nav>
 
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-2" title={me.isAdmin ? 'Administrador do clube' : undefined}>
+          {/* Your own face is the door to the room of faces. */}
+          <button
+            type="button"
+            onClick={() => onTab('people')}
+            title={me.isAdmin ? 'Administrador do clube' : 'Ver avaliadores'}
+            aria-label={`${me.name} — ver avaliadores`}
+            className="flex items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
+          >
             <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
               {initialsOf(me.name)}
             </Reel>
-            <span className="hidden text-[13px] text-ink-dim sm:inline">{me.name}</span>
-          </span>
+            <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
+          </button>
           <button
             type="button"
             onClick={onSignOut}
