@@ -383,6 +383,41 @@ test('re-rating the same movie updates the review instead of duplicating it', as
   assert.equal(mine[0].final, 9);
 });
 
+test('a take keeps how long the film runs', async () => {
+  const reviewer = await newReviewer();
+  const m = movie({ runtime: 112 });
+
+  const { body } = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
+  assert.equal(body.movieRuntime, 112);
+
+  const all = await req('GET', '/api/reviews');
+  const mine = all.body.reviews.find(r => r.reviewerId === reviewer.id && r.movieId === m.id);
+  assert.equal(mine.movieRuntime, 112);
+});
+
+test('a film with no runtime on record is null, never zero', async () => {
+  const reviewer = await newReviewer();
+  const { body } = await req('POST', '/api/reviews', { movie: movie({ runtime: 0 }), scores: scoresFor('Terror', 5) }, reviewer.cookie);
+  assert.equal(body.movieRuntime, null);
+});
+
+/* Re-rating goes through the same upsert as rating, and the client sends
+   whatever the catalogue handed it — which, on a stale sheet served from a
+   cache written before durations existed, is nothing. A second take must not
+   erase a runtime the first one recorded. */
+test('re-rating without a runtime does not erase the one already recorded', async () => {
+  const reviewer = await newReviewer();
+  const m = movie({ runtime: 96 });
+
+  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 4) }, reviewer.cookie);
+  const again = await req('POST', '/api/reviews', {
+    movie: { ...m, runtime: undefined }, scores: scoresFor('Terror', 8)
+  }, reviewer.cookie);
+
+  assert.equal(again.body.final, 8);
+  assert.equal(again.body.movieRuntime, 96);
+});
+
 test('two reviewers can rate the same movie independently', async () => {
   const a = await newReviewer();
   const b = await newReviewer();

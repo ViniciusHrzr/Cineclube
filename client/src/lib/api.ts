@@ -60,6 +60,8 @@ export type Review = {
   movieGenre: string;
   moviePoster: string | null;
   movieDirector: string | null;
+  /** How long the film runs, in minutes. Null when TMDB never reported one. */
+  movieRuntime: number | null;
   scores: Record<string, number>;
   final: number;
   date: string;
@@ -77,6 +79,8 @@ export type Movie = {
   genres?: string[];
   poster: string | null;
   director?: string | null;
+  /** Minutes. Only the details endpoint carries it; a search result has none. */
+  runtime?: number | null;
   overview?: string | null;
   cast?: { name: string }[];
   trailerUrl?: string | null;
@@ -131,6 +135,21 @@ export function weightedSum(criteria: Criterion[], scores: Record<string, number
 
 export function fmt(n: number) {
   return Number(n).toFixed(1).replace('.', ',');
+}
+
+/* ── how long it runs ─────────────────────────────────────────────────────
+   Written the way a listing writes it — 1h 52min, 2h for a round one, 48min
+   for a short — rather than the raw minute count TMDB reports, because "112"
+   is a number to convert and "1h 52min" is a length of evening. Null when the
+   film has no runtime on record, so every caller can decide with `? :` whether
+   the line has a duration in it at all. */
+export function runtimeOf(minutes: number | null | undefined) {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const total = Math.round(minutes);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m}min`;
+  return m ? `${h}h ${m}min` : `${h}h`;
 }
 
 export function verdictFor(final: number) {

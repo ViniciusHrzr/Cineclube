@@ -6,13 +6,18 @@ const { GENRES, GENRE_TO_TMDB, critsFor } = require('../criteria');
 
 const router = express.Router();
 
+/* The runtime only ever arrives from the details endpoint, so a search or a
+   popular page writing over a cached row must not blank out the number a
+   previous detail fetch put there — hence COALESCE rather than excluded. */
 const upsertCache = db.prepare(`
-  INSERT INTO movies_cache (tmdb_id, title, year, genre, genres, poster, director, cached_at)
-  VALUES (@id, @title, @year, @genre, @genres, @poster, @director, datetime('now'))
+  INSERT INTO movies_cache (tmdb_id, title, year, genre, genres, poster, director, runtime, cached_at)
+  VALUES (@id, @title, @year, @genre, @genres, @poster, @director, @runtime, datetime('now'))
   ON CONFLICT(tmdb_id) DO UPDATE SET
     title = excluded.title, year = excluded.year, genre = excluded.genre,
     genres = excluded.genres,
-    poster = excluded.poster, director = excluded.director, cached_at = excluded.cached_at
+    poster = excluded.poster, director = excluded.director,
+    runtime = COALESCE(excluded.runtime, movies_cache.runtime),
+    cached_at = excluded.cached_at
 `);
 
 /** A cached row back into the shape the client speaks. */
@@ -28,6 +33,7 @@ function fromCache(c) {
     genres: c.genres ? c.genres.split(',') : [c.genre],
     poster: c.poster,
     director: c.director ?? null,
+    runtime: c.runtime ?? null,
   };
 }
 const getCache = db.prepare('SELECT * FROM movies_cache WHERE tmdb_id = ?');
@@ -40,7 +46,8 @@ async function cacheMovie(m) {
     await upsertCache.run({
       id: m.id, title: m.title, year: m.year ?? null, genre: m.genre,
       genres: (m.genres || [m.genre]).join(','),
-      poster: m.poster ?? null, director: m.director ?? null
+      poster: m.poster ?? null, director: m.director ?? null,
+      runtime: m.runtime ?? null
     });
   } catch (e) {
     console.warn('[catalog] falha ao cachear filme', m.id, e.message);

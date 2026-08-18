@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
-import { del, fmt, initialsOf, reelColor, type Review } from '@/lib/api';
+import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
 import { cn, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -328,7 +328,7 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold">{r.movieTitle}</span>
           <span className="q block text-[11px] text-ink-dim">
-            {r.movieYear ?? '—'} · {r.movieGenre}
+            {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
           </span>
         </span>
         <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
@@ -445,9 +445,18 @@ function ByMovie({
                       naming only the first would hide that the scores under
                       this average answered different questions. */}
                   <span className="q block text-[11px] text-ink-dim">
-                    {head.movieYear ?? '—'} ·{' '}
-                    {[...new Set(items.map(r => r.movieGenre))].join(' · ')} ·{' '}
-                    {plural(items.length, 'avaliação', 'avaliações')}
+                    {[
+                      head.movieYear ?? '—',
+                      /* Any take that knows the runtime speaks for the film:
+                         it is a fact about the film and not about the take, so
+                         one member having rated it before the archive recorded
+                         durations does not blank the number for everyone. */
+                      runtimeOf(items.find(r => r.movieRuntime != null)?.movieRuntime),
+                      [...new Set(items.map(r => r.movieGenre))].join(' · '),
+                      plural(items.length, 'avaliação', 'avaliações'),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 </span>
                 <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>

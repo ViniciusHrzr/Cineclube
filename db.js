@@ -177,6 +177,19 @@ async function migrate() {
   if (!movieCols.includes('genres')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN genres TEXT');
   }
+  /* How long the film runs, in minutes. TMDB only reports it on the details
+     endpoint, so a row cached from a search or a popular page has it null until
+     somebody opens the film — which is exactly when the number is needed. */
+  if (!movieCols.includes('runtime')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN runtime INTEGER');
+  }
+
+  /* A take carries its own copy of the film, so the record still reads as a
+     record with TMDB unreachable. Takes recorded before this column existed
+     fall back to the cache when the archive is read. */
+  if (!reviewCols.includes('movie_runtime')) {
+    await exec('ALTER TABLE reviews ADD COLUMN movie_runtime INTEGER');
+  }
 
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');

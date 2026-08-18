@@ -8,6 +8,7 @@
     "start": "node server.js",
     "test": "node --test",
     "migrate:turso": "node scripts/migrate-to-turso.js",
+    "backfill:runtimes": "node scripts/backfill-runtimes.js",
     "build": "npm --prefix client install && npm --prefix client run build"
   },
   "engines": {

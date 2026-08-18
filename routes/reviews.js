@@ -7,19 +7,25 @@ const { critsFor, finalOf, GENRES } = require('../criteria');
 
 const router = express.Router();
 
+/* The runtime is read through the cache when the take does not carry one: every
+   film in the archive was opened before it was rated, so the cache almost always
+   knows it, and takes recorded before reviews had the column get the number
+   without a backfill. */
 const listStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot
+  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot, mc.runtime AS cached_runtime
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
+  LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
   ORDER BY rv.date DESC
 `);
 const reviewerExistsStmt = db.prepare('SELECT id FROM reviewers WHERE id = ?');
 const upsertStmt = db.prepare(`
-  INSERT INTO reviews (id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, scores, final, date, comment)
-  VALUES (@id, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @scores, @final, @date, @comment)
+  INSERT INTO reviews (id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment)
+  VALUES (@id, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment)
   ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
     movie_title = excluded.movie_title, movie_year = excluded.movie_year, movie_genre = excluded.movie_genre,
     movie_poster = excluded.movie_poster, movie_director = excluded.movie_director,
+    movie_runtime = COALESCE(excluded.movie_runtime, reviews.movie_runtime),
     scores = excluded.scores, final = excluded.final, date = excluded.date, comment = excluded.comment
 `);
 const averagesStmt = db.prepare(`
@@ -28,8 +34,10 @@ const averagesStmt = db.prepare(`
   GROUP BY movie_id
 `);
 const savedStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot
-  FROM reviews rv JOIN reviewers r ON r.id = rv.reviewer_id
+  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot, mc.runtime AS cached_runtime
+  FROM reviews rv
+  JOIN reviewers r ON r.id = rv.reviewer_id
+  LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
   WHERE rv.reviewer_id = ? AND rv.movie_id = ?
 `);
 const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
@@ -51,6 +59,7 @@ function toReviewDTO(row) {
     movieGenre: genre,
     moviePoster: row.movie_poster,
     movieDirector: row.movie_director,
+    movieRuntime: row.movie_runtime ?? row.cached_runtime ?? null,
     scores,
     final: row.final,
     date: row.date,
@@ -102,6 +111,9 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
     id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
     moviePoster: movie.poster ?? null, movieDirector: movie.director ?? null,
+    movieRuntime: Number.isFinite(Number(movie.runtime)) && Number(movie.runtime) > 0
+      ? Math.round(Number(movie.runtime))
+      : null,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
   await deleteWatchlistStmt.run(movie.id);

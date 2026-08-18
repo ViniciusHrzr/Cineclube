@@ -91,6 +91,9 @@ async function movieDetails(id) {
     genres: genresFromTmdbIds((m.genres || []).map(g => g.id)),
     poster: posterUrl(m.poster_path),
     director: director ? director.name : null,
+    // Minutes, and only from the details endpoint — the list endpoints TMDB
+    // serves for search, popular and discover do not carry it at all.
+    runtime: m.runtime || null,
     overview: m.overview || null,
     cast,
     trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null

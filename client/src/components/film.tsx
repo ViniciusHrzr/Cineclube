@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import { Fault, IconKey, Key, Poster, Skeleton, Strip } from '@/components/bits';
-import { api, fmt, type Movie } from '@/lib/api';
+import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 
 /* ── the film cell ────────────────────────────────────────────────────────
@@ -204,9 +204,19 @@ export function ProjectionSheet({
             <Poster src={movie.poster} alt={`Pôster de ${movie.title}`} className="aspect-[2/3] w-[132px] flex-none sm:w-[190px]" />
             <div className="min-w-0 flex-1">
               <h2 className="pr-10 font-display text-[30px] leading-none tracking-[0.03em] text-beam">{movie.title}</h2>
+              {/* Year, length, director — the three facts you want before
+                  committing an evening, in the order you want them. The runtime
+                  only comes from the details endpoint, so on the rare sheet
+                  served from cache without one the middle term simply is not
+                  printed rather than showing a dash for it. */}
               <p className="q mt-2 text-[12.5px] text-ink-dim">
-                {movie.year ?? '—'}
-                {movie.director ? ` · dir. ${movie.director}` : ''}
+                {[
+                  movie.year ?? '—',
+                  runtimeOf(movie.runtime),
+                  movie.director ? `dir. ${movie.director}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 {/* Every genre the film carries, and not only the one it would

@@ -14,6 +14,7 @@ import {
   fmt,
   finalOf,
   post,
+  runtimeOf,
   verdictFor,
   weightedSum,
   type Criterion,
@@ -276,9 +277,17 @@ function Slate({
         <Poster src={movie.poster} alt={`Pôster de ${movie.title}`} className="aspect-[2/3] w-[86px] flex-none" />
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-[26px] leading-none tracking-[0.03em] text-beam">{movie.title}</h2>
+          {/* The same three facts the projection sheet states, in the same
+              order, because this is the same film seen from the other side of
+              the desk. */}
           <p className="q mt-2 text-[12.5px] text-ink-dim">
-            {movie.year ?? '—'}
-            {movie.director ? ` · dir. ${movie.director}` : ''}
+            {[
+              movie.year ?? '—',
+              runtimeOf(movie.runtime),
+              movie.director ? `dir. ${movie.director}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
 
           {/* ── what this film is being rated as ──────────────────────────
