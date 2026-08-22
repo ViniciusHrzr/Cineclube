@@ -389,11 +389,14 @@ function ByMovie({
   reviews.forEach(r => {
     (map[String(r.movieId)] ||= []).push(r);
   });
-  const groups = Object.values(map).sort((a, b) => {
-    const lastA = a.reduce((d, r) => (r.date > d ? r.date : d), '');
-    const lastB = b.reduce((d, r) => (r.date > d ? r.date : d), '');
-    return lastB.localeCompare(lastA) || a[0].movieTitle.localeCompare(b[0].movieTitle);
-  });
+  /* Ranked by the club's number, best first. The record is read as a ranking —
+     "what did we like" — and the date a film happened to be rated says nothing
+     about that. Films tied on the average fall back to the title so the order
+     is stable between renders rather than shuffling on every reload. */
+  const mean = (rs: Review[]) => rs.reduce((s, r) => s + r.final, 0) / rs.length;
+  const groups = Object.values(map).sort(
+    (a, b) => mean(b) - mean(a) || a[0].movieTitle.localeCompare(b[0].movieTitle)
+  );
 
   if (!groups.length)
     return <Blank title="Nenhum filme avaliado ainda">Quando alguém gravar a primeira nota, o filme aparece aqui com as avaliações de todo mundo juntas.</Blank>;
