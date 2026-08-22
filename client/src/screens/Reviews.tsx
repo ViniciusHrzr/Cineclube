@@ -369,7 +369,6 @@ function ByReviewer({
     <>
       {people.map(p => {
         const items = reviews.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
-        const mean = items.length ? items.reduce((s, r) => s + r.final, 0) / items.length : 0;
         /* A search forces every matching card open. Collapsed, a hit would show
            the name of someone who rated the film you typed and then hide the
            film itself — the card would be the answer to a question you did not
@@ -408,17 +407,16 @@ function ByReviewer({
                 >
                   {p.name}
                 </span>
-                {/* The average is the big number on the right, where the film's
-                    own number sits in the other view, so the subline only has
-                    to say how many films stand behind it. Printing "média 7,4"
-                    here as well would be the same figure twice on one line. */}
+                {/* How many films, and nothing else. A person's overall average
+                    is not a fact about the person — it is a fact about whatever
+                    they happened to have watched, and printed at the head of the
+                    card it reads as a grade, inviting a comparison between two
+                    members who never rated the same films. The numbers that mean
+                    something are inside, one per film. */}
                 <span className="q block text-[11px] text-ink-dim">
-                  {items.length ? `${plural(items.length, 'filme', 'filmes')} · média` : 'nenhuma avaliação'}
+                  {items.length ? plural(items.length, 'filme', 'filmes') : 'nenhuma avaliação'}
                 </span>
               </span>
-              {items.length ? (
-                <span className="q font-display text-[24px] leading-none text-beam">{fmt(mean)}</span>
-              ) : null}
               {openable ? (
                 <ChevronDown
                   className={cn(
