@@ -81,39 +81,13 @@ export function ReviewsScreen() {
           A busca cobre o título do filme e o nome de quem avaliou. Limpe o campo para ver o registro inteiro.
         </Blank>
       ) : view === 'reviewer' ? (
-        club.reviewers.length ? (
-          club.reviewers
-            /* A search hides the people it did not match: a column of empty
-               names is not an answer to "what did she rate". */
-            .filter(p => !filtering || shown.some(r => r.reviewerId === p.id))
-            .map(p => {
-              const items = shown.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
-              const mean = items.length ? items.reduce((s, r) => s + r.final, 0) / items.length : 0;
-              return (
-              <div key={p.id} className="mb-9">
-                <div className="mb-3 flex items-center gap-3">
-                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
-                    {initialsOf(p.name)}
-                  </Reel>
-                  <h2 className="font-display text-[19px] uppercase tracking-[0.1em] text-ink">{p.name}</h2>
-                  <span className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
-                  <span className="q text-[11px] text-ink-dim">
-                    {items.length ? `${items.length} filmes · média ${fmt(mean)}` : 'nenhuma avaliação'}
-                  </span>
-                </div>
-                {items.length ? (
-                  items.map(r => (
-                    <Take key={r.id} r={r} open={openIds.has(r.id)} onToggle={() => toggle(r.id)} onDelete={() => void remove(r)} />
-                  ))
-                ) : (
-                  <Blank title="Ainda não avaliou nenhum filme" />
-                )}
-              </div>
-            );
-          })
-        ) : (
-          <Blank title="Nenhum avaliador cadastrado">Cadastre as pessoas do clube na seção Avaliadores.</Blank>
-        )
+        <ByReviewer
+          reviews={shown}
+          filtering={filtering}
+          openIds={openIds}
+          onToggle={toggle}
+          onDelete={r => void remove(r)}
+        />
       ) : (
         <ByMovie reviews={shown} openIds={openIds} onToggle={toggle} onDelete={r => void remove(r)} />
       )}
@@ -309,15 +283,12 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
 
 function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onToggle: () => void; onDelete: () => void }) {
   return (
-    /* A card per film, instead of hairlines dividing one long sheet. The rows
-       are what the club actually points at — "that one" — and a divider only
-       says where one ends; a surface says the thing has edges. It also gives
-       the title and the score a ground of their own, which they did not have
-       while the wall ran behind them.
-
-       `overflow-hidden` so the hover wash and the drawer both stop at the
-       rounded corner instead of squaring it off. */
-    <div className="mb-2 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]">
+    /* A row inside the person's card, not a card of its own. The surface here
+       belongs to the reviewer — everything under that header is one person's
+       record — and a plate for each film sitting on top of that plate would be
+       two boxes claiming the same thing. A hairline is enough to say where one
+       film ends, exactly as the by-film view separates the people under it. */
+    <div className="border-t border-white/[0.06]">
       <button
         type="button"
         onClick={onToggle}
@@ -341,6 +312,141 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         </div>
       </Drawer>
     </div>
+  );
+}
+
+/* ── the person, and everything they sat through ──────────────────────────
+   The mirror of the by-film view, and it earns the same shape for the same
+   reason: this screen is read by looking for one thing in it. Every take from
+   every member laid out at once is a sheet you scroll past, and the member you
+   came for is not helped by the other five being open. So a person arrives as a
+   person — face, name, how many films and their average — and the films are one
+   press away.
+
+   Two levels here too, and they mean what they meant on the other side:
+   opening the person asks what they rated, opening a film asks what they gave
+   each criterion. */
+function ByReviewer({
+  reviews,
+  filtering,
+  openIds,
+  onToggle,
+  onDelete,
+}: {
+  /* Already filtered by the search upstairs, same as the by-film view. */
+  reviews: Review[];
+  /* Whether a search is running — not to filter with, only to decide whether
+     the cards should stand open. See below. */
+  filtering: boolean;
+  openIds: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+  onDelete: (r: Review) => void;
+}) {
+  const club = useClub();
+
+  /* Which people are showing their takes. Kept here and not in the card for
+     the same reason as the other view: the card is redrawn whenever the record
+     changes, and state living inside it would fold itself back up.
+
+     Everything starts closed. */
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = (id: string) =>
+    setOpen(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /* A search hides the people it did not match: a column of empty names is not
+     an answer to "what did she rate". */
+  const people = club.reviewers.filter(p => !filtering || reviews.some(r => r.reviewerId === p.id));
+
+  if (!club.reviewers.length)
+    return <Blank title="Nenhum avaliador cadastrado">Cadastre as pessoas do clube na seção Avaliadores.</Blank>;
+
+  return (
+    <>
+      {people.map(p => {
+        const items = reviews.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
+        const mean = items.length ? items.reduce((s, r) => s + r.final, 0) / items.length : 0;
+        /* A search forces every matching card open. Collapsed, a hit would show
+           the name of someone who rated the film you typed and then hide the
+           film itself — the card would be the answer to a question you did not
+           ask. Clearing the field hands the cards back to whatever you had
+           opened by hand. */
+        const expanded = filtering || open.has(p.id);
+        /* Nothing to open on someone who has not rated anything: a chevron that
+           unfolds an empty drawer is a promise the card cannot keep. The header
+           already says "nenhuma avaliação". */
+        const openable = items.length > 0;
+
+        return (
+          <div
+            key={p.id}
+            className="mb-4 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]"
+          >
+            <button
+              type="button"
+              disabled={!openable}
+              onClick={() => toggleGroup(p.id)}
+              aria-expanded={openable ? expanded : undefined}
+              className={cn(
+                'group flex w-full items-center gap-3 px-3 py-3 text-left transition-colors',
+                openable && 'hover:bg-beam/[0.05]'
+              )}
+            >
+              <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
+                {initialsOf(p.name)}
+              </Reel>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'block truncate font-display text-[17px] uppercase tracking-[0.1em] text-ink transition-colors',
+                    openable && 'group-hover:text-beam'
+                  )}
+                >
+                  {p.name}
+                </span>
+                {/* The average is the big number on the right, where the film's
+                    own number sits in the other view, so the subline only has
+                    to say how many films stand behind it. Printing "média 7,4"
+                    here as well would be the same figure twice on one line. */}
+                <span className="q block text-[11px] text-ink-dim">
+                  {items.length ? `${plural(items.length, 'filme', 'filmes')} · média` : 'nenhuma avaliação'}
+                </span>
+              </span>
+              {items.length ? (
+                <span className="q font-display text-[24px] leading-none text-beam">{fmt(mean)}</span>
+              ) : null}
+              {openable ? (
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+                    expanded && 'rotate-180'
+                  )}
+                  strokeWidth={1.7}
+                />
+              ) : null}
+            </button>
+
+            <Drawer open={expanded && openable}>
+              <div className="flex flex-col">
+                {items.map(r => (
+                  <Take
+                    key={r.id}
+                    r={r}
+                    open={openIds.has(r.id)}
+                    onToggle={() => onToggle(r.id)}
+                    onDelete={() => onDelete(r)}
+                  />
+                ))}
+              </div>
+            </Drawer>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
