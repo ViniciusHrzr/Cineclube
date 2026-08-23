@@ -407,7 +407,29 @@ function Verdicts({
    the real storefronts instead of guessing a deep link into a service the
    reader may not even have. */
 function WatchOn({ watch }: { watch: Movie['watch'] }) {
-  if (!watch) return null;
+  /* ── três estados, e dois deles são nulos ───────────────────────────────
+     `undefined` is "nobody asked": the film came from the cache because TMDB
+     was unreachable, and this sheet knows nothing about where it streams.
+     `null` is "asked, and it streams nowhere here" — a real answer.
+
+     They were drawn the same way until a film in cinemas made the difference
+     visible: the sheet simply ended after the trailer, which reads exactly like
+     the feature not being there at all. An answer nobody can see is not an
+     answer, so the negative one gets said out loud and the unknown one stays
+     quiet, which is the only honest split. */
+  if (watch === undefined) return null;
+
+  if (!watch) {
+    return (
+      <div className="mt-5 border-t border-white/[0.07] pt-4">
+        <span className="legend">Onde assistir</span>
+        <p className="mt-2 text-[12.5px] text-ink-dim">
+          Não está em nenhum streaming no Brasil — ainda em cartaz, ou só para alugar.
+        </p>
+        <Credit link={null} />
+      </div>
+    );
+  }
 
   return (
     <div className="mt-5 border-t border-white/[0.07] pt-4">
@@ -441,31 +463,31 @@ function WatchOn({ watch }: { watch: Movie['watch'] }) {
           </span>
         ))}
       </div>
-      <p className="q mt-3 text-[11px] text-ink-faint">
-        Disponibilidade no Brasil, por{' '}
-        <a
-          href="https://www.justwatch.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline underline-offset-2 transition-colors hover:text-ink-dim"
-        >
-          JustWatch
-        </a>
-        {watch.link ? (
-          <>
-            {' · '}
-            <a
-              href={watch.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline underline-offset-2 transition-colors hover:text-ink-dim"
-            >
-              ver onde
-            </a>
-          </>
-        ) : null}
-      </p>
+      <Credit link={watch.link} />
     </div>
+  );
+}
+
+/* The attribution, on both answers. Using this data obliges us to name
+   JustWatch as its source, and "não está em nenhum streaming" is as much their
+   answer as a list of logos is — it is the same query, returning nothing. */
+function Credit({ link }: { link: string | null }) {
+  const out = 'underline underline-offset-2 transition-colors hover:text-ink-dim';
+  return (
+    <p className="q mt-3 text-[11px] text-ink-faint">
+      Disponibilidade no Brasil, por{' '}
+      <a href="https://www.justwatch.com" target="_blank" rel="noopener noreferrer" className={out}>
+        JustWatch
+      </a>
+      {link ? (
+        <>
+          {' · '}
+          <a href={link} target="_blank" rel="noopener noreferrer" className={out}>
+            ver onde
+          </a>
+        </>
+      ) : null}
+    </p>
   );
 }
 
