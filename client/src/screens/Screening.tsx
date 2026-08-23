@@ -693,13 +693,10 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
 
   return (
     <div className="mt-6">
-      <p className="max-w-[60ch] text-[13.5px] leading-relaxed text-ink-dim">
-        Escolher um filme abre a sessão <strong className="text-ink">para todo mundo</strong>: quem estiver com
-        a aba aberta cai direto nela. Depois cada um aponta a própria fonte — o app sincroniza o controle, não
-        o vídeo.
-      </p>
-
-      <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
+      {/* No paragraph explaining what pressing a poster does. It opens the
+          session, which is the only thing this screen is for, and three lines
+          of prose above the posters were the app talking about itself. */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
         {watchlist.map(w => (
           <button
             key={w.id}
