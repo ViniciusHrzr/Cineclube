@@ -302,7 +302,10 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
             {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
           </span>
         </span>
-        <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
+        <span className="flex flex-none flex-col items-end gap-1">
+          <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
+          <CrowdNote crowd={r.crowd} />
+        </span>
         <ChevronDown className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', open && 'rotate-180')} strokeWidth={1.7} />
       </button>
       <Drawer open={open}>
@@ -312,6 +315,26 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         </div>
       </Drawer>
     </div>
+  );
+}
+
+/* ── a nota do TMDB, embaixo da do clube ──────────────────────────────────
+   The club's number stays the big one and this stays a footnote, which is the
+   hierarchy the whole product argues for: the verdict here is the club's, and
+   TMDB is the thing it is measured against rather than the thing it is
+   measured by.
+
+   Named TMDB and not "o mundo". It is one site's voters — a specific crowd with
+   a specific bias — and the club is entitled to know which crowd it is
+   disagreeing with.
+
+   Silent when the film cache has never seen the film, which after the column
+   was added means a film rated long ago and not opened since. It fills itself
+   in the next time anybody looks the film up. */
+function CrowdNote({ crowd }: { crowd: Review['crowd'] }) {
+  if (!crowd) return null;
+  return (
+    <span className="q block text-[10.5px] leading-none text-ink-dim">TMDB {fmt(crowd.score)}</span>
   );
 }
 
@@ -566,7 +589,14 @@ function ByMovie({
                       .join(' · ')}
                   </span>
                 </span>
-                <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
+                {/* Any take that knows it speaks for the film, same as the
+                    runtime above: it is a fact about the film, so one member
+                    having rated it before the archive recorded TMDB's number
+                    does not blank the comparison for everyone. */}
+                <span className="flex flex-none flex-col items-end gap-1">
+                  <span className="q font-display text-[24px] leading-none text-beam">{fmt(avg)}</span>
+                  <CrowdNote crowd={items.find(r => r.crowd)?.crowd} />
+                </span>
                 <ChevronDown
                   className={cn(
                     'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',

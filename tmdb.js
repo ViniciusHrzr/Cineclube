@@ -118,6 +118,25 @@ function posterUrl(path) {
   return path ? IMG_BASE + path : null;
 }
 
+/* ── a nota da multidão ───────────────────────────────────────────────────
+   TMDB's own average, on the same 0–10 the club uses, so the two numbers can
+   sit side by side without being converted into each other.
+
+   The count travels with it because the average means nothing alone. An 9,0
+   from eleven people and a 9,0 from four hundred thousand are different claims,
+   and the club deserves to see which one it is disagreeing with.
+
+   Zero votes reads as null rather than 0,0. TMDB gives an unrated film an
+   average of zero, and printing that beside the club's number would say the
+   world hated a film the world has not seen.
+
+   Carried by the list endpoints as well as the detail one, which is what lets
+   it reach the archive: a film is cached the first time anybody searches for
+   it, long before anybody opens it. */
+function crowdOf(m) {
+  return m.vote_count > 0 ? { score: m.vote_average, votes: m.vote_count } : null;
+}
+
 /* `genre` is the one it opens on; `genres` is everything it could be rated as.
    Both travel, because a poster in a grid only needs the first and the rating
    screen needs all of them. */
@@ -128,7 +147,8 @@ function normalizeListItem(m) {
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds(m.genre_ids),
     genres: genresFromTmdbIds(m.genre_ids),
-    poster: posterUrl(m.poster_path)
+    poster: posterUrl(m.poster_path),
+    crowd: crowdOf(m)
   };
 }
 
@@ -229,6 +249,18 @@ function signedBy(crew, cast) {
   return out;
 }
 
+/* ── providers on their own ───────────────────────────────────────────────
+   The detail endpoint carries this, but a catalogue page is twenty films and
+   twenty full details is twenty payloads of credits, videos and overviews to
+   read one field out of. TMDB serves the providers alone, and alone they are a
+   couple of kilobytes.
+
+   Used by the grid, which fills what the cache is missing. The projection sheet
+   still reads it off the detail it was already fetching. */
+async function watchProvidersFor(id) {
+  return watchIn(await tmdbGet(`/movie/${id}/watch/providers`));
+}
+
 async function movieDetails(id) {
   const m = await tmdbGet(`/movie/${id}`, { append_to_response: 'credits,videos,watch/providers' });
   const director = (m.credits?.crew || []).find(c => c.job === 'Director');
@@ -248,18 +280,7 @@ async function movieDetails(id) {
     // serves for search, popular and discover do not carry it at all.
     runtime: m.runtime || null,
     overview: m.overview || null,
-    /* ── a nota da multidão ────────────────────────────────────────────────
-       TMDB's own average, on the same 0–10 the club uses, so the two numbers
-       can sit side by side without being converted into each other.
-
-       The count travels with it because the average means nothing alone. A 9,0
-       from eleven people and a 9,0 from four hundred thousand are different
-       claims, and the club deserves to see which one it is disagreeing with.
-
-       Zero votes reads as null rather than 0,0. TMDB gives an unrated film an
-       average of zero, and printing that next to the club's number would say
-       the world hated a film the world has not seen. */
-    crowd: m.vote_count > 0 ? { score: m.vote_average, votes: m.vote_count } : null,
+    crowd: crowdOf(m),
     cast,
     // Who signs each criterion, keyed by criterion. Built from credits that
     // were already on the wire and already being parsed.
@@ -274,4 +295,7 @@ async function movieDetails(id) {
 // `watchIn` is exported for its test and not for its callers: it is the one
 // piece of real logic in this file, it is pure, and the rules it applies are
 // exactly the kind that rot silently as JustWatch renames things.
-module.exports = { searchMovies, popularMovies, discoverMovies, movieDetails, watchIn, signedBy };
+module.exports = {
+  searchMovies, popularMovies, discoverMovies, movieDetails, watchProvidersFor,
+  watchIn, signedBy
+};

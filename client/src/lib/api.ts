@@ -67,6 +67,11 @@ export type Review = {
   date: string;
   comment: string;
   breakdown: BreakdownRow[];
+  /* What TMDB's own voters gave the film, on the same 0–10 as `final`. Read
+     from the film cache rather than stored with the take: it is a fact about
+     the film and it keeps moving, while the take is frozen. Null on a film the
+     cache has never seen. */
+  crowd?: { score: number; votes: number } | null;
 };
 
 export type Movie = {

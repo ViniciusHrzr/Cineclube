@@ -184,6 +184,32 @@ async function migrate() {
     await exec('ALTER TABLE movies_cache ADD COLUMN runtime INTEGER');
   }
 
+  /* ── o que o TMDB achou ─────────────────────────────────────────────────
+     Their average and how many people are behind it, on the same 0–10 the club
+     uses. Cached because the archive needs it: a take is read from this
+     database with TMDB nowhere in the request, and "o clube deu 6,2 e o TMDB
+     deu 8,1" has to survive that. Every list endpoint carries both fields, so
+     a film has them from the first time anybody searched for it. */
+  if (!movieCols.includes('tmdb_score')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN tmdb_score REAL');
+    await exec('ALTER TABLE movies_cache ADD COLUMN tmdb_votes INTEGER');
+  }
+
+  /* ── onde está passando ─────────────────────────────────────────────────
+     The streaming services carrying the film, as JSON, with the moment it was
+     asked. Cached for a different reason than everything else here: not because
+     the answer is expensive — it is one small request — but because it is
+     twenty of them for one page of the catalogue, every time anybody scrolls.
+
+     The timestamp is the point. A catalogue moves: a film leaves Netflix and
+     the row here becomes a confident lie, which is worse than an empty one. It
+     is read only while it is fresh (see PROVIDERS_TTL in routes/catalog.js) and
+     refetched after that, so being wrong has a ceiling measured in days. */
+  if (!movieCols.includes('providers')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN providers TEXT');
+    await exec('ALTER TABLE movies_cache ADD COLUMN providers_at TEXT');
+  }
+
   /* A take carries its own copy of the film, so the record still reads as a
      record with TMDB unreachable. Takes recorded before this column existed
      fall back to the cache when the archive is read. */

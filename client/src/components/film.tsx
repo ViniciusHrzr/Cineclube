@@ -86,6 +86,7 @@ export const FilmCell = memo(function FilmCell({
               <span className="q text-[11.5px] text-ink-dim">sem avaliação</span>
             )}
           </div>
+          <OnCell watch={movie.watch} />
         </CardItem>
 
         <CardItem translateZ={18} className="mt-auto flex w-full gap-2 pt-3">
@@ -279,6 +280,49 @@ export function ProjectionSheet({
   );
 }
 
+/* ── onde está passando, na grade ─────────────────────────────────────────
+   The same answer as the projection sheet's, at the size a poster card can
+   afford: marks only, no names. A card is scanned rather than read — the eye is
+   going down a grid looking for something to watch tonight, and at that speed a
+   logo is faster than its own name.
+
+   The names are not lost, they are moved: each mark carries one as its title
+   and as the alt text, so a pointer resting on it and a screen reader reaching
+   it both get the word. The sheet behind the poster spells them out in full.
+
+   Capped at four, which is where a row of marks stops being a glance. The
+   overflow says how many are left rather than showing three more pixels of
+   logo, because "+2" is legible and a fifth 18px square is not. */
+function OnCell({ watch }: { watch: Movie['watch'] }) {
+  if (!watch?.streaming.length) return null;
+  const shown = watch.streaming.slice(0, 4);
+  const rest = watch.streaming.length - shown.length;
+
+  return (
+    <div className="mt-2 flex items-center gap-1">
+      {shown.map(p =>
+        p.logo ? (
+          <img
+            key={p.id}
+            src={p.logo}
+            alt={p.name}
+            title={p.name}
+            width={18}
+            height={18}
+            loading="lazy"
+            className="h-[18px] w-[18px] flex-none rounded-[2px] ring-1 ring-white/10"
+          />
+        ) : (
+          <span key={p.id} className="q text-[10.5px] text-ink-dim">
+            {p.name}
+          </span>
+        )
+      )}
+      {rest > 0 ? <span className="q text-[10.5px] text-ink-faint">+{rest}</span> : null}
+    </div>
+  );
+}
+
 /* ── o clube contra a multidão ────────────────────────────────────────────
    Two averages on the same 0–10, side by side, and the distance between them
    named out loud.
@@ -286,8 +330,12 @@ export function ProjectionSheet({
    The whole product is the premise that this club's verdict has a value of its
    own — that is why the criteria are the club's and the weights are the club's.
    A number to disagree with is what makes that premise visible. "A gente deu
-   6,2 e o mundo deu 8,1" is an argument waiting to happen at the table, and the
+   6,2 e o TMDB deu 8,1" is an argument waiting to happen at the table, and the
    sheet exists to start it.
+
+   Named TMDB and not "o mundo", because that is what it is: one site's voters,
+   not a verdict of humanity. The club is disagreeing with something specific
+   and should be able to see which thing.
 
    The vote count is not decoration. A 9,0 from eleven people and a 9,0 from
    four hundred thousand are different claims, and which one the club is
@@ -330,13 +378,13 @@ function Verdicts({
       {club != null
         ? verdict('Clube', club, plural(clubCount ?? 0, 'avaliação', 'avaliações'), true)
         : <p className="q text-[12px] text-ink-dim">sem avaliação do clube</p>}
-      {crowd ? verdict('Mundo', crowd.score, `${votes(crowd.votes)} votos`, false) : null}
+      {crowd ? verdict('TMDB', crowd.score, `${votes(crowd.votes)} votos`, false) : null}
       {apart ? (
         <p className="q mt-0.5 text-[11.5px] text-dye-cyan">
-          {fmt(Math.abs(gap!))} {gap! > 0 ? 'acima' : 'abaixo'} do mundo
+          {fmt(Math.abs(gap!))} {gap! > 0 ? 'acima' : 'abaixo'} do TMDB
         </p>
       ) : gap != null ? (
-        <p className="q mt-0.5 text-[11.5px] text-ink-faint">o clube e o mundo concordam</p>
+        <p className="q mt-0.5 text-[11.5px] text-ink-faint">o clube e o TMDB concordam</p>
       ) : null}
     </div>
   );

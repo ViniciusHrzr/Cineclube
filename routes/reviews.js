@@ -12,7 +12,8 @@ const router = express.Router();
    knows it, and takes recorded before reviews had the column get the number
    without a backfill. */
 const listStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot, mc.runtime AS cached_runtime
+  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
+         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
@@ -34,7 +35,8 @@ const averagesStmt = db.prepare(`
   GROUP BY movie_id
 `);
 const savedStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot, mc.runtime AS cached_runtime
+  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
+         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
@@ -60,6 +62,14 @@ function toReviewDTO(row) {
     moviePoster: row.movie_poster,
     movieDirector: row.movie_director,
     movieRuntime: row.movie_runtime ?? row.cached_runtime ?? null,
+    /* Read from the film cache rather than stored with the take, because it is
+       a fact about the film that keeps changing and not a fact about the
+       evening. A take is frozen; the number it disagrees with is not, and
+       freezing a copy of it would slowly turn the comparison into a comparison
+       with a number nobody can find any more. Null on a film the cache has
+       never seen, which after the migration means a film rated before the
+       column existed and not opened since. */
+    crowd: row.tmdb_votes > 0 ? { score: row.tmdb_score, votes: row.tmdb_votes } : null,
     scores,
     final: row.final,
     date: row.date,
