@@ -31,6 +31,10 @@ type Source =
   | { kind: 'none' }
   /** The receiver owns the element; there is no URL to hand anybody. */
   | { kind: 'torrent' }
+  /* Nothing on this screen can choose this any more — the field that did is
+     gone. It survives for one path: adopting a room whose link is not a magnet,
+     which the server still accepts and an older tab could still have published.
+     A member arriving into that session gets a picture instead of a dead end. */
   | { kind: 'url'; url: string };
 
 /** Shown once, on the first torrent of this browser. It is a fact, not a scare. */
@@ -515,11 +519,6 @@ export function ScreeningScreen() {
           onMagnet={value => chooseTorrent(value, 'receive')}
           onTorrentFile={file => chooseTorrent(file, 'receive')}
           onSeed={file => chooseTorrent(file, 'seed')}
-          onUrl={url => {
-            setFailure(null);
-            setSource({ kind: 'url', url });
-            share(url);
-          }}
         />
       ) : (
         <div className="mt-6">
@@ -721,22 +720,27 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
 }
 
 /* ── choosing the source ──────────────────────────────────────────────────
-   The drop area is the loud one because the two paths that actually work in a
-   browser both start with something being dropped: a magnet from whoever is
-   seeding, or the film itself from the person who has it. */
+   One way in: the film itself, dropped or chosen. Everything else this panel
+   ever offered was a link, and a link is the thing this product exists not to
+   need — somebody hunting one down, pasting it into the chat, and four people
+   finding out together that it does not play.
+
+   The field for a direct video URL is gone with the rest. It was the last of
+   them and it was the worst: it worked in principle, it worked almost never in
+   practice — a public mp4 the whole club can reach is not a thing anybody has —
+   and it sat under the drop box implying that the honest path was optional. A
+   magnet or a .torrent released here is still understood, because that costs a
+   line in `take` and rescues somebody who has one; it is simply never offered. */
 function SourcePanel({
   onMagnet,
   onTorrentFile,
   onSeed,
-  onUrl,
 }: {
   onMagnet: (value: string) => void;
   onTorrentFile: (file: File) => void;
   onSeed: (file: File) => void;
-  onUrl: (url: string) => void;
 }) {
   const [over, setOver] = useState(false);
-  const [url, setUrl] = useState('');
   /* A file chosen here is the same file dropped on the box: it is seeded to the
      club and the session starts by itself. The dashed box is a target for the
      mouse, not a different feature — clicking and dragging must not be two
@@ -829,30 +833,6 @@ function SourcePanel({
 
         {refused ? <p className="q mt-3 text-[11.5px] text-dye-red-lit">{refused}</p> : null}
       </div>
-
-      {/* The other source, and the last one: a link the club already has. Not
-          hidden behind a "more sources" toggle any more — there is nothing left
-          for it to be the alternative to, and one field is not a menu. */}
-      <form
-        className="mt-4 flex flex-wrap gap-2"
-        onSubmit={e => {
-          e.preventDefault();
-          const clean = url.trim();
-          if (/^https?:\/\//i.test(clean)) onUrl(clean);
-        }}
-      >
-        <input
-          value={url}
-          onChange={e => setUrl(e.target.value)}
-          placeholder="URL direta de vídeo (mp4, webm, m3u8)"
-          aria-label="URL direta de vídeo"
-          spellCheck={false}
-          className="q min-w-[18ch] flex-1 rounded-cell bg-house-deep px-3 py-2.5 text-[13px] text-ink caret-dye-red outline-none ring-1 ring-house-rail placeholder:text-ink-dim focus:ring-dye-cyan"
-        />
-        <Key type="submit" disabled={!/^https?:\/\//i.test(url.trim())}>
-          Usar
-        </Key>
-      </form>
     </div>
   );
 }
