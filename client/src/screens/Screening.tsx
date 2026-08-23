@@ -58,6 +58,18 @@ const SUB_SIZE_STEP = 10;
    which will never choose anything — does not hold up the evening. */
 const START_GRACE_MS = 20_000;
 
+/* ── the width of the room ────────────────────────────────────────────────
+   Narrower than the page, and the picture is the reason. The rest of the
+   product is a shelf of posters and wants the full 1240; a film does not. At
+   the column's full width the video is edge to edge with nothing around it —
+   no dark to sit the frame against — and every control underneath is stranded
+   at the far ends of a line the eye has to travel to read as one row.
+
+   So the whole screen moves in together, not just the video: a player at 900
+   with a status bar at 1240 under it is not a smaller player, it is a player
+   that lost an argument with the layout. */
+const ROOM = 'mx-auto w-full max-w-[900px]';
+
 /* ── subtitles ────────────────────────────────────────────────────────────
    A `<track>` only speaks WebVTT, and what people have on disk is almost always
    SubRip. The two are close enough that converting is a header and a punctuation
@@ -469,7 +481,7 @@ export function ScreeningScreen() {
 
   if (!state.open) {
     return (
-      <section>
+      <section className={ROOM}>
         <Head connected={connected} viewers={state.viewers.length} />
         <FilmPicker watchlist={club.watchlist} onPick={id => void openFilm(id)} />
       </section>
@@ -482,7 +494,7 @@ export function ScreeningScreen() {
   const waiting = state.viewers.filter(v => !v.ready);
 
   return (
-    <section>
+    <section className={ROOM}>
       <Head connected={connected} viewers={state.viewers.length} />
 
       <div className="mt-6 flex flex-wrap items-start gap-4">
@@ -524,68 +536,78 @@ export function ScreeningScreen() {
           />
 
           {failure ? (
-            <div className="mt-3 max-w-[68ch]">
+            <div className="mt-3">
               <Fault detail="ffmpeg -i filme.mkv -c:v copy -c:a aac -movflags +faststart filme.mp4">
                 {failure}
               </Fault>
             </div>
           ) : null}
 
-          <SubtitleBar
-            subtitle={subtitle}
-            on={subsOn}
-            offset={subOffset}
-            size={subSize}
-            onImport={file => void importSubtitle(file)}
-            onToggle={() => setSubsOn(v => !v)}
-            onNudge={by => setSubOffset(o => Math.round((o + by) * 10) / 10)}
-            onResize={by =>
-              setSubSize(v => Math.min(SUB_SIZE_MAX, Math.max(SUB_SIZE_MIN, v + by)))
-            }
-            onClear={() => {
-              heldSub.current = null;
-              setSubFile(null);
-              setSubOffset(0);
-              // The subtitle is the room's, so removing it removes it for all.
-              void publishSubtitle(null);
-            }}
-          />
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <SourceLine source={source} torrent={torrent.status} peaked={peak.current > 0} />
-            <button
-              type="button"
-              onClick={() => {
-                stopTorrent();
-                setSource({ kind: 'none' });
-                setDuration(null);
-                setFailure(null);
-                /* The room's pointer stays where it is — this is one person
-                   changing their own screen, not the club changing films. But
-                   without this the adoption below would put the same link
-                   straight back, and the button would do nothing at all. */
-                declined.current = state.link;
+          {/* ── the booth ─────────────────────────────────────────────────────
+              Everything here used to sit straight on the room: four rows of
+              loose text and unlit buttons under the picture, each one floating
+              at its own distance from the last, with nothing saying they were
+              one thing. They are one thing — the controls of the machine
+              showing the film — so they get one surface, and the rule that runs
+              across it separates what belongs to the subtitle from what belongs
+              to the source. */}
+          <div className="plate mt-3 px-4 py-3.5">
+            <SubtitleBar
+              subtitle={subtitle}
+              on={subsOn}
+              offset={subOffset}
+              size={subSize}
+              onImport={file => void importSubtitle(file)}
+              onToggle={() => setSubsOn(v => !v)}
+              onNudge={by => setSubOffset(o => Math.round((o + by) * 10) / 10)}
+              onResize={by =>
+                setSubSize(v => Math.min(SUB_SIZE_MAX, Math.max(SUB_SIZE_MIN, v + by)))
+              }
+              onClear={() => {
+                heldSub.current = null;
+                setSubFile(null);
+                setSubOffset(0);
+                // The subtitle is the room's, so removing it removes it for all.
+                void publishSubtitle(null);
               }}
-              className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
-            >
-              Trocar fonte
-            </button>
+            />
+
+            <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-house-rail pt-3.5">
+              <SourceLine source={source} torrent={torrent.status} peaked={peak.current > 0} />
+              <button
+                type="button"
+                onClick={() => {
+                  stopTorrent();
+                  setSource({ kind: 'none' });
+                  setDuration(null);
+                  setFailure(null);
+                  /* The room's pointer stays where it is — this is one person
+                     changing their own screen, not the club changing films. But
+                     without this the adoption below would put the same link
+                     straight back, and the button would do nothing at all. */
+                  declined.current = state.link;
+                }}
+                className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+              >
+                Trocar fonte
+              </button>
+            </div>
+
+            {/* What used to be a field with the magnet in it, to be copied into
+                the chat by hand. The room publishes that link by itself the
+                moment the engine builds it, so the field was a leftover errand
+                — but the sentence under it was not, and it is the one thing the
+                seeder genuinely needs to know. */}
+            {torrent.status.phase === 'seeding' ? (
+              <p className="q mt-2.5 max-w-[60ch] text-[11.5px] text-ink-dim">
+                Enquanto esta aba estiver aberta, o filme está no ar para o clube. Fechar aqui derruba
+                a fonte.
+              </p>
+            ) : null}
           </div>
 
-          {/* What used to be a field with the magnet in it, to be copied into
-              the chat by hand. The room publishes that link by itself the
-              moment the engine builds it, so the field was a leftover errand
-              — but the sentence under it was not, and it is the one thing the
-              seeder genuinely needs to know. */}
-          {torrent.status.phase === 'seeding' ? (
-            <p className="q mt-3 max-w-[60ch] text-[11.5px] text-ink-dim">
-              Enquanto esta aba estiver aberta, o filme está no ar para o clube. Fechar aqui derruba a
-              fonte.
-            </p>
-          ) : null}
-
           {ended ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="plate mt-3 flex flex-wrap items-center gap-3 px-4 py-3.5">
               <span className="legend">Fim de sessão</span>
               <Key tone="commit" onClick={() => club.rateMovie(movie.id)}>
                 Avaliar agora
@@ -595,8 +617,13 @@ export function ScreeningScreen() {
         </div>
       )}
 
-      {/* ── the club, and what it is waiting for ──────────────────────────── */}
-      <div className="mt-8">
+      {/* ── the club, and what it is waiting for ────────────────────────────
+          A plate for the same reason the booth is one: this is a list, and a
+          list of people floating on the wall under a caption is not read as a
+          list. The seats go a shade darker than the plate they sit on — they
+          were house-seat on the room, and house-seat on house-seat is nothing
+          at all. */}
+      <div className="plate mt-6 px-4 py-4">
         <span className="legend">Na sessão</span>
         <div className="mt-3 flex flex-wrap gap-2">
           {state.viewers.map(v => (
@@ -604,7 +631,7 @@ export function ScreeningScreen() {
               key={v.id}
               title={v.sourceTag ?? 'ainda escolhendo a fonte'}
               className={cn(
-                'flex items-center gap-2 rounded-cell bg-house-seat/70 px-2.5 py-1.5 ring-1',
+                'flex items-center gap-2 rounded-cell bg-house-deep/80 px-2.5 py-1.5 ring-1',
                 v.ready ? 'ring-house-rail' : 'ring-dye-red-lit/60'
               )}
             >
@@ -625,7 +652,7 @@ export function ScreeningScreen() {
         ) : null}
 
         {different.length ? (
-          <div className="mt-3 max-w-[60ch]">
+          <div className="mt-3">
             <Fault detail={different.map(v => `${v.name}: ${v.sourceTag}`).join(' · ')}>
               {plural(different.length, 'pessoa está', 'pessoas estão')} com uma cópia diferente da sua. A
               sincronia continua valendo, mas o mesmo segundo pode ser outra cena.
@@ -947,7 +974,9 @@ function SubtitleBar({
   onClear: () => void;
 }) {
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+    /* No top margin of its own: it is the first row inside the booth plate,
+       and the plate's padding is what stands it off the edge. */
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {subtitle ? (
         <>
           <button

@@ -453,20 +453,56 @@ export function SyncedVideo({
 
   return (
     <div className={cn('relative overflow-hidden rounded-cell bg-black', className)}>
-      {/* ── the size of the words ────────────────────────────────────────────
+      {/* ── how a line of dialogue is drawn ──────────────────────────────────
           A cue is drawn by the browser, inside a shadow tree no class can
           reach. `::cue` is the only handle there is, and it is a pseudo-element
-          on the video — so the value has to arrive as an actual stylesheet with
-          the number written into it, scoped by an attribute so it cannot leak
+          on the video — so the rule has to arrive as an actual stylesheet with
+          the values written into it, scoped by an attribute so it cannot leak
           onto some other player.
 
-          A percentage, because the browser already sizes cues from the size of
-          the video: 100% is exactly what it would have done unaided, and every
-          other value is this member saying it is wrong for their screen. Not a
-          custom property — `::cue` does not resolve `var()` in every engine
-          that supports the rest of it, and a rule that silently does nothing in
-          one browser is worse than no rule. */}
-      <style>{`video[data-club-player]::cue{font-size:${subtitleSize}%}`}</style>
+          What the browser does unaided is a black slab behind every line, in a
+          face nobody chose, at whatever leading that face defaults to. It reads
+          as a caption file being displayed rather than a film being shown, and
+          it has one failure worth naming: the slab is drawn per line and sized
+          to the words in it, so a sentence that wraps becomes two staggered
+          boxes with a seam between them. That seam is what looks like the lines
+          drifting apart, and no amount of leading fixes it — the box has to go.
+
+          With no plate under them the letters carry their own dark. Same trick
+          the rest of the product uses over the film wall (see `body` in
+          index.css), only heavier, because a subtitle sits over a moving
+          picture that is allowed to be white: four hard offsets are the edge
+          around the letterforms, the two blurs behind them are what separates
+          the line from whatever is lit underneath.
+
+          The size stays a percentage, because the browser already sizes cues
+          from the size of the video: 100% is exactly what it would have done
+          unaided, and every other value is this member saying it is wrong for
+          their screen. Not a custom property — `::cue` does not resolve `var()`
+          in every engine that supports the rest of it, and a rule that silently
+          does nothing in one browser is worse than no rule.
+
+          Styled here rather than drawn here: an overlay of our own would give
+          full control and lose it again the moment somebody presses the native
+          fullscreen button, which promotes the `<video>` alone and leaves every
+          sibling behind. Cues go fullscreen with the element they belong to. */}
+      <style>{`
+        video[data-club-player]::cue {
+          font-family: Poppins, system-ui, sans-serif;
+          font-size: ${subtitleSize}%;
+          font-weight: 500;
+          line-height: 1.25;
+          color: #fff6e6;
+          background: transparent;
+          text-shadow:
+            1px 1px 0 rgba(4, 5, 10, 0.92),
+            -1px 1px 0 rgba(4, 5, 10, 0.92),
+            1px -1px 0 rgba(4, 5, 10, 0.92),
+            -1px -1px 0 rgba(4, 5, 10, 0.92),
+            0 2px 4px rgba(4, 5, 10, 0.9),
+            0 0 12px rgba(4, 5, 10, 0.7);
+        }
+      `}</style>
       <video
         data-club-player=""
         ref={holdVideo}
