@@ -8,6 +8,8 @@
     "start": "node server.js",
     "test": "node --test",
     "migrate:turso": "node scripts/migrate-to-turso.js",
+    "migrate:criterios": "node scripts/migrate-criteria-keys.js",
+    "doc:criterios": "node scripts/criterios-doc.js",
     "backfill:runtimes": "node scripts/backfill-runtimes.js",
     "build": "npm --prefix client install && npm --prefix client run build"
   },

@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  TECH, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB,
-  genreFromTmdbIds, genresFromTmdbIds, critsFor, finalOf, GENRE_PRIORITY
+  BASE, BASE_SWAP, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB,
+  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, GENRE_PRIORITY
 } = require('../criteria');
 
 /* ── the /12 invariant ───────────────────────────────────────────────────
@@ -20,7 +20,7 @@ test('every genre weighs exactly 12', () => {
   }
 });
 
-test('every genre has 8 technical criteria (x1) and 2 genre criteria (x2)', () => {
+test('every genre has 8 base criteria (x1) and 2 genre criteria (x2)', () => {
   for (const genre of GENRES) {
     const cs = critsFor(genre);
     assert.equal(cs.filter(c => c.w === 1).length, 8, `${genre}: critérios x1`);
@@ -159,14 +159,59 @@ test('the single genre is the first of the list', () => {
   }
 });
 
-/* Rating the same film as two different genres has to give two usable cards:
-   the eight technical criteria never move, and only the pair at the end does. */
-test('every genre keeps the same eight technical criteria', () => {
-  const techOf = g => critsFor(g).filter(c => c.w === 1).map(c => c.key);
-  const base = techOf('Drama');
+/* ── the base, and the genres allowed to move it ──────────────────────────
+   A genre may replace a slot of the eight when the default question has no
+   referent — "Atuações" on an animation, "Direção de Arte" on a documentary.
+   What it may not do is add one, drop one, or reorder them: the count is what
+   holds the /12 divisor up and the order is what makes two cards comparable
+   side by side. So the swap is checked against the declaration rather than
+   forbidden outright. */
+const baseKeys = g => critsFor(g).filter(c => c.w === 1).map(c => c.key);
+
+test('a genre that declares no swap is asked the default eight', () => {
+  const fallback = BASE.map(t => t[0]);
   for (const genre of GENRES) {
-    assert.deepEqual(techOf(genre), base, `${genre} mudou os critérios técnicos`);
+    if (BASE_SWAP[genre]) continue;
+    assert.deepEqual(baseKeys(genre), fallback, `${genre} mexeu na base sem declarar`);
   }
+});
+
+test('a swap replaces a slot in place, never adds or reorders one', () => {
+  for (const [genre, swap] of Object.entries(BASE_SWAP)) {
+    const slots = BASE.map(t => t[0]);
+    for (const slot of Object.keys(swap)) {
+      assert.ok(slots.includes(slot), `${genre} troca "${slot}", que não está na base`);
+    }
+    const expected = BASE.map(t => (swap[t[0]] ? swap[t[0]][0] : t[0]));
+    assert.deepEqual(baseKeys(genre), expected, `${genre}: a base saiu de ordem`);
+    assert.equal(baseKeys(genre).length, 8, `${genre}: a base deixou de ter oito`);
+  }
+});
+
+/* The whole point of the swap. A criterion nobody can answer does not come back
+   empty — it comes back as whatever number was easiest to leave the slider on,
+   at full weight, indistinguishable from a measurement afterwards. */
+test('the genres with nothing to act in are not asked about acting', () => {
+  assert.ok(!baseKeys('Animação').includes('atuacoes'), 'animação ainda pede atuações');
+  assert.ok(baseKeys('Animação').includes('vozes'), 'animação precisa perguntar por vozes');
+  assert.ok(!baseKeys('Documentário').includes('atuacoes'), 'documentário ainda pede atuações');
+  assert.ok(!baseKeys('Documentário').includes('arte'), 'documentário ainda pede direção de arte');
+});
+
+/* Every genre still has to ask about the four systems a film is made of, plus
+   how it was directed and written. Those are not negotiable by genre — only
+   what fills the two slots that can be. */
+test('the craft every film has is asked of every genre', () => {
+  for (const genre of GENRES) {
+    for (const key of ['direcao', 'roteiro', 'fotografia', 'montagem', 'som', 'originalidade']) {
+      assert.ok(baseKeys(genre).includes(key), `${genre} não pergunta por ${key}`);
+    }
+  }
+});
+
+test('baseFor falls back to the default eight for an unknown genre', () => {
+  assert.deepEqual(baseFor('Faroeste'), BASE);
+  assert.deepEqual(baseFor(undefined), BASE);
 });
 
 /* A genre added to the taxonomy without a place in the priority list would be
@@ -205,11 +250,28 @@ test('GENRES covers exactly the genres that define criteria', () => {
   assert.ok(GENRES.includes('Drama'), 'Drama é o fallback e precisa existir');
 });
 
-test('TECH is the shared base of every genre card', () => {
-  const techKeys = TECH.map(t => t[0]);
-  assert.equal(techKeys.length, 8);
-  for (const genre of GENRES) {
-    const keys = critsFor(genre).filter(c => c.w === 1).map(c => c.key);
-    assert.deepEqual(keys, techKeys, `${genre} não usa a base técnica padrão`);
+test('BASE is eight slots and every slot is named and described', () => {
+  assert.equal(BASE.length, 8);
+  for (const [key, name, hint] of BASE) {
+    assert.ok(key && name && hint, `slot "${key}" incompleto`);
   }
+});
+
+/* A rename inside a genre is free; a new key is not — it drops that criterion
+   out of every take already recorded unless the archive is migrated with it.
+   This is the list scripts/migrate-criteria-keys.js has to agree with, and it
+   is written down here so that adding a swap without a migration is a decision
+   somebody makes on purpose. */
+test('the keys a genre introduces are the ones the migration knows about', () => {
+  const introduced = new Set();
+  for (const [genre, swap] of Object.entries(BASE_SWAP)) {
+    for (const [slot, replacement] of Object.entries(swap)) {
+      if (replacement[0] !== slot) introduced.add(`${genre}:${slot}→${replacement[0]}`);
+    }
+  }
+  assert.deepEqual([...introduced].sort(), [
+    'Animação:atuacoes→vozes',
+    'Documentário:arte→material',
+    'Documentário:atuacoes→acesso'
+  ]);
 });

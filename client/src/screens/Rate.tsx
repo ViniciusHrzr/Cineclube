@@ -44,8 +44,9 @@ export function RateScreen({
      Almost no film is one genre. TMDB gave Frewaka drama, fantasy and horror,
      and until now something had to choose — a priority list did, and it was
      guessing at what the person watching already knows. So the choice moves to
-     them: every genre the film carries is offered, and the two ×2 criteria
-     follow the one they pick.
+     them: every genre the film carries is offered, and the card follows the one
+     they pick — the two ×2 criteria always, and for animation and documentary a
+     slot of the eight as well.
 
      It is held here rather than read off the film because it is a decision
      about this take and not a fact about the film. Two members can rate the
@@ -93,10 +94,11 @@ export function RateScreen({
     [club]
   );
 
-  /* Switching genre keeps every mark that still has a question to answer. The
-     eight technical criteria are the same in every genre and never move; of the
-     two that change, one sometimes survives — Terror and Suspense both ask
-     about atmosfera — and whatever is new opens at five.
+  /* Switching genre keeps every mark that still has a question to answer, and
+     opens whatever is new at five. Most of the card survives the switch — the
+     eight at weight 1 are the same in every genre but the two that swap a slot
+     (see BASE_SWAP in criteria.js), and a pair is sometimes shared, as Drama and
+     Romance both are on impacto.
 
      Seeding matters more than it looks: a criterion with no entry reads as five
      on its slider and counts as zero in the total, so leaving one unseeded
@@ -327,7 +329,8 @@ function Slate({
           </div>
           {choices.length > 1 ? (
             <p className="mt-2 text-[12px] leading-relaxed text-ink-dim">
-              Este filme é de mais de um gênero. O escolhido decide os dois critérios que valem dobro.
+              Este filme é de mais de um gênero. O escolhido decide os dois critérios que valem dobro —
+              e, em animação e documentário, também troca uma das oito perguntas da base.
             </p>
           ) : null}
         </div>
@@ -460,7 +463,12 @@ function Channels({
   const row = (c: Criterion) => <Channel key={c.key} c={c} index={i++} value={scores[c.key] ?? 5} onChange={onChange} />;
   return (
     <div className="plate overflow-hidden px-4 pb-4 sm:px-5">
-      <p className="legend py-4">8 critérios técnicos ×1</p>
+      {/* Not "técnicos" any more. Two genres replace a slot of these eight —
+          animation is asked about its voice cast instead of its acting,
+          documentary about access and archive instead of acting and production
+          design — so the word that used to describe the group now describes it
+          wrongly for two of the nine. */}
+      <p className="legend py-4">8 critérios ×1</p>
       {tech.map(row)}
       <p className="legend mt-5 border-t border-white/[0.07] pt-5 text-dye-cyan">
         2 critérios de {genre.toLowerCase()} ×2
