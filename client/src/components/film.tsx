@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import { Fault, IconKey, Key, Poster, Skeleton, Strip } from '@/components/bits';
-import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
+import { api, fmt, runtimeOf, type Movie, type Provider } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 
 /* ── the film cell ────────────────────────────────────────────────────────
@@ -263,6 +263,8 @@ export function ProjectionSheet({
                 </a>
               ) : null}
 
+              <WatchOn watch={movie.watch} />
+
               <div className="mt-6 flex flex-wrap gap-2">
                 <Key tone="commit" onClick={() => onRate(movie.id)}>
                   <Check className="h-4 w-4" strokeWidth={2} />
@@ -282,6 +284,79 @@ export function ProjectionSheet({
         )}
       </div>
     </dialog>
+  );
+}
+
+/* ── onde a gente assiste isso ────────────────────────────────────────────
+   The question the club actually asks about a film it has not seen, and the
+   one thing the projection sheet could not answer. TMDB carries it, licensed
+   from JustWatch, split by how you get to the film — and that split is the
+   whole point: "está incluído em algo que você já paga" and "dá para alugar"
+   are different answers, and collapsing them into one row of logos would make
+   the sheet say something it does not know.
+
+   Absent on a stale film. The cache deliberately does not store this, because a
+   catalogue moves and a confident wrong answer about where a film is streaming
+   is worse than no answer.
+
+   The credit is not decoration: using this data obliges us to name JustWatch as
+   the source, and the link out is TMDB's own page for the film, which lands on
+   the real storefronts instead of guessing a deep link into a service the
+   reader may not even have. */
+function WatchOn({ watch }: { watch: Movie['watch'] }) {
+  if (!watch) return null;
+
+  const row = (label: string, list: Provider[]) =>
+    list.length ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="legend w-[9ch] flex-none">{label}</span>
+        {list.map(p => (
+          <span
+            key={p.id}
+            className="flex items-center gap-1.5 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
+          >
+            {/* Decorative: the name is right there in text beside it, so a
+                reader who cannot see the mark is not being told twice. */}
+            {p.logo ? (
+              <img src={p.logo} alt="" width={20} height={20} loading="lazy" className="h-5 w-5 rounded-[2px]" />
+            ) : null}
+            <span className="text-[11.5px] leading-none text-ink">{p.name}</span>
+          </span>
+        ))}
+      </div>
+    ) : null;
+
+  return (
+    <div className="mt-5 border-t border-white/[0.07] pt-4">
+      <div className="flex flex-col gap-2">
+        {row('Assinatura', watch.streaming)}
+        {row('Alugar', watch.paid)}
+      </div>
+      <p className="q mt-3 text-[11px] text-ink-faint">
+        Disponibilidade no Brasil, por{' '}
+        <a
+          href="https://www.justwatch.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 transition-colors hover:text-ink-dim"
+        >
+          JustWatch
+        </a>
+        {watch.link ? (
+          <>
+            {' · '}
+            <a
+              href={watch.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 transition-colors hover:text-ink-dim"
+            >
+              ver onde
+            </a>
+          </>
+        ) : null}
+      </p>
+    </div>
   );
 }
 

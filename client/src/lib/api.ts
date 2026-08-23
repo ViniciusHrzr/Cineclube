@@ -84,8 +84,23 @@ export type Movie = {
   overview?: string | null;
   cast?: { name: string }[];
   trailerUrl?: string | null;
+  /* Where the film can be watched in Brazil, from TMDB's JustWatch data. Null
+     when nothing carries it here, which for an old or obscure film is the
+     common case — and absent entirely on a cached film, because the cache does
+     not store it: a catalogue moves and a stale answer to "está na Netflix?"
+     is worse than no answer. */
+  watch?: {
+    /** TMDB's page for this film's providers. The link out, as they ask. */
+    link: string | null;
+    /** Included in a subscription: flatrate, free and ad-supported alike. */
+    streaming: Provider[];
+    /** Rental and purchase, which is a different answer to the question. */
+    paid: Provider[];
+  } | null;
   stale?: boolean;
 };
+
+export type Provider = { id: number; name: string; logo: string | null };
 
 export type WatchItem = {
   id: number;
