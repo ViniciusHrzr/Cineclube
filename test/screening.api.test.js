@@ -159,6 +159,8 @@ test('the room is the club\'s, not the internet\'s', async () => {
     ['POST', '/api/screening/close', {}],
     ['POST', '/api/screening/command', { type: 'play' }],
     ['POST', '/api/screening/ready', { ready: true }],
+    ['GET', '/api/screening/subtitle'],
+    ['POST', '/api/screening/subtitle', { subtitle: null }],
   ]) {
     const { status } = await req(method, route, body);
     assert.equal(status, 401, `${method} ${route} deveria exigir sessão`);
@@ -362,6 +364,69 @@ test('leaving the stream takes the viewer out of the room', async () => {
 });
 
 /* ── the clock ────────────────────────────────────────────────────────────── */
+
+test('a subtitle posted by one member is announced to another, and collected', async () => {
+  const film = await queuedFilm({ title: 'A Sessão Legendada' });
+  const ana = await newMember('Ana da Legenda');
+  const bruno = await newMember('Bruno da Legenda');
+  assert.equal((await req('POST', '/api/screening/open', { movieId: film.id }, ana.cookie)).status, 201);
+
+  const ear = await listen(bruno.cookie);
+  const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nboa noite';
+
+  const sent = await req(
+    'POST',
+    '/api/screening/subtitle',
+    { subtitle: { name: 'filme.srt', vtt } },
+    ana.cookie
+  );
+  assert.equal(sent.status, 200);
+
+  const frame = await ear.next(f => f.type === 'state' && f.subtitle?.name === 'filme.srt');
+  // Announced only: the text must never ride on a frame the room re-emits.
+  assert.equal(frame.subtitle.vtt, undefined);
+
+  const got = await req('GET', '/api/screening/subtitle', null, bruno.cookie);
+  assert.equal(got.status, 200);
+  assert.equal(got.body.vtt, vtt);
+  assert.equal(got.body.id, frame.subtitle.id, 'o id busca exatamente o que foi anunciado');
+
+  // And removing it is the room's doing, not one screen's.
+  assert.equal(
+    (await req('POST', '/api/screening/subtitle', { subtitle: null }, bruno.cookie)).status,
+    200
+  );
+  await ear.next(f => f.type === 'state' && f.subtitle === null);
+  assert.equal((await req('GET', '/api/screening/subtitle', null, ana.cookie)).status, 404);
+
+  await ear.close();
+  await req('POST', '/api/screening/close', {}, ana.cookie);
+});
+
+test('a subtitle needs an open session, and has to look like one', async () => {
+  const member = await newMember();
+  const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\noi';
+
+  await req('POST', '/api/screening/close', {}, member.cookie);
+  const shut = await req(
+    'POST',
+    '/api/screening/subtitle',
+    { subtitle: { name: 'a.srt', vtt } },
+    member.cookie
+  );
+  assert.equal(shut.status, 409);
+
+  const film = await queuedFilm();
+  assert.equal((await req('POST', '/api/screening/open', { movieId: film.id }, member.cookie)).status, 201);
+
+  for (const subtitle of [{ name: 'a.srt' }, { name: '  ', vtt }, { vtt }, 'WEBVTT']) {
+    const { status } = await req('POST', '/api/screening/subtitle', { subtitle }, member.cookie);
+    assert.equal(status, 400, JSON.stringify(subtitle));
+  }
+  assert.equal((await req('GET', '/api/screening/subtitle', null, member.cookie)).status, 404);
+
+  await req('POST', '/api/screening/close', {}, member.cookie);
+});
 
 test('the clock endpoint answers with the server\'s instant', async () => {
   const member = await newMember();

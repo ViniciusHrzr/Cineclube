@@ -152,6 +152,7 @@ export function SyncedVideo({
   onEnded,
   onPlaybackError,
   subtitle,
+  subtitleSize = 100,
   poster,
   className,
 }: {
@@ -165,8 +166,10 @@ export function SyncedVideo({
   onEnded?: () => void;
   /** The browser refused the file. The code is `MediaError.code`. */
   onPlaybackError?: (code: number) => void;
-  /** A subtitle file this member loaded, already converted to WebVTT. */
+  /** The room's subtitle, converted to WebVTT and shifted by this member. */
   subtitle?: { url: string; label: string } | null;
+  /** How big the cues are drawn, as a percentage of what the browser chose. */
+  subtitleSize?: number;
   poster?: string | null;
   className?: string;
 }) {
@@ -450,7 +453,22 @@ export function SyncedVideo({
 
   return (
     <div className={cn('relative overflow-hidden rounded-cell bg-black', className)}>
+      {/* ── the size of the words ────────────────────────────────────────────
+          A cue is drawn by the browser, inside a shadow tree no class can
+          reach. `::cue` is the only handle there is, and it is a pseudo-element
+          on the video — so the value has to arrive as an actual stylesheet with
+          the number written into it, scoped by an attribute so it cannot leak
+          onto some other player.
+
+          A percentage, because the browser already sizes cues from the size of
+          the video: 100% is exactly what it would have done unaided, and every
+          other value is this member saying it is wrong for their screen. Not a
+          custom property — `::cue` does not resolve `var()` in every engine
+          that supports the rest of it, and a rule that silently does nothing in
+          one browser is worse than no rule. */}
+      <style>{`video[data-club-player]::cue{font-size:${subtitleSize}%}`}</style>
       <video
+        data-club-player=""
         ref={holdVideo}
         src={src ?? undefined}
         poster={poster ?? undefined}

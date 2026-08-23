@@ -153,6 +153,34 @@ router.post('/link', wrap(async (req, res) => {
   res.json(screening.snapshot());
 }));
 
+/* ── the subtitle ─────────────────────────────────────────────────────────
+   Two routes rather than a field on the snapshot, and that split is the whole
+   design: the stream announces which subtitle the room is on, and this is
+   where the text is actually collected. The reasoning is in `snapshot`.
+
+   Sent as WebVTT because the browser only speaks WebVTT and the conversion
+   from SubRip already happens on the screen that read the file. Converting
+   once, where the file is opened, beats converting in every browser that
+   receives it — and means the room stores one format instead of two. */
+router.get('/subtitle', (_req, res) => {
+  const subtitle = screening.room.subtitle;
+  if (!subtitle) return res.status(404).json({ error: 'A sessão não tem legenda.' });
+  res.json(subtitle);
+});
+
+router.post('/subtitle', wrap(async (req, res) => {
+  if (!screening.withinRate(req.session.reviewer_id)) {
+    return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
+  }
+  if (!screening.room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
+
+  const { subtitle } = req.body || {};
+  if (!screening.setSubtitle(subtitle === null || subtitle === undefined ? null : subtitle)) {
+    return res.status(400).json({ error: 'Legenda inválida — precisa de nome e texto, até 512 KB.' });
+  }
+  res.json(screening.snapshot());
+}));
+
 /* Whether this member can play right now, and what they are playing. The
    source tag is how the club finds out somebody opened a different file before
    the difference becomes an argument about who is at the wrong scene. */

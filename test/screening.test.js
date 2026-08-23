@@ -393,6 +393,87 @@ test('the snapshot carries the link, so whoever arrives can load it', () => {
   assert.equal(screening.snapshot(T0).link, link);
 });
 
+/* ── the subtitle the club shares ─────────────────────────────────────────
+   The one file small enough to travel. What these cover is mostly the split
+   between the announcement and the text: the room broadcasts its snapshot on
+   every mutation it has, so anything heavy in there is multiplied by every
+   member and every buffer report. */
+
+const CUE = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nboa noite';
+
+test('a subtitle needs both a name and some text', () => {
+  screening.open(FILM, T0);
+
+  for (const bad of [
+    { name: 'filme.srt' },
+    { name: 'filme.srt', vtt: '' },
+    { name: 'filme.srt', vtt: '   ' },
+    { name: '   ', vtt: CUE },
+    { vtt: CUE },
+    {},
+    CUE,
+    42,
+    undefined,
+  ]) {
+    assert.equal(screening.setSubtitle(bad, T0), false, JSON.stringify(bad ?? null));
+  }
+  assert.equal(screening.room.subtitle, null);
+});
+
+test('a subtitle too big to be one is refused whole, not trimmed', () => {
+  screening.open(FILM, T0);
+
+  const over = { name: 'filme.srt', vtt: 'a'.repeat(screening.MAX_SUBTITLE + 1) };
+  assert.equal(screening.setSubtitle(over, T0), false);
+  assert.equal(screening.room.subtitle, null);
+
+  const at = { name: 'filme.srt', vtt: 'a'.repeat(screening.MAX_SUBTITLE) };
+  assert.equal(screening.setSubtitle(at, T0), true);
+  assert.equal(screening.room.subtitle.vtt.length, screening.MAX_SUBTITLE);
+});
+
+test('the snapshot announces the subtitle without carrying it', () => {
+  screening.open(FILM, T0);
+  screening.setSubtitle({ name: 'duna.srt', vtt: CUE }, T0);
+
+  const announced = screening.snapshot(T0).subtitle;
+  assert.deepEqual(Object.keys(announced).sort(), ['id', 'name']);
+  assert.equal(announced.name, 'duna.srt');
+  // The text lives behind its own route. On every frame, to everybody, it would
+  // be the fan-out every ceiling in this module exists to prevent.
+  assert.equal(announced.vtt, undefined);
+});
+
+test('swapping the file changes the id, which is all a client compares', () => {
+  screening.open(FILM, T0);
+  screening.setSubtitle({ name: 'a.srt', vtt: CUE }, T0);
+  const first = screening.snapshot(T0).subtitle.id;
+
+  screening.setSubtitle({ name: 'b.srt', vtt: CUE + '\n' }, T0 + 1000);
+  assert.notEqual(screening.snapshot(T0).subtitle.id, first);
+});
+
+test('removing the subtitle removes it for the whole room', () => {
+  screening.open(FILM, T0);
+  screening.setSubtitle({ name: 'a.srt', vtt: CUE }, T0);
+
+  assert.equal(screening.setSubtitle(null, T0 + 1000), true);
+  assert.equal(screening.room.subtitle, null);
+  assert.equal(screening.snapshot(T0).subtitle, null);
+});
+
+test('the subtitle belongs to the film it was loaded for', () => {
+  screening.open(FILM, T0);
+  screening.setSubtitle({ name: 'a.srt', vtt: CUE }, T0);
+
+  screening.open({ ...FILM, id: 2, title: 'Outro Filme' }, T0 + 1000);
+  assert.equal(screening.room.subtitle, null);
+
+  screening.setSubtitle({ name: 'b.srt', vtt: CUE }, T0 + 2000);
+  screening.close(T0 + 3000);
+  assert.equal(screening.room.subtitle, null);
+});
+
 test('the snapshot never exposes the connection count', () => {
   screening.attach(session('p1', 'Ana'));
   const [viewer] = screening.snapshot(T0).viewers;

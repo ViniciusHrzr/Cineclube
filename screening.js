@@ -86,6 +86,14 @@ const LINK_SCHEMES = new Set(['http:', 'https:', 'magnet:']);
    broken one. So links get their own ceiling and are refused rather than cut. */
 const MAX_LINK = 4096;
 
+/* A feature film's subtitles are 40 to 120 kB of WebVTT. This leaves room for a
+   long one with heavy formatting and still refuses anything that is plainly not
+   a subtitle file — someone's .mkv renamed, a log, a mistake. Refused whole,
+   like a link: half a subtitle file is not a shorter subtitle file. Note the
+   body parser in front of this accepts 1 MB, so the ceiling that actually
+   matters is this one. */
+const MAX_SUBTITLE = 512 * 1024;
+
 const room = {
   open: false,
   movie: null,
@@ -99,6 +107,11 @@ const room = {
      over: a magnet or a URL. Null while nobody has one, and null forever for a
      file on somebody's disk — those bytes cannot be shared by naming them. */
   link: null,
+  /* The club's subtitle: `{ id, name, vtt }`, or null while there is none.
+     Unlike the link this is the content and not a pointer to it, because there
+     is nowhere else for it to live — the file came off somebody's disk. What
+     the snapshot carries is still only a pointer; see `snapshot`. */
+  subtitle: null,
   /* Whether the current pause was the buffering wheel rather than a person.
      Only a pause the room caused itself may be undone by the room itself. */
   pausedByStall: false,
@@ -185,8 +198,10 @@ function open(movie, now = Date.now()) {
   // the wheel again, however badly the last one went.
   room.resumedAt = 0;
   room.autoPauses = 0;
-  // A link belongs to the film it was opened for, never to the next one.
+  // A link belongs to the film it was opened for, never to the next one. So
+  // does a subtitle, and rather more obviously.
   room.link = null;
+  room.subtitle = null;
   stamp(now);
   broadcastState();
 }
@@ -209,6 +224,43 @@ function setLink(link, now = Date.now()) {
   return true;
 }
 
+/* ── the subtitle the club shares ─────────────────────────────────────────
+   The one thing on this screen that is small enough to travel. The film cannot
+   — it is gigabytes and it stays on the disk it came from — but the subtitles
+   are a hundred kilobytes of text, and asking four people to each go and find
+   the same .srt is the same friction as asking them to each paste the same
+   magnet.
+
+   What is shared is the file, not the timing. The offset stays with each
+   member because it is a fact about *their* copy of the film: two people
+   watching different rips of the same title need different shifts, and one
+   person's correction applied to everybody would break the three it was not
+   measured against.
+
+   Passing `null` clears it for everyone, which is what "Remover" now means —
+   the subtitle belongs to the room, so leaving one member's screen is not a
+   thing it can do. */
+function setSubtitle(subtitle, now = Date.now()) {
+  if (subtitle === null) {
+    room.subtitle = null;
+    stamp(now);
+    broadcastState();
+    return true;
+  }
+  const name = text(subtitle?.name);
+  const vtt = typeof subtitle?.vtt === 'string' ? subtitle.vtt : null;
+  if (!name || !vtt || !vtt.trim() || vtt.length > MAX_SUBTITLE) return false;
+
+  stamp(now);
+  /* Identified by the revision it arrived on, which is already monotonic. A
+     client compares it against the one it holds and fetches only on a
+     difference — including the difference between "no subtitle" and "one it
+     has never seen", which is how somebody arriving mid-film gets it. */
+  room.subtitle = { id: room.revision, name, vtt };
+  broadcastState();
+  return true;
+}
+
 function close(now = Date.now()) {
   room.open = false;
   room.movie = null;
@@ -218,6 +270,7 @@ function close(now = Date.now()) {
   room.resumedAt = 0;
   room.autoPauses = 0;
   room.link = null;
+  room.subtitle = null;
   // The viewers survive: they are the people with a connection open, and
   // closing the film does not disconnect anybody.
   for (const viewer of room.viewers.values()) {
@@ -371,6 +424,14 @@ function snapshot(now = Date.now()) {
     revision: room.revision,
     pausedByStall: room.pausedByStall,
     link: room.link,
+    /* The announcement, not the file. This snapshot is re-emitted on every
+       mutation the room has — every play, every seek, every buffer report from
+       every member — and a hundred kilobytes of subtitle riding on each of
+       those, multiplied by everyone connected, is precisely the fan-out the
+       ceilings at the top of this file exist to prevent. So the room says
+       *that* there is a subtitle and which one; whoever does not have it
+       fetches it once, over HTTP, from `GET /api/screening/subtitle`. */
+    subtitle: room.subtitle ? { id: room.subtitle.id, name: room.subtitle.name } : null,
     // The client measures its own offset against this; without it, one member
     // with a crooked clock drifts permanently and nothing can tell why.
     serverTime: now,
@@ -494,6 +555,7 @@ function reset() {
   room.resumedAt = 0;
   room.autoPauses = 0;
   room.link = null;
+  room.subtitle = null;
   room.viewers.clear();
   streams.clear();
   buckets.clear();
@@ -502,6 +564,7 @@ function reset() {
 module.exports = {
   MAX_TEXT,
   MAX_LINK,
+  MAX_SUBTITLE,
   MAX_STREAMS_PER_VIEWER,
   MAX_STREAMS_TOTAL,
   COMMANDS,
@@ -512,6 +575,7 @@ module.exports = {
   isAllowedSource,
   isShareableLink,
   setLink,
+  setSubtitle,
   open,
   close,
   play,

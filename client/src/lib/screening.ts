@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { post } from '@/lib/api';
+import { api, post } from '@/lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The client half of the screening room.
@@ -52,9 +52,17 @@ export type ScreeningState = {
   pausedByStall: boolean;
   /** The magnet or URL the club is on, for whoever arrives next. Null: none. */
   link: string | null;
+  /* Which subtitle the room is on — the announcement, never the text. The text
+     is fetched once, by `fetchSubtitle`, because this state arrives on every
+     mutation and the file is a hundred kilobytes. `id` is what changes when
+     somebody swaps the file, and therefore the only thing worth comparing. */
+  subtitle: { id: number; name: string } | null;
   serverTime: number;
   viewers: ScreeningViewer[];
 };
+
+/** The subtitle itself, as WebVTT at offset zero. Each member shifts their own. */
+export type SubtitleFile = { id: number; name: string; vtt: string };
 
 export type CommandType = 'play' | 'pause' | 'seek';
 
@@ -66,6 +74,7 @@ const IDLE: ScreeningState = {
   revision: 0,
   pausedByStall: false,
   link: null,
+  subtitle: null,
   serverTime: 0,
   viewers: [],
 };
@@ -228,6 +237,27 @@ export function useScreening(onError?: (msg: string) => void) {
     }
   }, []);
 
+  /* ── the subtitle, both directions ───────────────────────────────────────
+     Publishing is an action a person took and worth a toast when it fails:
+     they chose a file and nothing appeared, and without a word they would
+     re-choose it, which fails the same way. Passing null removes it — for
+     everyone, because it is the room's and not this browser's. */
+  const publishSubtitle = useCallback(
+    async (subtitle: { name: string; vtt: string } | null) => {
+      try {
+        const snap = await post<ScreeningState>('/api/screening/subtitle', { subtitle });
+        return snap.subtitle?.id ?? null;
+      } catch (e) {
+        onError?.('Não foi possível enviar a legenda: ' + (e as Error).message);
+        return null;
+      }
+    },
+    [onError]
+  );
+
+  /** The text the room announced. Throws, so the caller can leave it alone. */
+  const fetchSubtitle = useCallback(() => api<SubtitleFile>('/api/screening/subtitle'), []);
+
   /* Reporting readiness is chatter, not an action: it fires on every stall and
      every recovery, and a failed one is corrected by the next. Errors are
      swallowed on purpose — surfacing them would put a toast on screen for
@@ -255,8 +285,23 @@ export function useScreening(onError?: (msg: string) => void) {
       closeFilm,
       setReady,
       publishLink,
+      publishSubtitle,
+      fetchSubtitle,
     }),
-    [state, connected, offset, serverNow, expected, send, openFilm, closeFilm, setReady, publishLink]
+    [
+      state,
+      connected,
+      offset,
+      serverNow,
+      expected,
+      send,
+      openFilm,
+      closeFilm,
+      setReady,
+      publishLink,
+      publishSubtitle,
+      fetchSubtitle,
+    ]
   );
 }
 

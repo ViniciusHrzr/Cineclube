@@ -36,6 +36,22 @@ type Source =
 /** Shown once, on the first torrent of this browser. It is a fact, not a scare. */
 const P2P_NOTICE = 'cineclube.p2p-avisado';
 
+/* ── how big the words are ────────────────────────────────────────────────
+   Kept in this browser and remembered between films, because it is not a fact
+   about the subtitle — it is a fact about the screen it is being read on, and
+   somebody watching on a laptop two feet away wants a different answer from
+   somebody with a television across the room. Same reason the offset is
+   per-person, one step further out: the offset belongs to the copy, this
+   belongs to the seat.
+
+   A percentage of whatever the browser was already going to use. The UA sizes
+   cues from the size of the video, so 100 is "leave it alone" and the range is
+   somebody saying it is wrong for them. */
+const SUB_SIZE = 'cineclube.legenda-tamanho';
+const SUB_SIZE_MIN = 40;
+const SUB_SIZE_MAX = 200;
+const SUB_SIZE_STEP = 10;
+
 /* How long the film waits for the rest of the club to load the source before
    starting anyway. Long enough for a magnet to resolve on a swarm of one
    seeder, short enough that a tab left open on somebody's second monitor —
@@ -106,11 +122,26 @@ export function ScreeningScreen() {
   const [duration, setDuration] = useState<number | null>(null);
   const [ended, setEnded] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  /** The imported file at offset zero; the shifted copy is derived from it. */
+  /** The room's file as WebVTT at offset zero; the shifted copy derives from it. */
   const [subFile, setSubFile] = useState<{ name: string; raw: string } | null>(null);
   const [subOffset, setSubOffset] = useState(0);
   const [subsOn, setSubsOn] = useState(true);
   const [subtitle, setSubtitle] = useState<{ url: string; label: string } | null>(null);
+  const [subSize, setSubSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(SUB_SIZE));
+      return saved >= SUB_SIZE_MIN && saved <= SUB_SIZE_MAX ? saved : 100;
+    } catch {
+      return 100; // storage refused: the default is not worth an exception
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUB_SIZE, String(subSize));
+    } catch {
+      /* it simply starts at the default next time */
+    }
+  }, [subSize]);
 
   const movieId = state.movie?.id ?? null;
   const { stop: stopTorrent } = torrent;
@@ -126,6 +157,9 @@ export function ScreeningScreen() {
   const declined = useRef<string | null>(null);
   /** Whether the film has been started. See "the film starting by itself". */
   const started = useRef(false);
+  /** The subtitle text this browser holds, and the room's id it came from. */
+  const heldSub = useRef<string | null>(null);
+  const tookSub = useRef<number | null>(null);
   /** When this member's own picture became available; the grace runs from it. */
   const feedingSince = useRef<number | null>(null);
 
@@ -143,6 +177,8 @@ export function ScreeningScreen() {
     declined.current = null;
     started.current = false;
     feedingSince.current = null;
+    heldSub.current = null;
+    tookSub.current = null;
     stopTorrent();
   }, [movieId, stopTorrent]);
 
@@ -220,11 +256,71 @@ export function ScreeningScreen() {
     return () => el.textTracks.removeEventListener('addtrack', apply);
   }, [subsOn, subtitle]);
 
-  const importSubtitle = useCallback(async (file: File) => {
-    setSubOffset(0);
-    setSubsOn(true);
-    setSubFile({ name: file.name, raw: await readSubtitle(file) });
-  }, []);
+  /* ── the subtitle, which does travel ─────────────────────────────────────
+     The film cannot be handed over — it is gigabytes and it lives on one disk
+     — but the subtitles are a hundred kilobytes of text, and four people each
+     hunting down the same .srt is the same errand the room exists to abolish.
+     So this one goes to the club, and everybody's player picks it up.
+
+     Converted to WebVTT here rather than in each browser that receives it: the
+     conversion belongs where the file was opened, and the room then stores one
+     format instead of two. At offset zero, always — the shift is the one part
+     that stays personal, because it is a fact about your copy of the film. */
+  const { publishSubtitle, fetchSubtitle } = screening;
+
+  const importSubtitle = useCallback(
+    async (file: File) => {
+      const vtt = toVtt(await readSubtitle(file), 0);
+      setSubOffset(0);
+      setSubsOn(true);
+      heldSub.current = vtt;
+      setSubFile({ name: file.name, raw: vtt });
+      tookSub.current = await publishSubtitle({ name: file.name, vtt });
+    },
+    [publishSubtitle]
+  );
+
+  /* The other direction: the room announces a subtitle and whoever does not
+     have it collects it. Only the id is compared, because the announcement is
+     all the stream carries — the text is a separate request, made once. This is
+     also how a member arriving in the second act gets the subtitles without
+     asking, which is the whole point of putting it in the room. */
+  const announcedSub = state.subtitle?.id ?? null;
+  useEffect(() => {
+    if (announcedSub === null) {
+      // Somebody removed it. It was the room's, so it goes from every screen.
+      if (tookSub.current === null) return;
+      tookSub.current = null;
+      heldSub.current = null;
+      setSubFile(null);
+      setSubOffset(0);
+      return;
+    }
+    if (announcedSub === tookSub.current) return;
+    tookSub.current = announcedSub;
+
+    let alive = true;
+    void fetchSubtitle().then(
+      got => {
+        /* Already holding this exact text: our own upload coming back round the
+           stream, because the frame can beat the reply to the POST. Rebuilding
+           the blob would replace a live `<track>` for no reason, and a browser
+           shows that as the subtitles blinking out mid-line. */
+        if (!alive || got.vtt === heldSub.current) return;
+        heldSub.current = got.vtt;
+        setSubFile({ name: got.name, raw: got.vtt });
+        // A different file is a different timing; the old shift means nothing.
+        setSubOffset(0);
+      },
+      () => {
+        /* One failed fetch is not worth a toast: the next announcement, or the
+           next film, tries again, and the player is perfectly usable without. */
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [announcedSub, fetchSubtitle]);
 
   /* ── the pointer the club shares ─────────────────────────────────────────
      Published once per link and never in a loop: two members who each chose a
@@ -423,6 +519,7 @@ export function ScreeningScreen() {
             onEnded={() => setEnded(true)}
             onPlaybackError={code => setFailure(playbackFailure(code))}
             subtitle={subtitle}
+            subtitleSize={subSize}
             poster={movie.poster}
           />
 
@@ -438,12 +535,19 @@ export function ScreeningScreen() {
             subtitle={subtitle}
             on={subsOn}
             offset={subOffset}
+            size={subSize}
             onImport={file => void importSubtitle(file)}
             onToggle={() => setSubsOn(v => !v)}
             onNudge={by => setSubOffset(o => Math.round((o + by) * 10) / 10)}
+            onResize={by =>
+              setSubSize(v => Math.min(SUB_SIZE_MAX, Math.max(SUB_SIZE_MIN, v + by)))
+            }
             onClear={() => {
+              heldSub.current = null;
               setSubFile(null);
               setSubOffset(0);
+              // The subtitle is the room's, so removing it removes it for all.
+              void publishSubtitle(null);
             }}
           />
 
@@ -468,8 +572,16 @@ export function ScreeningScreen() {
             </button>
           </div>
 
-          {torrent.status.phase === 'seeding' && torrent.status.magnet ? (
-            <MagnetToCopy magnet={torrent.status.magnet} />
+          {/* What used to be a field with the magnet in it, to be copied into
+              the chat by hand. The room publishes that link by itself the
+              moment the engine builds it, so the field was a leftover errand
+              — but the sentence under it was not, and it is the one thing the
+              seeder genuinely needs to know. */}
+          {torrent.status.phase === 'seeding' ? (
+            <p className="q mt-3 max-w-[60ch] text-[11.5px] text-ink-dim">
+              Enquanto esta aba estiver aberta, o filme está no ar para o clube. Fechar aqui derruba a
+              fonte.
+            </p>
           ) : null}
 
           {ended ? (
@@ -804,25 +916,34 @@ function SourceLine({
 }
 
 /* ── subtitles ────────────────────────────────────────────────────────────
-   Deliberately this member's own business: the file stays in this browser and
-   the offset is per person, because whose copy runs two seconds early is
-   exactly the kind of thing that differs between two people watching the same
-   film from two different rips. */
+   The file is the club's — one person finds it and everybody's player loads
+   it. The two adjustments are not, and the split is deliberate:
+
+   - the offset belongs to your *copy of the film*. Two members watching
+     different rips need different shifts, and one person's correction pushed
+     onto everybody would break the three it was not measured against;
+   - the size belongs to your *screen*, which the room knows nothing about.
+
+   So one file, and two knobs that never leave the browser they are turned in. */
 function SubtitleBar({
   subtitle,
   on,
   offset,
+  size,
   onImport,
   onToggle,
   onNudge,
+  onResize,
   onClear,
 }: {
   subtitle: { url: string; label: string } | null;
   on: boolean;
   offset: number;
+  size: number;
   onImport: (file: File) => void;
   onToggle: () => void;
   onNudge: (by: number) => void;
+  onResize: (by: number) => void;
   onClear: () => void;
 }) {
   return (
@@ -867,6 +988,29 @@ function SubtitleBar({
             </button>
           </div>
 
+          {/* Sized in words rather than in a number nobody can picture: the
+              percentage is there to be read back, not to be aimed at. */}
+          <div className="flex items-center gap-2">
+            <span className="q text-[11.5px] text-ink-dim">Tamanho</span>
+            <button
+              type="button"
+              onClick={() => onResize(-SUB_SIZE_STEP)}
+              aria-label="Diminuir a legenda"
+              className="rounded-cell px-2 py-1 font-display text-[11px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
+            >
+              A−
+            </button>
+            <span className="q min-w-[5ch] text-center text-[12px] text-ink">{size}%</span>
+            <button
+              type="button"
+              onClick={() => onResize(SUB_SIZE_STEP)}
+              aria-label="Aumentar a legenda"
+              className="rounded-cell px-2 py-1 font-display text-[15px] leading-none text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
+            >
+              A+
+            </button>
+          </div>
+
           <span className="q max-w-[24ch] truncate text-[11.5px] text-ink-dim" title={subtitle.label}>
             {subtitle.label}
           </span>
@@ -892,50 +1036,10 @@ function SubtitleBar({
             }}
             className="max-w-full text-[12px] text-ink-dim file:mr-3 file:rounded-cell file:border-0 file:bg-house-seat file:px-3 file:py-2 file:font-display file:text-[12px] file:uppercase file:tracking-[0.12em] file:text-ink"
           />
-          <span className="q text-[11.5px] text-ink-dim">.srt ou .vtt, do seu computador</span>
+          <span className="q text-[11.5px] text-ink-dim">.srt ou .vtt — vai para o clube inteiro</span>
         </label>
       )}
     </div>
   );
 }
 
-/* ── the link to hand out ─────────────────────────────────────────────────
-   Seeding is only useful if the link leaves this browser, so the field exists
-   to be copied and pasted in the chat where the club already is. */
-function MagnetToCopy({ magnet }: { magnet: string }) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <div className="plate mt-4 p-4">
-      <span className="legend">Seu link — mande no Discord</span>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <input
-          readOnly
-          value={magnet}
-          onFocus={e => e.currentTarget.select()}
-          className="q min-w-[18ch] flex-1 rounded-cell bg-house-deep px-3 py-2.5 text-[12px] text-ink-dim outline-none ring-1 ring-house-rail focus:ring-dye-cyan"
-        />
-        <Key
-          onClick={() => {
-            /* The clipboard API is missing outside a secure context, and
-               `?.` then leaves `undefined.then` — which threw. */
-            const written = navigator.clipboard?.writeText(magnet);
-            if (!written) return;
-            void written.then(
-              () => {
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 2000);
-              },
-              () => setCopied(false)
-            );
-          }}
-        >
-          {copied ? 'Copiado' : 'Copiar'}
-        </Key>
-      </div>
-      <p className="q mt-3 text-[11.5px] text-ink-dim">
-        Enquanto esta aba estiver aberta, o filme está no ar para o clube. Fechar aqui derruba a fonte.
-      </p>
-    </div>
-  );
-}
