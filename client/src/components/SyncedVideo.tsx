@@ -46,8 +46,20 @@ const DRIFT_INTERVAL_MS = 2000;
    waiting for you and ought to be told. */
 const STALL_AFTER_MS = 1200;
 
-/** How far apart two lines of one subtitle sit, as a multiple of their size. */
-const SUB_LEADING = 1.25;
+/* How far apart two lines of one subtitle sit, as a multiple of their size.
+
+   Tighter than anything the browser would arrive at on its own, and tighter
+   than body copy wants, because a subtitle is not a paragraph: it is two lines
+   that have to be read as one utterance in the second they are on screen.
+   Loose leading makes the eye travel, and travelling is what reads as the two
+   halves of a sentence belonging to different thoughts.
+
+   The floor is not taste, it is the alphabet. Poppins puts an accented capital
+   about 0.78em above the baseline and a descender 0.21em below it, so two
+   lines of Portuguese — which stacks Á over g without being asked twice —
+   have roughly 0.99em of ink between the top of one and the bottom of the
+   other. Below about 1.05 they touch. This leaves a hair of room over that. */
+const SUB_LEADING = 1.12;
 
 /* ── being ready, measured instead of guessed ─────────────────────────────
    Recovery used to be the `canplay` event, and that was the start-stop loop.
