@@ -19,11 +19,18 @@
 
    É idempotente: uma chave já renomeada não é encontrada de novo, e uma linha
    em que nada mudou não é reescrita. Rodar duas vezes não faz nada na segunda.
+
+   Com --dry não escreve nada: lê o acervo, imprime exatamente o que faria e
+   sai. Existe por causa do banco de produção, que fica atrás de uma URL e um
+   token de ambiente — quando o alvo é o clube inteiro e não este notebook, a
+   primeira rodada deve ser a que não pode dar errado.
    ══════════════════════════════════════════════════════════════════════════ */
 
 try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }
 
 const db = require('../db');
+
+const DRY = process.argv.includes('--dry');
 
 /* ── o que virou o quê ────────────────────────────────────────────────────
    Por gênero, porque uma chave só muda dentro do gênero que a trocou:
@@ -65,6 +72,14 @@ function rename(scores, map) {
 async function main() {
   await db.ready;
 
+  /* Which database this is about to touch, said before anything happens. The
+     script reads the same env the server does, so running it with the
+     production variables unset is not an error — it quietly migrates the copy
+     on this machine instead, which looks exactly like success. */
+  const target = process.env.TURSO_DATABASE_URL;
+  console.log(`[critérios] banco: ${target ? `Turso — ${target}` : 'arquivo local (data/cineclube.db)'}`);
+  if (DRY) console.log('[critérios] simulação: nada será escrito');
+
   const rows = await readStmt.all();
   if (!rows.length) {
     console.log('[critérios] o acervo está vazio — nada a migrar');
@@ -97,16 +112,20 @@ async function main() {
       continue;
     }
 
-    await writeStmt.run(JSON.stringify(out), row.id);
+    if (!DRY) await writeStmt.run(JSON.stringify(out), row.id);
     touched++;
     const moved = Object.entries(map)
       .filter(([from]) => from in scores)
       .map(([from, to]) => `${from}→${to}`)
       .join(', ');
-    console.log(`[critérios] ${row.movie_title} (${row.movie_genre}): ${moved}`);
+    console.log(`[critérios] ${DRY ? '(simulado) ' : ''}${row.movie_title} (${row.movie_genre}): ${moved}`);
   }
 
-  console.log(`[critérios] pronto — ${touched} avaliação(ões) migrada(s), ${skipped} já em dia`);
+  console.log(
+    DRY
+      ? `[critérios] simulação — ${touched} avaliação(ões) seriam migradas, ${skipped} já em dia`
+      : `[critérios] pronto — ${touched} avaliação(ões) migrada(s), ${skipped} já em dia`
+  );
 }
 
 main()
