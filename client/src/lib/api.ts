@@ -83,6 +83,16 @@ export type Movie = {
   runtime?: number | null;
   overview?: string | null;
   cast?: { name: string }[];
+  /* Who signs each criterion, keyed by criterion key — `fotografia`, `som`,
+     `montagem`. Built by the server from credits it was already parsing. A key
+     is absent when nobody is credited for it, which happens honestly: an
+     animation rarely credits a director of photography, and nobody at all
+     signs `originalidade`. */
+  crew?: Record<string, string[]>;
+  /* TMDB's own average, on the same 0–10 as the club's, with the number of
+     people behind it. Null when nobody has voted — TMDB reports that as an
+     average of zero, which is not the same thing as a bad film. */
+  crowd?: { score: number; votes: number } | null;
   trailerUrl?: string | null;
   /* Where the film can be watched in Brazil, from TMDB's JustWatch data. Null
      when nothing carries it here, which for an old or obscure film is the
@@ -92,10 +102,9 @@ export type Movie = {
   watch?: {
     /** TMDB's page for this film's providers. The link out, as they ask. */
     link: string | null;
-    /** Included in a subscription: flatrate, free and ad-supported alike. */
+    /* Included in something already paid for: flatrate, free and ad-supported
+       alike. Rental and purchase are not carried — see `watchIn` in tmdb.js. */
     streaming: Provider[];
-    /** Rental and purchase, which is a different answer to the question. */
-    paid: Provider[];
   } | null;
   stale?: boolean;
 };

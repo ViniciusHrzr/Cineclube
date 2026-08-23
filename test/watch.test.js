@@ -33,15 +33,21 @@ test('only Brazil is read, however many countries came back', () => {
   assert.deepEqual(names(watchIn(payload).streaming), ['Disney Plus']);
 });
 
-test('subscription and rental stay apart', () => {
+/* Rental and purchase are dropped on the floor. Almost every film ever made is
+   for sale on the same three storefronts, so the rental row was a constant
+   under every poster — and a constant carries no information. */
+test('rental and purchase are not carried at all', () => {
   const watch = watchIn(wrap({
     flatrate: [P(8, 'Netflix', 0)],
     rent: [P(3, 'Google Play Movies', 14)],
     buy: [P(2, 'Apple TV Store', 9)]
   }));
   assert.deepEqual(names(watch.streaming), ['Netflix']);
-  // Sorted by JustWatch's priority, so buy can precede rent in the joined list.
-  assert.deepEqual(names(watch.paid), ['Apple TV Store', 'Google Play Movies']);
+  assert.equal(watch.paid, undefined, 'aluguel não deve viajar');
+});
+
+test('a film only for rent answers null, as if it were nowhere', () => {
+  assert.equal(watchIn(wrap({ rent: [P(3, 'Google Play Movies', 14)], buy: [P(2, 'Apple TV Store', 9)] })), null);
 });
 
 /* Free and ad-supported are a different deal to JustWatch and the same answer
@@ -89,11 +95,9 @@ test('an ad tier is folded into the service, not listed beside it', () => {
    a word boundary rather than on any shared prefix. */
 test('two services with overlapping names both survive', () => {
   const watch = watchIn(wrap({
-    flatrate: [P(119, 'Amazon Prime Video', 1)],
-    rent: [P(10, 'Amazon Video', 13)]
+    flatrate: [P(119, 'Amazon Prime Video', 1), P(10, 'Amazon Video', 13)]
   }));
-  assert.deepEqual(names(watch.streaming), ['Amazon Prime Video']);
-  assert.deepEqual(names(watch.paid), ['Amazon Video']);
+  assert.deepEqual(names(watch.streaming), ['Amazon Prime Video', 'Amazon Video']);
 });
 
 test('the list is capped before it becomes a directory', () => {

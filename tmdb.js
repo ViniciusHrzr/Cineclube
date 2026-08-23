@@ -71,17 +71,22 @@ function watchIn(providers) {
   const here = providers?.results?.[REGION];
   if (!here) return null;
   /* `free` and `ads` are streaming somebody does not pay extra for, which is
-     the same answer as `flatrate` from where the club is standing. */
+     the same answer as `flatrate` from where the club is standing.
+
+     `rent` and `buy` are deliberately not read. Almost every film ever made is
+     for sale on Apple TV, Amazon and Google Play, so the rental row was the
+     same three logos under every poster — a constant, and a constant carries no
+     information. It also answered a question nobody in this club asked: the
+     point is finding something four people can watch tonight without anybody
+     buying anything. */
   const streaming = tidyProviders([...(here.flatrate || []), ...(here.free || []), ...(here.ads || [])]);
-  const paid = tidyProviders([...(here.rent || []), ...(here.buy || [])]);
-  if (!streaming.length && !paid.length) return null;
+  if (!streaming.length) return null;
   return {
     // TMDB asks that this be the link out, and it is also the honest one: it
     // lands on a page with the actual storefronts rather than guessing a deep
     // link into a service the visitor may not have.
     link: here.link || null,
-    streaming,
-    paid
+    streaming
   };
 }
 
@@ -158,6 +163,72 @@ async function discoverMovies(tmdbGenreIds, page = 1) {
   };
 }
 
+/* ── quem assina cada critério ────────────────────────────────────────────
+   The credits already arrive. A film's `crew` is 736 people for Inception, 225
+   for Oppenheimer, and until now exactly one of them survived being parsed —
+   the director — while the rest was read and thrown away. Five of the eight
+   base criteria have a name sitting in that discarded array.
+
+   Putting it on the rating card turns an abstract slider into a judgement about
+   somebody's work: you are not scoring "Fotografia", you are scoring what Hoyte
+   van Hoytema did. It is also the club learning who these people are, which is
+   most of what watching films together is for.
+
+   Two things make this a list of jobs per criterion rather than one job name:
+
+   · TMDB does not spell the writing credit one way. Oppenheimer and Inception
+     say `Writer`; Fight Club says `Screenplay`. And both carry `Novel` or
+     `Book` as well, which is the author of the source and emphatically not the
+     person who wrote the film — so the list is an allowlist, never a
+     department scan.
+   · Some criteria genuinely are two crafts. `som` is trilha and desenho
+     sonoro, and the composer and the sound designer are different people doing
+     different work under one slider. Naming only one of them would be a
+     quieter mistake than naming neither.
+
+   Keyed by criterion so the client can look up whatever card it is drawing
+   without knowing any of this. Keys the genre does not ask about are simply
+   never read; `originalidade` is absent because nobody signs it, and that is
+   the correct answer rather than a gap. */
+const SIGNED_BY = {
+  direcao: ['Director'],
+  roteiro: ['Screenplay', 'Writer'],
+  fotografia: ['Director of Photography'],
+  montagem: ['Editor'],
+  som: ['Original Music Composer', 'Sound Designer'],
+  arte: ['Production Design']
+};
+
+/* Enough to say who is responsible, not enough to become a credit roll. Three
+   is what fits on one line beside a criterion's name at the width the card is
+   drawn at. */
+const MAX_NAMES = 3;
+
+function signedBy(crew, cast) {
+  const out = {};
+  for (const [key, jobs] of Object.entries(SIGNED_BY)) {
+    const names = [];
+    /* Walked in the order the jobs are declared, not the order TMDB listed the
+       crew: for `som` that keeps the composer ahead of the sound designer, and
+       for `roteiro` it prefers the explicit screenplay credit where a film
+       carries both spellings. */
+    for (const job of jobs) {
+      for (const person of crew) {
+        if (person.job === job && person.name && !names.includes(person.name)) names.push(person.name);
+      }
+    }
+    if (names.length) out[key] = names.slice(0, MAX_NAMES);
+  }
+  /* The cast answers two different criteria depending on the genre, and it is
+     the same people either way — an animated film's cast IS its voice cast. */
+  const players = cast.slice(0, MAX_NAMES).map(c => c.name);
+  if (players.length) {
+    out.atuacoes = players;
+    out.vozes = players;
+  }
+  return out;
+}
+
 async function movieDetails(id) {
   const m = await tmdbGet(`/movie/${id}`, { append_to_response: 'credits,videos,watch/providers' });
   const director = (m.credits?.crew || []).find(c => c.job === 'Director');
@@ -177,7 +248,22 @@ async function movieDetails(id) {
     // serves for search, popular and discover do not carry it at all.
     runtime: m.runtime || null,
     overview: m.overview || null,
+    /* ── a nota da multidão ────────────────────────────────────────────────
+       TMDB's own average, on the same 0–10 the club uses, so the two numbers
+       can sit side by side without being converted into each other.
+
+       The count travels with it because the average means nothing alone. A 9,0
+       from eleven people and a 9,0 from four hundred thousand are different
+       claims, and the club deserves to see which one it is disagreeing with.
+
+       Zero votes reads as null rather than 0,0. TMDB gives an unrated film an
+       average of zero, and printing that next to the club's number would say
+       the world hated a film the world has not seen. */
+    crowd: m.vote_count > 0 ? { score: m.vote_average, votes: m.vote_count } : null,
     cast,
+    // Who signs each criterion, keyed by criterion. Built from credits that
+    // were already on the wire and already being parsed.
+    crew: signedBy(m.credits?.crew || [], m.credits?.cast || []),
     trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
     // Null when nothing streams, rents or sells it here — which for an old or
     // obscure film is the common case, and is itself the answer.
@@ -188,4 +274,4 @@ async function movieDetails(id) {
 // `watchIn` is exported for its test and not for its callers: it is the one
 // piece of real logic in this file, it is pure, and the rules it applies are
 // exactly the kind that rot silently as JustWatch renames things.
-module.exports = { searchMovies, popularMovies, discoverMovies, movieDetails, watchIn };
+module.exports = { searchMovies, popularMovies, discoverMovies, movieDetails, watchIn, signedBy };

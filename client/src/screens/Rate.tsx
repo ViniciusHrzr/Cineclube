@@ -202,6 +202,7 @@ export function RateScreen({
                   criteria={criteria}
                   scores={scores}
                   genre={genre}
+                  crew={movie.crew}
                   onChange={(k, v) => {
                     setScores(s => ({ ...s, [k]: v }));
                     setSaved(false);
@@ -450,17 +451,22 @@ function Channels({
   criteria,
   scores,
   genre,
+  crew,
   onChange,
 }: {
   criteria: Criterion[];
   scores: Record<string, number>;
   genre: string;
+  /** Who signs each criterion. Empty for a film served from the cache. */
+  crew?: Record<string, string[]>;
   onChange: (key: string, value: number) => void;
 }) {
   const tech = criteria.filter(c => c.w === 1);
   const gen = criteria.filter(c => c.w === 2);
   let i = 0;
-  const row = (c: Criterion) => <Channel key={c.key} c={c} index={i++} value={scores[c.key] ?? 5} onChange={onChange} />;
+  const row = (c: Criterion) => (
+    <Channel key={c.key} c={c} index={i++} value={scores[c.key] ?? 5} signers={crew?.[c.key]} onChange={onChange} />
+  );
   return (
     <div className="plate overflow-hidden px-4 pb-4 sm:px-5">
       {/* Not "técnicos" any more. Two genres replace a slot of these eight —
@@ -482,11 +488,14 @@ function Channel({
   c,
   index,
   value,
+  signers,
   onChange,
 }: {
   c: Criterion;
   index: number;
   value: number;
+  /** The people credited for this criterion, if anybody is. */
+  signers?: string[];
   onChange: (key: string, value: number) => void;
 }) {
   /* ── the gate and the light ─────────────────────────────────────────────
@@ -539,6 +548,19 @@ function Channel({
           {fmt(value)}
         </span>
       </div>
+
+      {/* ── quem assina ──────────────────────────────────────────────────────
+          The name goes above the slider, not in the description under it,
+          because it is the thing being scored and not an explanation of the
+          scoring. Dragging Fotografia from 5 to 8 is a judgement about work
+          somebody did, and the card should say whose while the hand is on it.
+
+          Silent when nobody is credited. An animation rarely has a director of
+          photography and nobody at all signs Originalidade — an empty line
+          reading "—" would be inventing an absence that is not one. */}
+      {signers?.length ? (
+        <p className="mt-1 text-[12px] leading-snug text-beam-dim">{signers.join(' · ')}</p>
+      ) : null}
 
       {/* Everything visible is drawn here; the input is invisible and on top,
           where it still takes the drag, the arrow keys and the screen reader.

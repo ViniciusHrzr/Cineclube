@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import { Fault, IconKey, Key, Poster, Skeleton, Strip } from '@/components/bits';
-import { api, fmt, runtimeOf, type Movie, type Provider } from '@/lib/api';
+import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 
 /* ── the film cell ────────────────────────────────────────────────────────
@@ -233,17 +233,9 @@ export function ProjectionSheet({
                     </span>
                   ))}
                 </span>
-                {clubAvg != null ? (
-                  <span className="flex items-center gap-2">
-                    <Strip value={clubAvg} cells={10} className="h-[5px] w-[70px]" />
-                    <span className="q text-[12px] text-beam">
-                      {fmt(clubAvg)} · {plural(clubCount ?? 0, 'avaliação', 'avaliações')}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="q text-[12px] text-ink-dim">sem avaliação do clube</span>
-                )}
               </div>
+
+              <Verdicts club={clubAvg} clubCount={clubCount} crowd={movie.crowd} />
 
               <p className="mt-4 max-w-[66ch] text-[13.5px] leading-relaxed text-ink-dim">
                 {movie.overview || 'Sem sinopse disponível no TMDB.'}
@@ -287,6 +279,69 @@ export function ProjectionSheet({
   );
 }
 
+/* ── o clube contra a multidão ────────────────────────────────────────────
+   Two averages on the same 0–10, side by side, and the distance between them
+   named out loud.
+
+   The whole product is the premise that this club's verdict has a value of its
+   own — that is why the criteria are the club's and the weights are the club's.
+   A number to disagree with is what makes that premise visible. "A gente deu
+   6,2 e o mundo deu 8,1" is an argument waiting to happen at the table, and the
+   sheet exists to start it.
+
+   The vote count is not decoration. A 9,0 from eleven people and a 9,0 from
+   four hundred thousand are different claims, and which one the club is
+   contradicting changes what the disagreement means. */
+function Verdicts({
+  club,
+  clubCount,
+  crowd,
+}: {
+  club: number | null | undefined;
+  clubCount: number | null | undefined;
+  crowd: Movie['crowd'];
+}) {
+  /* Compact, in Portuguese: 12.345 votos reads as "12 mil". The exact figure is
+     noise at this size — the order of magnitude is the whole message. */
+  const votes = (n: number) =>
+    new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+  const gap = club != null && crowd ? club - crowd.score : null;
+  /* Under a quarter of a point is the two agreeing. Naming a gap that small as
+     a disagreement would manufacture a fight out of rounding. */
+  const apart = gap != null && Math.abs(gap) >= 0.25;
+
+  const verdict = (label: string, score: number, note: string, lit: boolean) => (
+    <span className="flex items-center gap-2">
+      <span className="legend w-[6ch] flex-none">{label}</span>
+      <Strip value={score} cells={10} className="h-[5px] w-[70px] flex-none" />
+      <span className={cn('q text-[12px] whitespace-nowrap', lit ? 'text-beam' : 'text-ink-dim')}>
+        {fmt(score)} <span className="text-ink-faint">· {note}</span>
+      </span>
+    </span>
+  );
+
+  if (club == null && !crowd) {
+    return <p className="q mt-3 text-[12px] text-ink-dim">sem avaliação do clube</p>;
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      {club != null
+        ? verdict('Clube', club, plural(clubCount ?? 0, 'avaliação', 'avaliações'), true)
+        : <p className="q text-[12px] text-ink-dim">sem avaliação do clube</p>}
+      {crowd ? verdict('Mundo', crowd.score, `${votes(crowd.votes)} votos`, false) : null}
+      {apart ? (
+        <p className="q mt-0.5 text-[11.5px] text-dye-cyan">
+          {fmt(Math.abs(gap!))} {gap! > 0 ? 'acima' : 'abaixo'} do mundo
+        </p>
+      ) : gap != null ? (
+        <p className="q mt-0.5 text-[11.5px] text-ink-faint">o clube e o mundo concordam</p>
+      ) : null}
+    </div>
+  );
+}
+
 /* ── onde a gente assiste isso ────────────────────────────────────────────
    The question the club actually asks about a film it has not seen, and the
    one thing the projection sheet could not answer. TMDB carries it, licensed
@@ -306,31 +361,37 @@ export function ProjectionSheet({
 function WatchOn({ watch }: { watch: Movie['watch'] }) {
   if (!watch) return null;
 
-  const row = (label: string, list: Provider[]) =>
-    list.length ? (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="legend w-[9ch] flex-none">{label}</span>
-        {list.map(p => (
-          <span
-            key={p.id}
-            className="flex items-center gap-1.5 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
-          >
-            {/* Decorative: the name is right there in text beside it, so a
-                reader who cannot see the mark is not being told twice. */}
-            {p.logo ? (
-              <img src={p.logo} alt="" width={20} height={20} loading="lazy" className="h-5 w-5 rounded-[2px]" />
-            ) : null}
-            <span className="text-[11.5px] leading-none text-ink">{p.name}</span>
-          </span>
-        ))}
-      </div>
-    ) : null;
-
   return (
     <div className="mt-5 border-t border-white/[0.07] pt-4">
-      <div className="flex flex-col gap-2">
-        {row('Assinatura', watch.streaming)}
-        {row('Alugar', watch.paid)}
+      {/* The caption sits on its own line rather than at the head of the row.
+          Sharing the line meant a fixed-width label with wrapping chips beside
+          it, and the moment the chips wrapped they ran back under the label —
+          which is what was reading as the logos piling on each other. A caption
+          above and a plain wrap below cannot do that at any width. */}
+      <span className="legend">Onde assistir</span>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {watch.streaming.map(p => (
+          <span
+            key={p.id}
+            /* `shrink-0` so a long name never squeezes the mark next to it into
+               the one after; the row wraps instead, which is what it is for. */
+            className="flex shrink-0 items-center gap-2 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
+          >
+            {/* Decorative: the name is in text right beside it, so a reader who
+                cannot see the mark is not told the same thing twice. */}
+            {p.logo ? (
+              <img
+                src={p.logo}
+                alt=""
+                width={20}
+                height={20}
+                loading="lazy"
+                className="h-5 w-5 flex-none rounded-[2px] object-contain"
+              />
+            ) : null}
+            <span className="whitespace-nowrap text-[11.5px] leading-none text-ink">{p.name}</span>
+          </span>
+        ))}
       </div>
       <p className="q mt-3 text-[11px] text-ink-faint">
         Disponibilidade no Brasil, por{' '}
