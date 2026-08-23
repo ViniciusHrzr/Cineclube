@@ -942,6 +942,55 @@ function SourceLine({
   );
 }
 
+/* ── a knob with a reading on it ──────────────────────────────────────────
+   Four pieces of one control, in one shell, divided by hairlines: what it
+   adjusts, less, where it stands, more.
+
+   They were four loose things in a row before — a caption in one face, two
+   outlined buttons in another, a number floating between them with nothing
+   around it — and every group on the line was assembled differently from the
+   last, so the eye had to work out which caption owned which buttons. The
+   symbols are the same on both knobs for the same reason: `A−`/`A+` next to
+   `−0,5s`/`+0,5s` reads as two different kinds of control, and they are not. */
+function Stepper({
+  label,
+  value,
+  onLess,
+  onMore,
+  less,
+  more,
+}: {
+  label: string;
+  /** Already formatted: this draws it, it does not know what it means. */
+  value: string;
+  onLess: () => void;
+  onMore: () => void;
+  /** What each key does, for anybody who cannot see which way it points. */
+  less: string;
+  more: string;
+}) {
+  const key =
+    'flex w-8 items-center justify-center border-l border-house-rail font-display text-[15px] leading-none text-ink-dim transition-colors hover:bg-house-seat hover:text-beam';
+  return (
+    <div className="flex h-[30px] items-stretch overflow-hidden rounded-cell bg-house-deep/70 ring-1 ring-house-rail">
+      <span className="flex items-center pl-3 pr-2.5 font-display text-[11px] uppercase leading-none tracking-[0.14em] text-ink-dim">
+        {label}
+      </span>
+      <button type="button" onClick={onLess} aria-label={less} className={key}>
+        −
+      </button>
+      {/* One width for both knobs, wide enough for the longest reading either
+          of them can show, so a press moves the number and nothing else. */}
+      <span className="q flex min-w-[6ch] items-center justify-center border-l border-house-rail px-1.5 text-[12px] leading-none text-ink">
+        {value}
+      </span>
+      <button type="button" onClick={onMore} aria-label={more} className={key}>
+        +
+      </button>
+    </div>
+  );
+}
+
 /* ── subtitles ────────────────────────────────────────────────────────────
    The file is the club's — one person finds it and everybody's player loads
    it. The two adjustments are not, and the split is deliberate:
@@ -976,80 +1025,72 @@ function SubtitleBar({
   return (
     /* No top margin of its own: it is the first row inside the booth plate,
        and the plate's padding is what stands it off the edge. */
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {subtitle ? (
         <>
+          {/* ── the lamp ────────────────────────────────────────────────────
+              The label used to be the state — "Legenda ligada" becoming
+              "Legenda desligada" — which is two words longer in one position
+              than the other, so pressing it shoved everything to its right
+              along the row. A lamp says the same thing in a fixed width, and
+              the room already has one: red, lit, the colour this product uses
+              for something that is running. */}
           <button
             type="button"
             aria-pressed={on}
             onClick={onToggle}
+            title={on ? 'Legenda ligada' : 'Legenda desligada'}
             className={cn(
-              'rounded-cell px-3 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] ring-1 transition-colors',
+              'flex h-[30px] items-center gap-2 rounded-cell px-3 font-display text-[11px] uppercase leading-none tracking-[0.14em] ring-1 transition-colors',
               on
-                ? 'text-dye-red-lit ring-dye-red-lit/70'
-                : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+                ? 'bg-dye-red/15 text-dye-red-lit ring-dye-red-lit/45'
+                : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/20'
             )}
           >
-            Legenda {on ? 'ligada' : 'desligada'}
+            <span
+              aria-hidden
+              className={cn(
+                'h-1.5 w-1.5 rounded-full transition-colors',
+                on ? 'bg-dye-red-lit shadow-[0_0_7px_rgba(242,86,74,0.85)]' : 'bg-ink-faint'
+              )}
+            />
+            Legenda
           </button>
 
-          <div className="flex items-center gap-2">
-            <span className="legend">Sincronia</span>
-            <button
-              type="button"
-              onClick={() => onNudge(-0.5)}
-              aria-label="Adiantar a legenda meio segundo"
-              className="rounded-cell px-2 py-1 font-display text-[13px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
-            >
-              −0,5s
-            </button>
-            <span className="q min-w-[6ch] text-center text-[12px] text-ink">
-              {offset > 0 ? '+' : ''}
-              {offset.toFixed(1).replace('.', ',')}s
+          <Stepper
+            label="Sincronia"
+            value={`${offset > 0 ? '+' : ''}${offset.toFixed(1).replace('.', ',')}s`}
+            onLess={() => onNudge(-0.5)}
+            onMore={() => onNudge(0.5)}
+            less="Adiantar a legenda meio segundo"
+            more="Atrasar a legenda meio segundo"
+          />
+
+          {/* The percentage is there to be read back, not to be aimed at. */}
+          <Stepper
+            label="Tamanho"
+            value={`${size}%`}
+            onLess={() => onResize(-SUB_SIZE_STEP)}
+            onMore={() => onResize(SUB_SIZE_STEP)}
+            less="Diminuir a legenda"
+            more="Aumentar a legenda"
+          />
+
+          {/* What the file is called and how to be rid of it: the two things
+              here that are about the subtitle rather than about watching it,
+              so they go to the far end and stop sitting between the knobs. */}
+          <div className="ml-auto flex items-center gap-3">
+            <span className="q max-w-[22ch] truncate text-[11.5px] text-ink-dim" title={subtitle.label}>
+              {subtitle.label}
             </span>
             <button
               type="button"
-              onClick={() => onNudge(0.5)}
-              aria-label="Atrasar a legenda meio segundo"
-              className="rounded-cell px-2 py-1 font-display text-[13px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
+              onClick={onClear}
+              className="font-display text-[11px] uppercase leading-none tracking-[0.14em] text-ink-dim transition-colors hover:text-dye-red-lit"
             >
-              +0,5s
+              Remover
             </button>
           </div>
-
-          {/* Sized in words rather than in a number nobody can picture: the
-              percentage is there to be read back, not to be aimed at. */}
-          <div className="flex items-center gap-2">
-            <span className="q text-[11.5px] text-ink-dim">Tamanho</span>
-            <button
-              type="button"
-              onClick={() => onResize(-SUB_SIZE_STEP)}
-              aria-label="Diminuir a legenda"
-              className="rounded-cell px-2 py-1 font-display text-[11px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
-            >
-              A−
-            </button>
-            <span className="q min-w-[5ch] text-center text-[12px] text-ink">{size}%</span>
-            <button
-              type="button"
-              onClick={() => onResize(SUB_SIZE_STEP)}
-              aria-label="Aumentar a legenda"
-              className="rounded-cell px-2 py-1 font-display text-[15px] leading-none text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
-            >
-              A+
-            </button>
-          </div>
-
-          <span className="q max-w-[24ch] truncate text-[11.5px] text-ink-dim" title={subtitle.label}>
-            {subtitle.label}
-          </span>
-          <button
-            type="button"
-            onClick={onClear}
-            className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
-          >
-            Remover
-          </button>
         </>
       ) : (
         <label className="flex flex-wrap items-center gap-3">

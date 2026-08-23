@@ -46,6 +46,9 @@ const DRIFT_INTERVAL_MS = 2000;
    waiting for you and ought to be told. */
 const STALL_AFTER_MS = 1200;
 
+/** How far apart two lines of one subtitle sit, as a multiple of their size. */
+const SUB_LEADING = 1.25;
+
 /* ── being ready, measured instead of guessed ─────────────────────────────
    Recovery used to be the `canplay` event, and that was the start-stop loop.
    `canplay` means "there are a couple of frames" — which on a stream still
@@ -485,13 +488,36 @@ export function SyncedVideo({
           Styled here rather than drawn here: an overlay of our own would give
           full control and lose it again the moment somebody presses the native
           fullscreen button, which promotes the `<video>` alone and leaves every
-          sibling behind. Cues go fullscreen with the element they belong to. */}
+          sibling behind. Cues go fullscreen with the element they belong to.
+
+          ── and why the leading is computed and not written ──────────────────
+          A `line-height` on `::cue` alone does nothing visible, and the reason
+          is the oldest rule in CSS line layout: the height of a line box is the
+          tallest thing in it, and one of those things is the *strut* — an
+          invisible box the size of the block's own font, contributed by the
+          block whether or not any text is that big.
+
+          The block here is the browser's cue container, and its font size is
+          the one the browser picked from the height of the video. Shrinking the
+          words to 50% shrinks the words and leaves the strut where it was, so
+          the lines keep the spacing of the size nobody chose — which is exactly
+          the gap that opens up as the subtitle gets smaller.
+
+          So the strut is scaled instead of the leading. The number below is the
+          leading we want multiplied by the size we are drawing at, which lands
+          the container's own line box on precisely `SUB_LEADING` times the size
+          of the text inside it. The `::cue` rule keeps the plain multiple, for
+          the engine that honours it there. */}
       <style>{`
+        video[data-club-player]::-webkit-media-text-track-container,
+        video[data-club-player]::-webkit-media-text-track-display {
+          line-height: ${((SUB_LEADING * subtitleSize) / 100).toFixed(3)} !important;
+        }
         video[data-club-player]::cue {
           font-family: Poppins, system-ui, sans-serif;
           font-size: ${subtitleSize}%;
           font-weight: 500;
-          line-height: 1.25;
+          line-height: ${SUB_LEADING};
           color: #fff6e6;
           background: transparent;
           text-shadow:
