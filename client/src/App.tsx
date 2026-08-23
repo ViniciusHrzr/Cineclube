@@ -23,11 +23,15 @@ import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
 import { ReviewsScreen } from '@/screens/Reviews';
 import { PeopleScreen } from '@/screens/People';
+import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
   { id: 'rate', label: 'Avaliar' },
   { id: 'catalog', label: 'Catálogo' },
   { id: 'watchlist', label: 'Quero ver' },
+  /* Between the queue and the reviews, because that is where it falls in an
+     evening: you pick the film, you watch it, you rate it. */
+  { id: 'screening', label: 'Sessão' },
   { id: 'reviews', label: 'Avaliados' },
   { id: 'people', label: 'Avaliadores' },
 ] as const;
@@ -353,6 +357,10 @@ export default function App() {
               )}
               {tab === 'catalog' && <CatalogScreen />}
               {tab === 'watchlist' && <WatchlistScreen />}
+              {/* Mounted only while the tab is open, and that is deliberate: the
+                  screen holds an SSE connection and, in torrent mode, a swarm.
+                  Neither should outlive somebody's interest in watching. */}
+              {tab === 'screening' && <ScreeningScreen />}
               {tab === 'reviews' && <ReviewsScreen />}
               {tab === 'people' && <PeopleScreen />}
             </div>

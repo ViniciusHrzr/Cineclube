@@ -9,6 +9,10 @@ node_modules/
 
 # O TypeScript reconstrói isto a cada build.
 client/tsconfig.tsbuildinfo
+
+# Cópia do service worker do WebTorrent, refeita pelo `vendor:sw` a cada build.
+# Versionar seria guardar uma segunda cópia que pode divergir do pacote.
+client/public/sw.min.js
 data/*.db
 data/*.db-journal
 data/*.db-shm

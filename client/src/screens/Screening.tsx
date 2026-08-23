@@ -1,0 +1,941 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Blank, Fault, Key, Poster, Reel } from '@/components/bits';
+import { SyncedVideo } from '@/components/SyncedVideo';
+import { useClub } from '@/App';
+import { initialsOf, reelColor, runtimeOf, type WatchItem } from '@/lib/api';
+import { useScreening } from '@/lib/screening';
+import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
+import { cn, plural } from '@/lib/utils';
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The screening room, as a screen.
+
+   Three things share this page and they are deliberately kept apart:
+
+   - `useScreening` is the room — who is here, what is playing, where the film
+     is. It is the club's shared state and the server owns it.
+   - `useTorrent` is a receiver. It plays a link somebody hands it and knows
+     nothing about the room; the room, in turn, never learns what it is.
+   - This file is the seam. It chooses a source, hands the resulting stream to
+     one `<video>`, and lets the room drive that element.
+
+   The consequence worth stating: the sync engine works with any source. There
+   are two — the film itself, dropped here and handed to the club, and a direct
+   URL for the occasions when the club already has one — and the torrent path is
+   the only one with failure modes of its own, which is why most of the words on
+   this page belong to it.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** What this member is playing. Everyone chooses their own; the room only syncs. */
+type Source =
+  | { kind: 'none' }
+  /** The receiver owns the element; there is no URL to hand anybody. */
+  | { kind: 'torrent' }
+  | { kind: 'url'; url: string };
+
+/** Shown once, on the first torrent of this browser. It is a fact, not a scare. */
+const P2P_NOTICE = 'cineclube.p2p-avisado';
+
+/* How long the film waits for the rest of the club to load the source before
+   starting anyway. Long enough for a magnet to resolve on a swarm of one
+   seeder, short enough that a tab left open on somebody's second monitor —
+   which will never choose anything — does not hold up the evening. */
+const START_GRACE_MS = 20_000;
+
+/* ── subtitles ────────────────────────────────────────────────────────────
+   A `<track>` only speaks WebVTT, and what people have on disk is almost always
+   SubRip. The two are close enough that converting is a header and a punctuation
+   change — which is worth doing here rather than asking somebody to go find a
+   converter in the middle of a film.
+
+   The offset is not a nicety either: a subtitle file found separately from the
+   video is routinely a second or two out, and without a way to shift it the
+   file is simply wrong. It is applied by rewriting the timestamps rather than
+   by moving live cues, because a rebuilt file is a state the player can be
+   handed cleanly, and a mutated cue list is one it half-notices. */
+
+/** SubRip is UTF-8 as often as it is Windows-1252, and neither says which. */
+async function readSubtitle(file: File) {
+  const buffer = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    // Not valid UTF-8, so it is the other one — the encoding Brazilian subtitle
+    // files have been written in for twenty years.
+    return new TextDecoder('windows-1252').decode(buffer);
+  }
+}
+
+const STAMP = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})/g;
+
+function vttStamp(seconds: number) {
+  const total = Math.max(0, Math.round(seconds * 1000));
+  const pad = (n: number, size = 2) => String(n).padStart(size, '0');
+  return `${pad(Math.floor(total / 3600000))}:${pad(Math.floor(total / 60000) % 60)}:${pad(
+    Math.floor(total / 1000) % 60
+  )}.${pad(total % 1000, 3)}`;
+}
+
+/** SubRip in, WebVTT out, shifted by `offset` seconds on the way through. */
+function toVtt(raw: string, offset: number) {
+  const body = raw.replace(/^﻿/, '').replace(/\r/g, '');
+  const shifted = body.replace(STAMP, (_all, h, m, s, ms) => {
+    const at = Number(h ?? 0) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+    return vttStamp(at + offset);
+  });
+  return /^WEBVTT/.test(shifted) ? shifted : `WEBVTT\n\n${shifted}`;
+}
+
+/** What `MediaError.code` means, said to somebody who just saw a black screen. */
+function playbackFailure(code: number) {
+  if (code === 2) return 'A fonte caiu no meio da reprodução.';
+  if (code === 3 || code === 4) {
+    return 'Seu navegador não consegue decodificar este arquivo. Costuma ser áudio AC3/DTS ou vídeo HEVC dentro do .mkv.';
+  }
+  return null;
+}
+
+export function ScreeningScreen() {
+  const club = useClub();
+  const screening = useScreening(club.fault);
+  const torrent = useTorrent();
+  const { state, connected, setReady } = screening;
+
+  const [source, setSource] = useState<Source>({ kind: 'none' });
+  /** Of the local file, once the player has read it. Half of the file's identity. */
+  const [duration, setDuration] = useState<number | null>(null);
+  const [ended, setEnded] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  /** The imported file at offset zero; the shifted copy is derived from it. */
+  const [subFile, setSubFile] = useState<{ name: string; raw: string } | null>(null);
+  const [subOffset, setSubOffset] = useState(0);
+  const [subsOn, setSubsOn] = useState(true);
+  const [subtitle, setSubtitle] = useState<{ url: string; label: string } | null>(null);
+
+  const movieId = state.movie?.id ?? null;
+  const { stop: stopTorrent } = torrent;
+  const { publishLink } = screening;
+  /** The last link this browser told the room about. See `share` below. */
+  const shared = useRef<string | null>(null);
+  /* The same value, but set only when this browser is the one that *published*
+     it rather than one that adopted it. Which member put the film on the board
+     is the only fact that separates the one browser that should press play
+     from the three that should follow. */
+  const published = useRef<string | null>(null);
+  /** A link this member turned down, so adoption does not force it back. */
+  const declined = useRef<string | null>(null);
+  /** Whether the film has been started. See "the film starting by itself". */
+  const started = useRef(false);
+  /** When this member's own picture became available; the grace runs from it. */
+  const feedingSince = useRef<number | null>(null);
+
+  /* A different film is a different evening: the source, the receiver, the
+     subtitles and the credits all belong to the last one. */
+  useEffect(() => {
+    setSource({ kind: 'none' });
+    setDuration(null);
+    setEnded(false);
+    setFailure(null);
+    setSubFile(null);
+    setSubOffset(0);
+    shared.current = null;
+    published.current = null;
+    declined.current = null;
+    started.current = false;
+    feedingSince.current = null;
+    stopTorrent();
+  }, [movieId, stopTorrent]);
+
+  /* ── what this member is playing, said in one string ─────────────────────
+     The infohash is exact: two people on the same hash have the same bytes, so
+     the club can tell a shared copy from somebody's own rip without comparing
+     anything but this. A URL is exact for the same reason. */
+  const tag = useMemo(() => {
+    if (source.kind === 'torrent') return torrent.status.infoHash;
+    if (source.kind === 'url') return source.url;
+    return null;
+  }, [source, torrent.status.infoHash]);
+
+  /* The player reports readiness only when it changes, and a member whose film
+     never stalls would therefore never say what they are watching. This is what
+     puts the source on the board. */
+  useEffect(() => {
+    if (tag) void setReady(true, tag);
+  }, [tag, setReady]);
+
+  /* The element is shared: the receiver streams into it, and a local file wants
+     its duration read off it. */
+  const elemRef = useRef<HTMLVideoElement | null>(null);
+  const { attach } = torrent;
+  const holdElement = useCallback(
+    (el: HTMLVideoElement | null) => {
+      const previous = elemRef.current;
+      if (previous) previous.onloadedmetadata = null;
+      elemRef.current = el;
+      if (el) {
+        el.onloadedmetadata = () => {
+          setDuration(Number.isFinite(el.duration) ? Math.round(el.duration) : null);
+        };
+      }
+      attach(el);
+    },
+    [attach]
+  );
+
+  /* Peers seen at the best moment, which is what turns "nobody is here" into
+     the two different sentences it can mean: never arrived, or left. */
+  const peak = useRef(0);
+  useEffect(() => {
+    if (torrent.status.peers > peak.current) peak.current = torrent.status.peers;
+  }, [torrent.status.peers]);
+  useEffect(() => {
+    peak.current = 0;
+  }, [torrent.status.infoHash]);
+
+  /* The file the `<track>` actually loads: the imported one, rebuilt at the
+     current offset. The cleanup is what keeps a shifted copy from leaking on
+     every press of the nudge. */
+  useEffect(() => {
+    if (!subFile) {
+      setSubtitle(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([toVtt(subFile.raw, subOffset)], { type: 'text/vtt' }));
+    setSubtitle({ url, label: subFile.name });
+    return () => URL.revokeObjectURL(url);
+  }, [subFile, subOffset]);
+
+  /* Showing or hiding is a property of the track, not of the markup, so it is
+     set on the element. `addtrack` is here because the track is parsed
+     asynchronously: setting the mode before it exists is a silent no-op, and
+     the subtitles never appear. */
+  useEffect(() => {
+    const el = elemRef.current;
+    if (!el) return;
+    const apply = () => {
+      for (const track of Array.from(el.textTracks)) track.mode = subsOn ? 'showing' : 'hidden';
+    };
+    apply();
+    el.textTracks.addEventListener('addtrack', apply);
+    return () => el.textTracks.removeEventListener('addtrack', apply);
+  }, [subsOn, subtitle]);
+
+  const importSubtitle = useCallback(async (file: File) => {
+    setSubOffset(0);
+    setSubsOn(true);
+    setSubFile({ name: file.name, raw: await readSubtitle(file) });
+  }, []);
+
+  /* ── the pointer the club shares ─────────────────────────────────────────
+     Published once per link and never in a loop: two members who each chose a
+     different magnet would otherwise overwrite each other for as long as both
+     tabs were open. The last one to choose wins, which is the same thing that
+     happens in the chat. */
+  const share = useCallback(
+    (link: string | null) => {
+      if (!link || shared.current === link) return;
+      shared.current = link;
+      published.current = link;
+      void publishLink(link);
+    },
+    [publishLink]
+  );
+
+  const { receive, seed } = torrent;
+  const chooseTorrent = useCallback(
+    (input: string | File, mode: 'receive' | 'seed') => {
+      setSource({ kind: 'torrent' });
+      setEnded(false);
+      setFailure(null);
+      if (mode === 'seed') {
+        void seed(input as File);
+      } else {
+        // Published straight away rather than after the engine resolves it: a
+        // magnet with no peers never resolves, and the club would never learn
+        // what to try.
+        if (typeof input === 'string') share(input);
+        void receive(input);
+      }
+    },
+    [receive, seed, share]
+  );
+
+  /* Seeding produces a link that did not exist a moment ago, so it can only be
+     shared once the engine has built it. */
+  const seedMagnet = torrent.status.phase === 'seeding' ? torrent.status.magnet : null;
+  useEffect(() => {
+    if (seedMagnet) share(seedMagnet);
+  }, [seedMagnet, share]);
+
+  /* ── the film starting by itself ─────────────────────────────────────────
+     Somebody drops the file and the evening should begin. Asking the person
+     who just handed the club the film to then go and find the play button is
+     a step that exists only because the code needed it to; nobody watching
+     ever wanted it.
+
+     Three conditions, and each one is a way this could be wrong:
+
+     - Only the member who *published* the source presses it. Everybody else
+       follows the room, which is the whole design — four browsers each
+       sending the same play is four commands for one press, and whichever
+       arrives last decides where the film starts.
+     - Only at the top of a film that nobody has started. A room already
+       running, or paused somewhere in the second act, is somewhere a person
+       put it, and restarting that is the app overruling them.
+     - Only once the club has loaded the same source — or once the grace has
+       run out, because a tab open on a second monitor will never load
+       anything and must not be able to hold up the film.
+
+     `duration` is the honest signal that this browser has a film rather than
+     a promise of one: it is read off the element, so it exists only after the
+     player has actually opened what it was given. */
+  const { send } = screening;
+
+  const feeding =
+    duration != null &&
+    (source.kind === 'url' ||
+      (source.kind === 'torrent' &&
+        (torrent.status.phase === 'streaming' || torrent.status.phase === 'seeding')));
+
+  useEffect(() => {
+    if (!feeding) feedingSince.current = null;
+    else feedingSince.current ??= Date.now();
+  }, [feeding]);
+
+  /* A room that is running was started by somebody — this one, or a person.
+     Either way the question is settled and must not be asked again. */
+  useEffect(() => {
+    if (state.status === 'playing') started.current = true;
+  }, [state.status]);
+
+  const { viewers, link: roomSource, open: roomOpen, status, position } = state;
+  useEffect(() => {
+    if (started.current || !roomOpen || !feeding) return;
+    if (status !== 'paused' || position > 1) return;
+    if (roomSource && published.current !== roomSource) return;
+
+    const go = () => {
+      if (started.current) return;
+      started.current = true;
+      void send('play', 0);
+    };
+
+    if (viewers.length > 0 && viewers.every(v => v.sourceTag)) return go();
+
+    // The deadline is absolute rather than a fresh countdown, so the state
+    // frames arriving every few seconds cannot keep pushing it away.
+    const left = START_GRACE_MS - (Date.now() - (feedingSince.current ?? Date.now()));
+    const id = window.setTimeout(go, Math.max(0, left));
+    return () => window.clearTimeout(id);
+  }, [roomOpen, status, position, roomSource, viewers, feeding, send]);
+
+  /* ── arriving into a session already under way ───────────────────────────
+     The room knows what everyone else is watching, so a member who opens the
+     tab in the middle of a film should not be shown an empty picker and left to
+     ask in the chat. Only when nothing has been chosen here: adopting over
+     somebody's own choice would be the app overruling them. */
+  const roomLink = state.link;
+  useEffect(() => {
+    if (!state.open || !roomLink || source.kind !== 'none') return;
+    if (roomLink === declined.current) return;
+    // Adopted, not chosen — so it must not be published back as news.
+    shared.current = roomLink;
+    if (isMagnet(roomLink)) {
+      setSource({ kind: 'torrent' });
+      void receive(roomLink);
+    } else {
+      setSource({ kind: 'url', url: roomLink });
+    }
+  }, [state.open, roomLink, source.kind, receive]);
+
+  /* ── the drop that must never navigate ───────────────────────────────────
+     A page that does not cancel `drop` hands the file to the browser, and the
+     browser opens it — replacing the document. The app does not crash, it is
+     *gone*: no React tree left to catch anything, no error to print, nothing
+     but the reload.
+
+     Cancelling on the drop area alone was not enough, because a drop that
+     lands a few pixels outside it is not a drop on the area — it is a drop on
+     the page, and the page had no opinion. Releasing near a target is what
+     dragging *is*, so the whole window says no, and the target says yes. */
+  useEffect(() => {
+    const swallow = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', swallow);
+    window.addEventListener('drop', swallow);
+    return () => {
+      window.removeEventListener('dragover', swallow);
+      window.removeEventListener('drop', swallow);
+    };
+  }, []);
+
+  const openFilm = screening.openFilm;
+  const closeFilm = screening.closeFilm;
+
+  if (!state.open) {
+    return (
+      <section>
+        <Head connected={connected} viewers={state.viewers.length} />
+        <FilmPicker watchlist={club.watchlist} onPick={id => void openFilm(id)} />
+      </section>
+    );
+  }
+
+  const movie = state.movie!;
+  const mine = tag;
+  const different = state.viewers.filter(v => v.id !== club.me.id && v.sourceTag && mine && v.sourceTag !== mine);
+  const waiting = state.viewers.filter(v => !v.ready);
+
+  return (
+    <section>
+      <Head connected={connected} viewers={state.viewers.length} />
+
+      <div className="mt-6 flex flex-wrap items-start gap-4">
+        <Poster src={movie.poster} alt={movie.title} className="h-[86px] w-[58px] flex-none" />
+        <div className="min-w-[16ch] flex-1">
+          <h1 className="font-display text-[26px] leading-none tracking-[0.04em] text-beam">{movie.title}</h1>
+          <p className="q mt-2 text-[12.5px] text-ink-dim">
+            {[movie.year, movie.genre, runtimeOf(movie.runtime)].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <Key tone="danger" onClick={() => void closeFilm()}>
+          Encerrar sessão
+        </Key>
+      </div>
+
+      {source.kind === 'none' ? (
+        <SourcePanel
+          onMagnet={value => chooseTorrent(value, 'receive')}
+          onTorrentFile={file => chooseTorrent(file, 'receive')}
+          onSeed={file => chooseTorrent(file, 'seed')}
+          onUrl={url => {
+            setFailure(null);
+            setSource({ kind: 'url', url });
+            share(url);
+          }}
+        />
+      ) : (
+        <div className="mt-6">
+          <SyncedVideo
+            screening={screening}
+            src={source.kind === 'url' ? source.url : null}
+            sourceTag={tag}
+            onElement={holdElement}
+            onEnded={() => setEnded(true)}
+            onPlaybackError={code => setFailure(playbackFailure(code))}
+            subtitle={subtitle}
+            poster={movie.poster}
+          />
+
+          {failure ? (
+            <div className="mt-3 max-w-[68ch]">
+              <Fault detail="ffmpeg -i filme.mkv -c:v copy -c:a aac -movflags +faststart filme.mp4">
+                {failure}
+              </Fault>
+            </div>
+          ) : null}
+
+          <SubtitleBar
+            subtitle={subtitle}
+            on={subsOn}
+            offset={subOffset}
+            onImport={file => void importSubtitle(file)}
+            onToggle={() => setSubsOn(v => !v)}
+            onNudge={by => setSubOffset(o => Math.round((o + by) * 10) / 10)}
+            onClear={() => {
+              setSubFile(null);
+              setSubOffset(0);
+            }}
+          />
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <SourceLine source={source} torrent={torrent.status} peaked={peak.current > 0} />
+            <button
+              type="button"
+              onClick={() => {
+                stopTorrent();
+                setSource({ kind: 'none' });
+                setDuration(null);
+                setFailure(null);
+                /* The room's pointer stays where it is — this is one person
+                   changing their own screen, not the club changing films. But
+                   without this the adoption below would put the same link
+                   straight back, and the button would do nothing at all. */
+                declined.current = state.link;
+              }}
+              className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+            >
+              Trocar fonte
+            </button>
+          </div>
+
+          {torrent.status.phase === 'seeding' && torrent.status.magnet ? (
+            <MagnetToCopy magnet={torrent.status.magnet} />
+          ) : null}
+
+          {ended ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span className="legend">Fim de sessão</span>
+              <Key tone="commit" onClick={() => club.rateMovie(movie.id)}>
+                Avaliar agora
+              </Key>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* ── the club, and what it is waiting for ──────────────────────────── */}
+      <div className="mt-8">
+        <span className="legend">Na sessão</span>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {state.viewers.map(v => (
+            <span
+              key={v.id}
+              title={v.sourceTag ?? 'ainda escolhendo a fonte'}
+              className={cn(
+                'flex items-center gap-2 rounded-cell bg-house-seat/70 px-2.5 py-1.5 ring-1',
+                v.ready ? 'ring-house-rail' : 'ring-dye-red-lit/60'
+              )}
+            >
+              <Reel color={reelColor(v.dot, v.id)} src={club.avatarOf(v.id)} size="sm">
+                {initialsOf(v.name)}
+              </Reel>
+              <span className="text-[12.5px] text-ink">{v.name}</span>
+              {!v.ready ? <span className="q text-[11px] text-dye-red-lit">buffer</span> : null}
+            </span>
+          ))}
+        </div>
+
+        {state.pausedByStall ? (
+          <p className="q mt-3 text-[12px] text-ink-dim">
+            A sala pausou sozinha esperando {waiting.map(v => v.name).join(', ') || 'alguém'} — e volta sozinha
+            quando o buffer encher.
+          </p>
+        ) : null}
+
+        {different.length ? (
+          <div className="mt-3 max-w-[60ch]">
+            <Fault detail={different.map(v => `${v.name}: ${v.sourceTag}`).join(' · ')}>
+              {plural(different.length, 'pessoa está', 'pessoas estão')} com uma cópia diferente da sua. A
+              sincronia continua valendo, mas o mesmo segundo pode ser outra cena.
+            </Fault>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/* ── the header ───────────────────────────────────────────────────────────
+   The connection is the one piece of status that has to be visible before
+   anything else: every control on this page is a message to a server, and a
+   page that quietly stopped listening looks exactly like a page where nobody
+   pressed play. */
+function Head({ connected, viewers }: { connected: boolean; viewers: number }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <span className="legend">Sessão</span>
+      <span className={cn('q text-[12px]', connected ? 'text-ink-dim' : 'text-dye-red-lit')}>
+        {connected ? plural(viewers, 'pessoa na sala', 'pessoas na sala') : 'sem conexão com a sala'}
+      </span>
+    </div>
+  );
+}
+
+/* ── choosing the film ──────────────────────────────────────────────────── */
+function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id: number) => void }) {
+  if (!watchlist.length) {
+    return (
+      <Blank title="A fila está vazia">
+        A sessão começa por um filme da fila. Marque alguma coisa em <span className="q">Quero ver</span> e
+        volte aqui.
+      </Blank>
+    );
+  }
+
+  return (
+    <div className="mt-6">
+      <p className="max-w-[60ch] text-[13.5px] leading-relaxed text-ink-dim">
+        Escolher um filme abre a sessão <strong className="text-ink">para todo mundo</strong>: quem estiver com
+        a aba aberta cai direto nela. Depois cada um aponta a própria fonte — o app sincroniza o controle, não
+        o vídeo.
+      </p>
+
+      <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
+        {watchlist.map(w => (
+          <button
+            key={w.id}
+            type="button"
+            onClick={() => onPick(w.id)}
+            className="group text-left"
+            title={`Abrir sessão de ${w.title}`}
+          >
+            <Poster
+              src={w.poster}
+              alt={w.title}
+              className="aspect-[2/3] w-full transition-[box-shadow] duration-150 group-hover:ring-beam/70"
+            />
+            <span className="mt-2 block text-[12.5px] leading-tight text-ink-dim transition-colors group-hover:text-beam">
+              {w.title}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── choosing the source ──────────────────────────────────────────────────
+   The drop area is the loud one because the two paths that actually work in a
+   browser both start with something being dropped: a magnet from whoever is
+   seeding, or the film itself from the person who has it. */
+function SourcePanel({
+  onMagnet,
+  onTorrentFile,
+  onSeed,
+  onUrl,
+}: {
+  onMagnet: (value: string) => void;
+  onTorrentFile: (file: File) => void;
+  onSeed: (file: File) => void;
+  onUrl: (url: string) => void;
+}) {
+  const [over, setOver] = useState(false);
+  const [url, setUrl] = useState('');
+  /* A file chosen here is the same file dropped on the box: it is seeded to the
+     club and the session starts by itself. The dashed box is a target for the
+     mouse, not a different feature — clicking and dragging must not be two
+     routes with two outcomes. */
+  const browse = useRef<HTMLInputElement | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+
+  const take = useCallback(
+    (text: string, file: File | null) => {
+      setRefused(null);
+      const dropped = text.trim();
+      if (dropped && isMagnet(dropped)) return onMagnet(dropped);
+
+      if (!file) {
+        return setRefused('Isso não é um magnet nem um arquivo que eu saiba abrir.');
+      }
+      if (/\.torrent$/i.test(file.name)) return onTorrentFile(file);
+      if (file.type.startsWith('video/') || /\.(mp4|m4v|webm|mkv|avi|mov)$/i.test(file.name)) {
+        return onSeed(file);
+      }
+      setRefused(`"${file.name}" não é um vídeo nem um .torrent.`);
+    },
+    [onMagnet, onSeed, onTorrentFile]
+  );
+
+  /* The listener sits on the whole panel and not on the dashed box, so the
+     generous release — near the target, in the general direction of it — lands
+     where the hand meant it to. The box is what the eye aims at; the panel is
+     what actually catches. */
+  const catches = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setOver(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      // Only when the pointer left the panel itself, not when it crossed onto
+      // a child — which fires `dragleave` and would flicker the whole state.
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setOver(false);
+      take(
+        e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text'),
+        e.dataTransfer.files?.[0] ?? null
+      );
+    },
+  };
+
+  return (
+    <div className="mt-6 max-w-[68ch]" {...catches}>
+      <div
+        className={cn(
+          'rounded-cell border border-dashed px-5 py-8 text-center transition-colors duration-150',
+          over ? 'border-dye-cyan bg-dye-cyan/[0.06]' : 'border-house-rail bg-house-deep/60'
+        )}
+      >
+        {/* Leads with the file because that is the path that works, and it is
+            now the only one this box advertises. A magnet or a .torrent
+            released here is still understood — that costs a line in `take` and
+            saves somebody who has one — but it is no longer offered, because
+            offering it sold a promise the browser cannot keep: a magnet from a
+            torrent site announces on UDP trackers and DHT, and a tab reaches
+            neither. */}
+        <p className="font-display text-[15px] uppercase tracking-[0.14em] text-beam">
+          Solte o arquivo do filme
+        </p>
+        <p className="mx-auto mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ink-dim">
+          O clube inteiro recebe direto do seu navegador e a sessão começa sozinha. Ninguém precisa colar
+          link nenhum.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          <Key onClick={() => browse.current?.click()}>Escolher do computador</Key>
+          <span className="q text-[11.5px] text-ink-dim">ou arraste até aqui</span>
+        </div>
+        <input
+          ref={browse}
+          type="file"
+          accept="video/*,.mkv,.avi,.torrent"
+          hidden
+          onChange={e => {
+            const file = e.target.files?.[0];
+            // Cleared so choosing the same file twice still fires a change.
+            e.target.value = '';
+            if (file) take('', file);
+          }}
+        />
+
+        {refused ? <p className="q mt-3 text-[11.5px] text-dye-red-lit">{refused}</p> : null}
+      </div>
+
+      {/* The other source, and the last one: a link the club already has. Not
+          hidden behind a "more sources" toggle any more — there is nothing left
+          for it to be the alternative to, and one field is not a menu. */}
+      <form
+        className="mt-4 flex flex-wrap gap-2"
+        onSubmit={e => {
+          e.preventDefault();
+          const clean = url.trim();
+          if (/^https?:\/\//i.test(clean)) onUrl(clean);
+        }}
+      >
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="URL direta de vídeo (mp4, webm, m3u8)"
+          aria-label="URL direta de vídeo"
+          spellCheck={false}
+          className="q min-w-[18ch] flex-1 rounded-cell bg-house-deep px-3 py-2.5 text-[13px] text-ink caret-dye-red outline-none ring-1 ring-house-rail placeholder:text-ink-dim focus:ring-dye-cyan"
+        />
+        <Key type="submit" disabled={!/^https?:\/\//i.test(url.trim())}>
+          Usar
+        </Key>
+      </form>
+    </div>
+  );
+}
+
+/* ── what the source is doing ─────────────────────────────────────────────
+   In torrent mode this is the only place the difference between "still
+   arriving" and "never will" is visible, so it says which one it is in words
+   rather than leaving a spinner to imply it. */
+function SourceLine({
+  source,
+  torrent,
+  peaked,
+}: {
+  source: Source;
+  torrent: TorrentStatus;
+  peaked: boolean;
+}) {
+  const [warned, setWarned] = useState(() => {
+    try {
+      return localStorage.getItem(P2P_NOTICE) === '1';
+    } catch {
+      return true; // storage refused: the notice is not worth an exception
+    }
+  });
+
+  if (source.kind === 'url') {
+    return <span className="q text-[12px] text-ink-dim">URL direta</span>;
+  }
+  if (source.kind === 'none') return null;
+
+  const gone = peaked && torrent.peers === 0 && torrent.progress < 1 && torrent.phase === 'streaming';
+
+  return (
+    <div className="min-w-0 flex-1">
+      {torrent.phase === 'error' ? (
+        <Fault>{torrent.error}</Fault>
+      ) : (
+        <span className="q text-[12px] text-ink-dim">
+          {torrent.phase === 'booting' && 'Ligando o motor…'}
+          {torrent.phase === 'searching' && 'Lendo o link e procurando quem tem o arquivo…'}
+          {(torrent.phase === 'streaming' || torrent.phase === 'seeding') &&
+            [
+              torrent.phase === 'seeding' ? 'semeando' : `${Math.round(torrent.progress * 100)}%`,
+              plural(torrent.peers, 'peer', 'peers'),
+              torrent.down > 0 ? `↓ ${bytes(torrent.down)}/s` : null,
+              torrent.up > 0 ? `↑ ${bytes(torrent.up)}/s` : null,
+              torrent.name,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+        </span>
+      )}
+
+      {gone ? (
+        <p className="q mt-1 text-[11.5px] text-dye-red-lit">
+          A fonte saiu do ar — quem estava semeando fechou a aba.
+        </p>
+      ) : torrent.lonely && torrent.phase !== 'seeding' ? (
+        <p className="q mt-1 text-[11.5px] text-dye-red-lit">
+          Ninguém está semeando isto. Peça para quem tem o arquivo abrir esta aba e soltar o vídeo aqui.
+        </p>
+      ) : null}
+
+      {!warned ? (
+        <p className="q mt-1 text-[11.5px] text-ink-dim">
+          Conexão direta entre navegadores expõe seu IP para os outros peers — é assim em qualquer P2P.{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setWarned(true);
+              try {
+                localStorage.setItem(P2P_NOTICE, '1');
+              } catch {
+                /* the notice simply returns next time */
+              }
+            }}
+            className="underline underline-offset-2 transition-colors hover:text-beam"
+          >
+            Entendi
+          </button>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── subtitles ────────────────────────────────────────────────────────────
+   Deliberately this member's own business: the file stays in this browser and
+   the offset is per person, because whose copy runs two seconds early is
+   exactly the kind of thing that differs between two people watching the same
+   film from two different rips. */
+function SubtitleBar({
+  subtitle,
+  on,
+  offset,
+  onImport,
+  onToggle,
+  onNudge,
+  onClear,
+}: {
+  subtitle: { url: string; label: string } | null;
+  on: boolean;
+  offset: number;
+  onImport: (file: File) => void;
+  onToggle: () => void;
+  onNudge: (by: number) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      {subtitle ? (
+        <>
+          <button
+            type="button"
+            aria-pressed={on}
+            onClick={onToggle}
+            className={cn(
+              'rounded-cell px-3 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] ring-1 transition-colors',
+              on
+                ? 'text-dye-red-lit ring-dye-red-lit/70'
+                : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+            )}
+          >
+            Legenda {on ? 'ligada' : 'desligada'}
+          </button>
+
+          <div className="flex items-center gap-2">
+            <span className="legend">Sincronia</span>
+            <button
+              type="button"
+              onClick={() => onNudge(-0.5)}
+              aria-label="Adiantar a legenda meio segundo"
+              className="rounded-cell px-2 py-1 font-display text-[13px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
+            >
+              −0,5s
+            </button>
+            <span className="q min-w-[6ch] text-center text-[12px] text-ink">
+              {offset > 0 ? '+' : ''}
+              {offset.toFixed(1).replace('.', ',')}s
+            </span>
+            <button
+              type="button"
+              onClick={() => onNudge(0.5)}
+              aria-label="Atrasar a legenda meio segundo"
+              className="rounded-cell px-2 py-1 font-display text-[13px] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
+            >
+              +0,5s
+            </button>
+          </div>
+
+          <span className="q max-w-[24ch] truncate text-[11.5px] text-ink-dim" title={subtitle.label}>
+            {subtitle.label}
+          </span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
+          >
+            Remover
+          </button>
+        </>
+      ) : (
+        <label className="flex flex-wrap items-center gap-3">
+          <span className="legend">Legenda</span>
+          <input
+            type="file"
+            accept=".srt,.vtt,text/vtt,application/x-subrip"
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) onImport(file);
+              // Cleared so choosing the same file twice still fires a change.
+              e.target.value = '';
+            }}
+            className="max-w-full text-[12px] text-ink-dim file:mr-3 file:rounded-cell file:border-0 file:bg-house-seat file:px-3 file:py-2 file:font-display file:text-[12px] file:uppercase file:tracking-[0.12em] file:text-ink"
+          />
+          <span className="q text-[11.5px] text-ink-dim">.srt ou .vtt, do seu computador</span>
+        </label>
+      )}
+    </div>
+  );
+}
+
+/* ── the link to hand out ─────────────────────────────────────────────────
+   Seeding is only useful if the link leaves this browser, so the field exists
+   to be copied and pasted in the chat where the club already is. */
+function MagnetToCopy({ magnet }: { magnet: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="plate mt-4 p-4">
+      <span className="legend">Seu link — mande no Discord</span>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input
+          readOnly
+          value={magnet}
+          onFocus={e => e.currentTarget.select()}
+          className="q min-w-[18ch] flex-1 rounded-cell bg-house-deep px-3 py-2.5 text-[12px] text-ink-dim outline-none ring-1 ring-house-rail focus:ring-dye-cyan"
+        />
+        <Key
+          onClick={() => {
+            /* The clipboard API is missing outside a secure context, and
+               `?.` then leaves `undefined.then` — which threw. */
+            const written = navigator.clipboard?.writeText(magnet);
+            if (!written) return;
+            void written.then(
+              () => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+              },
+              () => setCopied(false)
+            );
+          }}
+        >
+          {copied ? 'Copiado' : 'Copiar'}
+        </Key>
+      </div>
+      <p className="q mt-3 text-[11.5px] text-ink-dim">
+        Enquanto esta aba estiver aberta, o filme está no ar para o clube. Fechar aqui derruba a fonte.
+      </p>
+    </div>
+  );
+}

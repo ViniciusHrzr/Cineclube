@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "dev": "npm run vendor:sw && vite",
+    "build": "npm run vendor:sw && tsc -b && vite build",
+    "preview": "vite preview",
+    "vendor:sw": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync(require.resolve('webtorrent/dist/sw.min.js'),'public/sw.min.js')\""
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -14,7 +15,8 @@
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "webtorrent": "^3.0.21"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
