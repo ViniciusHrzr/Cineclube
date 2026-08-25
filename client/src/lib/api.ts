@@ -58,6 +58,11 @@ export type Review = {
   movieTitle: string;
   movieYear: number | null;
   movieGenre: string;
+  /* Os outros nomes do filme, para a busca do acervo. Lidos do cache do filme
+     e não gravados com a avaliação — ver `crowd` abaixo, que vem de lá pelo
+     mesmo motivo. */
+  movieOriginal?: string | null;
+  movieEnglish?: string | null;
   moviePoster: string | null;
   movieDirector: string | null;
   /** How long the film runs, in minutes. Null when TMDB never reported one. */
@@ -83,6 +88,11 @@ export type Movie = {
      when it has something to add. Not always English: it is TMDB's original
      title, so a Korean film comes back in Korean. */
   original?: string | null;
+  /* O nome em inglês, quando ele não é nenhum dos dois acima — Parasita é
+     `Parasita`, `기생충` e `Parasite`, e só o terceiro acha uma cópia. Existe
+     para as buscas locais e não é desenhado em lugar nenhum. Só chega em filme
+     que o clube guardou: ficha aberta, fila ou avaliado. */
+  english?: string | null;
   year: number | null;
   /** The genre it opens on: the first of `genres`. */
   genre: string;
@@ -127,6 +137,8 @@ export type WatchItem = {
   title: string;
   /** See `Movie['original']`. Read through the film cache, not stored here. */
   original?: string | null;
+  /** See `Movie['english']`. Also read through the cache. */
+  english?: string | null;
   year: number | null;
   genre: string;
   poster: string | null;

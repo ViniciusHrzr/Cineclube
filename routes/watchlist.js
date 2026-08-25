@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
+const { fillEnglishTitle } = require('../english');
 const { GENRES } = require('../criteria');
 
 const router = express.Router();
@@ -15,7 +16,7 @@ const router = express.Router();
    way here, so the cache knows the name. Null on the film the cache somehow
    never saw, which the card draws as simply not having a second line. */
 const listStmt = db.prepare(`
-  SELECT w.*, mc.original_title
+  SELECT w.*, mc.original_title, mc.english_title
   FROM watchlist w
   LEFT JOIN movies_cache mc ON mc.tmdb_id = w.movie_id
   ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
@@ -36,6 +37,7 @@ function toDTO(row) {
     id: row.movie_id,
     title: row.movie_title,
     original: row.original_title ?? null,
+    english: row.english_title ?? null,
     year: row.movie_year,
     genre: row.movie_genre,
     poster: row.movie_poster,
@@ -59,6 +61,9 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
     movieId: movie.id, movieTitle: movie.title, movieYear: movie.year ?? null,
     movieGenre: genre, moviePoster: movie.poster ?? null
   });
+  /* A fila é uma das telas que filtram o banco, então o filme entra nela já
+     sabendo por quais nomes pode ser procurado depois. */
+  await fillEnglishTitle(movie.id);
   res.status(201).json({ ok: true });
 }));
 

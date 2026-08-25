@@ -14,7 +14,7 @@ import { GripVertical } from 'lucide-react';
 import { Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { api, del, type Movie, type WatchItem } from '@/lib/api';
-import { cn, norm, plural } from '@/lib/utils';
+import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 type Page = { items: Movie[]; page: number; totalPages: number };
@@ -249,7 +249,7 @@ export function WatchlistScreen() {
 
   const filtering = query.trim().length > 0;
   const shown = filtering
-    ? club.watchlist.filter(w => norm(w.title).includes(norm(query.trim())))
+    ? club.watchlist.filter(w => named(norm(query.trim()), w.title, w.original, w.english))
     : club.watchlist;
 
   /* ── the queue, twenty-four at a time ───────────────────────────────────

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
-import { cn, norm, plural } from '@/lib/utils';
+import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function ReviewsScreen() {
@@ -25,7 +25,9 @@ export function ReviewsScreen() {
   const filtering = query.trim().length > 0;
   const q = norm(query.trim());
   const shown = filtering
-    ? club.reviews.filter(r => norm(r.movieTitle).includes(q) || norm(r.reviewerName).includes(q))
+    ? club.reviews.filter(
+        r => named(q, r.movieTitle, r.movieOriginal, r.movieEnglish) || named(q, r.reviewerName)
+      )
     : club.reviews;
 
   async function remove(r: Review) {
@@ -78,7 +80,8 @@ export function ReviewsScreen() {
 
       {filtering && !shown.length ? (
         <Blank title="Nenhuma avaliação com esse nome">
-          A busca cobre o título do filme e o nome de quem avaliou. Limpe o campo para ver o registro inteiro.
+          A busca cobre o filme — em português, no original ou em inglês — e o nome de quem avaliou. Limpe o
+          campo para ver o registro inteiro.
         </Blank>
       ) : view === 'reviewer' ? (
         <ByReviewer

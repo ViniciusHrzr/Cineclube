@@ -4,6 +4,7 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const { critsFor, finalOf, GENRES } = require('../criteria');
+const { fillEnglishTitle } = require('../english');
 
 const router = express.Router();
 
@@ -13,7 +14,8 @@ const router = express.Router();
    without a backfill. */
 const listStmt = db.prepare(`
   SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
-         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes
+         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes,
+         mc.original_title, mc.english_title
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
@@ -36,7 +38,8 @@ const averagesStmt = db.prepare(`
 `);
 const savedStmt = db.prepare(`
   SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
-         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes
+         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes,
+         mc.original_title, mc.english_title
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
@@ -57,6 +60,11 @@ function toReviewDTO(row) {
     reviewerDot: row.reviewer_dot,
     movieId: row.movie_id,
     movieTitle: row.movie_title,
+    /* Os outros nomes do filme, para a busca do acervo achar por qualquer um
+       deles. Lidos do cache pelo mesmo motivo que a nota do TMDB logo abaixo: é
+       fato sobre o filme, não sobre a noite, e a avaliação está congelada. */
+    movieOriginal: row.original_title ?? null,
+    movieEnglish: row.english_title ?? null,
     movieYear: row.movie_year,
     movieGenre: genre,
     moviePoster: row.movie_poster,
@@ -127,6 +135,10 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
   await deleteWatchlistStmt.run(movie.id);
+  /* O acervo é a outra tela que filtra o banco, e um filme avaliado fica nele
+     para sempre — então é aqui que ele precisa aprender os nomes por que vai
+     ser procurado. Antes de reler a linha, para a resposta já sair com eles. */
+  await fillEnglishTitle(movie.id);
 
   const saved = await savedStmt.get(reviewerId, movie.id);
   res.status(201).json(toReviewDTO(saved));

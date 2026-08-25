@@ -5,7 +5,7 @@ import { useClub } from '@/App';
 import { initialsOf, reelColor, runtimeOf, type WatchItem } from '@/lib/api';
 import { useScreening } from '@/lib/screening';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
-import { cn, norm, plural } from '@/lib/utils';
+import { cn, named, norm, plural } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screening room, as a screen.
@@ -683,7 +683,9 @@ function Head({ connected, viewers }: { connected: boolean; viewers: number }) {
 function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id: number) => void }) {
   const [query, setQuery] = useState('');
   const filtering = query.trim().length > 0;
-  const shown = filtering ? watchlist.filter(w => norm(w.title).includes(norm(query.trim()))) : watchlist;
+  const shown = filtering
+    ? watchlist.filter(w => named(norm(query.trim()), w.title, w.original, w.english))
+    : watchlist;
 
   /* Before the field, not after: an empty queue has nothing to filter, and a
      search box over a "the queue is empty" notice is a control for a list that

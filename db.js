@@ -187,6 +187,18 @@ async function migrate() {
     await exec('ALTER TABLE movies_cache ADD COLUMN original_title TEXT');
   }
 
+  /* E o nome em inglês, quando ele não é nenhum dos dois acima. Existe para as
+     buscas: a fila, a sessão e o acervo filtram o que está no banco, e Parasita
+     não é achável por "Parasite" sem esta coluna.
+
+     Só chega por filme, nunca por lista — TMDB carrega tradução no endpoint de
+     um filme e em nenhum outro — então é preenchido quando o filme vira algo
+     que o clube guarda: ficha aberta, entrou na fila, foi avaliado. O que já
+     estava no banco antes disso é o que `npm run backfill:ingles` cura. */
+  if (!movieCols.includes('english_title')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN english_title TEXT');
+  }
+
   /* How long the film runs, in minutes. TMDB only reports it on the details
      endpoint, so a row cached from a search or a popular page has it null until
      somebody opens the film — which is exactly when the number is needed. */

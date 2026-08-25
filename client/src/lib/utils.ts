@@ -56,3 +56,22 @@ export function norm(s: string) {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
 }
+
+/* ── um filme tem mais de um nome ─────────────────────────────────────────
+   Every list the club filters locally — a fila, a sessão, o acervo — used to
+   match the Portuguese title and nothing else, which quietly made the app worse
+   at the one thing it is for. Somebody who watched Entre Facas e Segredos
+   remembers it as Knives Out; somebody hunting a copy of Parasita is typing
+   Parasite. Both were misses, and a miss on a list you are looking straight at
+   reads as the film not being there.
+
+   Any name matches: the Portuguese one, the original, the English one. They
+   arrive null when they would only repeat a name already in the list, so this
+   never compares the same string twice.
+
+   The query is normalised once by the caller and the names once each here —
+   see `norm`. A search box is a keystroke and a full list scan, and this runs
+   on every one of them. */
+export function named(query: string, ...names: (string | null | undefined)[]) {
+  return names.some(n => n && norm(n).includes(query));
+}

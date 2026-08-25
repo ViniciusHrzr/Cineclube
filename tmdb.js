@@ -155,6 +155,33 @@ function originalOf(m) {
   return m.original_title && m.original_title !== m.title ? m.original_title : null;
 }
 
+/* ── e o nome em inglês, quando ele é um terceiro ─────────────────────────
+   For most films this is nothing new: an English-language film has it as its
+   original title, and a Brazilian one is being looked for in Portuguese
+   anyway. It earns a column for exactly one case — the film that is neither.
+   Parasita is `Parasita` here, `기생충` originally, and `Parasite` everywhere
+   the club would go looking for a copy, and none of the first two finds it.
+
+   Null when it repeats a name we already hold, so the field is non-null only
+   when it adds a way to find the film and never when it is a third copy of the
+   same string.
+
+   Not on the list endpoints — TMDB only carries translations per film — which
+   is why this is filled where a film becomes something the club keeps (opened,
+   queued, rated) rather than for every poster that scrolls past. */
+function englishOf(m, translations) {
+  const en = (translations?.translations || []).find(t => t.iso_639_1 === 'en');
+  const title = en?.data?.title;
+  if (!title || title === m.title || title === m.original_title) return null;
+  return title;
+}
+
+/** The English name alone, for a film already cached without one. */
+async function englishTitleFor(id) {
+  const m = await tmdbGet(`/movie/${id}`, { append_to_response: 'translations' });
+  return englishOf(m, m.translations);
+}
+
 /* `genre` is the one it opens on; `genres` is everything it could be rated as.
    Both travel, because a poster in a grid only needs the first and the rating
    screen needs all of them. */
@@ -281,7 +308,12 @@ async function watchProvidersFor(id) {
 }
 
 async function movieDetails(id) {
-  const m = await tmdbGet(`/movie/${id}`, { append_to_response: 'credits,videos,watch/providers' });
+  // `translations` rides along on a request that was already being made, which
+  // is the whole reason the English name is free on this endpoint and costs a
+  // request everywhere else.
+  const m = await tmdbGet(`/movie/${id}`, {
+    append_to_response: 'credits,videos,watch/providers,translations'
+  });
   const director = (m.credits?.crew || []).find(c => c.job === 'Director');
   const cast = (m.credits?.cast || []).slice(0, 6).map(c => ({ name: c.name, character: c.character }));
   const trailer = (m.videos?.results || [])
@@ -291,6 +323,7 @@ async function movieDetails(id) {
     id: m.id,
     title: m.title,
     original: originalOf(m),
+    english: englishOf(m, m.translations),
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds((m.genres || []).map(g => g.id)),
     genres: genresFromTmdbIds((m.genres || []).map(g => g.id)),
@@ -317,5 +350,5 @@ async function movieDetails(id) {
 // exactly the kind that rot silently as JustWatch renames things.
 module.exports = {
   searchMovies, popularMovies, discoverMovies, movieDetails, watchProvidersFor,
-  watchIn, signedBy
+  englishTitleFor, watchIn, signedBy, englishOf
 };
