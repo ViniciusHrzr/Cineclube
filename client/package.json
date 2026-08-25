@@ -7,7 +7,7 @@
     "dev": "npm run vendor:sw && vite",
     "build": "npm run vendor:sw && tsc -b && vite build",
     "preview": "vite preview",
-    "vendor:sw": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync(require.resolve('webtorrent/dist/sw.min.js'),'public/sw.min.js')\""
+    "vendor:sw": "node scripts/vendor-sw.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

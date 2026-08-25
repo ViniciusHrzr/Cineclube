@@ -40,11 +40,21 @@ app.use(
    in full, and it has no way to find out otherwise. Without a Cache-Control
    header a browser is free to invent a freshness lifetime of its own, and it
    does. `no-cache` does not mean "do not store": it means "ask first", which
-   costs one conditional request and answers 304 the moment nothing changed. */
+   costs one conditional request and answers 304 the moment nothing changed.
+
+   The service worker gets the same header for a stronger reason. It has no hash
+   either, and it is the file that serves the film: a browser still running the
+   previous one is a browser with the previous one's bugs, and a service worker
+   outlives the tab that installed it. Browsers do revalidate a worker script on
+   their own, but "do" is a thing three engines each decided separately and have
+   changed before, and one member stuck on an old worker is one member whose
+   picture stops mid-film for reasons nobody in the room can see. */
 app.use(
   express.static(path.join(__dirname, 'public'), {
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.endsWith('.html') || filePath.endsWith('sw.min.js')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
     },
   })
 );
