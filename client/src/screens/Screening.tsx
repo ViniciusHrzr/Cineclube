@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Blank, Fault, Key, Poster, Reel } from '@/components/bits';
+import { Blank, Fault, Key, Poster, Reel, SearchField } from '@/components/bits';
 import { SyncedVideo } from '@/components/SyncedVideo';
 import { useClub } from '@/App';
 import { initialsOf, reelColor, runtimeOf, type WatchItem } from '@/lib/api';
 import { useScreening } from '@/lib/screening';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
-import { cn, plural } from '@/lib/utils';
+import { cn, norm, plural } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screening room, as a screen.
@@ -681,6 +681,13 @@ function Head({ connected, viewers }: { connected: boolean; viewers: number }) {
 
 /* ── choosing the film ──────────────────────────────────────────────────── */
 function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id: number) => void }) {
+  const [query, setQuery] = useState('');
+  const filtering = query.trim().length > 0;
+  const shown = filtering ? watchlist.filter(w => norm(w.title).includes(norm(query.trim()))) : watchlist;
+
+  /* Before the field, not after: an empty queue has nothing to filter, and a
+     search box over a "the queue is empty" notice is a control for a list that
+     does not exist. */
   if (!watchlist.length) {
     return (
       <Blank title="A fila está vazia">
@@ -692,11 +699,28 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
 
   return (
     <div className="mt-6">
-      {/* No paragraph explaining what pressing a poster does. It opens the
-          session, which is the only thing this screen is for, and three lines
-          of prose above the posters were the app talking about itself. */}
+      {/* The same field the queue has, for the same reason: a club that has
+          been marking films for a few months is choosing tonight's out of
+          eighty posters, and scrolling a wall of them to find the one already
+          agreed on in the chat is the errand. Local, because this list is
+          already here — nothing to ask the server for. */}
+      <div className="mb-5 max-w-[440px]">
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Filtrar a fila…"
+          hint={filtering ? `${plural(shown.length, 'filme', 'filmes')} na fila` : undefined}
+        />
+      </div>
+
+      {!shown.length ? (
+        <Blank title="Nenhum filme na fila com esse título">Limpe o filtro para ver a fila inteira.</Blank>
+      ) : (
+      /* No paragraph explaining what pressing a poster does. It opens the
+         session, which is the only thing this screen is for, and three lines
+         of prose above the posters were the app talking about itself. */
       <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
-        {watchlist.map(w => (
+        {shown.map(w => (
           <button
             key={w.id}
             type="button"
@@ -715,6 +739,7 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
           </button>
         ))}
       </div>
+      )}
     </div>
   );
 }
