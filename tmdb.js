@@ -137,6 +137,24 @@ function crowdOf(m) {
   return m.vote_count > 0 ? { score: m.vote_average, votes: m.vote_count } : null;
 }
 
+/* ── o nome com que o filme circula ───────────────────────────────────────
+   Everything on this page is asked for in pt-BR, which is right for reading and
+   useless for searching: "Entre Facas e Segredos" finds nothing anywhere, and
+   the club looking for a copy of it is looking for "Knives Out".
+
+   Null when it is the same string, because a film whose Portuguese title was
+   never changed has nothing to add — printing "Interstellar" under
+   "Interstellar" is a second line that says the first line again.
+
+   This is TMDB's `original_title`, so for a film shot in English it is the
+   English name, and for one shot elsewhere it is that language's: Parasita
+   comes back as 기생충, not as Parasite. That is the honest field and it is
+   free on every endpoint — the English name of a Korean film would be a second
+   request per film, which a page of twenty posters cannot pay. */
+function originalOf(m) {
+  return m.original_title && m.original_title !== m.title ? m.original_title : null;
+}
+
 /* `genre` is the one it opens on; `genres` is everything it could be rated as.
    Both travel, because a poster in a grid only needs the first and the rating
    screen needs all of them. */
@@ -144,6 +162,7 @@ function normalizeListItem(m) {
   return {
     id: m.id,
     title: m.title,
+    original: originalOf(m),
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds(m.genre_ids),
     genres: genresFromTmdbIds(m.genre_ids),
@@ -271,6 +290,7 @@ async function movieDetails(id) {
   return {
     id: m.id,
     title: m.title,
+    original: originalOf(m),
     year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
     genre: genreFromTmdbIds((m.genres || []).map(g => g.id)),
     genres: genresFromTmdbIds((m.genres || []).map(g => g.id)),

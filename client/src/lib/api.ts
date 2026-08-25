@@ -77,6 +77,12 @@ export type Review = {
 export type Movie = {
   id: number;
   title: string;
+  /* O nome com que o filme circula lá fora, para quem vai atrás de uma cópia:
+     "Entre Facas e Segredos" não acha nada, "Knives Out" acha. Null when it is
+     the same string as `title`, which is most films — the line is only drawn
+     when it has something to add. Not always English: it is TMDB's original
+     title, so a Korean film comes back in Korean. */
+  original?: string | null;
   year: number | null;
   /** The genre it opens on: the first of `genres`. */
   genre: string;
@@ -119,6 +125,8 @@ export type Provider = { id: number; name: string; logo: string | null };
 export type WatchItem = {
   id: number;
   title: string;
+  /** See `Movie['original']`. Read through the film cache, not stored here. */
+  original?: string | null;
   year: number | null;
   genre: string;
   poster: string | null;

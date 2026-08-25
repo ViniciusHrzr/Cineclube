@@ -72,6 +72,19 @@ export const FilmCell = memo(function FilmCell({
 
         <CardItem translateZ={30} className="mt-3 w-full">
           <h3 className="text-[14px] font-semibold leading-tight text-ink">{movie.title}</h3>
+          {/* ── o nome de procurar ──────────────────────────────────────────
+              A step quieter than the title and a step above the year, because
+              it is the same fact as the title and not a new one — the card must
+              not read as a film with two names. Truncated at one line: a card
+              is 178px wide and a long original title would push the score bar
+              down and break the grid's rhythm; the `title` attribute keeps the
+              whole string for the pointer, and it is selectable text either
+              way, which is the point of putting it here. */}
+          {movie.original ? (
+            <p className="q mt-0.5 truncate text-[11px] text-ink-faint" title={movie.original}>
+              {movie.original}
+            </p>
+          ) : null}
           <p className="q mt-0.5 text-[11.5px] text-ink-dim">
             {movie.year ?? '—'} · {movie.genre}
           </p>
@@ -205,6 +218,12 @@ export function ProjectionSheet({
             <Poster src={movie.poster} alt={`Pôster de ${movie.title}`} className="aspect-[2/3] w-[132px] flex-none sm:w-[190px]" />
             <div className="min-w-0 flex-1">
               <h2 className="pr-10 font-display text-[30px] leading-none tracking-[0.03em] text-beam">{movie.title}</h2>
+              {/* On its own line and not appended to the year, because it is a
+                  name and the line under it is a row of facts. It wraps freely
+                  here — the sheet has the width the card did not. */}
+              {movie.original ? (
+                <p className="q mt-1.5 pr-10 text-[13px] text-ink-dim">{movie.original}</p>
+              ) : null}
               {/* Year, length, director — the three facts you want before
                   committing an evening, in the order you want them. The runtime
                   only comes from the details endpoint, so on the rare sheet

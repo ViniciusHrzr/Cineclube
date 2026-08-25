@@ -177,6 +177,16 @@ async function migrate() {
   if (!movieCols.includes('genres')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN genres TEXT');
   }
+  /* O nome com que o filme circula lá fora — TMDB's `original_title`, stored
+     only when it differs from the Portuguese one. Cached because the queue and
+     the archive read the film from here with TMDB nowhere in the request, and
+     because it is the string somebody copies to go find a copy. Rows written
+     before this column existed have it null and fill in the next time the film
+     is seen, which every list endpoint does. */
+  if (!movieCols.includes('original_title')) {
+    await exec('ALTER TABLE movies_cache ADD COLUMN original_title TEXT');
+  }
+
   /* How long the film runs, in minutes. TMDB only reports it on the details
      endpoint, so a row cached from a search or a popular page has it null until
      somebody opens the film — which is exactly when the number is needed. */

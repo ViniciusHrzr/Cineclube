@@ -6,11 +6,20 @@ const { GENRES } = require('../criteria');
 
 const router = express.Router();
 
-// position is the club's arrangement; added_at only breaks ties for rows that
-// predate the column.
-const listStmt = db.prepare(
-  'SELECT * FROM watchlist ORDER BY position IS NULL, position ASC, added_at DESC'
-);
+/* position is the club's arrangement; added_at only breaks ties for rows that
+   predate the column.
+
+   The original title comes through the cache rather than being copied into this
+   table, the same way the archive reads the TMDB score: the queue row is a
+   pointer to a film, and every film in it passed through the catalogue on its
+   way here, so the cache knows the name. Null on the film the cache somehow
+   never saw, which the card draws as simply not having a second line. */
+const listStmt = db.prepare(`
+  SELECT w.*, mc.original_title
+  FROM watchlist w
+  LEFT JOIN movies_cache mc ON mc.tmdb_id = w.movie_id
+  ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
+`);
 const insertStmt = db.prepare(`
   INSERT INTO watchlist (movie_id, movie_title, movie_year, movie_genre, movie_poster, position)
   VALUES (@movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
@@ -26,6 +35,7 @@ function toDTO(row) {
   return {
     id: row.movie_id,
     title: row.movie_title,
+    original: row.original_title ?? null,
     year: row.movie_year,
     genre: row.movie_genre,
     poster: row.movie_poster,

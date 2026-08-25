@@ -10,11 +10,15 @@ const router = express.Router();
    popular page writing over a cached row must not blank out the number a
    previous detail fetch put there — hence COALESCE rather than excluded. */
 const upsertCache = db.prepare(`
-  INSERT INTO movies_cache (tmdb_id, title, year, genre, genres, poster, director, runtime, tmdb_score, tmdb_votes, cached_at)
-  VALUES (@id, @title, @year, @genre, @genres, @poster, @director, @runtime, @score, @votes, datetime('now'))
+  INSERT INTO movies_cache (tmdb_id, title, original_title, year, genre, genres, poster, director, runtime, tmdb_score, tmdb_votes, cached_at)
+  VALUES (@id, @title, @original, @year, @genre, @genres, @poster, @director, @runtime, @score, @votes, datetime('now'))
   ON CONFLICT(tmdb_id) DO UPDATE SET
     title = excluded.title, year = excluded.year, genre = excluded.genre,
     genres = excluded.genres,
+    -- Written flat rather than COALESCEd: every endpoint carries this one, so a
+    -- null here is TMDB saying the two titles are now the same string, not a
+    -- cheaper endpoint failing to mention it.
+    original_title = excluded.original_title,
     poster = excluded.poster, director = excluded.director,
     runtime = COALESCE(excluded.runtime, movies_cache.runtime),
     tmdb_score = COALESCE(excluded.tmdb_score, movies_cache.tmdb_score),
@@ -27,6 +31,7 @@ function fromCache(c) {
   return {
     id: c.tmdb_id,
     title: c.title,
+    original: c.original_title ?? null,
     year: c.year,
     genre: c.genre,
     // Rows written before the column existed still know one genre; one is a
@@ -47,7 +52,8 @@ const recentCache = db.prepare('SELECT * FROM movies_cache ORDER BY cached_at DE
 async function cacheMovie(m) {
   try {
     await upsertCache.run({
-      id: m.id, title: m.title, year: m.year ?? null, genre: m.genre,
+      id: m.id, title: m.title, original: m.original ?? null,
+      year: m.year ?? null, genre: m.genre,
       genres: (m.genres || [m.genre]).join(','),
       poster: m.poster ?? null, director: m.director ?? null,
       runtime: m.runtime ?? null,

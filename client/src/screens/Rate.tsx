@@ -280,6 +280,9 @@ function Slate({
         <Poster src={movie.poster} alt={`Pôster de ${movie.title}`} className="aspect-[2/3] w-[86px] flex-none" />
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-[26px] leading-none tracking-[0.03em] text-beam">{movie.title}</h2>
+          {movie.original ? (
+            <p className="q mt-1.5 text-[12.5px] text-ink-dim">{movie.original}</p>
+          ) : null}
           {/* The same three facts the projection sheet states, in the same
               order, because this is the same film seen from the other side of
               the desk. */}
