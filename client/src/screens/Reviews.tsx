@@ -1,8 +1,18 @@
 import { useState } from 'react';
-import { ChevronDown, Pencil, Plus, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  ChevronDown,
+  Pencil,
+  Plus,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Bill, Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, runtimeOf, type Review, type ReviewComment } from '@/lib/api';
-import { cn, named, norm, plural } from '@/lib/utils';
+import { cn, named, norm, plural, whenOf } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function ReviewsScreen() {
@@ -15,6 +25,9 @@ export function ReviewsScreen() {
      under two people, is exactly the comparison this screen exists for, and
      opening the second one used to close the first. */
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  /* Da maior para a menor por padrão: o arquivo é lido para achar o que o clube
+     mais gostou muito mais vezes do que para achar o que ele detestou. */
+  const [desc, setDesc] = useState(true);
   const [query, setQuery] = useState('');
 
   /* Title or person, in one field. This screen is the club's record and it is
@@ -70,12 +83,36 @@ export function ReviewsScreen() {
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {(['reviewer', 'movie'] as const).map(v => (
           <Chip key={v} on={view === v} onClick={() => setView(v)}>
             {v === 'reviewer' ? 'Por avaliador' : 'Por filme'}
           </Chip>
         ))}
+
+        {/* ── da maior ou da menor ────────────────────────────────────────
+            Um botão e não dois chips: são dois estados de uma coisa só, e uma
+            fila de filtros em que dois deles são o mesmo filtro invertido faz
+            o olho ler quatro escolhas onde há três. O ícone diz para que lado a
+            lista corre, e o rótulo ao lado diz em palavras — sozinho, um ícone
+            de ordenação é um símbolo que cada produto desenha diferente.
+
+            Separado dos chips por uma folga maior: eles escolhem O QUE se
+            agrupa, este escolhe em QUE ORDEM. */}
+        <button
+          type="button"
+          onClick={() => setDesc(d => !d)}
+          aria-label={desc ? 'Ordenando da maior nota; inverter' : 'Ordenando da menor nota; inverter'}
+          title={desc ? 'Da maior nota para a menor' : 'Da menor nota para a maior'}
+          className="ml-2 flex items-center gap-2 rounded-cell bg-house-seat/70 px-3 py-1.5 font-display text-[12.5px] uppercase leading-none tracking-[0.12em] text-ink-dim ring-1 ring-house-rail transition-colors duration-150 hover:text-ink hover:ring-white/25"
+        >
+          {desc ? (
+            <ArrowDownWideNarrow className="h-3.5 w-3.5 flex-none" strokeWidth={1.8} aria-hidden />
+          ) : (
+            <ArrowUpNarrowWide className="h-3.5 w-3.5 flex-none" strokeWidth={1.8} aria-hidden />
+          )}
+          {desc ? 'Maior nota' : 'Menor nota'}
+        </button>
       </div>
 
       {filtering && !shown.length ? (
@@ -87,12 +124,19 @@ export function ReviewsScreen() {
         <ByReviewer
           reviews={shown}
           filtering={filtering}
+          desc={desc}
           openIds={openIds}
           onToggle={toggle}
           onDelete={r => void remove(r)}
         />
       ) : (
-        <ByMovie reviews={shown} openIds={openIds} onToggle={toggle} onDelete={r => void remove(r)} />
+        <ByMovie
+          reviews={shown}
+          desc={desc}
+          openIds={openIds}
+          onToggle={toggle}
+          onDelete={r => void remove(r)}
+        />
       )}
     </section>
   );
@@ -416,21 +460,6 @@ function CriterionVotes({
   );
 }
 
-/* ── quando foi dito ──────────────────────────────────────────────────────
-   Uma conversa é lida na ordem em que aconteceu, e o que interessa é se foi
-   agora ou faz semanas — não o carimbo. Hoje e ontem por extenso, o resto em
-   data curta, e o carimbo completo fica no title para quem precisar dele. */
-function whenOf(iso: string) {
-  // O servidor grava com datetime('now'), que é UTC sem fuso no texto.
-  const at = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(at.getTime())) return '';
-  const days = Math.floor((Date.now() - at.getTime()) / 86400000);
-  const clock = at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  if (days <= 0) return clock;
-  if (days === 1) return `ontem, ${clock}`;
-  return at.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-}
-
 /* ── a conversa em cima de uma ficha ──────────────────────────────────────
    O clube discute por voz e a discussão morre com a chamada. Isto é a primeira
    coisa no produto que guarda alguma parte dela.
@@ -722,6 +751,7 @@ function CrowdNote({ crowd }: { crowd: Review['crowd'] }) {
 function ByReviewer({
   reviews,
   filtering,
+  desc,
   openIds,
   onToggle,
   onDelete,
@@ -731,6 +761,8 @@ function ByReviewer({
   /* Whether a search is running — not to filter with, only to decide whether
      the cards should stand open. See below. */
   filtering: boolean;
+  /** Which way the score runs. Decided once, above both views. */
+  desc: boolean;
   openIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
@@ -761,7 +793,9 @@ function ByReviewer({
   return (
     <>
       {people.map(p => {
-        const items = reviews.filter(r => r.reviewerId === p.id).sort((a, b) => b.final - a.final);
+        const items = reviews
+          .filter(r => r.reviewerId === p.id)
+          .sort((a, b) => (desc ? b.final - a.final : a.final - b.final));
         /* A search forces every matching card open. Collapsed, a hit would show
            the name of someone who rated the film you typed and then hide the
            film itself — the card would be the answer to a question you did not
@@ -850,6 +884,7 @@ function ByReviewer({
    say the same thing — one that had to be decoded before it could be read. */
 function ByMovie({
   reviews,
+  desc,
   openIds,
   onToggle,
   onDelete,
@@ -857,6 +892,8 @@ function ByMovie({
   /* Already filtered by the search upstairs, so this view never has to know
      one is running. */
   reviews: Review[];
+  /** Which way the score runs — the films, and the takes inside each one. */
+  desc: boolean;
   openIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
@@ -886,13 +923,17 @@ function ByMovie({
   reviews.forEach(r => {
     (map[String(r.movieId)] ||= []).push(r);
   });
-  /* Ranked by the club's number, best first. The record is read as a ranking —
-     "what did we like" — and the date a film happened to be rated says nothing
-     about that. Films tied on the average fall back to the title so the order
-     is stable between renders rather than shuffling on every reload. */
+  /* Ranked by the club's number, in the direction the control above asked for.
+     The record is read as a ranking — "what did we like", and sometimes "what
+     did we hate" — and the date a film happened to be rated says nothing about
+     either. Films tied on the average fall back to the title so the order is
+     stable between renders rather than shuffling on every reload; the tiebreak
+     stays alphabetical in both directions, because a name has no worse end. */
   const mean = (rs: Review[]) => rs.reduce((s, r) => s + r.final, 0) / rs.length;
   const groups = Object.values(map).sort(
-    (a, b) => mean(b) - mean(a) || a[0].movieTitle.localeCompare(b[0].movieTitle)
+    (a, b) =>
+      (desc ? mean(b) - mean(a) : mean(a) - mean(b)) ||
+      a[0].movieTitle.localeCompare(b[0].movieTitle)
   );
 
   if (!groups.length)
@@ -903,7 +944,7 @@ function ByMovie({
       {groups.map(items => {
         const head = items[0];
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
-        const sorted = [...items].sort((a, b) => b.final - a.final);
+        const sorted = [...items].sort((a, b) => (desc ? b.final - a.final : a.final - b.final));
 
         /* ── the card is closed until it is asked ─────────────────────────
            Every take on every film, all open at once, is a wall of names

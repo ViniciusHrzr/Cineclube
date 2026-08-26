@@ -75,3 +75,22 @@ export function norm(s: string) {
 export function named(query: string, ...names: (string | null | undefined)[]) {
   return names.some(n => n && norm(n).includes(query));
 }
+
+/* ── quando foi ───────────────────────────────────────────────────────────
+   Uma conversa e um aviso são lidos na ordem em que aconteceram, e o que
+   interessa é se foi agora ou faz semanas — não o carimbo. Hoje e ontem por
+   extenso, o resto em data curta; o carimbo completo fica no `title` de quem
+   desenha isto, para quem precisar dele.
+
+   O servidor grava com `datetime('now')`, que é UTC e não traz fuso no texto.
+   Sem o `Z` acrescentado aqui o navegador lê a string como hora local e a
+   conversa inteira aparece três horas fora do lugar. */
+export function whenOf(iso: string) {
+  const at = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(at.getTime())) return '';
+  const days = Math.floor((Date.now() - at.getTime()) / 86400000);
+  const clock = at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (days <= 0) return clock;
+  if (days === 1) return `ontem, ${clock}`;
+  return at.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}

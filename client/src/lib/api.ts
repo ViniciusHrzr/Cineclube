@@ -94,6 +94,32 @@ export type CriterionVote = {
    informação com o sinal trocado. */
 export type CommentLike = { commentId: string; reviewerId: string };
 
+/* ── quem reagiu ao que é seu ─────────────────────────────────────────────
+   Derivado no servidor das três tabelas de reação, nunca gravado como evento —
+   ver routes/notifications.js. A frase vem pronta de lá porque a redação do
+   produto é conteúdo autoral e não um switch nesta tela. */
+export type Notice = {
+  id: string;
+  kind: 'comment' | 'vote' | 'like';
+  /** ISO em UTC, sem fuso no texto — ver `whenOf`. */
+  at: string;
+  actor: { id: string; name: string; dot: string };
+  movieId: number;
+  reviewId: string;
+  /** A frase inteira: "comentou sua avaliação de Parasita". */
+  text: string;
+  /** Um pedaço do que foi escrito, em comentário e curtida. */
+  excerpt?: string;
+  /** +1 ou −1, só em voto. */
+  value?: number;
+  criterion?: string;
+};
+
+export const notifications = {
+  all: () => api<{ items: Notice[]; unread: number; seenAt: string | null }>('/api/notifications'),
+  seen: () => post<{ seenAt: string | null }>('/api/notifications/seen', {}),
+};
+
 export const social = {
   all: () =>
     api<{ comments: ReviewComment[]; votes: CriterionVote[]; commentLikes: CommentLike[] }>(

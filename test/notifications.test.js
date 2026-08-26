@@ -1,0 +1,290 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const dbPath = path.join(os.tmpdir(), `cineclube-notif-${crypto.randomUUID()}.db`);
+process.env.CINECLUBE_DB = dbPath;
+
+const app = require('../server');
+const db = require('../db');
+const { critsFor } = require('../criteria');
+
+/* ══════════════════════════════════════════════════════════════════════════
+   O sino.
+
+   O feed é derivado das três tabelas de reação, e é por isso que estes testes
+   olham tanto para o que NÃO aparece nele quanto para o que aparece:
+
+   · o que você mesmo fez nunca vira aviso;
+   · um evento desfeito some do feed, porque não há cópia dele em lugar nenhum;
+   · a marca d'água é uma data, então "não lidas" é quantos eventos são mais
+     novos que ela — e ver o sino zera a conta sem apagar nada.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+let baseUrl;
+let server;
+
+test.before(async () => {
+  await app.ready;
+  server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  baseUrl = `http://127.0.0.1:${server.address().port}`;
+});
+
+test.after(async () => {
+  await new Promise(resolve => server.close(resolve));
+  db.close();
+  for (const suffix of ['', '-shm', '-wal']) {
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+  }
+});
+
+async function req(method, pathname, body, cookie) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (cookie) headers.Cookie = cookie;
+  const res = await fetch(baseUrl + pathname, {
+    method,
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await res.text();
+  return { status: res.status, body: text ? JSON.parse(text) : null, setCookie: res.headers.get('set-cookie') };
+}
+
+const cookieOf = s => (s ? s.split(';')[0] : null);
+let seq = 0;
+const PIN = '4321';
+
+async function newReviewer(name) {
+  const res = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin: PIN });
+  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin: PIN });
+  return { ...res.body, cookie: cookieOf(login.setCookie) };
+}
+
+const movie = () => ({ id: 800000 + ++seq, title: `Filme ${seq}`, year: 2024, genre: 'Terror' });
+
+function scoresFor(genre, value) {
+  const o = {};
+  critsFor(genre).forEach(c => { o[c.key] = value; });
+  return o;
+}
+
+async function newTake(who) {
+  const m = movie();
+  const res = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, who.cookie);
+  assert.equal(res.status, 201);
+  return { ...res.body, movie: m };
+}
+
+const feed = who => req('GET', '/api/notifications', null, who.cookie);
+const seen = who => req('POST', '/api/notifications/seen', {}, who.cookie);
+
+const comment = (take, body, who) =>
+  req('POST', `/api/social/reviews/${take.id}/comments`, { body }, who.cookie);
+const vote = (take, key, value, who) =>
+  req('PUT', `/api/social/reviews/${take.id}/criteria/${key}/vote`, { value }, who.cookie);
+const like = (c, liked, who) =>
+  req('PUT', `/api/social/comments/${c.id}/like`, { liked }, who.cookie);
+
+/* ── as três coisas que acendem o sino ───────────────────────────────── */
+
+test('um comentário na minha ficha vira aviso, com trecho do que foi dito', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer('Bruno Sá');
+  const take = await newTake(author);
+  await comment(take, 'teu 7 em roteiro é generoso', reader);
+
+  const { body } = await feed(author);
+  assert.equal(body.items.length, 1);
+  const item = body.items[0];
+  assert.equal(item.kind, 'comment');
+  assert.equal(item.actor.id, reader.id);
+  assert.equal(item.reviewId, take.id);
+  assert.match(item.text, /comentou sua avaliação/);
+  assert.equal(item.excerpt, 'teu 7 em roteiro é generoso');
+});
+
+test('um voto numa nota minha vira aviso, e diz o critério pelo nome', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await vote(take, 'fotografia', 1, reader);
+
+  const { body } = await feed(author);
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].kind, 'vote');
+  assert.equal(body.items[0].criterion, 'Fotografia');
+  assert.equal(body.items[0].value, 1);
+  assert.match(body.items[0].text, /concordou com seu Fotografia/);
+});
+
+test('discordar diz discordou, e não concordou com sinal trocado', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await vote(take, 'som', -1, reader);
+
+  const { body } = await feed(author);
+  assert.match(body.items[0].text, /discordou do seu Som/);
+});
+
+test('o critério é nomeado pelo gênero da ficha, não por uma tabela fixa', async () => {
+  // 'atuacoes' numa animação chama-se Vozes; o aviso tem de dizer o que a
+  // pessoa viu na própria ficha.
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const m = { ...movie(), genre: 'Animação' };
+  const take = (await req('POST', '/api/reviews', {
+    movie: m, scores: scoresFor('Animação', 8)
+  }, author.cookie)).body;
+
+  await vote(take, 'vozes', 1, reader);
+  const { body } = await feed(author);
+  assert.equal(body.items[0].criterion, 'Vozes');
+});
+
+test('curtir meu comentário vira aviso, mesmo na ficha de outra pessoa', async () => {
+  const host = await newReviewer();
+  const writer = await newReviewer();
+  const liker = await newReviewer();
+  const take = await newTake(host);
+  const c = (await comment(take, 'a cena do corredor', writer)).body;
+
+  await like(c, true, liker);
+  const { body } = await feed(writer);
+  const mine = body.items.filter(i => i.kind === 'like');
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].actor.id, liker.id);
+  assert.equal(mine[0].excerpt, 'a cena do corredor');
+});
+
+/* ── o que não acende ────────────────────────────────────────────────── */
+
+test('o que você mesmo faz nunca vira aviso para você', async () => {
+  const author = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'respondendo a mim mesmo', author);
+
+  const { body } = await feed(author);
+  assert.equal(body.items.length, 0, 'comentar a própria ficha acendeu o próprio sino');
+  assert.equal(body.unread, 0);
+});
+
+test('reação na ficha de outra pessoa não aparece no meu sino', async () => {
+  const author = await newReviewer();
+  const other = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'nada a ver comigo', reader);
+
+  assert.equal((await feed(other)).body.items.length, 0);
+});
+
+test('um evento desfeito some do feed, porque não há cópia dele', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+
+  await vote(take, 'direcao', 1, reader);
+  assert.equal((await feed(author)).body.items.length, 1);
+
+  await vote(take, 'direcao', 0, reader);
+  assert.equal((await feed(author)).body.items.length, 0, 'o aviso sobreviveu ao voto retirado');
+});
+
+test('apagar o comentário apaga o aviso sobre ele', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  const c = (await comment(take, 'some comigo', reader)).body;
+  assert.equal((await feed(author)).body.items.length, 1);
+
+  await req('DELETE', `/api/social/comments/${c.id}`, null, reader.cookie);
+  assert.equal((await feed(author)).body.items.length, 0);
+});
+
+/* ── a marca d'água ──────────────────────────────────────────────────── */
+
+test('tudo é novo até a primeira vez que o sino é aberto', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'primeiro', a);
+  await vote(take, 'montagem', 1, b);
+
+  const before = await feed(author);
+  assert.equal(before.body.items.length, 2);
+  assert.equal(before.body.unread, 2, 'quem nunca abriu o sino tem tudo por ler');
+  assert.equal(before.body.seenAt, null);
+});
+
+test('ver o sino zera a conta sem apagar o histórico', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'oi', reader);
+
+  assert.equal((await seen(author)).status, 200);
+  const after = await feed(author);
+  assert.equal(after.body.unread, 0, 'a conta não zerou');
+  assert.equal(after.body.items.length, 1, 'o histórico foi apagado junto');
+  assert.ok(after.body.seenAt, 'a marca d\'água não foi gravada');
+});
+
+test('o que chega depois de visto conta como novo de novo', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'antes', a);
+  await seen(author);
+
+  // datetime('now') tem resolução de um segundo, então um evento gravado no
+  // mesmo segundo da marca não conta como posterior a ela. Espera o relógio
+  // virar antes de gerar o segundo, senão este teste mede a resolução do
+  // banco em vez da regra.
+  await new Promise(r => setTimeout(r, 1100));
+  await comment(take, 'depois', b);
+
+  const { body } = await feed(author);
+  assert.equal(body.items.length, 2);
+  assert.equal(body.unread, 1, 'só o que veio depois da marca é novo');
+});
+
+test('a marca de uma pessoa não mexe na de outra', async () => {
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const reader = await newReviewer();
+  const takeA = await newTake(a);
+  const takeB = await newTake(b);
+  await comment(takeA, 'para a', reader);
+  await comment(takeB, 'para b', reader);
+
+  await seen(a);
+  assert.equal((await feed(a)).body.unread, 0);
+  assert.equal((await feed(b)).body.unread, 1, 'ver o sino de um zerou o do outro');
+});
+
+/* ── quem pode ler ───────────────────────────────────────────────────── */
+
+test('o sino exige sessão — nas duas rotas', async () => {
+  assert.equal((await req('GET', '/api/notifications')).status, 401);
+  assert.equal((await req('POST', '/api/notifications/seen', {})).status, 401);
+});
+
+test('o feed é o de quem está logado, e não aceita um id no caminho', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'só o autor vê isto', reader);
+
+  // A sessão é a única coisa que escolhe o destinatário: o leitor, com a
+  // própria sessão, não vê o aviso que é do autor.
+  assert.equal((await feed(reader)).body.items.length, 0);
+  assert.equal((await feed(author)).body.items.length, 1);
+});

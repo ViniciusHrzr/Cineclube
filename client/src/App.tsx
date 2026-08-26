@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { ProjectionSheet } from '@/components/film';
+import { Notices } from '@/components/notices';
 import { Fault } from '@/components/bits';
 import {
   api,
@@ -529,6 +530,7 @@ function Marquee({
         </nav>
 
         <div className="flex items-center gap-2">
+          <Notices onOpenReview={() => onTab('reviews')} />
           {/* Your own face is the door to the room of faces. */}
           <button
             type="button"

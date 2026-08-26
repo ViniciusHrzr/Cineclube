@@ -296,6 +296,23 @@ async function migrate() {
     await exec('ALTER TABLE reviews ADD COLUMN movie_runtime INTEGER');
   }
 
+  /* ── até onde esta pessoa já viu ──────────────────────────────────────
+     A marca d'água das notificações, e a única coisa que este produto grava
+     sobre elas.
+
+     Não existe tabela de notificação, de propósito. Um comentário, um voto e
+     uma curtida já são linhas com autor e hora; uma segunda tabela repetindo
+     isso seria um segundo lugar onde a mesma verdade pode estar errada — e
+     apagar um comentário teria de lembrar de apagar o aviso sobre ele. O feed é
+     derivado das três tabelas que já existem, então ele nunca discorda delas e
+     um evento desfeito desaparece sozinho.
+
+     O que sobra para guardar é uma data por pessoa: tudo depois dela é novo.
+     Isso custa não ter estado por item — não dá para marcar uma notificação
+     como lida e as outras não — que é exatamente o que um contador de não-lidas
+     precisa e nada mais. */
+  await addReviewerCol('notifications_seen_at', 'notifications_seen_at TEXT');
+
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');
