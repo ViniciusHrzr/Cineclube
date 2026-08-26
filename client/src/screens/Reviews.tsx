@@ -3,7 +3,6 @@ import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   ChevronDown,
-  Link as LinkIcon,
   Pencil,
   Plus,
   ThumbsDown,
@@ -766,41 +765,6 @@ function Conversation({ review }: { review: Review }) {
   );
 }
 
-/* ── o endereço desta ficha, para colar no chat ───────────────────────────
-   Um link que só o sino sabe produzir é meio recurso. O clube combina o filme
-   por voz e discorda por escrito depois, e "abre a minha do Parasita" é uma
-   frase que agora cabe num link.
-
-   `navigator.clipboard` não existe fora de https e de localhost, e o clube roda
-   nos dois — no Render por https, na máquina de quem desenvolve por localhost.
-   Onde ele falta, o botão diz o endereço em vez de fingir que copiou. */
-function ShareTake({ id, title, who }: { id: string; title: string; who: string }) {
-  const [done, setDone] = useState(false);
-  const club = useClub();
-  const link = `${location.origin}${location.pathname}#reviews/${encodeURIComponent(id)}`;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setDone(true);
-      window.setTimeout(() => setDone(false), 2000);
-    } catch {
-      club.fault(`Copie o link à mão: ${link}`);
-    }
-  }
-
-  return (
-    <Key
-      tone="ghost"
-      onClick={() => void copy()}
-      aria-label={`Copiar o link da avaliação de ${title} por ${who}`}
-    >
-      <LinkIcon className="h-3.5 w-3.5" strokeWidth={1.8} />
-      {done ? 'Copiado' : 'Copiar link'}
-    </Key>
-  );
-}
-
 function Take({
   r,
   open,
@@ -860,10 +824,7 @@ function Take({
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
           <Conversation review={r} />
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <TakeActions r={r} onDelete={onDelete} />
-            <ShareTake id={r.id} title={r.movieTitle} who={r.reviewerName} />
-          </div>
+          <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
       </Drawer>
     </div>
@@ -1255,10 +1216,7 @@ function ByMovie({
                       <div className="px-3 pb-4 pt-1">
                         <Breakdown r={r} comment={r.comment} />
                         <Conversation review={r} />
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                          <TakeActions r={r} onDelete={() => onDelete(r)} invite={false} />
-                          <ShareTake id={r.id} title={r.movieTitle} who={r.reviewerName} />
-                        </div>
+                        <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
                       </div>
                     </Drawer>
                   </div>

@@ -270,6 +270,78 @@ test('a marca de uma pessoa não mexe na de outra', async () => {
   assert.equal((await feed(b)).body.unread, 1, 'ver o sino de um zerou o do outro');
 });
 
+/* ── limpar ──────────────────────────────────────────────────────────── */
+
+const clear = who => req('POST', '/api/notifications/clear', {}, who.cookie);
+
+test('limpar esvazia a lista e zera a conta', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'um', a);
+  await vote(take, 'direcao', 1, b);
+  assert.equal((await feed(author)).body.items.length, 2);
+
+  assert.equal((await clear(author)).status, 200);
+  const after = await feed(author);
+  assert.equal(after.body.items.length, 0);
+  assert.equal(after.body.unread, 0);
+});
+
+test('limpar não apaga o comentário nem o voto — só a projeção deles', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  const c = (await comment(take, 'isto tem de sobreviver', reader)).body;
+  await vote(take, 'som', 1, reader);
+
+  await clear(author);
+
+  // O sino do autor esvaziou, mas o que as outras pessoas escreveram continua
+  // lá para o clube inteiro ver.
+  const social = (await req('GET', '/api/social')).body;
+  assert.ok(social.comments.some(x => x.id === c.id), 'o comentário foi apagado');
+  assert.equal(social.votes.filter(v => v.reviewId === take.id).length, 1, 'o voto foi apagado');
+});
+
+test('o que chega depois de limpar volta a aparecer', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  await comment(take, 'antes', a);
+  await clear(author);
+
+  // datetime('now') tem resolução de um segundo: um evento gravado no mesmo
+  // segundo da marca não é posterior a ela.
+  await new Promise(r => setTimeout(r, 1100));
+  await comment(take, 'depois', b);
+
+  const { body } = await feed(author);
+  assert.equal(body.items.length, 1, 'a lista deveria ter só o que veio depois');
+  assert.equal(body.items[0].excerpt, 'depois');
+  assert.equal(body.unread, 1, 'o que chega depois de limpar é novo');
+});
+
+test('limpar o próprio sino não mexe no de ninguém', async () => {
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const reader = await newReviewer();
+  const takeA = await newTake(a);
+  const takeB = await newTake(b);
+  await comment(takeA, 'para a', reader);
+  await comment(takeB, 'para b', reader);
+
+  await clear(a);
+  assert.equal((await feed(a)).body.items.length, 0);
+  assert.equal((await feed(b)).body.items.length, 1, 'limpar de um esvaziou o do outro');
+});
+
+test('limpar exige sessão', async () => {
+  assert.equal((await req('POST', '/api/notifications/clear', {})).status, 401);
+});
+
 /* ── quem pode ler ───────────────────────────────────────────────────── */
 
 test('o sino exige sessão — nas duas rotas', async () => {

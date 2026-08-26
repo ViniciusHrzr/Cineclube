@@ -78,9 +78,18 @@ const likesOnMine = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-const seenStmt = db.prepare('SELECT notifications_seen_at FROM reviewers WHERE id = ?');
+const marksStmt = db.prepare(
+  'SELECT notifications_seen_at, notifications_cleared_at FROM reviewers WHERE id = ?'
+);
 const markSeenStmt = db.prepare(
   "UPDATE reviewers SET notifications_seen_at = datetime('now') WHERE id = ?"
+);
+/* Limpar é também ter visto: sem mover as duas juntas, a lista esvaziaria e o
+   contador continuaria acusando avisos que ninguém consegue mais abrir. */
+const markClearedStmt = db.prepare(
+  `UPDATE reviewers
+   SET notifications_cleared_at = datetime('now'), notifications_seen_at = datetime('now')
+   WHERE id = ?`
 );
 
 /** O nome do critério como a ficha o fez, para o aviso dizer "Fotografia". */
@@ -115,11 +124,11 @@ const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor
 
 router.get('/', auth.requireSession, wrap(async (req, res) => {
   const me = req.session.reviewer_id;
-  const [comments, votes, likes, seenRow] = await Promise.all([
+  const [comments, votes, likes, marks] = await Promise.all([
     commentsOnMine.all(me, me),
     votesOnMine.all(me, me),
     likesOnMine.all(me, me),
-    seenStmt.get(me)
+    marksStmt.get(me)
   ]);
 
   const items = [];
@@ -172,19 +181,41 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
      entre si e desordenadas umas com as outras. Comparação de string funciona
      porque datetime('now') grava YYYY-MM-DD HH:MM:SS, que ordena como texto. */
   items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  const feed = items.slice(0, LIMIT);
 
-  const seenAt = seenRow?.notifications_seen_at || null;
+  /* Dispensado fica de fora da lista, e não só marcado. Comparação de string
+     funciona porque datetime('now') grava YYYY-MM-DD HH:MM:SS, que ordena como
+     texto. */
+  const clearedAt = marks?.notifications_cleared_at || null;
+  const feed = (clearedAt ? items.filter(i => String(i.at) > clearedAt) : items).slice(0, LIMIT);
+
+  const seenAt = marks?.notifications_seen_at || null;
   const unread = seenAt ? feed.filter(i => String(i.at) > seenAt).length : feed.length;
 
-  res.json({ items: feed, unread, seenAt });
+  res.json({ items: feed, unread, seenAt, clearedAt });
+}));
+
+/* ── limpar o sino ────────────────────────────────────────────────────────
+   Esvazia a lista de quem pediu, e de mais ninguém. Não apaga comentário, voto
+   nem curtida: um aviso é a projeção de uma linha que pertence a outra pessoa,
+   e o botão de limpar o próprio sino não tem o direito de apagar o que alguém
+   escreveu. O que ele move é uma data.
+
+   O que chegar depois volta a aparecer, porque nada foi destruído — só deixou
+   de estar depois da marca. */
+router.post('/clear', auth.requireSession, wrap(async (req, res) => {
+  await markClearedStmt.run(req.session.reviewer_id);
+  const row = await marksStmt.get(req.session.reviewer_id);
+  res.json({
+    seenAt: row?.notifications_seen_at || null,
+    clearedAt: row?.notifications_cleared_at || null
+  });
 }));
 
 /* Marca tudo como visto. Uma data, não uma lista: ver o sino aberto é ver o que
    está nele, e um item por item aqui seria estado que ninguém pediu. */
 router.post('/seen', auth.requireSession, wrap(async (req, res) => {
   await markSeenStmt.run(req.session.reviewer_id);
-  const row = await seenStmt.get(req.session.reviewer_id);
+  const row = await marksStmt.get(req.session.reviewer_id);
   res.json({ seenAt: row?.notifications_seen_at || null });
 }));
 

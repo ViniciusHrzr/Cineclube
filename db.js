@@ -313,6 +313,18 @@ async function migrate() {
      precisa e nada mais. */
   await addReviewerCol('notifications_seen_at', 'notifications_seen_at TEXT');
 
+  /* ── e até onde esta pessoa já dispensou ──────────────────────────────
+     A outra marca d'água. `seen_at` responde "o que é novo"; esta responde "o
+     que eu ainda quero ver na lista".
+
+     Limpar não apaga nada — não pode. Um aviso é a projeção de um comentário,
+     de um voto ou de uma curtida que pertencem a outra pessoa, e o botão de
+     limpar o seu sino não tem o direito de apagar o que alguém escreveu. O que
+     ele move é esta data, e o feed passa a mostrar só o que veio depois dela.
+
+     Por pessoa, então limpar o próprio sino não mexe no de ninguém. */
+  await addReviewerCol('notifications_cleared_at', 'notifications_cleared_at TEXT');
+
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');

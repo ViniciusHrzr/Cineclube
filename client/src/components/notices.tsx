@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Reel } from '@/components/bits';
+import { useClub } from '@/App';
 import { initialsOf, notifications, reelColor, type Notice } from '@/lib/api';
 import { cn, plural, whenOf } from '@/lib/utils';
 
@@ -36,9 +37,14 @@ function iconOf(kind: Notice['kind'], value?: number) {
 }
 
 export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => void }) {
+  /* O retrato vem do clube, que já carrega a lista de avaliadores, e não do
+     feed: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
+     cada item repetiria a mesma URL dezenas de vezes na mesma resposta. */
+  const { avatarOf } = useClub();
   const [items, setItems] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [failed, setFailed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
@@ -84,6 +90,25 @@ export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => 
     } catch {
       /* A marca não subiu: a conta volta no próximo carregamento, o que é o
          comportamento certo — nada foi visto do ponto de vista do servidor. */
+    }
+  }
+
+  /* A lista some na hora, sem esperar a resposta: quem apertou está olhando
+     para ela, e um painel que continua cheio por meio segundo depois do clique
+     parece um botão que não funcionou. Se o pedido falhar, o próximo
+     carregamento traz tudo de volta, que é a verdade. */
+  async function wipe() {
+    if (clearing) return;
+    setClearing(true);
+    const had = items;
+    setItems([]);
+    setUnread(0);
+    try {
+      await notifications.clear();
+    } catch {
+      setItems(had);
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -142,8 +167,19 @@ export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => 
         >
           <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-white/[0.07] bg-house-seat px-4 py-3">
             <span className="legend">Novidades</span>
+            {/* Limpar esvazia a sua lista e nada mais: o comentário, o voto e a
+                curtida continuam onde estão, para o clube inteiro. Sem confirmar
+                — não há o que desfazer porque não há o que se perde, e o que
+                chegar depois volta a aparecer. */}
             {items.length ? (
-              <span className="q text-[11px] text-ink-dim">{items.length}</span>
+              <button
+                type="button"
+                disabled={clearing}
+                onClick={() => void wipe()}
+                className="font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-dim transition-colors hover:text-beam disabled:opacity-40"
+              >
+                {clearing ? 'Limpando…' : 'Limpar'}
+              </button>
             ) : null}
           </div>
 
@@ -174,7 +210,16 @@ export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => 
                       }}
                       className="flex w-full gap-2.5 border-b border-white/[0.05] px-4 py-3 text-left transition-colors last:border-0 hover:bg-beam/[0.05]"
                     >
-                      <Reel color={reelColor(n.actor.dot, n.actor.id)} size="sm">
+                      {/* Com o retrato de quem reagiu. O sino é a única lista
+                          de pessoas do produto que estava mostrando só as
+                          iniciais: o `Reel` aceita `src` e não estava
+                          recebendo nenhum, então todo mundo aparecia como
+                          etiqueta colorida mesmo tendo foto. */}
+                      <Reel
+                        color={reelColor(n.actor.dot, n.actor.id)}
+                        src={avatarOf(n.actor.id)}
+                        size="sm"
+                      >
                         {initialsOf(n.actor.name)}
                       </Reel>
                       <span className="min-w-0 flex-1">

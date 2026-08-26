@@ -116,8 +116,14 @@ export type Notice = {
 };
 
 export const notifications = {
-  all: () => api<{ items: Notice[]; unread: number; seenAt: string | null }>('/api/notifications'),
+  all: () =>
+    api<{ items: Notice[]; unread: number; seenAt: string | null; clearedAt: string | null }>(
+      '/api/notifications'
+    ),
   seen: () => post<{ seenAt: string | null }>('/api/notifications/seen', {}),
+  /* Esvazia a sua lista movendo uma data. Não apaga comentário, voto nem
+     curtida: um aviso é a projeção de uma linha que é de outra pessoa. */
+  clear: () => post<{ clearedAt: string | null }>('/api/notifications/clear', {}),
 };
 
 export const social = {
