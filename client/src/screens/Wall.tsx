@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, Plus, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Bill, Blank, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
 import { api, fmt, initialsOf, reelColor, type WallEvent } from '@/lib/api';
 import { plural } from '@/lib/utils';
@@ -22,14 +22,20 @@ import { useClub } from '@/App';
    arquivo usa, então uma nota é reconhecível como nota antes de ser lida.
 
    ── a densidade é o desenho ─────────────────────────────────────────────
-   Quatro tipos de acontecimento, e eles não pesam o mesmo. A avaliação é o
+   Dois tipos de acontecimento, e eles não pesam o mesmo. A avaliação é o
    assunto — pôster, nota, régua, os dois extremos, o que a pessoa escreveu. O
-   comentário e o voto são a conversa em cima dela: uma linha, sem pôster, com o
-   filme dito por escrito. A fila é uma nota de rodapé.
+   comentário é a conversa em cima dela: uma linha, sem pôster, com o filme dito
+   por escrito.
 
    Um mural em que tudo tem o mesmo tamanho é uma lista, e uma lista é lida do
    começo ao fim ou não é lida. Este é feito para ser varrido: o olho cai nas
    fichas e as linhas menores preenchem o entre.
+
+   Eram quatro tipos. O voto em critério e o filme posto na fila saíram no dia
+   seguinte — ver routes/feed.js: um voto acontece até onze vezes por ficha por
+   pessoa, e uma noite de discussão enterrava a ficha embaixo das linhas sobre
+   ela. O voto continua na tela como contagem na própria ficha, que é onde ele
+   significa alguma coisa.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* De dois minutos, e só com a aba à vista — a mesma regra do sino, pelo mesmo
@@ -133,8 +139,8 @@ export function WallScreen() {
       <section>
         <Bill title="Mural" />
         <Blank title="O clube ainda não fez nada">
-          Quando alguém avaliar um filme, comentar uma ficha, discordar de uma nota ou pôr alguma
-          coisa na fila, aparece aqui — do mais recente para o mais antigo.
+          Quando alguém avaliar um filme ou comentar uma ficha, aparece aqui — do mais recente para
+          o mais antigo.
         </Blank>
       </section>
     );
@@ -165,10 +171,18 @@ export function WallScreen() {
                    a nenhum. */
                 <p className="legend mb-3 mt-7 first:mt-0">{day}</p>
               ) : null}
+              {/* As duas linhas levam à mesma ficha: o comentário é sobre ela.
+                  `reviewId` sempre existe agora que só avaliação e comentário
+                  chegam aqui, mas a queda para o pôster fica — é uma linha, e é
+                  ela que impede uma tela em branco se o servidor voltar a
+                  mandar um tipo que não aponta para ficha nenhuma. */}
               {e.kind === 'review' ? (
                 <Rated e={e} onOpen={() => club.goReview(e.reviewId!)} />
               ) : (
-                <Aside e={e} onOpen={() => (e.reviewId ? club.goReview(e.reviewId) : club.openSheet(e.movieId))} />
+                <Aside
+                  e={e}
+                  onOpen={() => (e.reviewId ? club.goReview(e.reviewId) : club.openSheet(e.movieId))}
+                />
               )}
             </div>
           );
@@ -282,38 +296,16 @@ function Rated({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
   );
 }
 
-/* ── a conversa em cima da ficha, e a fila ────────────────────────────────
-   Uma linha, sem placa e sem pôster. São acontecimentos reais e não merecem
-   sumir, mas dar a cada um a mesma superfície da ficha faria o mural inteiro
-   pesar igual — e um mural que pesa igual é uma lista.
+/* ── a conversa em cima da ficha ──────────────────────────────────────────
+   Uma linha, sem placa e sem pôster. É acontecimento real e não merece sumir,
+   mas dar a ela a mesma superfície da ficha faria o mural inteiro pesar igual —
+   e um mural que pesa igual é uma lista.
 
-   O ícone à esquerda é a coluna que deixa o mural ser varrido: quatro formas
-   distintas na mesma posição, e o olho aprende as quatro em dois segundos. */
+   O ícone à esquerda é a coluna que deixa o mural ser varrido: uma forma fixa
+   numa posição fixa, e o olho aprende a pular ou a parar sem ler. */
 function Aside({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
   const club = useClub();
   const clock = clockOf(e.at);
-  const Icon = e.kind === 'comment' ? MessageSquare : e.kind === 'queued' ? Plus : e.value === -1 ? ThumbsDown : ThumbsUp;
-
-  /* O texto é montado aqui, e não no servidor como no sino. A diferença é que
-     lá a frase é sobre você, escrita na segunda pessoa, e aqui ela é sobre duas
-     outras pessoas — o nome de quem agiu já está desenhado à esquerda, então o
-     que sobra é curto e não vale uma viagem pela rede. */
-  const said = () => {
-    if (e.kind === 'queued') return <>pôs na fila</>;
-    if (e.kind === 'comment')
-      return (
-        <>
-          comentou a ficha de <Who name={e.owner?.name} me={e.owner?.id === club.me.id} />
-        </>
-      );
-    return (
-      <>
-        {e.value === -1 ? 'discordou do' : 'concordou com o'}{' '}
-        <span className="text-ink">{e.criterion}</span> de{' '}
-        <Who name={e.owner?.name} me={e.owner?.id === club.me.id} />
-      </>
-    );
-  };
 
   return (
     <button
@@ -321,11 +313,20 @@ function Aside({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
       onClick={onOpen}
       className="group mb-1 flex w-full items-start gap-3 rounded-cell px-3 py-2.5 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
     >
-      <Icon className="mt-[3px] h-3.5 w-3.5 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+      <MessageSquare
+        className="mt-[3px] h-3.5 w-3.5 flex-none text-ink-faint"
+        strokeWidth={1.9}
+        aria-hidden
+      />
       <span className="min-w-0 flex-1">
+        {/* A frase é montada aqui, e não no servidor como no sino. Lá ela é
+            sobre você, na segunda pessoa; aqui é sobre duas outras pessoas, o
+            nome de quem agiu já está desenhado ao lado, e o que sobra é curto
+            demais para valer uma viagem pela rede. */}
         <span className="block text-[12.5px] leading-snug text-ink-dim">
           <span className="font-display uppercase tracking-[0.08em] text-ink">{e.actor.name}</span>{' '}
-          {said()} <span className="text-ink transition-colors group-hover:text-beam">{e.movieTitle}</span>
+          comentou a ficha de <Who name={e.owner?.name} me={e.owner?.id === club.me.id} /> em{' '}
+          <span className="text-ink transition-colors group-hover:text-beam">{e.movieTitle}</span>
         </span>
         {e.excerpt ? (
           <span className="mt-0.5 block break-words text-[12px] italic leading-snug text-ink-faint">

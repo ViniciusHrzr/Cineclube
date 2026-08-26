@@ -3,6 +3,7 @@ const db = require('../db');
 const wrap = require('../wrap');
 const { critsFor, GENRES } = require('../criteria');
 
+
 const router = express.Router();
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -23,12 +24,23 @@ const router = express.Router();
    uma linha sobre um comentário que não existe mais é o clube inteiro vendo o
    produto mentir.
 
-   ── o que entra, e o que não entra ──────────────────────────────────────
-   Entram avaliação, comentário, voto em critério e filme posto na fila. Fica de
-   fora a curtida em comentário: ela é reação a uma reação, e um mural que
-   anuncia "fulano curtiu o comentário que beltrano fez sobre a ficha de
-   cicrano" é ruído com três níveis de profundidade. A curtida continua visível
-   onde ela significa alguma coisa, que é ao lado do comentário.
+   ── o que entra, e o corte de 26/08/2026 ────────────────────────────────
+   Entram avaliação e comentário. Saíram o voto em critério e o filme posto na
+   fila, cortados pelo dono depois de usar a primeira versão.
+
+   O motivo é de proporção, e ele é real. Uma avaliação acontece uma vez por
+   filme por pessoa. Um comentário é uma vez por pessoa por ideia — alguém
+   escreveu, é assunto. Mas um voto acontece até ONZE vezes por ficha por
+   pessoa: com seis membros, uma única noite de discussão enterrava a ficha que
+   originou a discussão embaixo de quarenta linhas sobre ela. O sinal virava a
+   moldura do ruído.
+
+   A curtida em comentário nunca entrou, por ser reação a uma reação. E o voto
+   não sumiu da tela: virou contagem na própria ficha, ao lado de quantos
+   responderam — que é onde ele significa alguma coisa.
+
+   A fila saiu junto por ser a linha mais fraca das quatro: pôr um filme na fila
+   é uma intenção, não um acontecimento, e ela já tem uma aba inteira só dela.
 
    ── por que a avaliação é a linha rica ──────────────────────────────────
    Porque é o que este produto tem de próprio. Onze critérios por ficha
@@ -65,36 +77,7 @@ const recentComments = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-const recentVotes = db.prepare(`
-  SELECT v.criterion_key, v.value, v.created_at,
-         a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot,
-         rv.id AS review_id, rv.movie_id, rv.movie_title, rv.movie_poster,
-         rv.movie_genre, o.name AS owner_name, o.id AS owner_id
-  FROM criterion_votes v
-  JOIN reviews rv ON rv.id = v.review_id
-  JOIN reviewers a ON a.id = v.reviewer_id
-  JOIN reviewers o ON o.id = rv.reviewer_id
-  ORDER BY v.created_at DESC
-  LIMIT ${LIMIT}
-`);
-
-/* Só a fila que sabe de quem foi a ideia. Linhas anteriores à coluna ficam de
-   fora: "alguém pôs isto na fila" não é um acontecimento. */
-const recentQueued = db.prepare(`
-  SELECT w.movie_id, w.movie_title, w.movie_poster, w.added_at,
-         r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot
-  FROM watchlist w
-  JOIN reviewers r ON r.id = w.added_by
-  ORDER BY w.added_at DESC
-  LIMIT ${LIMIT}
-`);
-
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
-
-const criterionName = (genre, key) => {
-  const named = GENRES.includes(genre) ? genre : 'Drama';
-  return critsFor(named).find(c => c.key === key)?.name ?? key;
-};
 
 function excerpt(body, max = 120) {
   const text = String(body || '').replace(/\s+/g, ' ').trim();
@@ -134,9 +117,7 @@ function endsOf(genre, raw) {
 }
 
 router.get('/', wrap(async (req, res) => {
-  const [reviews, comments, votes, queued] = await Promise.all([
-    recentReviews.all(), recentComments.all(), recentVotes.all(), recentQueued.all()
-  ]);
+  const [reviews, comments] = await Promise.all([recentReviews.all(), recentComments.all()]);
 
   const items = [];
 
@@ -172,37 +153,9 @@ router.get('/', wrap(async (req, res) => {
     });
   }
 
-  for (const row of votes) {
-    items.push({
-      id: `v:${row.review_id}:${row.criterion_key}:${row.actor_id}`,
-      kind: 'vote',
-      at: row.created_at,
-      actor: actorOf(row),
-      movieId: Number(row.movie_id),
-      movieTitle: row.movie_title,
-      moviePoster: row.movie_poster,
-      reviewId: row.review_id,
-      owner: { id: row.owner_id, name: row.owner_name },
-      value: Number(row.value),
-      criterion: criterionName(row.movie_genre, row.criterion_key)
-    });
-  }
-
-  for (const row of queued) {
-    items.push({
-      id: `q:${row.movie_id}`,
-      kind: 'queued',
-      at: row.added_at,
-      actor: actorOf(row),
-      movieId: Number(row.movie_id),
-      movieTitle: row.movie_title,
-      moviePoster: row.movie_poster
-    });
-  }
-
-  /* Ordenado depois de juntar: as quatro chegam ordenadas entre si e
-     desordenadas umas com as outras. Comparação de string funciona porque
-     datetime('now') grava YYYY-MM-DD HH:MM:SS, que ordena como texto. */
+  /* Ordenado depois de juntar: as duas chegam ordenadas entre si e desordenadas
+     uma com a outra. Comparação de string funciona porque datetime('now') grava
+     YYYY-MM-DD HH:MM:SS, que ordena como texto. */
   items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
   res.json({ items: items.slice(0, LIMIT) });
 }));

@@ -42,7 +42,17 @@ export const TABS = [
      de uma linha — mover esta entrada para baixo de `catalog` e trocar o
      `?? 'catalog'` logo abaixo. */
   { id: 'wall', label: 'Mural' },
-  { id: 'rate', label: 'Avaliar' },
+  /* ── uma rota que não é uma aba ─────────────────────────────────────────
+     Avaliar não se escolhe: escolhe-se um filme, e avaliar é o que se faz com
+     ele. Uma aba levava a uma tela vazia com uma busca dentro, que é pedir para
+     a pessoa achar de novo um filme que ela já tinha achado.
+
+     Sai da barra, fica na tabela. `hidden` e não uma exclusão porque a rota
+     precisa continuar existindo: `rateMovie` escreve `#rate`, e um endereço que
+     a tabela não reconhece derruba o botão Voltar e o recarregar de volta para
+     o mural. Navegação e roteamento são duas listas que aqui coincidiam por
+     acidente. */
+  { id: 'rate', label: 'Avaliar', hidden: true },
   { id: 'catalog', label: 'Catálogo' },
   { id: 'watchlist', label: 'Quero ver' },
   /* Between the queue and the reviews, because that is where it falls in an
@@ -577,7 +587,7 @@ function Marquee({
           <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
         </a>
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.map(t => {
+          {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
             const on = tab === t.id;
             return (
               <button

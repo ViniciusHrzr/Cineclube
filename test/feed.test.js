@@ -117,31 +117,30 @@ test('um comentário vira linha, e diz de quem é a ficha', async () => {
   assert.equal(line.excerpt, 'discordo');
 });
 
-test('um voto vira linha, com o critério pelo nome do gênero da ficha', async () => {
+/* ── e o que o mural recusa ──────────────────────────────────────────────
+   O corte de 26/08/2026, e ele é de proporção: um voto acontece até onze vezes
+   por ficha por pessoa, então uma noite de discussão enterrava a ficha que
+   originou a discussão embaixo de quarenta linhas sobre ela. Estes três testes
+   são o que impede o mural de voltar a se afogar. */
+
+test('voto em critério não vira linha — onze por ficha afogariam a ficha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
-  const m = { ...movie(), genre: 'Animação' };
-  const take = (await req('POST', '/api/reviews', {
-    movie: m, scores: scoresFor('Animação', 8)
-  }, author.cookie)).body;
-  await req('PUT', `/api/social/reviews/${take.id}/criteria/vozes/vote`, { value: -1 }, reader.cookie);
+  const take = await newTake(author);
+  await req('PUT', `/api/social/reviews/${take.id}/criteria/fotografia/vote`, { value: 1 }, reader.cookie);
+  await req('PUT', `/api/social/reviews/${take.id}/criteria/som/vote`, { value: -1 }, reader.cookie);
 
   const { body } = await feed();
-  const line = body.items.find(i => i.kind === 'vote' && i.reviewId === take.id);
-  assert.ok(line);
-  assert.equal(line.criterion, 'Vozes');
-  assert.equal(line.value, -1);
+  assert.ok(!kindsOf(body.items).includes('vote'), 'o voto virou linha');
 });
 
-test('um filme posto na fila vira linha, com quem pôs', async () => {
+test('filme posto na fila não vira linha — é intenção, e tem uma aba própria', async () => {
   const who = await newReviewer('Gipico');
   const m = movie();
   assert.equal((await req('POST', '/api/watchlist', { movie: m }, who.cookie)).status, 201);
 
   const { body } = await feed();
-  const line = body.items.find(i => i.kind === 'queued' && i.movieId === m.id);
-  assert.ok(line, 'a fila não virou linha');
-  assert.equal(line.actor.name, 'Gipico');
+  assert.ok(!kindsOf(body.items).includes('queued'), 'a fila virou linha');
 });
 
 test('curtida em comentário não entra — é reação a uma reação', async () => {
@@ -154,6 +153,18 @@ test('curtida em comentário não entra — é reação a uma reação', async (
 
   const { body } = await feed();
   assert.ok(!kindsOf(body.items).includes('like'), 'a curtida virou linha');
+});
+
+test('o mural carrega exatamente dois tipos de linha', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, reader.cookie);
+  await req('PUT', `/api/social/reviews/${take.id}/criteria/direcao/vote`, { value: 1 }, reader.cookie);
+  await req('POST', '/api/watchlist', { movie: movie() }, reader.cookie);
+
+  const { body } = await feed();
+  assert.deepEqual([...new Set(kindsOf(body.items))].sort(), ['comment', 'review']);
 });
 
 /* ── o alto e o baixo, que é o que só este produto sabe dizer ─────────── */
@@ -235,7 +246,6 @@ test('uma avaliação apagada leva as linhas dela junto', async () => {
   const reader = await newReviewer();
   const take = await newTake(author);
   await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, reader.cookie);
-  await req('PUT', `/api/social/reviews/${take.id}/criteria/som/vote`, { value: 1 }, reader.cookie);
 
   await req('DELETE', `/api/reviews/${take.id}`, null, author.cookie);
   const { body } = await feed();
