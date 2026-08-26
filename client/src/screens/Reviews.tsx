@@ -640,12 +640,16 @@ const FIRST_PAGE = 3;
    As respostas ficam recolhidas atrás de "ver N respostas", como no Instagram e
    no Facebook, e pela razão que fez os dois chegarem lá: uma discussão longa
    dentro de um fio empurra os OUTROS fios para fora da tela, e quem abriu a
-   gaveta queria ver a conversa inteira, não uma dela. */
+   gaveta queria ver a conversa inteira, não uma dela.
+
+   A exceção é chegar por link: aí não se está folheando, se está indo buscar um
+   texto específico — ver `arrived`. */
 function Comment({
   c,
   replies,
   review,
   lit,
+  arrived,
   onRemove,
 }: {
   c: ReviewComment;
@@ -653,20 +657,31 @@ function Comment({
   review: Review;
   /** O texto que um aviso apontou, aceso por alguns segundos. */
   lit: string | null;
+  /* O mesmo texto, no valor que NÃO apaga. É ele que abre as respostas, e a
+     separação é a mesma que a ficha já fazia: um brilho tem de acabar, uma
+     gaveta aberta não. Ligar a abertura ao brilho fecharia tudo sozinho dois
+     segundos e meio depois de chegar. */
+  arrived: string | null;
   onRemove: (id: string) => void;
 }) {
   const club = useClub();
-  /* ── abertas por padrão ─────────────────────────────────────────────────
-     Nasciam recolhidas, como no Instagram, e o defeito apareceu no uso: quem
-     clicava num aviso de "respondeu você" chegava na ficha certa com a resposta
-     escondida atrás de um botão. Um aviso que leva a um lugar onde a coisa
-     anunciada não está visível não terminou de avisar.
+  /* ── recolhidas ao folhear, abertas ao chegar por link ──────────────────
+     Recolhido é o padrão certo para quem está lendo o acervo: as respostas de
+     um fio pertencem a ele, não à varredura, e abri-las todas empurra os outros
+     comentários para fora da tela.
 
-     E o recolhimento estava resolvendo um problema que este clube não tem: são
-     seis pessoas, e um fio com dez respostas é raro. O botão continua, agora
-     como "ocultar" — quem tiver uma discussão longa pode fechá-la. */
-  const [open, setOpen] = useState(true);
+     Mas quem clica em "respondeu você" no sino não está folheando — está indo
+     buscar uma resposta específica, e chegar num botão que a esconde é o aviso
+     não ter terminado de avisar. Então o link abre, e só o link. */
+  const [open, setOpen] = useState(false);
   const [writing, setWriting] = useState(false);
+
+  /* Uma vez, quando o alvo é este comentário ou uma resposta dele. Depois disso
+     a gaveta é de quem está lendo, inclusive para fechar. */
+  const targeted = !!arrived && (arrived === c.id || replies.some(r => r.id === arrived));
+  useEffect(() => {
+    if (targeted) setOpen(true);
+  }, [targeted]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const mine = c.reviewerId === club.me.id;
@@ -867,7 +882,10 @@ function Conversation({ review }: { review: Review }) {
      três, o suficiente. */
   const wanted = club.focusComment;
   const { clearFocusComment } = club;
+  /* Dois valores para a mesma chegada, pela razão que a ficha já ensinou: o
+     brilho tem de apagar, a abertura não pode. */
   const [flash, setFlash] = useState<string | null>(null);
+  const [arrived, setArrived] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
   useEffect(() => {
@@ -879,6 +897,7 @@ function Conversation({ review }: { review: Review }) {
     const rootId = target.parentId || target.id;
     const at = roots.findIndex(c => c.id === rootId);
     if (at >= 0) setShowing(n => Math.max(n, roots.length - at));
+    setArrived(wanted);
     setFlash(wanted);
     clearFocusComment();
 
@@ -958,6 +977,7 @@ function Conversation({ review }: { review: Review }) {
               replies={repliesOf(c.id)}
               review={review}
               lit={flash}
+              arrived={arrived}
               onRemove={remove}
             />
           ))}
