@@ -43,6 +43,15 @@ const commentsStmt = db.prepare(`
 const votesStmt = db.prepare(
   'SELECT review_id, criterion_key, reviewer_id, value FROM criterion_votes'
 );
+const likesStmt = db.prepare('SELECT comment_id, reviewer_id FROM comment_likes');
+
+const commentAuthorStmt = db.prepare('SELECT id, reviewer_id FROM review_comments WHERE id = ?');
+const likeStmt = db.prepare(
+  'INSERT INTO comment_likes (comment_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+);
+const unlikeStmt = db.prepare(
+  'DELETE FROM comment_likes WHERE comment_id = ? AND reviewer_id = ?'
+);
 
 const oneCommentStmt = db.prepare(`
   SELECT c.id, c.review_id, c.reviewer_id, c.body, c.created_at,
@@ -92,8 +101,14 @@ function toVoteDTO(row) {
 /* Aberto, como todo o resto da leitura neste app. O que o PIN protege é
    escrever: a ameaça aqui é um amigo votando no lugar do outro, não sigilo. */
 router.get('/', wrap(async (req, res) => {
-  const [comments, votes] = await Promise.all([commentsStmt.all(), votesStmt.all()]);
-  res.json({ comments: comments.map(toCommentDTO), votes: votes.map(toVoteDTO) });
+  const [comments, votes, likes] = await Promise.all([
+    commentsStmt.all(), votesStmt.all(), likesStmt.all()
+  ]);
+  res.json({
+    comments: comments.map(toCommentDTO),
+    votes: votes.map(toVoteDTO),
+    commentLikes: likes.map(row => ({ commentId: row.comment_id, reviewerId: row.reviewer_id }))
+  });
 }));
 
 /* ── escrever um comentário ───────────────────────────────────────────────
@@ -126,6 +141,31 @@ router.delete('/comments/:id', auth.requireSession, wrap(async (req, res) => {
   }
   await deleteCommentStmt.run(row.id);
   res.status(204).end();
+}));
+
+/* ── curtir um comentário ─────────────────────────────────────────────────
+   Um estado, não dois: curtido ou não. `liked: false` apaga a linha, que é a
+   diferença entre "não curti" e "curti e desfiz" — o contador não deve saber a
+   segunda.
+
+   Não se curte o próprio comentário, pela mesma aritmética que impede votar na
+   própria ficha: um número que o autor pode somar em si mesmo deixa de contar
+   quem concordou. Aqui é mais barato que lá — é vaidade, não distorção — mas a
+   regra é a mesma e vale ser uma só. */
+router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
+  const comment = await commentAuthorStmt.get(req.params.id);
+  if (!comment) return res.status(404).json({ error: 'Comentário não encontrado.' });
+  if (comment.reviewer_id === req.session.reviewer_id) {
+    return res.status(403).json({ error: 'Não dá para curtir o seu próprio comentário.' });
+  }
+
+  const liked = req.body?.liked;
+  if (typeof liked !== 'boolean') return res.status(400).json({ error: 'Curtida inválida.' });
+
+  const who = req.session.reviewer_id;
+  if (liked) await likeStmt.run(comment.id, who);
+  else await unlikeStmt.run(comment.id, who);
+  res.json({ liked });
 }));
 
 /* ── votar numa nota ──────────────────────────────────────────────────────

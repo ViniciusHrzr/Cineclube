@@ -143,6 +143,23 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS review_comments_review ON review_comments(review_id);
 
+    /* ── e o like no comentário ───────────────────────────────────────────
+       Sem coluna de valor, ao contrário do voto em critério. Lá o par existe
+       porque se concorda ou se discorda de um número; aqui é uma pessoa
+       dizendo "isso" para o que outra escreveu, e o contrário disso, num clube
+       de amigos, não é a mesma informação com o sinal trocado — é outra coisa,
+       mais pesada, que ninguém pediu.
+
+       Então o like existe ou não existe. Tirar apaga a linha, do mesmo jeito
+       que tirar um voto apaga a dele. */
+    CREATE TABLE IF NOT EXISTS comment_likes (
+      comment_id TEXT NOT NULL REFERENCES review_comments(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (comment_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS comment_likes_comment ON comment_likes(comment_id);
+
     /* ── e o voto em uma nota isolada ─────────────────────────────────────
        Concordar com uma pessoa inteira é raro; concordar com o 9 dela em
        fotografia e achar o 4 em roteiro absurdo é o que acontece de verdade. O

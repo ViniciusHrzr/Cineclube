@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, Pencil, Plus, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
 import { Bill, Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
-import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
+import { del, fmt, initialsOf, reelColor, runtimeOf, type Review, type ReviewComment } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -446,6 +446,71 @@ function whenOf(iso: string) {
 /** O mesmo teto que routes/social.js aplica. Espelhado, nunca decidido aqui. */
 const MAX_COMMENT = 1000;
 
+/* ── curtir o que alguém escreveu ─────────────────────────────────────────
+   Um botão só, e não o par de polegares que a nota tem. Lá o par existe porque
+   se concorda ou se discorda de um número; aqui o contrário de curtir não é a
+   mesma informação com o sinal trocado — é outra coisa, e num clube de seis
+   amigos que se falam por voz ela custa mais do que informa.
+
+   Segue as mesmas regras do voto em critério, porque é o mesmo tipo de gesto:
+   latão quando é seu, contador só quando existe, e no que você mesmo escreveu
+   sobra o placar sem o botão. */
+function CommentLikes({ comment }: { comment: ReviewComment }) {
+  const club = useClub();
+  const [busy, setBusy] = useState(false);
+
+  const likes = club.commentLikes.filter(l => l.commentId === comment.id);
+  const mine = likes.some(l => l.reviewerId === club.me.id);
+  const own = comment.reviewerId === club.me.id;
+
+  async function press() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await club.likeComment(comment.id, !mine);
+    } catch (e) {
+      club.fault('Não foi possível curtir: ' + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (own) {
+    if (!likes.length) return null;
+    return (
+      <span
+        className="flex items-center gap-1 text-ink-faint"
+        title={`${likes.length} ${likes.length === 1 ? 'curtida' : 'curtidas'}`}
+      >
+        <ThumbsUp className="h-3 w-3" strokeWidth={1.9} aria-hidden />
+        <span className="q text-[10.5px] leading-none text-ink-dim">{likes.length}</span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      aria-pressed={mine}
+      aria-label={`${mine ? 'Descurtir' : 'Curtir'} o comentário de ${comment.reviewerName}${
+        likes.length ? `, ${likes.length} até agora` : ''
+      }`}
+      onClick={() => void press()}
+      className={cn(
+        'flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-cell transition-colors duration-150',
+        'disabled:opacity-40',
+        mine ? 'text-dye-brass' : 'text-ink-faint hover:text-beam'
+      )}
+    >
+      <ThumbsUp className="h-3 w-3 flex-none" strokeWidth={1.9} aria-hidden />
+      {likes.length ? (
+        <span className="q text-[10.5px] leading-none text-ink-dim">{likes.length}</span>
+      ) : null}
+    </button>
+  );
+}
+
 function Conversation({ review }: { review: Review }) {
   const club = useClub();
   const [draft, setDraft] = useState('');
@@ -501,12 +566,19 @@ function Conversation({ review }: { review: Review }) {
                   {initialsOf(c.reviewerName)}
                 </Reel>
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-baseline gap-x-2">
+                  {/* A curtida fica na linha do nome e da hora, empurrada para
+                      o fim: é sobre o comentário inteiro, e uma linha de ação
+                      própria embaixo de cada um deles somaria uma altura por
+                      comentário numa gaveta que já é a mais alta da tela. */}
+                  <p className="flex flex-wrap items-center gap-x-2">
                     <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
                       {c.reviewerName}
                     </span>
                     <span className="q text-[10.5px] text-ink-dim" title={c.createdAt}>
                       {whenOf(c.createdAt)}
+                    </span>
+                    <span className="ml-auto pl-2">
+                      <CommentLikes comment={c} />
                     </span>
                   </p>
                   {/* `break-words` porque um link colado sem espaço é uma

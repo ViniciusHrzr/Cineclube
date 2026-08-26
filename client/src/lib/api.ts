@@ -88,11 +88,26 @@ export type CriterionVote = {
   value: 1 | -1;
 };
 
+/* Uma curtida em um comentário. Sem valor: ela existe ou não existe. Em
+   critério o par +1/−1 faz sentido porque se concorda ou se discorda de um
+   número; no que alguém escreveu, o contrário de curtir não é a mesma
+   informação com o sinal trocado. */
+export type CommentLike = { commentId: string; reviewerId: string };
+
 export const social = {
-  all: () => api<{ comments: ReviewComment[]; votes: CriterionVote[] }>('/api/social'),
+  all: () =>
+    api<{ comments: ReviewComment[]; votes: CriterionVote[]; commentLikes: CommentLike[] }>(
+      '/api/social'
+    ),
   comment: (reviewId: string, body: string) =>
     post<ReviewComment>(`/api/social/reviews/${reviewId}/comments`, { body }),
   uncomment: (id: string) => del(`/api/social/comments/${id}`),
+  likeComment: (id: string, liked: boolean) =>
+    api<{ liked: boolean }>(`/api/social/comments/${id}/like`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ liked }),
+    }),
   /** 0 tira o voto. Devolve o voto gravado, ou null quando foi retirado. */
   vote: (reviewId: string, key: string, value: 1 | -1 | 0) =>
     api<{ vote: CriterionVote | null }>(`/api/social/reviews/${reviewId}/criteria/${key}/vote`, {

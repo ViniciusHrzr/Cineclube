@@ -199,6 +199,109 @@ test('apagar a avaliação leva a conversa sobre ela junto', async () => {
   assert.equal((await social()).body.comments.filter(c => c.reviewId === take.id).length, 0);
 });
 
+/* ── curtidas em um comentário ───────────────────────────────────────── */
+
+const like = (comment, liked, who) =>
+  req('PUT', `/api/social/comments/${comment.id}/like`, { liked }, who.cookie);
+
+/** Um comentário escrito por `who` na ficha de `author`. */
+async function newComment(author, who, body) {
+  const take = await newTake(author);
+  const posted = await req(
+    'POST', `/api/social/reviews/${take.id}/comments`, { body: body || 'algo a dizer' }, who.cookie
+  );
+  assert.equal(posted.status, 201);
+  return posted.body;
+}
+
+test('curtir e descurtir um comentário, sem virar duas linhas', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const reader = await newReviewer();
+  const comment = await newComment(author, writer);
+
+  assert.equal((await like(comment, true, reader)).status, 200);
+  assert.equal((await like(comment, true, reader)).status, 200, 'curtir de novo não pode falhar');
+
+  let mine = (await social()).body.commentLikes.filter(l => l.commentId === comment.id);
+  assert.equal(mine.length, 1, 'curtir duas vezes criou duas linhas');
+
+  assert.equal((await like(comment, false, reader)).status, 200);
+  mine = (await social()).body.commentLikes.filter(l => l.commentId === comment.id);
+  assert.equal(mine.length, 0, 'descurtir deveria apagar a linha');
+});
+
+test('duas pessoas curtem o mesmo comentário sem se sobrescrever', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const comment = await newComment(author, writer);
+
+  await like(comment, true, a);
+  await like(comment, true, b);
+  assert.equal((await social()).body.commentLikes.filter(l => l.commentId === comment.id).length, 2);
+});
+
+test('ninguém curte o próprio comentário', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const comment = await newComment(author, writer);
+
+  const refused = await like(comment, true, writer);
+  assert.equal(refused.status, 403);
+  assert.equal((await social()).body.commentLikes.filter(l => l.commentId === comment.id).length, 0);
+});
+
+test('o dono da ficha pode curtir um comentário na ficha dele', async () => {
+  // Ele não escreveu aquele comentário — a regra é sobre autoria do texto, não
+  // sobre de quem é a avaliação embaixo dele.
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const comment = await newComment(author, writer);
+  assert.equal((await like(comment, true, author)).status, 200);
+});
+
+test('curtida que não é booleana é recusada', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const reader = await newReviewer();
+  const comment = await newComment(author, writer);
+
+  for (const value of [1, 0, 'sim', null, undefined]) {
+    assert.equal((await like(comment, value, reader)).status, 400, `aceitou ${value}`);
+  }
+});
+
+test('visitante deslogado lê as curtidas mas não curte', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const comment = await newComment(author, writer);
+
+  assert.equal((await social()).status, 200);
+  assert.equal(
+    (await req('PUT', `/api/social/comments/${comment.id}/like`, { liked: true })).status, 401
+  );
+});
+
+test('apagar o comentário leva as curtidas dele junto', async () => {
+  const author = await newReviewer();
+  const writer = await newReviewer();
+  const reader = await newReviewer();
+  const comment = await newComment(author, writer);
+  await like(comment, true, reader);
+
+  assert.equal((await req('DELETE', `/api/social/comments/${comment.id}`, null, writer.cookie)).status, 204);
+  assert.equal((await social()).body.commentLikes.filter(l => l.commentId === comment.id).length, 0);
+});
+
+test('curtir um comentário que não existe responde 404', async () => {
+  const reader = await newReviewer();
+  assert.equal(
+    (await req('PUT', '/api/social/comments/cnaoexiste/like', { liked: true }, reader.cookie)).status, 404
+  );
+});
+
 /* ── votos em um critério ────────────────────────────────────────────── */
 
 const vote = (take, key, value, who) =>

@@ -10,6 +10,7 @@ import {
   post,
   reelColor,
   social,
+  type CommentLike,
   type Criterion,
   type CriterionVote,
   type Movie,
@@ -61,9 +62,12 @@ type Club = {
      quatro pessoas isto é da ordem de centenas de linhas. */
   comments: ReviewComment[];
   votes: CriterionVote[];
+  commentLikes: CommentLike[];
   /** Escreve, e devolve o comentário gravado — a lista já se atualizou. */
   comment: (reviewId: string, body: string) => Promise<void>;
   uncomment: (id: string) => Promise<void>;
+  /** Curtir e descurtir o comentário de outra pessoa. */
+  likeComment: (id: string, liked: boolean) => Promise<void>;
   /** +1, −1, ou 0 para tirar. Pressionar o voto que já está posto tira ele. */
   voteOn: (reviewId: string, key: string, value: 1 | -1 | 0) => Promise<void>;
   reload: (patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => void;
@@ -101,6 +105,7 @@ export default function App() {
   const [genres, setGenres] = useState<string[]>([]);
   const [comments, setComments] = useState<ReviewComment[]>([]);
   const [votes, setVotes] = useState<CriterionVote[]>([]);
+  const [commentLikes, setCommentLikes] = useState<CommentLike[]>([]);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [me, setMe] = useState<SessionUser | null>(null);
@@ -144,6 +149,7 @@ export default function App() {
       setWatchlist(wl.watchlist);
       setComments(sc.comments);
       setVotes(sc.votes);
+      setCommentLikes(sc.commentLikes);
       setBooted(true);
     } catch (e) {
       setBootError((e as Error).message);
@@ -276,7 +282,21 @@ export default function App() {
   const uncomment = useCallback(async (id: string) => {
     await social.uncomment(id);
     setComments(prev => prev.filter(c => c.id !== id));
+    // O servidor apaga as curtidas em cascata; a lista local tem de fazer o
+    // mesmo, ou um contador some junto com o comentário e volta no próximo boot.
+    setCommentLikes(prev => prev.filter(l => l.commentId !== id));
   }, []);
+
+  const likeComment = useCallback(
+    async (id: string, liked: boolean) => {
+      await social.likeComment(id, liked);
+      setCommentLikes(prev => {
+        const rest = prev.filter(l => !(l.commentId === id && l.reviewerId === meId));
+        return liked && meId ? [...rest, { commentId: id, reviewerId: meId }] : rest;
+      });
+    },
+    [meId]
+  );
 
   const voteOn = useCallback(
     async (reviewId: string, key: string, value: 1 | -1 | 0) => {
@@ -331,8 +351,10 @@ export default function App() {
             genres,
             comments,
             votes,
+            commentLikes,
             comment,
             uncomment,
+            likeComment,
             voteOn,
             reload,
             criteriaFor,
@@ -358,8 +380,10 @@ export default function App() {
       genres,
       comments,
       votes,
+      commentLikes,
       comment,
       uncomment,
+      likeComment,
       voteOn,
       reload,
       criteriaFor,
