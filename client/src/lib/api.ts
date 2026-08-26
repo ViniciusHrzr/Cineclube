@@ -292,6 +292,10 @@ export type WatchItem = {
   genre: string;
   poster: string | null;
   addedAt?: string;
+  /* Quem pôs o filme na fila. Só o id: o nome, a cor e o retrato saem do clube
+     que já está carregado. Nulo numa linha anterior à coluna, ou de alguém que
+     saiu do clube depois. */
+  addedBy?: string | null;
 };
 
 export async function api<T>(path: string, opts?: RequestInit): Promise<T> {

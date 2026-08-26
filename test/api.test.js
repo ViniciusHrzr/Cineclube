@@ -521,6 +521,19 @@ test('adds a movie to the watchlist and lists it back', async () => {
   assert.equal(found.genre, 'Terror');
 });
 
+/* A fila mostra de quem foi a ideia, e o id é a única parte disso que sai do
+   servidor: o nome, a cor e o retrato são fatos sobre a pessoa e o clube
+   inteiro já está carregado no cliente. Sem este campo a tela volta a ser
+   quarenta pôsteres sem autor nenhum. */
+test('a fila diz quem pôs cada filme', async () => {
+  const member = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+
+  const { body } = await req('GET', '/api/watchlist');
+  assert.equal(body.watchlist.find(w => w.id === m.id).addedBy, member.id);
+});
+
 test('adding the same movie twice keeps a single entry', async () => {
   const member = await newReviewer();
   const m = movie();

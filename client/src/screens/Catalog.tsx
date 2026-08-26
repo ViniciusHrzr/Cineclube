@@ -11,9 +11,9 @@ import {
   useVelocity,
 } from 'framer-motion';
 import { GripVertical } from 'lucide-react';
-import { Bill, Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
+import { Bill, Blank, Chip, Fault, Key, Poster, Reel, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
-import { api, del, type Movie, type WatchItem } from '@/lib/api';
+import { api, del, initialsOf, reelColor, type Movie, type WatchItem } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -219,9 +219,87 @@ type Lift = { id: number; w: number; h: number; grabX: number; grabY: number };
    it is a spring, not a duration — it settles like something with weight. */
 const REFLOW = { type: 'spring', stiffness: 520, damping: 42, mass: 0.9 } as const;
 
+/* ── de quem foi a ideia ──────────────────────────────────────────────────
+   A fila é do clube: qualquer um põe, qualquer um tira, e a ordem é uma só. Mas
+   quem escolheu cada filme não é detalhe administrativo — é metade do assunto.
+   "Esse aí foi o Leonardo que pôs" é a primeira coisa que alguém diz olhando a
+   fila, e até agora a resposta só existia no feed, rolando para trás até achar
+   a linha.
+
+   ── por que uma tira de retratos, e não uma seção por pessoa ────────────
+   Porque a fila é UMA fila ordenada, e essa ordem é o que ela significa: o
+   próximo filme do clube é o primeiro da lista. Quebrada em seis seções, a
+   posição 3 passa a ser "a terceira da Beren", que não é lugar nenhum na
+   próxima sessão — e arrastar um pôster de uma seção para outra teria de
+   significar ou mudar a ordem do clube ou mudar de dono, duas coisas
+   diferentes com um gesto só.
+
+   Então a fila continua inteira e a autoria entra por cima dela: uma marca no
+   canto de cada pôster, que responde "de quem é este" sem clique nenhum, e uma
+   tira de retratos que filtra a grade para uma pessoa. Separado é o que se vê;
+   junto é o que se ordena.
+
+   Filtrado por pessoa a fila não se arrasta, pela mesma razão que já valia para
+   a busca: reordenar uma lista parcial é reordenar uma coisa que não é a
+   fila. */
+type Owner = {
+  id: string;
+  name: string;
+  dot: string;
+  avatar: string | null;
+  count: number;
+};
+
+/* O mesmo desenho do chip do resto do produto — latão quando ligado, aro
+   discreto quando não — com um retrato dentro. Não é o `Chip`: aquele é uma
+   caixa de texto com altura própria, e enfiar um retrato dentro dele esticaria
+   todos os outros chips do produto por causa deste. */
+function ReelChip({
+  on,
+  onClick,
+  label,
+  count,
+  reel,
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  reel?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      aria-label={
+        on ? `Mostrando ${label}. Voltar para a fila inteira` : `Ver só o que ${label} pôs na fila`
+      }
+      className={cn(
+        'flex items-center gap-2 rounded-cell bg-house-seat/70 py-1 pr-2.5 ring-1 transition-colors duration-150',
+        reel ? 'pl-1' : 'pl-2.5',
+        on
+          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
+          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+      )}
+    >
+      {reel}
+      <span className="font-display text-[12.5px] uppercase leading-none tracking-[0.1em]">
+        {label}
+      </span>
+      <span className="q text-[10.5px] leading-none opacity-70">{count}</span>
+    </button>
+  );
+}
+
+/** O balde de quem não tem dono registrado. Nunca é um id de gente. */
+const NOBODY = ' sem-dono';
+
 export function WatchlistScreen() {
   const club = useClub();
   const [query, setQuery] = useState('');
+  /** Qual pessoa a grade está mostrando, ou null para a fila inteira. */
+  const [who, setWho] = useState<string | null>(null);
   const [lift, setLift] = useState<Lift | null>(null);
   const [landing, setLanding] = useState(false);
   const cellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -247,10 +325,48 @@ export function WatchlistScreen() {
     damping: 24,
   });
 
-  const filtering = query.trim().length > 0;
-  const shown = filtering
-    ? club.watchlist.filter(w => named(norm(query.trim()), w.title, w.original, w.english))
-    : club.watchlist;
+  /* ── quem tem filme na fila ─────────────────────────────────────────────
+     Contado da própria fila e não do clube inteiro: uma tira com seis retratos
+     em que quatro levam a uma grade vazia é uma tira que promete o que não tem.
+     Na ordem do clube, para a tira não se reorganizar sozinha toda vez que
+     alguém põe um filme.
+
+     Uma linha pode apontar para um id que não está mais no clube — a coluna não
+     tem chave estrangeira, então quem sai deixa o id para trás — e isso cai no
+     mesmo balde de quem nunca teve dono: a fila sabe que não sabe. */
+  const owners: Owner[] = [];
+  const tally = new Map<string, number>();
+  club.watchlist.forEach(w => {
+    const key = w.addedBy && club.reviewers.some(p => p.id === w.addedBy) ? w.addedBy : NOBODY;
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  });
+  club.reviewers.forEach(p => {
+    const count = tally.get(p.id);
+    if (count) owners.push({ id: p.id, name: p.name, dot: p.dot, avatar: p.avatar ?? null, count });
+  });
+  const orphans = tally.get(NOBODY) ?? 0;
+
+  const ownerOf = useCallback(
+    (w: WatchItem) => club.reviewers.find(p => p.id === w.addedBy) ?? null,
+    [club.reviewers]
+  );
+
+  /* Uma pessoa que sai do clube, ou que tem o último filme dela tirado da fila,
+     não pode deixar a grade vazia e sem explicação: o filtro cai sozinho para a
+     fila inteira quando o dono selecionado deixa de existir nela. */
+  if (who && who !== NOBODY && !owners.some(o => o.id === who)) setWho(null);
+  if (who === NOBODY && !orphans) setWho(null);
+
+  const searching = query.trim().length > 0;
+  /* As duas peneiras contam para a mesma regra: o que a grade mostra não é a
+     fila, então a fila não pode ser reordenada daqui. */
+  const filtering = searching || who !== null;
+  const shown = club.watchlist.filter(w => {
+    if (searching && !named(norm(query.trim()), w.title, w.original, w.english)) return false;
+    if (!who) return true;
+    const mine = w.addedBy && club.reviewers.some(p => p.id === w.addedBy) ? w.addedBy : NOBODY;
+    return mine === who;
+  });
 
   /* ── the queue, twenty-four at a time ───────────────────────────────────
      The same shape the catalogue uses, for the same reason: a long queue is a
@@ -267,10 +383,11 @@ export function WatchlistScreen() {
   const rest = shown.length - paged.length;
 
   /* A search re-cuts the whole list, so how far the old one had been opened
-     means nothing to it. */
-  const lastQuery = useRef(query);
-  if (lastQuery.current !== query) {
-    lastQuery.current = query;
+     means nothing to it. Trocar de pessoa é a mesma coisa: é outra lista. */
+  const cut = `${query}|${who ?? ''}`;
+  const lastCut = useRef(cut);
+  if (lastCut.current !== cut) {
+    lastCut.current = cut;
     if (visible !== STEP) setVisible(STEP);
   }
 
@@ -500,6 +617,46 @@ export function WatchlistScreen() {
         </div>
       ) : null}
 
+      {/* ── a tira de quem escolheu ──────────────────────────────────────
+          Retrato, nome e quantos. O número é o que faz a tira valer o espaço:
+          sem ele são seis botões idênticos que não dizem nada até serem
+          apertados, e com ele a tira já é a resposta para "quem está enchendo
+          a fila" antes de alguém clicar em nada.
+
+          "Todos" primeiro e sempre visível — um filtro que só se desliga
+          apertando de novo o mesmo botão é um filtro em que dá para ficar
+          preso. Apertar o retrato aceso também desliga, para quem tentar. */}
+      {owners.length > 1 || orphans ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <ReelChip on={who === null} onClick={() => setWho(null)} label="Todos" count={club.watchlist.length} />
+          {owners.map(o => (
+            <ReelChip
+              key={o.id}
+              on={who === o.id}
+              onClick={() => setWho(v => (v === o.id ? null : o.id))}
+              label={o.name}
+              count={o.count}
+              reel={
+                <Reel color={reelColor(o.dot, o.id)} src={o.avatar} size="md">
+                  {initialsOf(o.name)}
+                </Reel>
+              }
+            />
+          ))}
+          {/* Só aparece quando existe: as linhas anteriores à coluna `added_by`
+              e as de quem saiu do clube. Um balde permanentemente vazio na tira
+              seria a fila anunciando um problema que ela não tem. */}
+          {orphans ? (
+            <ReelChip
+              on={who === NOBODY}
+              onClick={() => setWho(v => (v === NOBODY ? null : NOBODY))}
+              label="Sem registro"
+              count={orphans}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
       {shown.length ? (
         <div
           className={cn(
@@ -510,6 +667,7 @@ export function WatchlistScreen() {
           <AnimatePresence initial={false}>
             {paged.map((w, i) => {
               const air = lift?.id === w.id;
+              const owner = ownerOf(w);
               return (
                 <motion.div
                   key={w.id}
@@ -555,6 +713,38 @@ export function WatchlistScreen() {
                     <span className="q absolute right-1.5 top-1.5 z-20 rounded-cell bg-house-deep/85 px-1.5 py-0.5 text-[10px] text-ink-dim ring-1 ring-white/10">
                       {filtering ? club.watchlist.findIndex(x => x.id === w.id) + 1 : i + 1}
                     </span>
+                    {/* ── de quem foi a ideia ────────────────────────────
+                        No pé do pôster e não no topo: em cima já moram a alça
+                        e o número da posição, e um terceiro selo ali faria a
+                        arte do filme começar depois de uma fileira de
+                        emblemas. Embaixo, o retrato pousa sobre a parte mais
+                        escura de quase todo pôster e some do caminho.
+
+                        A caixa externa marca exatamente o pôster —
+                        `aspect-[2/3]` a partir do topo, como o quadro que
+                        fica aberto quando um card está no ar — porque o card
+                        continua abaixo dela com título, ano e nota, e o selo
+                        pertence à imagem.
+
+                        Sem eventos de ponteiro: hover neste canto é hover no
+                        pôster, e é ele que abre a tarja de sinopse. Um alvo
+                        clicável de vinte pixels bem em cima dessa tarja
+                        trocaria uma coisa que se lê sem pensar por uma que
+                        pisca. Filtrar por pessoa é o que a tira lá em cima
+                        faz, com nome e contagem à mostra. */}
+                    {owner ? (
+                      <span
+                        className="pointer-events-none absolute inset-x-0 top-0 z-20 aspect-[2/3]"
+                        aria-hidden
+                      >
+                        <span className="absolute bottom-1.5 left-1.5 flex rounded-cell bg-house-deep/85 p-[3px] ring-1 ring-white/10 backdrop-blur-sm">
+                          <Reel color={reelColor(owner.dot, owner.id)} src={owner.avatar} size="sm">
+                            {initialsOf(owner.name)}
+                          </Reel>
+                        </span>
+                      </span>
+                    ) : null}
+                    <span className="sr-only">Posto na fila por {owner ? owner.name : 'alguém que não ficou registrado'}.</span>
                     <FilmCell
                       movie={w as Movie}
                       onOpen={club.openSheet}
@@ -580,7 +770,15 @@ export function WatchlistScreen() {
           </AnimatePresence>
         </div>
       ) : filtering ? (
-        <Blank title="Nenhum filme na fila com esse título">Limpe o filtro para ver a fila inteira.</Blank>
+        <Blank
+          title={
+            searching
+              ? 'Nenhum filme na fila com esse título'
+              : 'Essa pessoa não tem nada na fila'
+          }
+        >
+          Limpe o filtro para ver a fila inteira.
+        </Blank>
       ) : (
         <Blank title="A fila está vazia">
           Marque filmes no Catálogo e eles entram aqui, prontos para a próxima sessão. Gravar uma avaliação

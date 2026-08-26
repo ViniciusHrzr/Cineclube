@@ -45,7 +45,17 @@ function toDTO(row) {
     year: row.movie_year,
     genre: row.movie_genre,
     poster: row.movie_poster,
-    addedAt: row.added_at
+    addedAt: row.added_at,
+    /* Quem teve a ideia. A coluna existia só para o feed ter o que contar, e a
+       fila em si nunca a mostrava: quarenta pôsteres numa grade, cada um
+       escolhido por alguém, e nada na tela dizendo por quem — a pergunta "quem
+       foi que pôs esse aí" só tinha resposta no mural, rolando para trás.
+
+       Só o id. O nome, a cor e o retrato são fatos sobre a pessoa e não sobre a
+       linha da fila, e o clube inteiro já está carregado no cliente desde o
+       boot — mandá-los aqui repetiria os mesmos seis nomes quarenta vezes na
+       mesma resposta. Nulo nas linhas anteriores à coluna. */
+    addedBy: row.added_by || null
   };
 }
 
