@@ -146,187 +146,90 @@ test('text a member sent is trimmed and capped', () => {
   assert.equal(screening.text('x'.repeat(9999)).length, screening.MAX_TEXT);
 });
 
-/* ── the buffering wheel ──────────────────────────────────────────────────── */
+/* ── a roda de carregar, que só informa ───────────────────────────────────
+   A sala já parou sozinha pela travada de um membro, e voltou sozinha quando
+   ele voltou. O argumento era o certo no papel — seguir sem quem travou é a
+   dessincronia que este módulo existe para evitar — e o clube passou noites
+   sentado no resultado: uma sessão que para quando ninguém pediu e volta
+   quando ninguém pediu.
 
-test('one person stalling pauses the club', () => {
+   Era um laço de controle com quatro navegadores, um enxame e um filme dentro
+   dele. Todo amortecedor que se somou (carência, teto por filme, almofada
+   medida, "chegar não é travar") mudou a frequência e não a natureza.
+
+   Estes testes são a garantia de que não volta. O que a roda faz agora é
+   gravar quem está carregando; o filme só para quando uma pessoa para. */
+
+test('a travada de um membro não para mais o filme de ninguém', () => {
   screening.attach(session('p1', 'Ana'));
   screening.attach(session('p2', 'Bruno'));
   screening.open(FILM, T0);
   screening.play(null, T0);
 
-  screening.setReady('p2', false, SRC,T0 + 20_000);
-
-  assert.equal(screening.room.status, 'paused');
-  assert.equal(screening.room.pausedByStall, true);
-  // Paused where it actually was, not at zero.
-  assert.equal(screening.positionAt(T0 + 60_000), 20);
-});
-
-test('the club starts again once everyone can play', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
-  screening.open(FILM, T0);
-  screening.play(null, T0);
-  screening.setReady('p2', false, SRC,T0 + 20_000);
-
-  screening.setReady('p2', true, SRC,T0 + 25_000);
+  screening.setReady('p2', false, SRC, T0 + 20_000);
 
   assert.equal(screening.room.status, 'playing');
-  assert.equal(screening.room.pausedByStall, false);
-  assert.equal(screening.positionAt(T0 + 30_000), 25);
+  assert.equal(screening.positionAt(T0 + 60_000), 60, 'o filme parou de correr');
+  // E o clube fica sabendo: é isso que o painel desenha, e é com isso que
+  // alguém decide apertar pause.
+  assert.equal(screening.room.viewers.get('p2').ready, false);
 });
 
-test('a person pausing during a stall stops the room resuming on its own', () => {
+test('nem quando todo mundo trava ao mesmo tempo', () => {
   screening.attach(session('p1', 'Ana'));
   screening.attach(session('p2', 'Bruno'));
   screening.open(FILM, T0);
   screening.play(null, T0);
-  screening.setReady('p2', false, SRC,T0 + 20_000);
 
-  // Somebody gets up to make coffee while Bruno buffers.
+  screening.setReady('p1', false, SRC, T0 + 10_000);
+  screening.setReady('p2', false, SRC, T0 + 11_000);
+
+  assert.equal(screening.room.status, 'playing');
+});
+
+/* O outro lado, e o que mais incomodava: a sala também não recomeça sozinha.
+   Uma sessão que volta a rodar sem ninguém apertar nada é a mesma surpresa da
+   pausa, na direção contrária — e pega o clube fora da sala. */
+test('e a sala não recomeça sozinha quando o buffer enche', () => {
+  screening.attach(session('p1', 'Ana'));
+  screening.attach(session('p2', 'Bruno'));
+  screening.open(FILM, T0);
+  screening.play(null, T0);
+  screening.setReady('p2', false, SRC, T0 + 20_000);
+
+  // Alguém para de propósito para esperar o Bruno, que é como isto se resolve
+  // agora: uma pessoa decide.
   screening.pause(null, T0 + 22_000);
-  screening.setReady('p2', true, SRC,T0 + 25_000);
+  screening.setReady('p2', true, SRC, T0 + 25_000);
 
-  assert.equal(screening.room.status, 'paused');
+  assert.equal(screening.room.status, 'paused', 'a sala voltou sem ninguém pedir');
+  assert.equal(screening.positionAt(T0 + 90_000), 22);
 });
 
-test('leaving releases a room that was held on the person who left', () => {
+test('sair da sala não mexe no filme', () => {
   screening.attach(session('p1', 'Ana'));
   screening.attach(session('p2', 'Bruno'));
   screening.open(FILM, T0);
   screening.play(null, T0);
-  screening.setReady('p2', false, SRC,T0 + 20_000);
+  screening.setReady('p2', false, SRC, T0 + 20_000);
 
-  screening.detach('p2', T0 + 30_000);
+  screening.detach('p2');
 
   assert.equal(screening.room.status, 'playing');
   assert.equal(screening.room.viewers.size, 1);
 });
 
-/* ── chegar não é travar ──────────────────────────────────────────────────
-   O defeito que a sala inteira sentia como "pausa sozinho". Quem abre a aba no
-   meio do filme não tem imagem nenhuma, e o navegador diz isso alto: o
-   `waiting` do <video> dispara no instante em que o arquivo é apontado. Isso
-   virava uma travada, e a travada de um parava os outros três — uma vez por
-   pessoa que chegava.
-
-   O clube chega ao longo de dez minutos. Da poltrona, era uma sala que parava
-   sozinha do nada.
-
-   A metade que mora aqui é a mais simples de dizer: quem não tem filme aberto
-   não trava. A outra está no cliente, onde há a informação que este lado não
-   tem — se a imagem daquela pessoa chegou a andar (ver `joinedIn`). */
-
-test('quem ainda não abriu filme nenhum não para a sala', () => {
+test('a roda continua dizendo quem está carregando e o que cada um abriu', () => {
   screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
-  screening.open(FILM, T0);
-  screening.play(null, T0);
-  screening.setReady('p1', true, SRC, T0 + 1000);
-
-  // Bruno acabou de entrar: a aba está aberta, o filme não.
-  screening.setReady('p2', false, null, T0 + 20_000);
-
-  assert.equal(screening.room.status, 'playing', 'a sala parou por quem nem começou');
-  assert.equal(screening.room.pausedByStall, false);
-});
-
-/* E o outro lado da mesma regra, que importa tanto quanto: quem não conta para
-   parar também não conta para impedir a sala de voltar. Sem isto, uma pessoa
-   sem fonte marcada como não-pronta seguraria o filme parado para todo mundo
-   sem ter nem como se destravar. */
-test('quem não abriu filme nenhum também não segura a sala parada', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
-  screening.open(FILM, T0);
-  screening.play(null, T0);
-  screening.setReady('p1', true, SRC, T0 + 1000);
-  screening.setReady('p2', false, null, T0 + 5000);
-
-  // Ana trava de verdade, e a sala para por ela.
-  screening.setReady('p1', false, SRC, T0 + 20_000);
-  assert.equal(screening.room.pausedByStall, true);
-
-  // Ana volta. Bruno continua sem filme aberto, e isso não é motivo para a
-  // sessão ficar parada.
-  screening.setReady('p1', true, SRC, T0 + 25_000);
-  assert.equal(screening.room.status, 'playing');
-});
-
-/* ── damping ──────────────────────────────────────────────────────────────
-   These two are the ones that were missing, and their absence is what the club
-   sat through: a stall pauses, the buffer fills a little, the room resumes, the
-   same thin copy stalls again on the next breath. Nothing in the loop converged
-   because nothing in it was allowed to give up. */
-
-test('the room does not seize on a second stall right after releasing one', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
   screening.open(FILM, T0);
   screening.play(null, T0);
 
-  screening.setReady('p2', false, SRC,T0 + 20_000);
-  screening.setReady('p2', true, SRC,T0 + 25_000);
-  // Bruno's copy runs dry again two seconds later, as a thin copy does.
-  screening.setReady('p2', false, SRC,T0 + 27_000);
+  screening.setReady('p1', false, SRC, T0 + 5000);
+  assert.equal(screening.room.viewers.get('p1').ready, false);
+  assert.equal(screening.room.viewers.get('p1').sourceTag, SRC);
 
-  assert.equal(screening.room.status, 'playing', 'the film carries on without him');
-  assert.equal(screening.room.pausedByStall, false);
-  // He is still on the board as buffering, which is the part the club can act on.
-  assert.equal(screening.room.viewers.get('p2').ready, false);
-});
-
-test('a film that keeps stopping itself stops being allowed to', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
-  screening.open(FILM, T0);
-  screening.play(null, T0);
-
-  // Six stalls, each one well clear of the cooldown, so every one is granted.
-  let t = T0;
-  for (let i = 0; i < 6; i++) {
-    t += 60_000;
-    screening.setReady('p2', false, SRC,t);
-    assert.equal(screening.room.pausedByStall, true, `stall ${i + 1} should still pause`);
-    t += 5000;
-    screening.setReady('p2', true, SRC,t);
-  }
-
-  t += 60_000;
-  screening.setReady('p2', false, SRC,t);
-
-  assert.equal(screening.room.status, 'playing', 'the mechanism has run out of credit');
-  assert.equal(screening.room.pausedByStall, false);
-});
-
-test('a new film gets the damping budget back', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.attach(session('p2', 'Bruno'));
-  screening.open(FILM, T0);
-  screening.play(null, T0);
-
-  let t = T0;
-  for (let i = 0; i < 6; i++) {
-    t += 60_000;
-    screening.setReady('p2', false, SRC,t);
-    t += 5000;
-    screening.setReady('p2', true, SRC,t);
-  }
-
-  screening.open(FILM, t + 1000);
-  screening.play(null, t + 2000);
-  screening.setReady('p2', false, SRC,t + 20_000);
-
-  assert.equal(screening.room.pausedByStall, true);
-});
-
-test('a stall while already paused does not mark the pause as the room\'s', () => {
-  screening.attach(session('p1', 'Ana'));
-  screening.open(FILM, T0);
-
-  screening.setReady('p1', false, SRC, T0 + 1000);
-
-  assert.equal(screening.room.pausedByStall, false);
+  screening.setReady('p1', true, SRC, T0 + 9000);
+  assert.equal(screening.room.viewers.get('p1').ready, true);
 });
 
 /* ── who is in the room ───────────────────────────────────────────────────── */

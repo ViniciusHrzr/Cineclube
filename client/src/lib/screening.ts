@@ -48,8 +48,6 @@ export type ScreeningState = {
   /** Seconds, true as of `serverTime` — never read this without deriving. */
   position: number;
   revision: number;
-  /** Whether the buffering wheel paused us, rather than a person. */
-  pausedByStall: boolean;
   /** The magnet or URL the club is on, for whoever arrives next. Null: none. */
   link: string | null;
   /* Which subtitle the room is on — the announcement, never the text. The text
@@ -72,7 +70,6 @@ const IDLE: ScreeningState = {
   status: 'paused',
   position: 0,
   revision: 0,
-  pausedByStall: false,
   link: null,
   subtitle: null,
   serverTime: 0,

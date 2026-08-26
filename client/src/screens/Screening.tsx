@@ -643,10 +643,21 @@ export function ScreeningScreen() {
           ))}
         </div>
 
-        {state.pausedByStall ? (
+        {/* ── quem está carregando, e o que o clube faz com isso ───────────
+            Esta linha dizia "a sala pausou sozinha esperando fulano — e volta
+            sozinha quando o buffer encher", porque era isso que acontecia. A
+            sala não para mais por ninguém: uma sessão que para quando ninguém
+            pediu e volta quando ninguém pediu foi pior, em todas as noites em
+            que o clube sentou nela, do que seguir e alguém dizer "peraí".
+
+            O que sobrou é o fato, sem a decisão em cima dele. Quem está atrás
+            já aparece com o aro vermelho no painel; esta frase existe para o
+            clube saber que a escolha é dele — apertar pause é uma coisa que
+            quatro pessoas num Discord fazem sem pensar. */}
+        {waiting.length ? (
           <p className="q mt-3 text-[12px] text-ink-dim">
-            A sala pausou sozinha esperando {waiting.map(v => v.name).join(', ') || 'alguém'} — e volta sozinha
-            quando o buffer encher.
+            {waiting.map(v => v.name).join(', ')} {waiting.length === 1 ? 'está' : 'estão'} carregando. A
+            sessão segue — pause se quiser esperar.
           </p>
         ) : null}
 

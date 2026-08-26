@@ -247,7 +247,10 @@ test('one member presses play and the other member\'s stream says so', async () 
   await ear.close();
 });
 
-test('a stalled member pauses the room, and coming back starts it again', async () => {
+/* Quem trava aparece no painel de todo mundo, e o filme não para. A sala já
+   parou sozinha por isso e o clube passou noites sentado no resultado — ver a
+   nota em screening.js. Quem decide esperar é uma pessoa, apertando pause. */
+test('uma travada chega ao painel do clube sem parar o filme', async () => {
   const ana = await newMember('Ana do Buffer');
   const bruno = await newMember('Bruno do Buffer');
   const film = await queuedFilm();
@@ -260,17 +263,25 @@ test('a stalled member pauses the room, and coming back starts it again', async 
 
   await req('POST', '/api/screening/open', { movieId: film.id }, ana.cookie);
   await req('POST', '/api/screening/command', { type: 'play', position: 0 }, ana.cookie);
-  await ear.next(f => f.status === 'playing');
+  const playing = await ear.next(f => f.status === 'playing');
 
   await req('POST', '/api/screening/ready', { ready: false, sourceTag: 'abc123' }, bruno.cookie);
-  const held = await ear.next(f => f.type === 'state' && f.pausedByStall);
-  assert.equal(held.status, 'paused', 'seguir sem quem travou é justamente a dessincronia a evitar');
-  assert.equal(held.viewers.find(v => v.name === 'Bruno do Buffer').sourceTag, 'abc123');
+  const stalled = await ear.next(
+    f => f.type === 'state' && f.viewers.some(v => v.name === 'Bruno do Buffer' && !v.ready)
+  );
+  assert.equal(stalled.status, 'playing', 'a sala parou por uma travada');
+  assert.ok(stalled.revision >= playing.revision);
+  assert.equal(stalled.viewers.find(v => v.name === 'Bruno do Buffer').sourceTag, 'abc123');
 
+  /* A volta é conferida pelo instantâneo e não pelo fluxo, de propósito: uma
+     leitura de buffer não é uma mutação da sala, então ela não avança a
+     revisão — e sem revisão não há como dizer, olhando os quadros, que um
+     "Bruno pronto" é o de agora e não o de antes de o filme começar. O
+     instantâneo é a sala neste instante, sem ordem para desempatar. */
   await req('POST', '/api/screening/ready', { ready: true }, bruno.cookie);
-  // Newer than the pause, or this would match the play frame from before it.
-  const resumed = await ear.next(f => f.type === 'state' && f.status === 'playing' && f.revision > held.revision);
-  assert.equal(resumed.pausedByStall, false);
+  const now = (await req('GET', '/api/screening', null, ana.cookie)).body;
+  assert.equal(now.status, 'playing');
+  assert.equal(now.viewers.find(v => v.name === 'Bruno do Buffer').ready, true);
 
   await req('POST', '/api/screening/close', {}, ana.cookie);
   await ear.close();

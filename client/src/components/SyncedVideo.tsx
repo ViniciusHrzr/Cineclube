@@ -325,7 +325,7 @@ export function SyncedVideo({
       );
     }
     if (s.status === 'paused' && !v.paused) {
-      log('the room says pause', { at: v.currentTime, byStall: s.pausedByStall });
+      log('the room says pause', { at: v.currentTime });
       v.pause();
     }
   }, [stateRef, serverNow, hardSeek]);

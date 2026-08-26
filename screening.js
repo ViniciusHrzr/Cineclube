@@ -45,26 +45,6 @@ const PING_MS = 20_000;
 /** The unprompted correction: late and drifting clients converge on this. */
 const SYNC_MS = 5000;
 
-/* ── damping ──────────────────────────────────────────────────────────────
-   Auto-pause and auto-resume are a control loop with four browsers, a swarm
-   and a film inside it, and an undamped control loop oscillates: the room
-   resumes, the thinnest copy is still thin, it stalls, the room pauses, a
-   little arrives, the room resumes. Two seconds a cycle, all evening. The
-   club watched exactly that.
-
-   The player's cushion is the first damper and the honest one — it resumes on
-   a measurement rather than on a flicker. These two are the second, and they
-   exist because they are the only ones a wrong client cannot defeat: having
-   just let go of a stall the room will not seize on another for a while, and
-   a film that has stopped itself this many times has proved the mechanism is
-   not earning its keep tonight.
-
-   Both leave the struggling member behind rather than holding the room. That
-   is the right way round: they are still on the board, still marked buffering,
-   and the club can see it and decide — which is a thing four people can act
-   on, unlike a picture that will not stay still. */
-const STALL_COOLDOWN_MS = 15_000;
-const MAX_AUTO_PAUSES = 6;
 /* A file usually runs longer than the runtime TMDB reports — different cuts,
    credits, an extra frame of black. The clamp is a guard against nonsense, not
    a statement about the film, so it leaves room. */
@@ -112,13 +92,6 @@ const room = {
      is nowhere else for it to live — the file came off somebody's disk. What
      the snapshot carries is still only a pointer; see `snapshot`. */
   subtitle: null,
-  /* Whether the current pause was the buffering wheel rather than a person.
-     Only a pause the room caused itself may be undone by the room itself. */
-  pausedByStall: false,
-  /** When the room last released itself from a stall. Zero: it never has. */
-  resumedAt: 0,
-  /** How many times it has stopped itself for this film. See the damping. */
-  autoPauses: 0,
   viewers: new Map(),
 };
 
@@ -193,11 +166,6 @@ function open(movie, now = Date.now()) {
   room.movie = movie;
   room.status = 'paused';
   room.position = 0;
-  room.pausedByStall = false;
-  // Both budgets are per film: a new evening starts with the room trusting
-  // the wheel again, however badly the last one went.
-  room.resumedAt = 0;
-  room.autoPauses = 0;
   // A link belongs to the film it was opened for, never to the next one. So
   // does a subtitle, and rather more obviously.
   room.link = null;
@@ -266,9 +234,6 @@ function close(now = Date.now()) {
   room.movie = null;
   room.status = 'paused';
   room.position = 0;
-  room.pausedByStall = false;
-  room.resumedAt = 0;
-  room.autoPauses = 0;
   room.link = null;
   room.subtitle = null;
   // The viewers survive: they are the people with a connection open, and
@@ -284,8 +249,6 @@ function close(now = Date.now()) {
 function play(at, now = Date.now()) {
   room.position = at == null ? positionAt(now) : clampPosition(at);
   room.status = 'playing';
-  // A person pressing play answers the stall, whatever the wheel is doing.
-  room.pausedByStall = false;
   stamp(now);
   broadcastState();
 }
@@ -293,7 +256,6 @@ function play(at, now = Date.now()) {
 function pause(at, now = Date.now()) {
   room.position = at == null ? positionAt(now) : clampPosition(at);
   room.status = 'paused';
-  room.pausedByStall = false;
   stamp(now);
   broadcastState();
 }
@@ -316,21 +278,28 @@ function command(type, position, now = Date.now()) {
   return true;
 }
 
-/* ── the buffering wheel ──────────────────────────────────────────────────
-   One member's connection stalling is the whole club's problem: carrying on
-   without them is exactly the desynchronisation this module exists to stop. So
-   a stall pauses everybody, and — because it was the room that paused, not a
-   person — the room may start again by itself once everyone can play.
+/* ── a roda de carregar, que agora só informa ─────────────────────────────
+   A travada de um membro já foi problema de todos: a sala parava sozinha por
+   ele e voltava sozinha quando ele voltava. O argumento era o certo no papel —
+   seguir sem quem travou é a dessincronia que este módulo existe para evitar —
+   e o clube passou noites sentado no resultado.
 
-   Mas isto só vale para quem está VENDO. A sala parava sozinha o tempo todo, e
-   o motivo era este mecanismo disparando por gente que ainda nem tinha imagem:
-   quem abria a aba no meio do filme parava os outros três antes de ter
-   carregado o primeiro quadro. Chegar não é travar, e um filme que não foi
-   aberto não trava — ver `watching` abaixo e `joinedIn` no SyncedVideo.
+   Porque é um laço de controle com quatro navegadores, um enxame e um filme
+   dentro dele, e um laço de controle oscila. Todo amortecedor que se somou
+   (carência, teto de paradas por filme, almofada medida antes de dizer que
+   voltou, "chegar não é travar") melhorou o número de vezes por noite e não
+   mudou a natureza da coisa: uma sessão que para quando ninguém pediu, e volta
+   quando ninguém pediu. Quatro pessoas num Discord resolvem isso melhor do que
+   qualquer heurística — alguém fala "peraí" e aperta pause, que é uma coisa que
+   um clube de amigos faz sem pensar.
 
-   The flag is what keeps that from being presumptuous. A person pausing at any
-   point clears it, and from then on nothing resumes without somebody saying so. */
-function setReady(reviewerId, ready, sourceTag, now = Date.now()) {
+   Então a sala parou de opinar. Isto aqui só GRAVA quem está carregando e o
+   que cada um abriu, e o painel mostra — é a informação que o clube usa para
+   decidir. Nada aqui muda `status`: o filme só para quando uma pessoa para.
+
+   Quem travou não fica para trás sozinho: o corretor de deriva do player dele
+   o traz de volta para a posição da sala assim que ele conseguir tocar. */
+function setReady(reviewerId, ready, sourceTag) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
 
@@ -339,46 +308,7 @@ function setReady(reviewerId, ready, sourceTag, now = Date.now()) {
     viewer.sourceTag = isAllowedSource(sourceTag) ? text(sourceTag) : null;
   }
 
-  /* ── quem conta para a roda ─────────────────────────────────────────────
-     Só quem tem um filme aberto. Não se trava num filme que não se abriu, e
-     estar na sala com o seletor de fonte na tela — escolhendo o arquivo,
-     esperando um magnet resolver, ou só de bobeira com a aba aberta — não é
-     estar vendo.
-
-     Vale nos dois sentidos, e o segundo importa tanto quanto o primeiro: quem
-     não conta para pausar também não conta para impedir a sala de voltar. Sem
-     isso, uma pessoa sem fonte marcada como não-pronta seguraria o filme parado
-     para todo mundo sem ter nem como destravar.
-
-     A outra metade desta regra mora no cliente, onde há informação que aqui não
-     chega: chegar não é travar — ver `joinedIn` em SyncedVideo. */
-  const watching = v => !!v.sourceTag;
-  const everyoneReady = [...room.viewers.values()].filter(watching).every(v => v.ready);
-
-  if (!viewer.ready && watching(viewer) && room.status === 'playing') {
-    if (mayAutoPause(now)) {
-      room.position = positionAt(now);
-      room.status = 'paused';
-      room.pausedByStall = true;
-      room.autoPauses += 1;
-      stamp(now);
-    }
-    /* Refused: the room keeps running and this member is left behind, marked
-       buffering on the board. Their own player closes the gap by seeking. */
-  } else if (everyoneReady && room.pausedByStall && room.status === 'paused') {
-    room.status = 'playing';
-    room.pausedByStall = false;
-    room.resumedAt = now;
-    stamp(now);
-  }
-
   broadcastState();
-}
-
-/** Whether the room is still allowed to stop itself. See the damping above. */
-function mayAutoPause(now) {
-  if (room.autoPauses >= MAX_AUTO_PAUSES) return false;
-  return now - room.resumedAt >= STALL_COOLDOWN_MS;
 }
 
 /* ── who is in the room ───────────────────────────────────────────────────
@@ -397,9 +327,9 @@ function attach(session) {
     id: session.reviewer_id,
     name: session.name,
     dot: session.dot,
-    /* Ready until they say otherwise. The alternative — arriving unready —
-       would mean a member opening the tab mid-film pauses everyone else before
-       they have even chosen a source. */
+    /* Pronto até dizerem o contrário. Chegar marcado como carregando poria uma
+       roda no painel ao lado do nome de quem acabou de abrir a aba e ainda nem
+       escolheu de onde vai ver. */
     ready: true,
     sourceTag: null,
     streams: 1,
@@ -415,24 +345,15 @@ function attach(session) {
   return viewer;
 }
 
-function detach(reviewerId, now = Date.now()) {
+/* Sair não mexe no filme. Havia aqui uma retomada — se a sala estava presa na
+   roda de quem saiu, a roda ia embora com ele —, e ela existia porque a sala
+   se prendia. Não se prende mais: o que sai daqui é uma pessoa do painel. */
+function detach(reviewerId) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
   viewer.streams -= 1;
   if (viewer.streams > 0) return;
   room.viewers.delete(reviewerId);
-  /* Somebody leaving can be what unblocks the room: if the club was held on
-     their buffering wheel, the wheel left with them. */
-  /* A sala tem de continuar tendo gente — não se retoma uma sessão vazia — mas
-     quem julga a retomada é só quem tem filme aberto, a mesma regra do
-     `setReady`. Ninguém segurando é ninguém segurando. */
-  const holding = [...room.viewers.values()].filter(v => !!v.sourceTag);
-  if (room.pausedByStall && room.viewers.size && holding.every(v => v.ready)) {
-    room.status = 'playing';
-    room.pausedByStall = false;
-    room.resumedAt = now;
-    stamp(now);
-  }
   broadcastState();
 }
 
@@ -446,7 +367,6 @@ function snapshot(now = Date.now()) {
     status: room.status,
     position: positionAt(now),
     revision: room.revision,
-    pausedByStall: room.pausedByStall,
     link: room.link,
     /* The announcement, not the file. This snapshot is re-emitted on every
        mutation the room has — every play, every seek, every buffer report from
@@ -575,9 +495,6 @@ function reset() {
   room.position = 0;
   room.updatedAt = Date.now();
   room.revision = 0;
-  room.pausedByStall = false;
-  room.resumedAt = 0;
-  room.autoPauses = 0;
   room.link = null;
   room.subtitle = null;
   room.viewers.clear();
