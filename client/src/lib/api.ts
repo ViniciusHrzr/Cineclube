@@ -115,7 +115,7 @@ export type Notice = {
   criterion?: string;
 };
 
-/* ── o mural ──────────────────────────────────────────────────────────────
+/* ── o feed ───────────────────────────────────────────────────────────────
    O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
    tabelas de sempre — ver routes/feed.js —, então uma linha nunca sobrevive ao
    acontecimento que ela anuncia.
@@ -124,7 +124,7 @@ export type Notice = {
    têm marcados como opcionais. A alternativa é uma união discriminada, que aqui
    custaria quatro interfaces e um `switch` de tipo em cada leitura para
    descrever quatro formas que compartilham nove campos dos onze. */
-export type WallEvent = {
+export type FeedEvent = {
   id: string;
   kind: 'review' | 'comment' | 'vote' | 'queued';
   at: string;

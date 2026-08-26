@@ -24,7 +24,7 @@ import {
 import { Reel } from '@/components/bits';
 import { SignIn } from '@/screens/SignIn';
 import { cn } from '@/lib/utils';
-import { WallScreen } from '@/screens/Wall';
+import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
 import { ReviewsScreen } from '@/screens/Reviews';
@@ -32,16 +32,16 @@ import { PeopleScreen } from '@/screens/People';
 import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
-  /* ── o mural abre a sala ────────────────────────────────────────────────
+  /* ── o feed abre a sala ─────────────────────────────────────────────────
      Primeiro na fila e porta de entrada, e as duas coisas andam juntas: um
-     mural que não é a tela de chegada é um mural que ninguém lê. O clube
-     avalia em horas diferentes, e o que ele nunca teve foi um lugar que
-     dissesse "isto aconteceu enquanto você não estava".
+     feed que não é a tela de chegada é um feed que ninguém lê. O clube avalia
+     em horas diferentes, e o que ele nunca teve foi um lugar que dissesse
+     "isto aconteceu enquanto você não estava".
 
      Isto muda a porta de entrada, que era o catálogo desde o início. A troca é
      de uma linha — mover esta entrada para baixo de `catalog` e trocar o
-     `?? 'catalog'` logo abaixo. */
-  { id: 'wall', label: 'Mural' },
+     `?? 'feed'` logo abaixo. */
+  { id: 'feed', label: 'Feed' },
   /* ── uma rota que não é uma aba ─────────────────────────────────────────
      Avaliar não se escolhe: escolhe-se um filme, e avaliar é o que se faz com
      ele. Uma aba levava a uma tela vazia com uma busca dentro, que é pedir para
@@ -50,7 +50,7 @@ export const TABS = [
      Sai da barra, fica na tabela. `hidden` e não uma exclusão porque a rota
      precisa continuar existindo: `rateMovie` escreve `#rate`, e um endereço que
      a tabela não reconhece derruba o botão Voltar e o recarregar de volta para
-     o mural. Navegação e roteamento são duas listas que aqui coincidiam por
+     o feed. Navegação e roteamento são duas listas que aqui coincidiam por
      acidente. */
   { id: 'rate', label: 'Avaliar', hidden: true },
   { id: 'catalog', label: 'Catálogo' },
@@ -59,7 +59,14 @@ export const TABS = [
      evening: you pick the film, you watch it, you rate it. */
   { id: 'screening', label: 'Sessão' },
   { id: 'reviews', label: 'Avaliados' },
-  { id: 'people', label: 'Avaliadores' },
+  /* Pela mesma razão de `rate`, e com o mesmo mecanismo: já se chega aqui pelo
+     próprio rosto na marquise, que é onde a pessoa procura quando quer mexer no
+     próprio nome, na própria foto ou no próprio PIN. Uma aba ao lado disso era
+     a segunda porta para o mesmo cômodo.
+
+     Continua roteável: `#people` é um endereço que alguém pode ter guardado, e
+     um endereço que a tabela não reconhece cai no feed sem dizer por quê. */
+  { id: 'people', label: 'Avaliadores', hidden: true },
 ] as const;
 export type TabId = (typeof TABS)[number]['id'];
 
@@ -141,11 +148,11 @@ function tabFromHash(): TabId | null {
 }
 
 export default function App() {
-  /* O mural é onde a sala abre. Era o catálogo, e o catálogo continua sendo a
+  /* O feed é onde a sala abre. Era o catálogo, e o catálogo continua sendo a
      resposta para "o que a gente vê agora" — mas essa pergunta é feita uma vez
      por semana, e "o que aconteceu por aqui" é feita toda vez que alguém entra.
      Um link com uma seção dentro continua ganhando do padrão. */
-  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'wall');
+  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'feed');
   /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
   const [focusReview, setFocusReview] = useState<string | null>(() => routeFromHash().review);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
@@ -522,7 +529,7 @@ export default function App() {
             </div>
           ) : (
             <div key={tab} className="animate-frame-in">
-              {tab === 'wall' && <WallScreen />}
+              {tab === 'feed' && <FeedScreen />}
               {tab === 'rate' && (
                 <RateScreen pendingRate={pendingRate} onConsumedPending={() => setPendingRate(null)} />
               )}
@@ -583,7 +590,7 @@ function Marquee({
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         {/* The marquee is the way home, and home is the catalogue. */}
-        <a href="#wall" className="mr-auto flex items-baseline no-underline">
+        <a href="#feed" className="mr-auto flex items-baseline no-underline">
           <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
         </a>
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

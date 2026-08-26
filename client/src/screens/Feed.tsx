@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Bill, Blank, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
-import { api, fmt, initialsOf, reelColor, type WallEvent } from '@/lib/api';
+import { api, fmt, initialsOf, reelColor, type FeedEvent } from '@/lib/api';
 import { plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O MURAL
+   O FEED
+
+   Chamou-se Mural por um dia. O nome caiu por colidir: "wall" neste projeto já
+   é a parede de celuloide que fica atrás de tudo, e o servidor sempre disse
+   feed — `/api/feed`, routes/feed.js. Três nomes para duas coisas viravam dois
+   nomes para duas coisas.
 
    O clube tinha três coisas que produzem sinal social — comentário, curtida,
    aviso — e nenhuma que o mostrasse junto. O sino é privado: se a Beren avaliou
@@ -15,7 +20,7 @@ import { useClub } from '@/App';
    escrito: *o grupo é visível*.
 
    ── por que isto não é o feed de qualquer produto ───────────────────────
-   Porque a linha da avaliação carrega os onze critérios. Um mural que dissesse
+   Porque a linha da avaliação carrega os onze critérios. Um feed que dissesse
    "fulano avaliou Parasita — 8,5" seria intercambiável com qualquer app de
    filme; este diz onde a pessoa se entusiasmou e onde se decepcionou, na mesma
    linha, e é disso que sai conversa. A régua de células ao lado é a mesma que o
@@ -27,7 +32,7 @@ import { useClub } from '@/App';
    comentário é a conversa em cima dela: uma linha, sem pôster, com o filme dito
    por escrito.
 
-   Um mural em que tudo tem o mesmo tamanho é uma lista, e uma lista é lida do
+   Um feed em que tudo tem o mesmo tamanho é uma lista, e uma lista é lida do
    começo ao fim ou não é lida. Este é feito para ser varrido: o olho cai nas
    fichas e as linhas menores preenchem o entre.
 
@@ -40,12 +45,12 @@ import { useClub } from '@/App';
 
 /* De dois minutos, e só com a aba à vista — a mesma regra do sino, pelo mesmo
    motivo: o clube deixa isto aberto ao lado do Discord por horas. Mais lento
-   que o sino porque um aviso é sobre você e um mural é sobre todo mundo: chegar
-   dois minutos atrasado a um mural não custa nada. */
+   que o sino porque um aviso é sobre você e um feed é sobre todo mundo: chegar
+   dois minutos atrasado a um feed não custa nada. */
 const POLL_MS = 120_000;
 
 /* ── o dia como cabeçalho ─────────────────────────────────────────────────
-   Um mural sem quebra de dia é uma coluna de horas soltas, e "14:22" não diz
+   Um feed sem quebra de dia é uma coluna de horas soltas, e "14:22" não diz
    nada sem saber de quando. Hoje e ontem por extenso porque é assim que se fala
    deles; o resto por data, com o ano só quando não é este — um clube com dois
    anos de arquivo precisa da diferença, e um com dois meses não. */
@@ -73,14 +78,14 @@ function clockOf(iso: string) {
   return at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function WallScreen() {
+export function FeedScreen() {
   const club = useClub();
-  const [items, setItems] = useState<WallEvent[] | null>(null);
+  const [items, setItems] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const got = await api<{ items: WallEvent[] }>('/api/feed');
+      const got = await api<{ items: FeedEvent[] }>('/api/feed');
       setItems(got.items);
       setError(null);
     } catch (e) {
@@ -104,9 +109,9 @@ export function WallScreen() {
   if (error && !items) {
     return (
       <section>
-        <Bill title="Mural" />
+        <Bill title="Feed" />
         <div className="max-w-[60ch]">
-          <Fault detail={error}>Não foi possível carregar o mural.</Fault>
+          <Fault detail={error}>Não foi possível carregar o feed.</Fault>
         </div>
       </section>
     );
@@ -115,7 +120,7 @@ export function WallScreen() {
   if (!items) {
     return (
       <section>
-        <Bill title="Mural" note="carregando…" />
+        <Bill title="Feed" note="carregando…" />
         {/* No formato do que vai chegar, e não um spinner: a página não muda de
             forma quando o conteúdo pousa. */}
         <div className="flex flex-col gap-3">
@@ -137,7 +142,7 @@ export function WallScreen() {
   if (!items.length) {
     return (
       <section>
-        <Bill title="Mural" />
+        <Bill title="Feed" />
         <Blank title="O clube ainda não fez nada">
           Quando alguém avaliar um filme ou comentar uma ficha, aparece aqui — do mais recente para
           o mais antigo.
@@ -154,7 +159,7 @@ export function WallScreen() {
   return (
     <section>
       <Bill
-        title="Mural"
+        title="Feed"
         note={`${plural(items.length, 'acontecimento', 'acontecimentos')} no clube`}
       />
 
@@ -193,7 +198,7 @@ export function WallScreen() {
 }
 
 /* ── a ficha, que é o assunto ─────────────────────────────────────────────
-   A única linha do mural que ganha uma placa, e ela ganha porque é a única que
+   A única linha do feed que ganha uma placa, e ela ganha porque é a única que
    tem conteúdo próprio: uma nota, uma régua, dois critérios e, quando existe,
    o que a pessoa escreveu. As outras três são sobre esta.
 
@@ -201,10 +206,20 @@ export function WallScreen() {
    é um título clicável dentro de um cartão inerte, que faz a pessoa mirar em
    quatro palavras quando a placa inteira quer dizer a mesma coisa. Nada dentro
    é clicável, então não há controle dentro de controle. */
-function Rated({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
+function Rated({ e, onOpen }: { e: FeedEvent; onOpen: () => void }) {
   const club = useClub();
   const talk = club.comments.filter(c => c.reviewId === e.reviewId).length;
-  const votes = club.votes.filter(v => v.reviewId === e.reviewId).length;
+  /* ── concordar e discordar são dois números ─────────────────────────────
+     Eram um só, somados e desenhados sob um polegar para cima — então uma ficha
+     com três discordâncias anunciava "👍 3", que é o contrário do que
+     aconteceu. Um contador que junta as duas direções não está contando
+     reação, está contando barulho, e o ícone escolhia um lado pelos dois.
+
+     Separados e silenciosos no zero, a mesma regra do voto no arquivo: uma
+     ficha só com discordância mostra só o polegar para baixo. */
+  const cast = club.votes.filter(v => v.reviewId === e.reviewId);
+  const agree = cast.filter(v => v.value === 1).length;
+  const differ = cast.filter(v => v.value === -1).length;
   const clock = clockOf(e.at);
 
   return (
@@ -275,7 +290,7 @@ function Rated({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
             estão na memória desta aba desde o boot. Silencioso no zero — uma
             fileira de zeros embaixo de cada ficha conta que ninguém falou nada,
             que é ruído com formato de dado. */}
-        {talk || votes ? (
+        {talk || agree || differ ? (
           <span className="mt-2.5 flex items-center gap-4 text-ink-faint">
             {talk ? (
               <span className="flex items-center gap-1.5" title={plural(talk, 'resposta', 'respostas')}>
@@ -283,10 +298,22 @@ function Rated({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
                 <span className="q text-[11px] text-ink-dim">{talk}</span>
               </span>
             ) : null}
-            {votes ? (
-              <span className="flex items-center gap-1.5" title={plural(votes, 'voto em critério', 'votos em critérios')}>
+            {agree ? (
+              <span
+                className="flex items-center gap-1.5"
+                title={`${plural(agree, 'concordância', 'concordâncias')} com um critério desta ficha`}
+              >
                 <ThumbsUp className="h-3 w-3" strokeWidth={1.9} aria-hidden />
-                <span className="q text-[11px] text-ink-dim">{votes}</span>
+                <span className="q text-[11px] text-ink-dim">{agree}</span>
+              </span>
+            ) : null}
+            {differ ? (
+              <span
+                className="flex items-center gap-1.5"
+                title={`${plural(differ, 'discordância', 'discordâncias')} de um critério desta ficha`}
+              >
+                <ThumbsDown className="h-3 w-3" strokeWidth={1.9} aria-hidden />
+                <span className="q text-[11px] text-ink-dim">{differ}</span>
               </span>
             ) : null}
           </span>
@@ -298,12 +325,12 @@ function Rated({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
 
 /* ── a conversa em cima da ficha ──────────────────────────────────────────
    Uma linha, sem placa e sem pôster. É acontecimento real e não merece sumir,
-   mas dar a ela a mesma superfície da ficha faria o mural inteiro pesar igual —
-   e um mural que pesa igual é uma lista.
+   mas dar a ela a mesma superfície da ficha faria o feed inteiro pesar igual —
+   e um feed que pesa igual é uma lista.
 
-   O ícone à esquerda é a coluna que deixa o mural ser varrido: uma forma fixa
+   O ícone à esquerda é a coluna que deixa o feed ser varrido: uma forma fixa
    numa posição fixa, e o olho aprende a pular ou a parar sem ler. */
-function Aside({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
+function Aside({ e, onOpen }: { e: FeedEvent; onOpen: () => void }) {
   const club = useClub();
   const clock = clockOf(e.at);
 
@@ -339,7 +366,7 @@ function Aside({ e, onOpen }: { e: WallEvent; onOpen: () => void }) {
   );
 }
 
-/* "a ficha de Beren" e "a sua ficha". A segunda pessoa é o que faz o mural
+/* "a ficha de Beren" e "a sua ficha". A segunda pessoa é o que faz o feed
    parar de ser um boletim sobre estranhos: quando o acontecimento é sobre você,
    ele diz isso. */
 function Who({ name, me }: { name?: string; me?: boolean }) {
