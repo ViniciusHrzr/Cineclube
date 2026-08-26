@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
@@ -49,7 +49,21 @@ export function ReviewsScreen() {
      honesto quando a coisa apontada não está mais lá. */
   const wanted = club.focusReview;
   const { clearFocusReview } = club;
+  /* Dois estados, e separá-los é o conserto de um defeito real: a ficha chegava
+     por link, abria, e fechava sozinha dois segundos e meio depois.
+
+     `flash` é o brilho, e ele TEM de apagar. `arrived` é a chegada, e ela NÃO
+     pode apagar. Estavam na mesma variável, e a carta que contém a ficha — a
+     pessoa numa visão, o filme na outra — estava aberta por causa do brilho.
+     Quando o brilho apagava, a carta se fechava e levava a ficha junto.
+
+     `arrived` sobrevive porque não é um efeito visual: é a resposta a "esta
+     carta foi aberta?", e foi. A partir daí ela se comporta como qualquer carta
+     que alguém abriu à mão, inclusive podendo ser fechada. */
   const [flash, setFlash] = useState<string | null>(null);
+  const [arrived, setArrived] = useState<string | null>(null);
+  /** Rolagem e apagar do destaque. Ver a nota longa dentro do efeito. */
+  const timers = useRef<number[]>([]);
 
   useEffect(() => {
     if (!wanted) return;
@@ -62,24 +76,41 @@ export function ReviewsScreen() {
     // A ficha abre; a carta que a contém é aberta pela visão, que sabe se
     // agrupa por pessoa ou por filme.
     setOpenIds(prev => (prev.has(wanted) ? prev : new Set(prev).add(wanted)));
+    setArrived(wanted);
     setFlash(wanted);
     clearFocusReview();
 
+    /* ── por que estes temporizadores não moram no cleanup deste efeito ────
+       Porque este efeito apaga o próprio gatilho. `clearFocusReview()` acima
+       zera `club.focusReview`, que é `wanted`, que é dependência daqui — então
+       o React roda o cleanup deste efeito no instante seguinte a ele terminar.
+
+       Com os `clearTimeout` ali dentro, os dois temporizadores que acabaram de
+       ser agendados eram cancelados antes de disparar: a página não rolava e o
+       destaque não apagava. Guardados em ref e limpos só na desmontagem, eles
+       sobrevivem à limpeza do gatilho e continuam cancelando corretamente
+       quando a pessoa sai da aba. */
     const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const scroll = window.setTimeout(() => {
-      document.getElementById(`take-${wanted}`)?.scrollIntoView({
-        behavior: gentle ? 'auto' : 'smooth',
-        block: 'center',
-      });
-    }, 300);
-    // Longo o bastante para o olho encontrar depois de a rolagem terminar,
-    // curto o bastante para não virar um estado permanente da carta.
-    const off = window.setTimeout(() => setFlash(null), 2600);
-    return () => {
-      window.clearTimeout(scroll);
-      window.clearTimeout(off);
-    };
+    timers.current.push(
+      window.setTimeout(() => {
+        document.getElementById(`take-${wanted}`)?.scrollIntoView({
+          behavior: gentle ? 'auto' : 'smooth',
+          block: 'center',
+        });
+      }, 300),
+      // Longo o bastante para o olho encontrar depois de a rolagem terminar,
+      // curto o bastante para não virar um estado permanente da fileira.
+      window.setTimeout(() => setFlash(null), 2600)
+    );
   }, [wanted, club.reviews, clearFocusReview]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(window.clearTimeout);
+      pending.length = 0;
+    };
+  }, []);
   const [query, setQuery] = useState('');
 
   /* Title or person, in one field. This screen is the club's record and it is
@@ -179,6 +210,7 @@ export function ReviewsScreen() {
           desc={desc}
           openIds={openIds}
           lit={flash}
+          arrived={arrived}
           onToggle={toggle}
           onDelete={r => void remove(r)}
         />
@@ -188,6 +220,7 @@ export function ReviewsScreen() {
           desc={desc}
           openIds={openIds}
           lit={flash}
+          arrived={arrived}
           onToggle={toggle}
           onDelete={r => void remove(r)}
         />
@@ -874,6 +907,7 @@ function ByReviewer({
   desc,
   openIds,
   lit,
+  arrived,
   onToggle,
   onDelete,
 }: {
@@ -887,6 +921,9 @@ function ByReviewer({
   openIds: ReadonlySet<string>;
   /** A ficha que acabou de chegar por link, acesa por alguns segundos. */
   lit: string | null;
+  /* A mesma ficha, mas o valor que não apaga: é ele que abre a carta de quem a
+     assinou. Ver o comentário sobre `flash` e `arrived` lá em cima. */
+  arrived: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
@@ -905,6 +942,19 @@ function ByReviewer({
       else next.add(id);
       return next;
     });
+
+  /* Uma ficha que chegou por link abre a carta de quem a assinou, uma vez, do
+     mesmo jeito que um clique abriria — e a partir daí ela é uma carta aberta
+     como qualquer outra, que fecha quando alguém a fecha. O efeito só corre
+     quando `arrived` muda, então reabrir à força nunca acontece.
+
+     Isto também é o que faz o link continuar valendo depois de trocar de visão:
+     a outra montada com o mesmo `arrived` abre a carta certa lá também. */
+  useEffect(() => {
+    if (!arrived) return;
+    const who = reviews.find(r => r.id === arrived)?.reviewerId;
+    if (who) setOpen(prev => (prev.has(who) ? prev : new Set(prev).add(who)));
+  }, [arrived, reviews]);
 
   /* A search hides the people it did not match: a column of empty names is not
      an answer to "what did she rate". */
@@ -925,10 +975,11 @@ function ByReviewer({
            ask. Clearing the field hands the cards back to whatever you had
            opened by hand.
 
-           Um link faz o mesmo com a carta de quem assinou a ficha pedida, pelo
-           mesmo motivo: levar a uma fileira dentro de uma gaveta fechada é não
-           levar a lugar nenhum. */
-        const expanded = filtering || open.has(p.id) || items.some(r => r.id === lit);
+           Um link também abre a carta de quem assinou a ficha — mas por
+           `setOpen` no efeito acima, e não por uma condição aqui. A condição foi
+           o defeito: ela dependia do destaque, o destaque apaga em dois segundos
+           e meio, e a carta se fechava sozinha levando a ficha junto. */
+        const expanded = filtering || open.has(p.id);
         /* Nothing to open on someone who has not rated anything: a chevron that
            unfolds an empty drawer is a promise the card cannot keep. The header
            already says "nenhuma avaliação". */
@@ -1015,6 +1066,7 @@ function ByMovie({
   desc,
   openIds,
   lit,
+  arrived,
   onToggle,
   onDelete,
 }: {
@@ -1026,6 +1078,8 @@ function ByMovie({
   openIds: ReadonlySet<string>;
   /** A ficha que acabou de chegar por link, acesa por alguns segundos. */
   lit: string | null;
+  /** A mesma ficha, no valor que não apaga: abre a carta do filme. */
+  arrived: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
@@ -1046,6 +1100,15 @@ function ByMovie({
       else next.add(movieId);
       return next;
     });
+  /* O par do efeito na outra visão: uma ficha que chegou por link abre a carta
+     do filme dela, uma vez, e depois disso a carta é uma carta aberta como
+     qualquer outra. Ver o comentário sobre `flash` e `arrived` na tela. */
+  useEffect(() => {
+    if (!arrived) return;
+    const film = reviews.find(r => r.id === arrived)?.movieId;
+    if (film != null) setOpen(prev => (prev.has(film) ? prev : new Set(prev).add(film)));
+  }, [arrived, reviews]);
+
   /* Grouped by film and by film alone. The club watches together on Discord but
      rates whenever each person gets to it, so two people rating the same movie a
      week apart are still the same conversation — keying this by date used to
@@ -1087,10 +1150,10 @@ function ByMovie({
            Two levels, and they mean different things. Opening the film asks
            who; opening a person asks what they gave each criterion.
 
-           E a carta que contém a ficha pedida por link abre sozinha: sem isso o
-           link levaria a uma fileira dentro de uma gaveta fechada, que é o
-           mesmo que não levar a lugar nenhum. */
-        const expanded = open.has(head.movieId) || items.some(r => r.id === lit);
+           A carta de uma ficha pedida por link também abre — pelo efeito acima,
+           não por uma condição aqui. A condição foi o defeito: dependia do
+           destaque, que apaga sozinho, e a carta fechava junto com ele. */
+        const expanded = open.has(head.movieId);
 
         return (
           /* Here the card is the film and every take on it — the group is the
