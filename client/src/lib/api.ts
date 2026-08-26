@@ -145,6 +145,10 @@ export type FeedEvent = {
   moviePoster: string | null;
   /** Ausente só na fila: um filme entra nela sem ninguém ter avaliado nada. */
   reviewId?: string;
+  /* Só em comentário: o texto de que a linha fala, para o clique cair nele e não
+     na ficha inteira — e o pai, quando o texto é uma resposta a outro. */
+  commentId?: string | null;
+  parentId?: string | null;
   /** De quem é a ficha em que se comentou ou votou. */
   owner?: { id: string; name: string };
   /** Só em avaliação. */

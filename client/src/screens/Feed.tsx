@@ -180,13 +180,24 @@ export function FeedScreen() {
                   `reviewId` sempre existe agora que só avaliação e comentário
                   chegam aqui, mas a queda para o pôster fica — é uma linha, e é
                   ela que impede uma tela em branco se o servidor voltar a
-                  mandar um tipo que não aponta para ficha nenhuma. */}
+                  mandar um tipo que não aponta para ficha nenhuma.
+
+                  A linha de conversa leva ao TEXTO, e não só à ficha: o segundo
+                  argumento é o que o sino já mandava e o feed não mandava. Sem
+                  ele, clicar numa resposta abria a avaliação certa e a resposta
+                  continuava recolhida atrás do "ver N respostas" do comentário
+                  que ela responde — o feed anunciava um texto e entregava uma
+                  gaveta fechada por cima dele. Com ele, a gaveta do pai abre, a
+                  lista cresce até alcançar o texto, a página rola e ele acende
+                  (ver `arrived` em Reviews). */}
               {e.kind === 'review' ? (
                 <Rated e={e} onOpen={() => club.goReview(e.reviewId!)} />
               ) : (
                 <Aside
                   e={e}
-                  onOpen={() => (e.reviewId ? club.goReview(e.reviewId) : club.openSheet(e.movieId))}
+                  onOpen={() =>
+                    e.reviewId ? club.goReview(e.reviewId, e.commentId) : club.openSheet(e.movieId)
+                  }
                 />
               )}
             </div>
@@ -352,7 +363,12 @@ function Aside({ e, onOpen }: { e: FeedEvent; onOpen: () => void }) {
             demais para valer uma viagem pela rede. */}
         <span className="block text-[12.5px] leading-snug text-ink-dim">
           <span className="font-display uppercase tracking-[0.08em] text-ink">{e.actor.name}</span>{' '}
-          comentou a ficha de <Who name={e.owner?.name} me={e.owner?.id === club.me.id} /> em{' '}
+          {/* Responder é outro gesto que comentar, e a linha diz qual foi: um
+              texto pendurado em outro texto anunciado como "comentou a ficha"
+              faz quem chega procurar, na conversa, um comentário de primeiro
+              nível que não existe. */}
+          {e.parentId ? 'respondeu um comentário na ficha de ' : 'comentou a ficha de '}
+          <Who name={e.owner?.name} me={e.owner?.id === club.me.id} /> em{' '}
           <span className="text-ink transition-colors group-hover:text-beam">{e.movieTitle}</span>
         </span>
         {e.excerpt ? (

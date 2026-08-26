@@ -65,7 +65,7 @@ const recentReviews = db.prepare(`
 `);
 
 const recentComments = db.prepare(`
-  SELECT c.id, c.created_at, c.body,
+  SELECT c.id, c.created_at, c.body, c.parent_id,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot,
          rv.id AS review_id, rv.movie_id, rv.movie_title, rv.movie_poster,
          o.name AS owner_name, o.id AS owner_id
@@ -138,6 +138,14 @@ router.get('/', wrap(async (req, res) => {
     });
   }
 
+  /* `commentId` é o que faz a linha levar ao TEXTO e não só à ficha, e é o mesmo
+     campo que o sino carrega — ver routes/notifications.js. Sem ele, uma linha
+     sobre uma resposta abria a avaliação certa e parava ali: a resposta mora
+     recolhida atrás do "ver N respostas" do comentário que ela responde, então o
+     feed anunciava um texto e entregava uma gaveta fechada por cima dele.
+
+     `parentId` viaja junto porque a tela precisa saber que aquilo é resposta
+     para dizê-lo na frase; para o link em si o id do próprio texto basta. */
   for (const row of comments) {
     items.push({
       id: `c:${row.id}`,
@@ -148,6 +156,8 @@ router.get('/', wrap(async (req, res) => {
       movieTitle: row.movie_title,
       moviePoster: row.movie_poster,
       reviewId: row.review_id,
+      commentId: row.id,
+      parentId: row.parent_id || null,
       owner: { id: row.owner_id, name: row.owner_name },
       excerpt: excerpt(row.body)
     });
