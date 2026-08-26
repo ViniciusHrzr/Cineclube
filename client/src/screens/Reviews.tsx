@@ -390,26 +390,21 @@ function Breakdown({ r, comment }: { r: Review; comment?: string }) {
             '--rows-3': Math.ceil(rows.length / 3),
           } as React.CSSProperties
         }
-        /* Two columns from `md` and not from `sm`. The vote control added ~66px
-           to every row, and at 640px two of these no longer fit inside the
-           card's padding — the grid did not wrap, it overflowed, which on a
-           breakdown means the tally of the right-hand column sitting off the
-           edge of the drawer. One column is taller and correct; the second
-           arrives when there is room for it. */
+        /* A segunda coluna voltou para `sm`. Ela tinha subido para `md` porque
+           o controle de voto somava ~66px a cada linha e a 640px duas delas não
+           cabiam mais dentro da carta — a grade não quebrava, transbordava.
+           Sem o controle, a linha é nome, régua e número, e cabem duas cedo. */
         className={cn(
           'grid grid-flow-col auto-cols-fr justify-items-center gap-x-4 gap-y-0.5',
           'grid-rows-[repeat(var(--rows-1),auto)]',
-          'md:grid-rows-[repeat(var(--rows-2),auto)]',
+          'sm:grid-rows-[repeat(var(--rows-2),auto)]',
           'lg:grid-rows-[repeat(var(--rows-3),auto)]'
         )}
       >
         {rows.map(b => (
-          /* The vote column is fixed-width and always present, so a criterion
-             nobody has voted on and one with three votes occupy the same
-             ground and the numbers down the grid stay in register. */
           <div
             key={b.key}
-            className="grid w-fit grid-cols-[minmax(0,104px)_52px_30px_66px] items-center gap-1.5 py-1"
+            className="grid w-fit grid-cols-[minmax(0,104px)_52px_30px] items-center gap-1.5 py-1"
           >
             {/* The genre pair used to be the bright row because it weighed
                 double. It still reads brighter, for what is now the honest
@@ -421,7 +416,6 @@ function Breakdown({ r, comment }: { r: Review; comment?: string }) {
             </span>
             <Strip value={b.value} cells={10} className="h-[5px]" />
             <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
-            <CriterionVotes review={r} criterionKey={b.key} label={b.name} />
           </div>
         ))}
       </div>
@@ -436,39 +430,39 @@ function Breakdown({ r, comment }: { r: Review; comment?: string }) {
   );
 }
 
-/* ── concordar com uma nota, e não com uma pessoa ─────────────────────────
-   Concordar com alguém inteiro é raro. Concordar com o 9 dela em fotografia e
-   achar o 4 em roteiro absurdo é o que acontece de verdade, e é por isso que o
-   voto é por critério.
+/* ── concordar com a ficha de alguém ──────────────────────────────────────
+   O voto era por critério, e o argumento era bom no papel: concordar com uma
+   pessoa inteira é raro, concordar com o 9 dela em fotografia e achar o 4 em
+   roteiro absurdo é o que acontece de verdade.
 
-   Três decisões que o mundo visual decide por nós:
+   Na tela, virou outra coisa. Onze polegares por ficha por pessoa não é uma
+   opinião, é um formulário — e o detalhamento, que existe para se ler onze
+   números de uma vez, passou a ter uma coluna de controles ao lado de cada um
+   deles, larga o bastante para expulsar a segunda coluna da grade em telas
+   pequenas. O que o clube diz de verdade é sobre o take: "boa avaliação",
+   "achei alto demais". É um voto.
 
-   · Sem verde e sem vermelho. A regra das três cores vale aqui como em todo o
-     resto — o que separa concordar de discordar é a direção do ícone e a
-     posição, e o que marca o seu voto é ciano, que é a cor de estado neste
-     sistema. Um placar que pinta de verde quando fica positivo estaria pintando
-     um limiar, que é a outra coisa que este mundo não faz.
-   · Contador só quando existe. Um zero em cada critério de cada ficha é uma
-     coluna de zeros dizendo que ninguém votou em nada, que é ruído com formato
-     de dado.
+   Com um só por ficha, os botões podem ter palavras. Os onze eram mudos porque
+   onze rótulos não caberiam em lugar nenhum — este cabe, e "Concordo" é mais
+   claro do que um polegar que a pessoa precisa interpretar.
+
+   O resto das regras não mudou:
+
+   · Sem verde e sem vermelho. O que separa concordar de discordar é a palavra e
+     a direção do ícone; o que marca o SEU voto é latão, a cor de estado deste
+     sistema. Um placar que fica verde quando é positivo estaria pintando um
+     limiar, que é a outra coisa que este mundo não faz.
+   · Contador só quando existe. Um zero em cada lado de cada ficha é ruído com
+     formato de dado.
    · Na própria ficha os botões somem e só o placar fica. Não é regra moral, é
      aritmética: um placar em que o autor pode se somar não mede mais
      concordância do clube. O servidor recusa de qualquer jeito; o que a tela
      faz é não oferecer o que vai ser negado. */
-function CriterionVotes({
-  review,
-  criterionKey,
-  label,
-}: {
-  review: Review;
-  criterionKey: string;
-  /** O nome do critério, para quem lê a tela em vez de olhar para ela. */
-  label: string;
-}) {
+function TakeVotes({ review, className }: { review: Review; className?: string }) {
   const club = useClub();
   const [busy, setBusy] = useState(false);
 
-  const cast = club.votes.filter(v => v.reviewId === review.id && v.key === criterionKey);
+  const cast = club.votes.filter(v => v.reviewId === review.id);
   const up = cast.filter(v => v.value === 1).length;
   const down = cast.filter(v => v.value === -1).length;
   const mine = cast.find(v => v.reviewerId === club.me.id)?.value ?? 0;
@@ -480,7 +474,7 @@ function CriterionVotes({
     try {
       // Pressing the vote you already cast takes it back — the same key does
       // both, which is the only way a toggle can be undone without a second one.
-      await club.voteOn(review.id, criterionKey, mine === value ? 0 : value);
+      await club.voteOn(review.id, mine === value ? 0 : value);
     } catch (e) {
       club.fault('Não foi possível registrar o voto: ' + (e as Error).message);
     } finally {
@@ -488,64 +482,72 @@ function CriterionVotes({
     }
   }
 
-  const tally = (n: number) =>
-    n > 0 ? <span className="q text-[10.5px] leading-none text-ink-dim">{n}</span> : null;
-
-  /* Na própria ficha: o placar, sem os controles. Uma linha inteira em branco
-     seria o autor não sabendo que alguém reagiu ao que ele escreveu. */
+  /* Na própria ficha: o placar, sem os controles. Silencioso enquanto ninguém
+     reagiu — e presente no instante em que alguém reage, porque o autor tem de
+     ficar sabendo. */
   if (own) {
-    // The column is held even when it is empty, so the numbers to its left stay
-    // in register down the grid.
-    if (!up && !down) return <span aria-hidden />;
+    if (!up && !down) return null;
     return (
-      <span className="flex items-center gap-2 text-ink-faint">
+      <div className={cn('flex flex-wrap items-center gap-4 text-ink-faint', className)}>
         {up ? (
-          <span className="flex items-center gap-1" title={`${up} concordam com ${label}`}>
+          <span className="flex items-center gap-1.5">
             <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
-            {tally(up)}
+            <span className="text-[12px] text-ink-dim">
+              {up === 1 ? '1 concorda' : `${up} concordam`}
+            </span>
           </span>
         ) : null}
         {down ? (
-          <span className="flex items-center gap-1" title={`${down} discordam de ${label}`}>
+          <span className="flex items-center gap-1.5">
             <ThumbsDown className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
-            {tally(down)}
+            <span className="text-[12px] text-ink-dim">
+              {down === 1 ? '1 discorda' : `${down} discordam`}
+            </span>
           </span>
         ) : null}
-      </span>
+      </div>
     );
   }
 
   const key = (side: 1 | -1, n: number) => {
     const on = mine === side;
     const Icon = side === 1 ? ThumbsUp : ThumbsDown;
-    const verb = side === 1 ? 'Concordar com' : 'Discordar de';
+    const word = side === 1 ? 'Concordo' : 'Discordo';
     return (
       <button
         type="button"
         disabled={busy}
         aria-pressed={on}
-        aria-label={`${verb} ${label} na avaliação de ${review.reviewerName}${n ? `, ${n} até agora` : ''}`}
+        aria-label={
+          `${on ? 'Tirar seu voto: ' : ''}${word} com a avaliação de ${review.reviewerName}` +
+          (n ? `, ${n} até agora` : '')
+        }
         onClick={() => void press(side)}
-        /* 24px tall and at least 24 wide even with no tally beside it. The icon
-           is 14px; the rest is the target, because a 16px hit area is a control
-           that only works with a mouse and this app is also used on a phone. */
+        /* Altura de 28px e área de toque inteira: este é um controle por ficha
+           agora, não um de onze espremidos numa linha, e um alvo de mão vale
+           mais do que os poucos pixels que ele custa. */
         className={cn(
-          'flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-cell transition-colors duration-150',
+          'flex h-7 items-center gap-1.5 rounded-cell px-2 ring-1 transition-colors duration-150',
           'disabled:opacity-40',
-          on ? 'text-dye-brass' : 'text-ink-faint hover:text-beam'
+          on
+            ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
+            : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
         )}
       >
         <Icon className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
-        {tally(n)}
+        <span className="font-display text-[11.5px] uppercase leading-none tracking-[0.1em]">
+          {word}
+        </span>
+        {n ? <span className="q text-[10.5px] leading-none opacity-80">{n}</span> : null}
       </button>
     );
   };
 
   return (
-    <span className="flex items-center gap-0.5">
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
       {key(1, up)}
       {key(-1, down)}
-    </span>
+    </div>
   );
 }
 
@@ -1065,6 +1067,10 @@ function Take({
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
+          {/* Logo abaixo do detalhamento e acima da conversa, que é a ordem em
+              que a coisa acontece: leem-se as notas, reage-se a elas, e quem
+              tem mais a dizer do que um polegar desce e escreve. */}
+          <TakeVotes review={r} className="mt-3" />
           <Conversation review={r} />
           <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>

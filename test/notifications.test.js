@@ -85,8 +85,8 @@ const seen = who => req('POST', '/api/notifications/seen', {}, who.cookie);
 
 const comment = (take, body, who) =>
   req('POST', `/api/social/reviews/${take.id}/comments`, { body }, who.cookie);
-const vote = (take, key, value, who) =>
-  req('PUT', `/api/social/reviews/${take.id}/criteria/${key}/vote`, { value }, who.cookie);
+const vote = (take, value, who) =>
+  req('PUT', `/api/social/reviews/${take.id}/vote`, { value }, who.cookie);
 const like = (c, liked, who) =>
   req('PUT', `/api/social/comments/${c.id}/like`, { liked }, who.cookie);
 
@@ -108,43 +108,43 @@ test('um comentário na minha ficha vira aviso, com trecho do que foi dito', asy
   assert.equal(item.excerpt, 'teu 7 em roteiro é generoso');
 });
 
-test('um voto numa nota minha vira aviso, e diz o critério pelo nome', async () => {
+test('um voto na minha ficha vira aviso, e diz o filme', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await vote(take, 'fotografia', 1, reader);
+  await vote(take, 1, reader);
 
   const { body } = await feed(author);
   assert.equal(body.items.length, 1);
   assert.equal(body.items[0].kind, 'vote');
-  assert.equal(body.items[0].criterion, 'Fotografia');
   assert.equal(body.items[0].value, 1);
-  assert.match(body.items[0].text, /concordou com seu Fotografia/);
+  assert.match(body.items[0].text, /concordou com sua avaliação de/);
 });
 
 test('discordar diz discordou, e não concordou com sinal trocado', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await vote(take, 'som', -1, reader);
+  await vote(take, -1, reader);
 
   const { body } = await feed(author);
-  assert.match(body.items[0].text, /discordou do seu Som/);
+  assert.match(body.items[0].text, /discordou da sua avaliação de/);
 });
 
-test('o critério é nomeado pelo gênero da ficha, não por uma tabela fixa', async () => {
-  // 'atuacoes' numa animação chama-se Vozes; o aviso tem de dizer o que a
-  // pessoa viu na própria ficha.
+/* Um por pessoa por ficha. Quando o voto era por critério, a mesma pessoa
+   podia encher o sino com onze avisos sobre a mesma avaliação — e o que ela
+   estava dizendo era uma coisa só. */
+test('a mesma pessoa votando de novo não vira um segundo aviso', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
-  const m = { ...movie(), genre: 'Animação' };
-  const take = (await req('POST', '/api/reviews', {
-    movie: m, scores: scoresFor('Animação', 8)
-  }, author.cookie)).body;
+  const take = await newTake(author);
 
-  await vote(take, 'vozes', 1, reader);
+  await vote(take, 1, reader);
+  await vote(take, -1, reader);
+
   const { body } = await feed(author);
-  assert.equal(body.items[0].criterion, 'Vozes');
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].value, -1);
 });
 
 test('curtir meu comentário vira aviso, mesmo na ficha de outra pessoa', async () => {
@@ -286,10 +286,10 @@ test('um evento desfeito some do feed, porque não há cópia dele', async () =>
   const reader = await newReviewer();
   const take = await newTake(author);
 
-  await vote(take, 'direcao', 1, reader);
+  await vote(take, 1, reader);
   assert.equal((await feed(author)).body.items.length, 1);
 
-  await vote(take, 'direcao', 0, reader);
+  await vote(take, 0, reader);
   assert.equal((await feed(author)).body.items.length, 0, 'o aviso sobreviveu ao voto retirado');
 });
 
@@ -312,7 +312,7 @@ test('tudo é novo até a primeira vez que o sino é aberto', async () => {
   const b = await newReviewer();
   const take = await newTake(author);
   await comment(take, 'primeiro', a);
-  await vote(take, 'montagem', 1, b);
+  await vote(take, 1, b);
 
   const before = await feed(author);
   assert.equal(before.body.items.length, 2);
@@ -377,7 +377,7 @@ test('limpar esvazia a lista e zera a conta', async () => {
   const b = await newReviewer();
   const take = await newTake(author);
   await comment(take, 'um', a);
-  await vote(take, 'direcao', 1, b);
+  await vote(take, 1, b);
   assert.equal((await feed(author)).body.items.length, 2);
 
   assert.equal((await clear(author)).status, 200);
@@ -391,7 +391,7 @@ test('limpar não apaga o comentário nem o voto — só a projeção deles', as
   const reader = await newReviewer();
   const take = await newTake(author);
   const c = (await comment(take, 'isto tem de sobreviver', reader)).body;
-  await vote(take, 'som', 1, reader);
+  await vote(take, 1, reader);
 
   await clear(author);
 

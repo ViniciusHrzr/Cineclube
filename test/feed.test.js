@@ -123,12 +123,15 @@ test('um comentário vira linha, e diz de quem é a ficha', async () => {
    originou a discussão embaixo de quarenta linhas sobre ela. Estes três testes
    são o que impede o mural de voltar a se afogar. */
 
-test('voto em critério não vira linha — onze por ficha afogariam a ficha', async () => {
+/* O voto continua fora do mural mesmo agora que é um por ficha e não onze. O
+   motivo de origem era proporção, e ele encolheu; o que sobra é outro e basta:
+   concordar é uma reação, e o mural é sobre o que o clube FEZ — avaliou,
+   escreveu. A concordância aparece contada na própria linha da ficha. */
+test('voto não vira linha do mural — é reação, e ela aparece na ficha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('PUT', `/api/social/reviews/${take.id}/criteria/fotografia/vote`, { value: 1 }, reader.cookie);
-  await req('PUT', `/api/social/reviews/${take.id}/criteria/som/vote`, { value: -1 }, reader.cookie);
+  await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 }, reader.cookie);
 
   const { body } = await feed();
   assert.ok(!kindsOf(body.items).includes('vote'), 'o voto virou linha');
@@ -160,7 +163,7 @@ test('o mural carrega exatamente dois tipos de linha', async () => {
   const reader = await newReviewer();
   const take = await newTake(author);
   await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, reader.cookie);
-  await req('PUT', `/api/social/reviews/${take.id}/criteria/direcao/vote`, { value: 1 }, reader.cookie);
+  await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 }, reader.cookie);
   await req('POST', '/api/watchlist', { movie: movie() }, reader.cookie);
 
   const { body } = await feed();

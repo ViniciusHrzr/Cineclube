@@ -163,15 +163,36 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS comment_likes_comment ON comment_likes(comment_id);
 
-    /* ── e o voto em uma nota isolada ─────────────────────────────────────
-       Concordar com uma pessoa inteira é raro; concordar com o 9 dela em
-       fotografia e achar o 4 em roteiro absurdo é o que acontece de verdade. O
-       voto é por critério por isso.
+    /* ── concordar com a ficha de alguém ──────────────────────────────────
+       O voto era por critério, e o argumento era bom no papel: concordar com
+       uma pessoa inteira é raro, concordar com o 9 dela em fotografia e achar o
+       4 em roteiro absurdo é o que acontece de verdade.
 
-       A chave primária é (avaliação, critério, quem votou), então uma pessoa
-       tem no máximo um voto em cada nota e trocar de ideia é um UPDATE, nunca
-       uma segunda linha. A coluna value é +1 ou -1 e nunca 0 — tirar o voto
-       apaga a linha, que é a diferença entre "não votei" e "votei neutro". */
+       Só que onze polegares por ficha por pessoa não é uma opinião, é um
+       formulário. Com seis membros, uma noite de discussão gerava dezenas de
+       votos sobre a mesma ficha — o mural teve de expulsá-los para não afogar a
+       avaliação que os originou — e o detalhamento virou uma grade com uma
+       coluna de controles ao lado de cada nota. O que o clube fazia de verdade
+       era concordar ou discordar do TAKE: "boa avaliação", "achei alto demais".
+
+       Então é um voto por (ficha, quem votou). A coluna value é +1 ou -1 e
+       nunca 0 — tirar o voto apaga a linha, que é a diferença entre "não votei"
+       e "votei neutro" —, e trocar de ideia é um UPDATE e nunca uma segunda
+       linha.
+
+       criterion_votes fica abaixo, sem ninguém lendo. É o fóssil do desenho
+       anterior: as linhas foram dobradas para cá na migração, e apagar a tabela
+       destruiria o único registro de quem concordou com o quê, por um espaço
+       que num banco deste tamanho não existe como problema. */
+    CREATE TABLE IF NOT EXISTS review_votes (
+      review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      value INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (review_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS review_votes_review ON review_votes(review_id);
+
     CREATE TABLE IF NOT EXISTS criterion_votes (
       review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
       criterion_key TEXT NOT NULL,
@@ -397,6 +418,39 @@ async function migrate() {
         sql: 'UPDATE watchlist SET position = ? WHERE movie_id = ?',
         args: [i, row.movie_id],
       })));
+    }
+  }
+
+  /* ── os onze polegares viram um ──────────────────────────────────────────
+     O voto deixou de ser por critério e passou a ser pela ficha inteira, e o
+     que já estava gravado não pode simplesmente sumir: são as únicas
+     concordâncias que o clube já registrou.
+
+     Cada pessoa é dobrada por ficha pela soma dos votos dela ali. Quem
+     concordou com cinco critérios e discordou de dois concordou com a ficha;
+     quem fez o contrário, discordou. Empate cai fora, e essa é a única perda
+     honesta desta migração: um polegar não sabe dizer "metade sim, metade não",
+     e inventar um lado para quem estava dividido seria pior do que não ter o
+     voto. A linha continua em criterion_votes de qualquer forma.
+
+     Roda uma vez: com a tabela nova já tendo qualquer linha, não há o que
+     dobrar. Um clube que nunca votou em critério nenhum também não paga nada
+     por isto além de dois SELECTs no boot. */
+  const { n: folded } = await prepare('SELECT COUNT(*) AS n FROM review_votes').get();
+  if (!folded) {
+    const rolled = await prepare(`
+      SELECT review_id, reviewer_id, SUM(value) AS total, MIN(created_at) AS since
+      FROM criterion_votes
+      GROUP BY review_id, reviewer_id
+      HAVING SUM(value) <> 0
+    `).all();
+    if (rolled.length) {
+      await batch(rolled.map(row => ({
+        sql: `INSERT INTO review_votes (review_id, reviewer_id, value, created_at)
+              VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        args: [row.review_id, row.reviewer_id, row.total > 0 ? 1 : -1, row.since],
+      })));
+      console.log(`[db] ${rolled.length} voto(s) em critério dobrados em voto de ficha`);
     }
   }
 

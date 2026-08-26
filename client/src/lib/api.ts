@@ -87,10 +87,12 @@ export type ReviewComment = {
   createdAt: string;
 };
 
-/** Um voto de uma pessoa em uma nota. +1 ou −1; não votar é não existir. */
-export type CriterionVote = {
+/* Um voto de uma pessoa na ficha de outra. +1 ou −1; não votar é não existir.
+
+   Era por critério, com uma `key` aqui dentro. Onze polegares por ficha por
+   pessoa não é uma opinião, é um formulário — ver a nota em db.js. */
+export type ReviewVote = {
   reviewId: string;
-  key: string;
   reviewerId: string;
   value: 1 | -1;
 };
@@ -121,9 +123,8 @@ export type Notice = {
   text: string;
   /** Um pedaço do que foi escrito, em comentário e curtida. */
   excerpt?: string;
-  /** +1 ou −1, só em voto. */
+  /** +1 ou −1, só em voto — é o que decide a direção do polegar no painel. */
   value?: number;
-  criterion?: string;
 };
 
 /* ── o feed ───────────────────────────────────────────────────────────────
@@ -177,7 +178,7 @@ export const notifications = {
 
 export const social = {
   all: () =>
-    api<{ comments: ReviewComment[]; votes: CriterionVote[]; commentLikes: CommentLike[] }>(
+    api<{ comments: ReviewComment[]; votes: ReviewVote[]; commentLikes: CommentLike[] }>(
       '/api/social'
     ),
   comment: (reviewId: string, body: string, parentId?: string | null) =>
@@ -190,8 +191,8 @@ export const social = {
       body: JSON.stringify({ liked }),
     }),
   /** 0 tira o voto. Devolve o voto gravado, ou null quando foi retirado. */
-  vote: (reviewId: string, key: string, value: 1 | -1 | 0) =>
-    api<{ vote: CriterionVote | null }>(`/api/social/reviews/${reviewId}/criteria/${key}/vote`, {
+  vote: (reviewId: string, value: 1 | -1 | 0) =>
+    api<{ vote: ReviewVote | null }>(`/api/social/reviews/${reviewId}/vote`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),

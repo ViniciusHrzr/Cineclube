@@ -393,21 +393,24 @@ test('curtir um comentário que não existe responde 404', async () => {
   );
 });
 
-/* ── votos em um critério ────────────────────────────────────────────── */
+/* ── o voto na ficha ─────────────────────────────────────────────────────
+   Era por critério — onze polegares por ficha por pessoa — e virou um por
+   ficha. O que o clube diz de verdade é sobre o take: "boa avaliação", "achei
+   alto demais". Ver a nota em db.js. */
 
-const vote = (take, key, value, who) =>
-  req('PUT', `/api/social/reviews/${take.id}/criteria/${key}/vote`, { value }, who.cookie);
+const vote = (take, value, who) =>
+  req('PUT', `/api/social/reviews/${take.id}/vote`, { value }, who.cookie);
 
-test('um voto vale por critério, e trocar de ideia não vira uma segunda linha', async () => {
+test('um voto vale por ficha, e trocar de ideia não vira uma segunda linha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
 
-  assert.equal((await vote(take, 'fotografia', 1, reader)).status, 200);
-  assert.equal((await vote(take, 'fotografia', -1, reader)).status, 200);
+  assert.equal((await vote(take, 1, reader)).status, 200);
+  assert.equal((await vote(take, -1, reader)).status, 200);
 
   const mine = (await social()).body.votes.filter(
-    v => v.reviewId === take.id && v.key === 'fotografia' && v.reviewerId === reader.id
+    v => v.reviewId === take.id && v.reviewerId === reader.id
   );
   assert.equal(mine.length, 1, 'trocar o voto criou uma linha nova');
   assert.equal(mine[0].value, -1);
@@ -418,23 +421,23 @@ test('votar zero tira o voto em vez de gravar um neutro', async () => {
   const reader = await newReviewer();
   const take = await newTake(author);
 
-  await vote(take, 'som', 1, reader);
-  const cleared = await vote(take, 'som', 0, reader);
+  await vote(take, 1, reader);
+  const cleared = await vote(take, 0, reader);
   assert.equal(cleared.status, 200);
   assert.equal(cleared.body.vote, null);
   assert.equal((await social()).body.votes.filter(v => v.reviewId === take.id).length, 0);
 });
 
-test('duas pessoas votam no mesmo critério sem se sobrescrever', async () => {
+test('duas pessoas votam na mesma ficha sem se sobrescrever', async () => {
   const author = await newReviewer();
   const a = await newReviewer();
   const b = await newReviewer();
   const take = await newTake(author);
 
-  await vote(take, 'direcao', 1, a);
-  await vote(take, 'direcao', -1, b);
+  await vote(take, 1, a);
+  await vote(take, -1, b);
 
-  const cast = (await social()).body.votes.filter(v => v.reviewId === take.id && v.key === 'direcao');
+  const cast = (await social()).body.votes.filter(v => v.reviewId === take.id);
   assert.equal(cast.length, 2);
   assert.equal(cast.reduce((sum, v) => sum + v.value, 0), 0);
 });
@@ -442,18 +445,9 @@ test('duas pessoas votam no mesmo critério sem se sobrescrever', async () => {
 test('ninguém vota na própria avaliação', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
-  const refused = await vote(take, 'direcao', 1, author);
+  const refused = await vote(take, 1, author);
   assert.equal(refused.status, 403);
   assert.equal((await social()).body.votes.filter(v => v.reviewId === take.id).length, 0);
-});
-
-test('um critério que a avaliação não respondeu não aceita voto', async () => {
-  const author = await newReviewer();
-  const reader = await newReviewer();
-  const take = await newTake(author);
-  // 'quimica' é de Romance; este take é de Terror e não tem esse critério.
-  assert.equal((await vote(take, 'quimica', 1, reader)).status, 400);
-  assert.equal((await vote(take, 'inventado', 1, reader)).status, 400);
 });
 
 test('um voto que não é 1, -1 ou 0 é recusado', async () => {
@@ -461,26 +455,31 @@ test('um voto que não é 1, -1 ou 0 é recusado', async () => {
   const reader = await newReviewer();
   const take = await newTake(author);
   for (const value of [2, -5, 0.5, 'sim', null]) {
-    assert.equal((await vote(take, 'direcao', value, reader)).status, 400, `aceitou ${value}`);
+    assert.equal((await vote(take, value, reader)).status, 400, `aceitou ${value}`);
   }
 });
 
 test('visitante deslogado não vota', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
-  const refused = await req('PUT', `/api/social/reviews/${take.id}/criteria/direcao/vote`, { value: 1 });
+  const refused = await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 });
   assert.equal(refused.status, 401);
 });
 
 /* ── o que a regravação faz com o que já foi dito ────────────────────── */
 
-test('regravar uma nota derruba os votos daquele critério e só daquele', async () => {
+/* Aqui havia uma limpeza: o voto no critério cuja nota mudou era apagado,
+   porque concordar com um 9 que virou 6 é concordar com uma coisa que não
+   existe mais. Com o voto sendo da ficha inteira isso deixou de valer — o que
+   se aprova é o take, e um take continua sendo o mesmo depois de meio ponto
+   ajustado. Cobrar a concordância do clube a cada retoque faria ninguém mais
+   corrigir uma nota. */
+test('regravar uma nota não derruba a concordância com a ficha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
 
-  await vote(take, 'direcao', 1, reader);
-  await vote(take, 'som', 1, reader);
+  await vote(take, 1, reader);
 
   // A mesma pessoa, o mesmo filme: um UPDATE, com 'direcao' mudando de 7 para 3.
   const again = await req('POST', '/api/reviews', {
@@ -490,20 +489,8 @@ test('regravar uma nota derruba os votos daquele critério e só daquele', async
   assert.equal(again.body.id, take.id, 'a regravação deveria manter a mesma avaliação');
 
   const left = (await social()).body.votes.filter(v => v.reviewId === take.id);
-  assert.deepEqual(left.map(v => v.key), ['som'], 'o voto errado foi derrubado');
-});
-
-test('regravar sem mexer na nota deixa os votos onde estão', async () => {
-  const author = await newReviewer();
-  const reader = await newReviewer();
-  const take = await newTake(author);
-  await vote(take, 'montagem', 1, reader);
-
-  await req('POST', '/api/reviews', {
-    movie: take.movie, scores: scoresFor('Terror', 7), comment: 'só mudei o texto'
-  }, author.cookie);
-
-  assert.equal((await social()).body.votes.filter(v => v.reviewId === take.id).length, 1);
+  assert.equal(left.length, 1);
+  assert.equal(left[0].value, 1);
 });
 
 test('a conversa sobrevive a uma regravação — foi para isso que a nota mudou', async () => {
@@ -525,6 +512,6 @@ test('comentar ou votar numa avaliação que não existe responde 404', async ()
     (await req('POST', '/api/social/reviews/rnaoexiste/comments', { body: 'oi' }, reader.cookie)).status, 404
   );
   assert.equal(
-    (await req('PUT', '/api/social/reviews/rnaoexiste/criteria/direcao/vote', { value: 1 }, reader.cookie)).status, 404
+    (await req('PUT', '/api/social/reviews/rnaoexiste/vote', { value: 1 }, reader.cookie)).status, 404
   );
 });

@@ -192,7 +192,7 @@ test('curtir, votar e apagar também avisam', async () => {
     await req('PUT', `/api/social/comments/${posted.body.id}/like`, { liked: true }, author.cookie);
     assert.equal((await ear.next()).kind, 'social');
 
-    await req('PUT', `/api/social/reviews/${take.id}/criteria/roteiro/vote`, { value: -1 }, reader.cookie);
+    await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: -1 }, reader.cookie);
     assert.equal((await ear.next()).kind, 'social');
 
     await req('DELETE', `/api/social/comments/${posted.body.id}`, null, reader.cookie);

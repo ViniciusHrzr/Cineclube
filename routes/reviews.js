@@ -50,20 +50,6 @@ const savedStmt = db.prepare(`
   WHERE rv.reviewer_id = ? AND rv.movie_id = ?
 `);
 const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
-/* ── o que uma regravação faz com os votos ────────────────────────────────
-   Um voto é em uma nota, não em um critério: "concordo com o teu 9 em
-   fotografia". Se a nota vira 6, aquele voto passa a dizer que duas pessoas
-   concordaram com um número que não está mais lá.
-
-   Então uma regravação limpa os votos dos critérios cuja nota mudou, e só
-   deles — quem regravou para mexer em roteiro não perde a concordância que já
-   tinha em som. Os comentários ficam: um argumento sobre o filme continua
-   valendo depois de a nota ser ajustada, e é justamente para isso que se
-   ajusta. */
-const priorScoresStmt = db.prepare(
-  'SELECT id, scores FROM reviews WHERE reviewer_id = ? AND movie_id = ?'
-);
-const dropVoteStmt = 'DELETE FROM criterion_votes WHERE review_id = ? AND criterion_key = ?';
 const deleteStmt = db.prepare('DELETE FROM reviews WHERE id = ?');
 const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
 
@@ -148,21 +134,21 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
   const cleanComment = typeof comment === 'string' ? comment.trim().slice(0, 2000) : null;
 
-  /* Lido antes da escrita, porque depois dela o valor antigo não existe mais. */
-  const prior = await priorScoresStmt.get(reviewerId, movie.id);
-  const stale = [];
-  if (prior) {
-    let before = {};
-    try {
-      before = JSON.parse(prior.scores) || {};
-    } catch {
-      /* scores ilegíveis: nada para comparar, e nada a limpar */
-    }
-    for (const c of cs) {
-      if (before[c.key] !== undefined && before[c.key] !== cleanScores[c.key]) stale.push(c.key);
-    }
-  }
+  /* ── e o voto de quem já tinha concordado ──────────────────────────────
+     Aqui havia uma limpeza: os votos dos critérios cuja nota mudou eram
+     apagados, porque concordar com um 9 que virou 6 é concordar com uma coisa
+     que não existe mais.
 
+     Com o voto sendo da ficha inteira, isso deixou de valer. O que se aprova
+     agora é o take da pessoa sobre o filme — "boa avaliação", "achei alto
+     demais" — e um take continua sendo o mesmo take depois de a pessoa ajustar
+     meio ponto em fotografia. Apagar a concordância do clube a cada retoque
+     seria cobrar um preço alto por corrigir um número, e o efeito prático seria
+     ninguém mais corrigir.
+
+     Uma regravação que vira o take do avesso existe, e para ela a resposta
+     honesta é a conversa que já mora embaixo da ficha, não um DELETE
+     silencioso. */
   await upsertStmt.run({
     id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
@@ -172,9 +158,6 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
       : null,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
-  if (stale.length) {
-    await db.batch(stale.map(key => ({ sql: dropVoteStmt, args: [prior.id, key] })));
-  }
   await deleteWatchlistStmt.run(movie.id);
   /* O acervo é a outra tela que filtra o banco, e um filme avaliado fica nele
      para sempre — então é aqui que ele precisa aprender os nomes por que vai
@@ -185,11 +168,9 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
      acervo e o filme sai da fila (`deleteWatchlistStmt`, acima). Um aviso só
      deixaria a fila de todo mundo com um filme que já foi visto e avaliado — e
      seria a tela ao vivo divergindo da tela recarregada, que é o defeito exato
-     que este mecanismo não pode ter. Votos em critérios que mudaram de nota
-     também caem aqui: `stale` apaga linhas que a conversa desenha. */
+     que este mecanismo não pode ter. */
   live.emit('reviews', reviewerId);
   live.emit('watchlist', reviewerId);
-  if (stale.length) live.emit('social', reviewerId);
 
   const saved = await savedStmt.get(reviewerId, movie.id);
   res.status(201).json(toReviewDTO(saved));

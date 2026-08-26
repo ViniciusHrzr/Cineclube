@@ -2,7 +2,6 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
-const { critsFor } = require('../criteria');
 const { handlesFor, mentionedIn } = require('../handles');
 
 const router = express.Router();
@@ -103,14 +102,14 @@ const recentTakeNotes = db.prepare(`
 
 const rosterStmt = db.prepare('SELECT id, name FROM reviewers');
 
-/* Votos em critérios das minhas avaliações. A rota de voto já recusa votar na
-   própria ficha, então o segundo termo é cinto e suspensório — e o cinto vale,
-   porque linhas gravadas antes daquela regra existirem não sabem dela. */
+/* Votos nas minhas avaliações. A rota de voto já recusa votar na própria ficha,
+   então o segundo termo é cinto e suspensório — e o cinto vale, porque linhas
+   gravadas antes daquela regra existirem não sabem dela. */
 const votesOnMine = db.prepare(`
-  SELECT v.criterion_key, v.value, v.created_at,
+  SELECT v.value, v.created_at,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot,
-         rv.id AS review_id, rv.movie_id, rv.movie_title, rv.movie_genre, rv.scores
-  FROM criterion_votes v
+         rv.id AS review_id, rv.movie_id, rv.movie_title
+  FROM review_votes v
   JOIN reviews rv ON rv.id = v.review_id
   JOIN reviewers a ON a.id = v.reviewer_id
   WHERE rv.reviewer_id = ? AND v.reviewer_id <> ?
@@ -147,12 +146,6 @@ const markClearedStmt = db.prepare(
    WHERE id = ?`
 );
 
-/** O nome do critério como a ficha o fez, para o aviso dizer "Fotografia". */
-function criterionName(genre, key) {
-  const found = critsFor(genre).find(c => c.key === key);
-  return found ? found.name : key;
-}
-
 /* Um pedaço do que foi escrito, para o aviso ter conteúdo em vez de só contar
    que alguma coisa aconteceu. Cortado na palavra, não no caractere: um trecho
    que termina no meio de uma sílaba parece defeito. */
@@ -173,8 +166,8 @@ function say(kind, item) {
   if (kind === 'mention') return `mencionou você em ${item.movie_title}`;
   if (kind === 'like') return 'curtiu seu comentário';
   return item.value === 1
-    ? `concordou com seu ${item.criterionName} em ${item.movie_title}`
-    : `discordou do seu ${item.criterionName} em ${item.movie_title}`;
+    ? `concordou com sua avaliação de ${item.movie_title}`
+    : `discordou da sua avaliação de ${item.movie_title}`;
 }
 
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
@@ -270,21 +263,20 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
     });
   }
 
+  /* Um por pessoa por ficha, agora que o voto é da ficha inteira. Eram até onze
+     avisos da mesma pessoa sobre a mesma avaliação — uma noite de discussão
+     enchia o sino de "concordou com seu Roteiro", "concordou com sua Direção",
+     e o que o sino queria dizer era uma coisa só. */
   for (const row of votes) {
-    /* O nome do critério depende do gênero sob o qual a ficha foi gravada, que
-       é o mesmo motivo pelo qual o detalhamento também lê dali: 'atuacoes' numa
-       animação chama-se Vozes. */
-    const named = criterionName(row.movie_genre, row.criterion_key);
     items.push({
-      id: `v:${row.review_id}:${row.criterion_key}:${row.actor_id}`,
+      id: `v:${row.review_id}:${row.actor_id}`,
       kind: 'vote',
       at: row.created_at,
       actor: actorOf(row),
       movieId: Number(row.movie_id),
       reviewId: row.review_id,
       value: Number(row.value),
-      criterion: named,
-      text: say('vote', { ...row, criterionName: named })
+      text: say('vote', row)
     });
   }
 

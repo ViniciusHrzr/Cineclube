@@ -13,7 +13,7 @@ import {
   social,
   type CommentLike,
   type Criterion,
-  type CriterionVote,
+  type ReviewVote,
   type Movie,
   type Reviewer,
   type Review,
@@ -91,7 +91,7 @@ type Club = {
      requisições e um estado de carregando dentro de cada gaveta. Num clube de
      quatro pessoas isto é da ordem de centenas de linhas. */
   comments: ReviewComment[];
-  votes: CriterionVote[];
+  votes: ReviewVote[];
   commentLikes: CommentLike[];
   /* Escreve, e devolve o comentário gravado — a lista já se atualizou.
      `parentId` faz dele uma resposta; a profundidade para em um. */
@@ -100,7 +100,7 @@ type Club = {
   /** Curtir e descurtir o comentário de outra pessoa. */
   likeComment: (id: string, liked: boolean) => Promise<void>;
   /** +1, −1, ou 0 para tirar. Pressionar o voto que já está posto tira ele. */
-  voteOn: (reviewId: string, key: string, value: 1 | -1 | 0) => Promise<void>;
+  voteOn: (reviewId: string, value: 1 | -1 | 0) => Promise<void>;
   reload: (patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => void;
   criteriaFor: (genre: string) => Criterion[];
   averages: Record<number, { avg: number; count: number }>;
@@ -173,7 +173,7 @@ export default function App() {
   const [criteria, setCriteria] = useState<Record<string, Criterion[]>>({});
   const [genres, setGenres] = useState<string[]>([]);
   const [comments, setComments] = useState<ReviewComment[]>([]);
-  const [votes, setVotes] = useState<CriterionVote[]>([]);
+  const [votes, setVotes] = useState<ReviewVote[]>([]);
   const [commentLikes, setCommentLikes] = useState<CommentLike[]>([]);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -425,12 +425,10 @@ export default function App() {
   );
 
   const voteOn = useCallback(
-    async (reviewId: string, key: string, value: 1 | -1 | 0) => {
-      const { vote } = await social.vote(reviewId, key, value);
+    async (reviewId: string, value: 1 | -1 | 0) => {
+      const { vote } = await social.vote(reviewId, value);
       setVotes(prev => {
-        const rest = prev.filter(
-          v => !(v.reviewId === reviewId && v.key === key && v.reviewerId === meId)
-        );
+        const rest = prev.filter(v => !(v.reviewId === reviewId && v.reviewerId === meId));
         return vote ? [...rest, vote] : rest;
       });
     },

@@ -41,9 +41,7 @@ const commentsStmt = db.prepare(`
   JOIN reviewers r ON r.id = c.reviewer_id
   ORDER BY c.created_at ASC
 `);
-const votesStmt = db.prepare(
-  'SELECT review_id, criterion_key, reviewer_id, value FROM criterion_votes'
-);
+const votesStmt = db.prepare('SELECT review_id, reviewer_id, value FROM review_votes');
 const likesStmt = db.prepare('SELECT comment_id, reviewer_id FROM comment_likes');
 
 const commentAuthorStmt = db.prepare('SELECT id, reviewer_id FROM review_comments WHERE id = ?');
@@ -76,13 +74,13 @@ const deleteRepliesStmt = db.prepare('DELETE FROM review_comments WHERE parent_i
 
 const reviewStmt = db.prepare('SELECT id, reviewer_id, scores FROM reviews WHERE id = ?');
 const castVoteStmt = db.prepare(`
-  INSERT INTO criterion_votes (review_id, criterion_key, reviewer_id, value)
-  VALUES (?, ?, ?, ?)
-  ON CONFLICT(review_id, criterion_key, reviewer_id) DO UPDATE SET
+  INSERT INTO review_votes (review_id, reviewer_id, value)
+  VALUES (?, ?, ?)
+  ON CONFLICT(review_id, reviewer_id) DO UPDATE SET
     value = excluded.value, created_at = datetime('now')
 `);
 const clearVoteStmt = db.prepare(
-  'DELETE FROM criterion_votes WHERE review_id = ? AND criterion_key = ? AND reviewer_id = ?'
+  'DELETE FROM review_votes WHERE review_id = ? AND reviewer_id = ?'
 );
 
 function toCommentDTO(row) {
@@ -102,7 +100,6 @@ function toCommentDTO(row) {
 function toVoteDTO(row) {
   return {
     reviewId: row.review_id,
-    key: row.criterion_key,
     reviewerId: row.reviewer_id,
     value: Number(row.value)
   };
@@ -207,33 +204,25 @@ router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
   res.json({ liked });
 }));
 
-/* ── votar numa nota ──────────────────────────────────────────────────────
+/* ── concordar com a ficha de alguém ──────────────────────────────────────
    +1, -1, ou 0 para tirar o voto. Zero apaga a linha em vez de gravar um
    neutro, porque "não votei" e "votei em cima do muro" não são a mesma
    informação e o contador não deve inventar a segunda.
 
+   Era um voto por critério, e a rota carregava o `key` na URL. O argumento era
+   bom no papel — concordar com o 9 dela em fotografia e achar o 4 em roteiro
+   absurdo é o que acontece de verdade — e na prática onze polegares por ficha
+   por pessoa não é uma opinião, é um formulário. O que se diz de verdade é
+   sobre o take inteiro. Ver a nota em db.js.
+
    Não se vota na própria ficha. Não é uma regra moral, é aritmética: um placar
    em que o autor pode se somar não mede mais concordância do clube, e o único
    uso de poder fazer isso seria esse. */
-router.put('/reviews/:reviewId/criteria/:key/vote', auth.requireSession, wrap(async (req, res) => {
+router.put('/reviews/:reviewId/vote', auth.requireSession, wrap(async (req, res) => {
   const review = await reviewStmt.get(req.params.reviewId);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
   if (review.reviewer_id === req.session.reviewer_id) {
     return res.status(403).json({ error: 'Não dá para votar na sua própria avaliação.' });
-  }
-
-  /* O critério tem que ser um que esta avaliação respondeu. Sem isto a rota
-     aceitaria qualquer string e o banco acumularia votos em critérios que não
-     existem, que ninguém nunca veria e que nada limparia. */
-  let scores = {};
-  try {
-    scores = JSON.parse(review.scores) || {};
-  } catch {
-    /* uma avaliação com scores ilegíveis não tem critério para votar */
-  }
-  const key = req.params.key;
-  if (!Object.prototype.hasOwnProperty.call(scores, key)) {
-    return res.status(400).json({ error: 'Esta avaliação não tem esse critério.' });
   }
 
   /* Um número de verdade, não algo que vira número. `Number(null)` e
@@ -247,13 +236,13 @@ router.put('/reviews/:reviewId/criteria/:key/vote', auth.requireSession, wrap(as
 
   const voter = req.session.reviewer_id;
   if (value === 0) {
-    await clearVoteStmt.run(review.id, key, voter);
+    await clearVoteStmt.run(review.id, voter);
     live.emit('social', voter);
     return res.json({ vote: null });
   }
-  await castVoteStmt.run(review.id, key, voter, value);
+  await castVoteStmt.run(review.id, voter, value);
   live.emit('social', voter);
-  res.json({ vote: { reviewId: review.id, key, reviewerId: voter, value } });
+  res.json({ vote: { reviewId: review.id, reviewerId: voter, value } });
 }));
 
 module.exports = router;
