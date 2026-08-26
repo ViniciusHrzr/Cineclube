@@ -322,6 +322,12 @@ function command(type, position, now = Date.now()) {
    a stall pauses everybody, and — because it was the room that paused, not a
    person — the room may start again by itself once everyone can play.
 
+   Mas isto só vale para quem está VENDO. A sala parava sozinha o tempo todo, e
+   o motivo era este mecanismo disparando por gente que ainda nem tinha imagem:
+   quem abria a aba no meio do filme parava os outros três antes de ter
+   carregado o primeiro quadro. Chegar não é travar, e um filme que não foi
+   aberto não trava — ver `watching` abaixo e `joinedIn` no SyncedVideo.
+
    The flag is what keeps that from being presumptuous. A person pausing at any
    point clears it, and from then on nothing resumes without somebody saying so. */
 function setReady(reviewerId, ready, sourceTag, now = Date.now()) {
@@ -333,9 +339,23 @@ function setReady(reviewerId, ready, sourceTag, now = Date.now()) {
     viewer.sourceTag = isAllowedSource(sourceTag) ? text(sourceTag) : null;
   }
 
-  const everyoneReady = [...room.viewers.values()].every(v => v.ready);
+  /* ── quem conta para a roda ─────────────────────────────────────────────
+     Só quem tem um filme aberto. Não se trava num filme que não se abriu, e
+     estar na sala com o seletor de fonte na tela — escolhendo o arquivo,
+     esperando um magnet resolver, ou só de bobeira com a aba aberta — não é
+     estar vendo.
 
-  if (!viewer.ready && room.status === 'playing') {
+     Vale nos dois sentidos, e o segundo importa tanto quanto o primeiro: quem
+     não conta para pausar também não conta para impedir a sala de voltar. Sem
+     isso, uma pessoa sem fonte marcada como não-pronta seguraria o filme parado
+     para todo mundo sem ter nem como destravar.
+
+     A outra metade desta regra mora no cliente, onde há informação que aqui não
+     chega: chegar não é travar — ver `joinedIn` em SyncedVideo. */
+  const watching = v => !!v.sourceTag;
+  const everyoneReady = [...room.viewers.values()].filter(watching).every(v => v.ready);
+
+  if (!viewer.ready && watching(viewer) && room.status === 'playing') {
     if (mayAutoPause(now)) {
       room.position = positionAt(now);
       room.status = 'paused';
@@ -403,7 +423,11 @@ function detach(reviewerId, now = Date.now()) {
   room.viewers.delete(reviewerId);
   /* Somebody leaving can be what unblocks the room: if the club was held on
      their buffering wheel, the wheel left with them. */
-  if (room.pausedByStall && room.viewers.size && [...room.viewers.values()].every(v => v.ready)) {
+  /* A sala tem de continuar tendo gente — não se retoma uma sessão vazia — mas
+     quem julga a retomada é só quem tem filme aberto, a mesma regra do
+     `setReady`. Ninguém segurando é ninguém segurando. */
+  const holding = [...room.viewers.values()].filter(v => !!v.sourceTag);
+  if (room.pausedByStall && room.viewers.size && holding.every(v => v.ready)) {
     room.status = 'playing';
     room.pausedByStall = false;
     room.resumedAt = now;

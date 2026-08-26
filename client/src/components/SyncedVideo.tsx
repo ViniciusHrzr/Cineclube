@@ -43,8 +43,13 @@ const TOLERANCE_SOFT = 0.35;
 const NUDGE = 0.05;
 const DRIFT_INTERVAL_MS = 2000;
 /* Buffering for less than this is the network breathing; past it, the club is
-   waiting for you and ought to be told. */
-const STALL_AFTER_MS = 1200;
+   waiting for you and ought to be told.
+
+   Era 1,2s, e 1,2s é curto demais para o preço que cobra: um soluço numa
+   conexão parava quatro pessoas, e voltar custa a todas elas os quatro segundos
+   de almofada que a retomada exige. O que interrompe a sessão tem de ser uma
+   travada de verdade, não um respiro. */
+const STALL_AFTER_MS = 3000;
 
 /* How far apart two lines of one subtitle sit, as a multiple of their size.
 
@@ -210,6 +215,29 @@ export function SyncedVideo({
   const frozenSince = useRef<number | null>(null);
   /** When the last expensive seek was spent. See `RESEEK_MS`. */
   const lastHardSeek = useRef(0);
+  /* ── chegar não é travar ──────────────────────────────────────────────────
+     Este é o defeito que a sala inteira sentia como "pausa sozinho": quem
+     entrava no meio do filme parava todo mundo.
+
+     A mecânica era esta. Um <video> que acaba de receber um arquivo dispara
+     `waiting` na hora — ele não tem nem o primeiro quadro, e é claro que não
+     tem — e `waiting` era travada. Segundos depois este navegador dizia à sala
+     que estava travado, e a sala, que trata a travada de um como problema de
+     todos, pausava o filme para os outros três. Não era uma conexão ruim: era o
+     preço de alguém abrir a aba. Com o clube chegando ao longo de dez minutos,
+     isso acontecia uma vez por pessoa, e da poltrona parecia uma sala que
+     parava sozinha do nada.
+
+     A distinção que faltava é entre TRAVAR e AINDA NÃO TER COMEÇADO. Travar é
+     uma coisa que só pode acontecer com quem estava junto: o filme corria na
+     tela desta pessoa e parou. Quem nunca teve imagem não travou — está
+     carregando, e carregar é problema de quem carrega.
+
+     Então este navegador só ganha o direito de segurar a sala depois de a
+     imagem dele ter andado de verdade com a sala rodando. Antes disso ele
+     carrega calado, é levado ao lugar certo pelo corretor de deriva quando
+     conseguir tocar, e entra no meio da sessão sem que ninguém perceba. */
+  const joinedIn = useRef(false);
 
   /* ── the ref that must not be rewritten on every render ──────────────────
      Written inline, this callback is a new function each render, and React
@@ -414,9 +442,20 @@ export function SyncedVideo({
     [serverNow]
   );
 
+  /* Trocar de fonte é começar de novo: o arquivo novo não tem imagem nenhuma, e
+     o direito de segurar a sala volta a ser conquistado tocando. A almofada
+     também volta ao mínimo — o que esta conexão precisou para aguentar o
+     arquivo anterior não diz nada sobre o próximo. */
+  useEffect(() => {
+    joinedIn.current = false;
+    needed.current = BUFFER_BASE_S;
+  }, [src, sourceTag]);
+
   /** The wheel started turning. Reported only if it keeps turning. */
   const stalling = useCallback(() => {
     if (stallTimer.current || !reportedReady.current) return;
+    // Ainda não começou: ver `joinedIn`. Carregar não é travar.
+    if (!joinedIn.current) return;
     stallTimer.current = window.setTimeout(() => {
       stallTimer.current = null;
       /* Too soon after the last recovery: this connection needs a bigger
@@ -438,6 +477,12 @@ export function SyncedVideo({
       if (!v || !s.open) return;
 
       const running = s.status === 'playing' && !v.paused && !v.seeking && !v.ended;
+
+      /* A imagem andou com a sala rodando: esta pessoa está VENDO o filme, e a
+         partir daqui uma parada dela é uma travada de verdade. É a medida certa
+         para isso e não o evento `playing`, que dispara com um quadro só e
+         antes de o quadro seguinte existir. */
+      if (running && v.currentTime !== lastTime.current) joinedIn.current = true;
 
       if (running && v.currentTime === lastTime.current) {
         frozenSince.current ??= Date.now();
