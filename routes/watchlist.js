@@ -22,9 +22,8 @@ const listStmt = db.prepare(`
   LEFT JOIN movies_cache mc ON mc.tmdb_id = w.movie_id
   ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
 `);
-/* `added_by` é a sessão, como toda escrita neste app. A fila continua sendo do
-   clube — quem pôs não ganha nenhum direito sobre a linha, qualquer um tira —
-   mas o mural precisa saber de quem foi a ideia para ter o que contar. */
+/* `added_by` é a sessão, como toda escrita neste app. Nasceu para o mural ter o
+   que contar e hoje é também quem pode tirar — ver o DELETE lá embaixo. */
 const insertStmt = db.prepare(`
   INSERT INTO watchlist (movie_id, movie_title, movie_year, movie_genre, movie_poster, position, added_by)
   VALUES (@movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
@@ -33,6 +32,14 @@ const insertStmt = db.prepare(`
 `);
 const idsStmt = db.prepare('SELECT movie_id FROM watchlist');
 const deleteStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
+/* Quem pôs, com o nome junto: a recusa precisa dizer de quem é a escolha que
+   está sendo protegida, ou vira "não pode" sem sujeito. */
+const ownerStmt = db.prepare(`
+  SELECT w.movie_id, w.movie_title, w.added_by, r.name AS added_by_name
+  FROM watchlist w
+  LEFT JOIN reviewers r ON r.id = w.added_by
+  WHERE w.movie_id = ?
+`);
 
 const SET_POSITION = 'UPDATE watchlist SET position = ? WHERE movie_id = ?';
 
@@ -112,8 +119,40 @@ router.put('/order', auth.requireSession, wrap(async (req, res) => {
   res.json({ watchlist: listed.map(toDTO) });
 }));
 
+/* ── tirar é de quem pôs ──────────────────────────────────────────────────
+   A fila é do clube e continua sendo: qualquer um põe, a ordem é uma só e vale
+   para todo mundo, e o filme sai sozinho quando alguém o avalia. O que deixou
+   de ser de todos é a tesoura.
+
+   Uma escolha na fila é alguém dizendo "quero ver isto com vocês", e apagar
+   isso é desdizer uma pessoa — a mesma regra que a avaliação já segue: ninguém
+   apaga a nota de ninguém. Sem isto, uma limpeza bem-intencionada às onze da
+   noite tira quatro filmes que outra pessoa vinha esperando há um mês, e não
+   sobra registro de que estiveram lá: a linha da fila é a única memória de que
+   aquela escolha existiu.
+
+   O administrador é exceção, e é a única. Aqui ele é mesmo o zelador: linhas
+   antigas sem dono e escolhas de quem já saiu do clube não podem ficar
+   entaladas na fila para sempre, e não há outro caminho para tirá-las.
+
+   Sumir com uma linha que não existe continua sendo 204 e não 404. Duas
+   pessoas tirando o mesmo filme ao mesmo tempo — o que agora acontece de
+   verdade, com a fila ao vivo — não é erro de ninguém: o pedido queria que o
+   filme não estivesse lá, e ele não está. */
 router.delete('/:movieId', auth.requireSession, wrap(async (req, res) => {
-  await deleteStmt.run(Number(req.params.movieId));
+  const row = await ownerStmt.get(Number(req.params.movieId));
+  if (!row) return res.status(204).end();
+
+  const mine = !!row.added_by && row.added_by === req.session.reviewer_id;
+  if (!mine && !req.session.is_admin) {
+    return res.status(403).json({
+      error: row.added_by_name
+        ? `Só quem pôs o filme na fila pode tirar, e ${row.movie_title} foi escolha de ${row.added_by_name}.`
+        : 'Este filme entrou na fila antes de ela registrar quem põe. Só o administrador do clube pode tirar.'
+    });
+  }
+
+  await deleteStmt.run(row.movie_id);
   live.emit('watchlist', req.session.reviewer_id);
   res.status(204).end();
 }));

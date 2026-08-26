@@ -668,6 +668,12 @@ export function WatchlistScreen() {
             {paged.map((w, i) => {
               const air = lift?.id === w.id;
               const owner = ownerOf(w);
+              /* A tesoura só aparece para quem pôs — e para o administrador,
+                 que é quem tira o que sobrou de gente que saiu do clube. Um
+                 botão que existe para dar 403 é pior do que botão nenhum: ele
+                 promete uma ação, e a explicação só chega depois do clique.
+                 Quem escolheu está dito no canto do pôster, logo ali. */
+              const cuttable = owner?.id === club.me.id || club.me.isAdmin;
               return (
                 <motion.div
                   key={w.id}
@@ -749,7 +755,7 @@ export function WatchlistScreen() {
                       movie={w as Movie}
                       onOpen={club.openSheet}
                       onRate={club.rateMovie}
-                      onRemove={remove}
+                      onRemove={cuttable ? remove : undefined}
                     />
                   </motion.div>
 

@@ -617,3 +617,63 @@ test('removes a movie from the watchlist', async () => {
   const { body } = await req('GET', '/api/watchlist');
   assert.ok(!body.watchlist.some(w => w.id === m.id));
 });
+
+/* ── tirar é de quem pôs ─────────────────────────────────────────────────
+   Uma escolha na fila é alguém dizendo "quero ver isto com vocês", e a linha é
+   a única memória de que aquilo foi escolhido. Uma limpeza bem-intencionada
+   apagando o mês de espera de outra pessoa é o que estes testes existem para
+   impedir — e a recusa tem de dizer de quem é a escolha, ou é um "não pode" sem
+   sujeito. */
+test('ninguém tira da fila o filme que outra pessoa pôs', async () => {
+  const dono = await newReviewer('Quem Pos');
+  const outro = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+
+  const refused = await req('DELETE', `/api/watchlist/${m.id}`, null, outro.cookie);
+  assert.equal(refused.status, 403);
+  assert.match(refused.body.error, /Quem Pos/);
+
+  const { body } = await req('GET', '/api/watchlist');
+  assert.ok(body.watchlist.some(w => w.id === m.id), 'a fila perdeu um filme que ninguém tinha direito de tirar');
+});
+
+/* O zelador do clube. É a única exceção, e ela existe porque as linhas antigas
+   sem dono e as escolhas de quem saiu do clube não têm outro caminho para fora
+   da fila. */
+test('o administrador tira o que for', async () => {
+  const dono = await newReviewer();
+  const admin = await newAdmin();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+
+  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`, null, admin.cookie)).status, 204);
+});
+
+/* Sumir com uma linha que já não existe não é erro de ninguém: o pedido queria
+   que o filme não estivesse na fila, e ele não está. Com a fila ao vivo, duas
+   pessoas tirando o mesmo filme ao mesmo tempo passou a acontecer de verdade. */
+test('tirar um filme que já saiu não é erro', async () => {
+  const member = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  await req('DELETE', `/api/watchlist/${m.id}`, null, member.cookie);
+
+  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`, null, member.cookie)).status, 204);
+});
+
+/* Avaliar continua tirando o filme da fila seja de quem for a escolha: quem pôs
+   pediu para o clube ver, e o clube viu. Isso não é desdizer ninguém — é a
+   escolha tendo dado certo. */
+test('avaliar tira da fila mesmo o filme que outra pessoa pôs', async () => {
+  const dono = await newReviewer();
+  const outro = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+
+  const rated = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, outro.cookie);
+  assert.equal(rated.status, 201);
+
+  const { body } = await req('GET', '/api/watchlist');
+  assert.ok(!body.watchlist.some(w => w.id === m.id), 'o filme avaliado continuou na fila');
+});

@@ -336,9 +336,41 @@ export default function App() {
   const watchRef = useRef(watchlist);
   watchRef.current = watchlist;
 
+  /* O clube e quem sou eu, para o mesmo uso e pelo mesmo motivo que a fila logo
+     acima: `toggleWatch` é entregue a cada pôster do catálogo, e uma função
+     nova a cada vez que alguém entra no clube ou troca de foto é uma prop nova
+     em todos os cem. */
+  const rosterRef = useRef(reviewers);
+  rosterRef.current = reviewers;
+  const meRef = useRef(me);
+  meRef.current = me;
+
   const toggleWatch = useCallback(
     async (m: Movie | WatchItem) => {
-      const has = watchRef.current.some(w => String(w.id) === String(m.id));
+      const held = watchRef.current.find(w => String(w.id) === String(m.id));
+      const has = !!held;
+      /* ── tirar é de quem pôs ─────────────────────────────────────────────
+         A mesma regra que o servidor aplica (ver routes/watchlist.js), dita
+         aqui para o marcador do catálogo não mandar um pedido que já se sabe
+         recusado. A recusa continua sendo do servidor: isto é o produto
+         explicando antes, não decidindo.
+
+         Na fila, a tesoura nem aparece nos filmes dos outros — lá o pôster tem
+         a marca de quem escolheu ao lado e o silêncio se explica sozinho. No
+         catálogo o marcador é um só e ele não tem essa marca, então quem
+         aperta merece uma frase. */
+      if (held && meRef.current) {
+        const me = meRef.current;
+        const owner = rosterRef.current.find(p => p.id === held.addedBy) ?? null;
+        if (owner?.id !== me.id && !me.isAdmin) {
+          fault(
+            owner
+              ? `Só quem pôs o filme na fila pode tirar, e ${held.title} foi escolha de ${owner.name}.`
+              : 'Este filme entrou na fila antes de ela registrar quem põe. Só o administrador do clube pode tirar.'
+          );
+          return;
+        }
+      }
       try {
         if (has) {
           await del(`/api/watchlist/${m.id}`);
