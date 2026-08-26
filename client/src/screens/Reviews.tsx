@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Pencil, Plus, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
 import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -229,7 +229,8 @@ function Drawer({ open, children }: { open: boolean; children: React.ReactNode }
    The plate is also what these numbers were missing: sitting on nothing but the
    wall, with the beam moving behind them, they read as loose type rather than
    as a record. */
-function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: string }) {
+function Breakdown({ r, comment }: { r: Review; comment?: string }) {
+  const rows = r.breakdown;
   return (
     /* The ring is inset. A Tailwind ring is a shadow cast outside the box, and
        this plate opens inside a container that clips its overflow to animate the
@@ -258,20 +259,38 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
             '--rows-3': Math.ceil(rows.length / 3),
           } as React.CSSProperties
         }
+        /* Two columns from `md` and not from `sm`. The vote control added ~66px
+           to every row, and at 640px two of these no longer fit inside the
+           card's padding — the grid did not wrap, it overflowed, which on a
+           breakdown means the tally of the right-hand column sitting off the
+           edge of the drawer. One column is taller and correct; the second
+           arrives when there is room for it. */
         className={cn(
           'grid grid-flow-col auto-cols-fr justify-items-center gap-x-4 gap-y-0.5',
           'grid-rows-[repeat(var(--rows-1),auto)]',
-          'sm:grid-rows-[repeat(var(--rows-2),auto)]',
+          'md:grid-rows-[repeat(var(--rows-2),auto)]',
           'lg:grid-rows-[repeat(var(--rows-3),auto)]'
         )}
       >
         {rows.map(b => (
-          <div key={b.key} className="grid w-fit grid-cols-[minmax(0,124px)_58px_34px] items-center gap-2 py-1">
-            <span className={cn('truncate text-[12.5px]', b.w === 2 ? 'text-ink' : 'text-ink-dim')}>
-              {b.name} <span className="q text-[10px] text-ink-faint">×{b.w}</span>
+          /* The vote column is fixed-width and always present, so a criterion
+             nobody has voted on and one with three votes occupy the same
+             ground and the numbers down the grid stay in register. */
+          <div
+            key={b.key}
+            className="grid w-fit grid-cols-[minmax(0,104px)_52px_30px_66px] items-center gap-1.5 py-1"
+          >
+            {/* The genre pair used to be the bright row because it weighed
+                double. It still reads brighter, for what is now the honest
+                reason: it is the part of the card this film chose, and the
+                personal one is bright for the same kind of reason — it is the
+                only answer that is about the person whose card this is. */}
+            <span className={cn('truncate text-[12.5px]', b.group === 'oficio' ? 'text-ink-dim' : 'text-ink')}>
+              {b.name}
             </span>
             <Strip value={b.value} cells={10} className="h-[5px]" />
             <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
+            <CriterionVotes review={r} criterionKey={b.key} label={b.name} />
           </div>
         ))}
       </div>
@@ -280,6 +299,261 @@ function Breakdown({ rows, comment }: { rows: Review['breakdown']; comment?: str
           “{comment}”
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/* ── concordar com uma nota, e não com uma pessoa ─────────────────────────
+   Concordar com alguém inteiro é raro. Concordar com o 9 dela em fotografia e
+   achar o 4 em roteiro absurdo é o que acontece de verdade, e é por isso que o
+   voto é por critério.
+
+   Três decisões que o mundo visual decide por nós:
+
+   · Sem verde e sem vermelho. A regra das três cores vale aqui como em todo o
+     resto — o que separa concordar de discordar é a direção do ícone e a
+     posição, e o que marca o seu voto é ciano, que é a cor de estado neste
+     sistema. Um placar que pinta de verde quando fica positivo estaria pintando
+     um limiar, que é a outra coisa que este mundo não faz.
+   · Contador só quando existe. Um zero em cada critério de cada ficha é uma
+     coluna de zeros dizendo que ninguém votou em nada, que é ruído com formato
+     de dado.
+   · Na própria ficha os botões somem e só o placar fica. Não é regra moral, é
+     aritmética: um placar em que o autor pode se somar não mede mais
+     concordância do clube. O servidor recusa de qualquer jeito; o que a tela
+     faz é não oferecer o que vai ser negado. */
+function CriterionVotes({
+  review,
+  criterionKey,
+  label,
+}: {
+  review: Review;
+  criterionKey: string;
+  /** O nome do critério, para quem lê a tela em vez de olhar para ela. */
+  label: string;
+}) {
+  const club = useClub();
+  const [busy, setBusy] = useState(false);
+
+  const cast = club.votes.filter(v => v.reviewId === review.id && v.key === criterionKey);
+  const up = cast.filter(v => v.value === 1).length;
+  const down = cast.filter(v => v.value === -1).length;
+  const mine = cast.find(v => v.reviewerId === club.me.id)?.value ?? 0;
+  const own = review.reviewerId === club.me.id;
+
+  async function press(value: 1 | -1) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Pressing the vote you already cast takes it back — the same key does
+      // both, which is the only way a toggle can be undone without a second one.
+      await club.voteOn(review.id, criterionKey, mine === value ? 0 : value);
+    } catch (e) {
+      club.fault('Não foi possível registrar o voto: ' + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tally = (n: number) =>
+    n > 0 ? <span className="q text-[10.5px] leading-none text-ink-dim">{n}</span> : null;
+
+  /* Na própria ficha: o placar, sem os controles. Uma linha inteira em branco
+     seria o autor não sabendo que alguém reagiu ao que ele escreveu. */
+  if (own) {
+    // The column is held even when it is empty, so the numbers to its left stay
+    // in register down the grid.
+    if (!up && !down) return <span aria-hidden />;
+    return (
+      <span className="flex items-center gap-2 text-ink-faint">
+        {up ? (
+          <span className="flex items-center gap-1" title={`${up} concordam com ${label}`}>
+            <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
+            {tally(up)}
+          </span>
+        ) : null}
+        {down ? (
+          <span className="flex items-center gap-1" title={`${down} discordam de ${label}`}>
+            <ThumbsDown className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
+            {tally(down)}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+
+  const key = (side: 1 | -1, n: number) => {
+    const on = mine === side;
+    const Icon = side === 1 ? ThumbsUp : ThumbsDown;
+    const verb = side === 1 ? 'Concordar com' : 'Discordar de';
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        aria-pressed={on}
+        aria-label={`${verb} ${label} na avaliação de ${review.reviewerName}${n ? `, ${n} até agora` : ''}`}
+        onClick={() => void press(side)}
+        /* 24px tall and at least 24 wide even with no tally beside it. The icon
+           is 14px; the rest is the target, because a 16px hit area is a control
+           that only works with a mouse and this app is also used on a phone. */
+        className={cn(
+          'flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-cell transition-colors duration-150',
+          'disabled:opacity-40',
+          on ? 'text-dye-brass' : 'text-ink-faint hover:text-beam'
+        )}
+      >
+        <Icon className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
+        {tally(n)}
+      </button>
+    );
+  };
+
+  return (
+    <span className="flex items-center gap-0.5">
+      {key(1, up)}
+      {key(-1, down)}
+    </span>
+  );
+}
+
+/* ── quando foi dito ──────────────────────────────────────────────────────
+   Uma conversa é lida na ordem em que aconteceu, e o que interessa é se foi
+   agora ou faz semanas — não o carimbo. Hoje e ontem por extenso, o resto em
+   data curta, e o carimbo completo fica no title para quem precisar dele. */
+function whenOf(iso: string) {
+  // O servidor grava com datetime('now'), que é UTC sem fuso no texto.
+  const at = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(at.getTime())) return '';
+  const days = Math.floor((Date.now() - at.getTime()) / 86400000);
+  const clock = at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (days <= 0) return clock;
+  if (days === 1) return `ontem, ${clock}`;
+  return at.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+/* ── a conversa em cima de uma ficha ──────────────────────────────────────
+   O clube discute por voz e a discussão morre com a chamada. Isto é a primeira
+   coisa no produto que guarda alguma parte dela.
+
+   Pendurada na avaliação e não no filme, de propósito: o que se discute é a
+   ficha de alguém — "teu 9 em fotografia" — e é a mesma unidade em que se vota
+   um critério logo acima. Um fio por filme juntaria as quatro conversas numa e
+   descolaria a resposta de quem foi respondido.
+
+   Não tem chave commit vermelha. A regra da lâmpada vale: no máximo uma
+   superfície vermelha por tela, e esta tela pode ter seis gavetas abertas ao
+   mesmo tempo. */
+function Conversation({ review }: { review: Review }) {
+  const club = useClub();
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  /* Na sua própria ficha você está respondendo quem te respondeu; na dos outros
+     você está comentando. O campo e a chave dizem o mesmo verbo — um botão que
+     diz "Comentar" embaixo de um campo que diz "Responder" faz a pessoa parar
+     para conferir se são duas coisas. */
+  const own = review.reviewerId === club.me.id;
+
+  const thread = club.comments
+    .filter(c => c.reviewId === review.id)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  async function send() {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    try {
+      await club.comment(review.id, body);
+      setDraft('');
+    } catch (e) {
+      club.fault('Não foi possível comentar: ' + (e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await club.uncomment(id);
+    } catch (e) {
+      club.fault('Não foi possível apagar o comentário: ' + (e as Error).message);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-white/[0.06] pt-4">
+      <div className="flex flex-wrap items-baseline gap-3">
+        <span className="legend">Conversa</span>
+        {thread.length ? (
+          <span className="q text-[11px] text-ink-dim">{plural(thread.length, 'resposta', 'respostas')}</span>
+        ) : null}
+      </div>
+
+      {thread.length ? (
+        <ul className="mt-3 flex flex-col gap-3">
+          {thread.map(c => {
+            const mine = c.reviewerId === club.me.id;
+            return (
+              <li key={c.id} className="flex gap-2.5">
+                <Reel color={reelColor(c.reviewerDot, c.reviewerId)} src={club.avatarOf(c.reviewerId)} size="sm">
+                  {initialsOf(c.reviewerName)}
+                </Reel>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
+                      {c.reviewerName}
+                    </span>
+                    <span className="q text-[10.5px] text-ink-dim" title={c.createdAt}>
+                      {whenOf(c.createdAt)}
+                    </span>
+                  </p>
+                  {/* `break-words` porque um link colado sem espaço é uma
+                      palavra de duzentos caracteres, e ela empurraria a gaveta
+                      inteira para fora da carta. */}
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-dim">
+                    {c.body}
+                  </p>
+                </div>
+                {mine || club.me.isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => void remove(c.id)}
+                    aria-label={mine ? 'Apagar seu comentário' : `Apagar o comentário de ${c.reviewerName}`}
+                    className="h-fit flex-none rounded-cell p-1 text-ink-faint transition-colors hover:text-dye-red-lit"
+                  >
+                    <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="min-w-[16ch] flex-1">
+          <span className="sr-only">Comentar a avaliação de {review.reviewerName}</span>
+          <textarea
+            rows={2}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            /* Enter envia, Shift+Enter quebra linha. Uma caixa de conversa em
+               que Enter não envia é uma caixa que faz a pessoa procurar o
+               botão toda vez, e a discussão aqui é rápida por definição — ela
+               está acontecendo em paralelo a uma chamada. */
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+            placeholder={own ? 'Responder' : 'Comentar'}
+            className="w-full resize-y rounded-cell bg-house-deep px-3 py-2 text-[13px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass"
+          />
+        </label>
+        <Key tone="flush" disabled={!draft.trim() || sending} onClick={() => void send()}>
+          {sending ? 'Enviando…' : own ? 'Responder' : 'Comentar'}
+        </Key>
+      </div>
     </div>
   );
 }
@@ -313,7 +587,8 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
       </button>
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
-          <Breakdown rows={r.breakdown} comment={r.comment} />
+          <Breakdown r={r} comment={r.comment} />
+          <Conversation review={r} />
           <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
       </Drawer>
@@ -636,7 +911,8 @@ function ByMovie({
                     </button>
                     <Drawer open={openIds.has(r.id)}>
                       <div className="px-3 pb-4 pt-1">
-                        <Breakdown rows={r.breakdown} comment={r.comment} />
+                        <Breakdown r={r} comment={r.comment} />
+                        <Conversation review={r} />
                         <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
                       </div>
                     </Drawer>

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useClub } from '@/App';
 
 const FIELD =
-  'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-cyan';
+  'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass';
 const PIN_FIELD = cn(FIELD, 'q tracking-[0.5em]');
 const onlyDigits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
 
@@ -426,7 +426,7 @@ function Roster() {
                     <span className="truncate">{p.name}</span>
                     {isSelf ? <span className="q text-[10px] text-ink-dim">você</span> : null}
                     {p.isAdmin ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-dye-cyan">
+                      <span className="inline-flex items-center gap-1 text-[10px] text-dye-brass">
                         <ShieldCheck className="h-3 w-3" strokeWidth={2} />
                         ADM
                       </span>

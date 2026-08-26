@@ -266,7 +266,7 @@ export function SearchField({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 rounded-cell bg-house-deep px-3 ring-1 ring-house-rail focus-within:ring-dye-cyan">
+      <div className="flex items-center gap-3 rounded-cell bg-house-deep px-3 ring-1 ring-house-rail focus-within:ring-dye-brass">
         <SearchIcon className="h-4 w-4 flex-none text-ink-dim" strokeWidth={1.7} />
         <input
           type="search"

@@ -2,29 +2,41 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  BASE, BASE_SWAP, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB,
-  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, GENRE_PRIORITY
+  BASE, BASE_SWAP, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB, PERSONAL_KEY,
+  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn, GENRE_PRIORITY
 } = require('../criteria');
 
-/* ── the /12 invariant ───────────────────────────────────────────────────
-   Both finalOf() here and the copy in public/app.js divide by a hard-coded
-   12. That only produces a 0–10 score while every genre keeps 8 criteria at
-   weight 1 plus 2 at weight 2. Adding a criterion without touching the
-   divisor would silently deflate every score, so guard it per genre. */
+/* ── a escala ────────────────────────────────────────────────────────────
+   Every genre asks eleven questions and every one of them weighs the same, so
+   a card full of tens is a ten and two films of different genres are on one
+   scale. What is guarded here is that property, not the constant that used to
+   produce it — the divisor is counted from the take now (see finalOf), which
+   is what lets a ten-criterion take from before Aproveitamento still read as a
+   score out of ten. */
 
-test('every genre weighs exactly 12', () => {
+test('every genre asks eleven questions, all at the same weight', () => {
   for (const genre of GENRES) {
     const cs = critsFor(genre);
-    const total = cs.reduce((sum, c) => sum + c.w, 0);
-    assert.equal(total, 12, `${genre} soma ${total} pesos, esperado 12`);
+    assert.equal(cs.length, 11, `${genre} tem ${cs.length} critérios, esperado 11`);
+    assert.deepEqual([...new Set(cs.map(c => c.w))], [1], `${genre} tem peso diferente de 1`);
   }
 });
 
-test('every genre has 8 base criteria (x1) and 2 genre criteria (x2)', () => {
+test('every genre is eight of craft, two of genre and one personal', () => {
   for (const genre of GENRES) {
     const cs = critsFor(genre);
-    assert.equal(cs.filter(c => c.w === 1).length, 8, `${genre}: critérios x1`);
-    assert.equal(cs.filter(c => c.w === 2).length, 2, `${genre}: critérios x2`);
+    assert.equal(cs.filter(c => c.group === 'oficio').length, 8, `${genre}: critérios de ofício`);
+    assert.equal(cs.filter(c => c.group === 'genero').length, 2, `${genre}: critérios do gênero`);
+    assert.equal(cs.filter(c => c.group === 'pessoal').length, 1, `${genre}: critério pessoal`);
+  }
+});
+
+test('the personal criterion is asked of every genre, and asked last', () => {
+  // Last on purpose: you say whether you enjoyed it after taking the film
+  // apart, and a card that asks it earlier invites the rest to agree with it.
+  for (const genre of GENRES) {
+    const cs = critsFor(genre);
+    assert.equal(cs.at(-1).key, PERSONAL_KEY, `${genre} não termina em ${PERSONAL_KEY}`);
   }
 });
 
@@ -73,24 +85,64 @@ test('finalOf stays inside 0-10 for every genre at the midpoint', () => {
   }
 });
 
-test('finalOf weighs genre criteria twice as heavily as technical ones', () => {
+test('no criterion counts more than any other', () => {
   const zeroed = allScores('Terror', 0);
 
-  // 'direcao' is technical (x1): 10 points -> 10/12.
-  const tech = finalOf('Terror', { ...zeroed, direcao: 10 });
-  assert.equal(tech, 10 / 12);
+  // 'direcao' is craft, 'atmosfera' is what Terror brings, 'aproveitamento' is
+  // the personal one. Ten points in any of them move the score the same.
+  const craft = finalOf('Terror', { ...zeroed, direcao: 10 });
+  const genre = finalOf('Terror', { ...zeroed, atmosfera: 10 });
+  const personal = finalOf('Terror', { ...zeroed, aproveitamento: 10 });
 
-  // 'atmosfera' is a Terror criterion (x2): 10 points -> 20/12.
-  const genreCrit = finalOf('Terror', { ...zeroed, atmosfera: 10 });
-  assert.equal(genreCrit, 20 / 12);
-  assert.equal(genreCrit, tech * 2);
+  assert.equal(craft, 10 / 11);
+  assert.equal(genre, craft);
+  assert.equal(personal, craft);
 });
 
-test('finalOf treats a missing criterion as zero rather than NaN', () => {
-  const partial = { direcao: 10, roteiro: 10 };
-  const final = finalOf('Drama', partial);
-  assert.ok(Number.isFinite(final), 'nota final virou NaN');
-  assert.equal(final, 20 / 12);
+/* ── o take que não respondeu tudo ───────────────────────────────────────
+   Every take recorded before 25/08/2026 has ten marks and no Aproveitamento.
+   Reading that silence as a zero would drop every historical score by about a
+   point, so the divisor is what the take answers. These two tests are the whole
+   reason finalOf counts instead of assuming. */
+
+test('a take from before Aproveitamento is scored out of what it answered', () => {
+  const before = allScores('Terror', 8);
+  delete before.aproveitamento;
+
+  // Ten eights is an eight. Divided by eleven it would have been 7,27.
+  assert.equal(finalOf('Terror', before), 8);
+  assert.equal(Object.keys(before).length, 10);
+});
+
+test('a criterion marked zero is not the same as one never asked', () => {
+  const answered = allScores('Terror', 10);
+  answered.aproveitamento = 0;
+  const missing = allScores('Terror', 10);
+  delete missing.aproveitamento;
+
+  assert.equal(finalOf('Terror', answered), 100 / 11);
+  assert.equal(finalOf('Terror', missing), 10);
+});
+
+test('finalOf survives a take with nothing in it rather than answering NaN', () => {
+  assert.equal(finalOf('Drama', {}), 0);
+  assert.equal(finalOf('Drama', undefined), 0);
+  const partial = finalOf('Drama', { direcao: 10, roteiro: 5 });
+  assert.ok(Number.isFinite(partial), 'nota final virou NaN');
+  assert.equal(partial, 7.5);
+});
+
+test('answeredIn lists what a take carries, in the order the card asks it', () => {
+  const before = allScores('Terror', 6);
+  delete before.aproveitamento;
+
+  const asked = answeredIn('Terror', before);
+  assert.equal(asked.length, 10);
+  assert.ok(!asked.some(c => c.key === PERSONAL_KEY), 'listou um critério que a ficha não tem');
+  assert.deepEqual(
+    asked.map(c => c.key),
+    critsFor('Terror').filter(c => c.key !== PERSONAL_KEY).map(c => c.key)
+  );
 });
 
 /* ── genre mapping ───────────────────────────────────────────────────── */
@@ -160,19 +212,24 @@ test('the single genre is the first of the list', () => {
 });
 
 /* ── the base, and the genres allowed to move it ──────────────────────────
-   A genre may replace a slot of the eight when the default question has no
+   A genre may replace a slot of the base when the default question has no
    referent — "Atuações" on an animation, "Direção de Arte" on a documentary.
    What it may not do is add one, drop one, or reorder them: the count is what
-   holds the /12 divisor up and the order is what makes two cards comparable
-   side by side. So the swap is checked against the declaration rather than
-   forbidden outright. */
-const baseKeys = g => critsFor(g).filter(c => c.w === 1).map(c => c.key);
+   keeps every take on one scale and the order is what makes two cards
+   comparable side by side. So the swap is checked against the declaration
+   rather than forbidden outright.
 
-test('a genre that declares no swap is asked the default eight', () => {
-  const fallback = BASE.map(t => t[0]);
+   `baseKeys` reads the craft group. It used to read `w === 1`, which was the
+   same set only while the genre pair weighed 2 — with every weight equal, the
+   group is the thing that was actually meant. */
+const baseKeys = g => critsFor(g).filter(c => c.group === 'oficio').map(c => c.key);
+/** The base as declared, minus the personal slot, which critsFor moves to the end. */
+const declaredCraft = BASE.map(t => t[0]).filter(k => k !== PERSONAL_KEY);
+
+test('a genre that declares no swap is asked the default craft', () => {
   for (const genre of GENRES) {
     if (BASE_SWAP[genre]) continue;
-    assert.deepEqual(baseKeys(genre), fallback, `${genre} mexeu na base sem declarar`);
+    assert.deepEqual(baseKeys(genre), declaredCraft, `${genre} mexeu na base sem declarar`);
   }
 });
 
@@ -182,9 +239,19 @@ test('a swap replaces a slot in place, never adds or reorders one', () => {
     for (const slot of Object.keys(swap)) {
       assert.ok(slots.includes(slot), `${genre} troca "${slot}", que não está na base`);
     }
-    const expected = BASE.map(t => (swap[t[0]] ? swap[t[0]][0] : t[0]));
+    const expected = BASE.map(t => (swap[t[0]] ? swap[t[0]][0] : t[0])).filter(
+      k => k !== PERSONAL_KEY
+    );
     assert.deepEqual(baseKeys(genre), expected, `${genre}: a base saiu de ordem`);
     assert.equal(baseKeys(genre).length, 8, `${genre}: a base deixou de ter oito`);
+  }
+});
+
+/* Nobody gets to swap out "did you enjoy it". A genre that replaced it would be
+   deciding that taste is not a question worth asking about that kind of film. */
+test('no genre may swap away the personal criterion', () => {
+  for (const swap of Object.values(BASE_SWAP)) {
+    assert.ok(!swap[PERSONAL_KEY], `um gênero está trocando ${PERSONAL_KEY}`);
   }
 });
 
@@ -209,7 +276,7 @@ test('the craft every film has is asked of every genre', () => {
   }
 });
 
-test('baseFor falls back to the default eight for an unknown genre', () => {
+test('baseFor falls back to the default base for an unknown genre', () => {
   assert.deepEqual(baseFor('Faroeste'), BASE);
   assert.deepEqual(baseFor(undefined), BASE);
 });
@@ -250,8 +317,8 @@ test('GENRES covers exactly the genres that define criteria', () => {
   assert.ok(GENRES.includes('Drama'), 'Drama é o fallback e precisa existir');
 });
 
-test('BASE is eight slots and every slot is named and described', () => {
-  assert.equal(BASE.length, 8);
+test('BASE is nine slots and every slot is named and described', () => {
+  assert.equal(BASE.length, 9);
   for (const [key, name, hint] of BASE) {
     assert.ok(key && name && hint, `slot "${key}" incompleto`);
   }

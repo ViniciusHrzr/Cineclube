@@ -1,12 +1,37 @@
 /* ══════════════════════════════════════════════════════════════════════════
    O que o clube pergunta de um filme.
 
-   Ten criteria per film, always: eight at weight 1 and two at weight 2, so the
-   weights sum to 12 and a card full of tens is a ten. That shape is load-
-   bearing — the divisor is written into finalOf() here and into the client, and
-   a test guards it.
+   Eleven criteria per film, and every one of them weighs the same. A card full
+   of tens is a ten, which is the only property of this arithmetic that is
+   actually load-bearing.
 
-   What changed is that the eight are no longer the same eight everywhere.
+   ── por que os pesos sumiram (25/08/2026) ───────────────────────────────
+   Eight criteria used to weigh 1 and the two the genre supplies weighed 2, for
+   a divisor of 12. The doubling was a claim: that what a genre is *for* counts
+   twice as much as how it is made. Defensible, never measured, and it quietly
+   decided every argument the club has ever had — a film with a great score and
+   flat atmosphere could not win a horror night no matter what anybody said.
+
+   The owner asked to see the record without it. So the weights are equal and
+   the divisor is now the number of questions answered, not a constant. The
+   genre criteria did not go anywhere: which two questions get asked still
+   depends on the film, and that was always the more interesting half.
+
+   `w` survives on every criterion, at 1. It is the arithmetic's own field, the
+   archive prints it, and a future weight is a value change rather than a
+   schema change.
+
+   ── por que o divisor conta, em vez de ser uma constante ────────────────
+   A take recorded before 25/08/2026 answered ten questions and has no mark for
+   Aproveitamento — it was not asked. Dividing those by eleven would read that
+   silence as a zero and drop every historical score by roughly a point, which
+   is the archive lying about what people said. So finalOf() divides by what the
+   take actually answers: ten for an old one, eleven for a new one, both means on
+   the same 0–10. The alternative — asking four people to re-rate forty films —
+   is not one.
+
+   ── de onde vem o conjunto ──────────────────────────────────────────────
+   Nine criteria are asked of every film, two come from its genre.
 
    ── why the base moves ──────────────────────────────────────────────────
    It used to be called TECH and it was fixed: the same eight questions asked of
@@ -21,9 +46,9 @@
    go blank; it fills with noise, at full weight, and the noise is
    indistinguishable from a score afterwards.
 
-   So a genre may replace a slot in the base. Replace, not add: the count and
-   the weights never move, which is what keeps every film on one scale. Two
-   genres do it today and the rest inherit the default eight unchanged.
+   So a genre may replace a slot in the base. Replace, not add: the count never
+   moves, which is what keeps every film on one scale. Two genres do it today
+   and the rest inherit the default nine unchanged.
 
    ── where these questions come from ─────────────────────────────────────
    The base is Bordwell & Thompson's division of film form in *Film Art* —
@@ -65,7 +90,7 @@
    lands on a slot of the same weight.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The eight a film is asked about unless its genre says otherwise. */
+/** The nine a film is asked about unless its genre says otherwise. */
 const BASE = [
   ['direcao', 'Direção',
     'A encenação: o que a câmera escolhe olhar, como o espaço da cena é organizado, o que fica de fora e o ritmo que o filme impõe. É onde se vê se alguém decidiu alguma coisa.'],
@@ -82,7 +107,23 @@ const BASE = [
   ['atuacoes', 'Atuações',
     'Interpretação e presença: corpo, voz, escuta. Se o elenco está todo no mesmo filme e se o tom de cada um serve ao que o filme é.'],
   ['originalidade', 'Originalidade',
-    'O que aqui não veio de outro lugar — ideia, forma ou ponto de vista próprios. Clichê usado com consciência conta a favor; clichê usado por falta de ideia, contra.']
+    'O que aqui não veio de outro lugar — ideia, forma ou ponto de vista próprios. Clichê usado com consciência conta a favor; clichê usado por falta de ideia, contra.'],
+  /* ── e o único que não é sobre o filme ─────────────────────────────────
+     Everything above asks what the film does. This one asks what it did to
+     *you*, and it is deliberately the last thing on the card: you answer it
+     after you have taken the thing apart, not before.
+
+     It exists because the other ten were quietly getting it anyway. A film
+     somebody loved and could not defend came out of this card at 6,4, and the
+     gap between that number and what they actually said out loud on the call
+     had nowhere to go — so it leaked into whichever criterion was closest to
+     hand, usually roteiro or originalidade. A criterion that is honestly
+     personal is what stops the other ten from being dishonestly personal.
+
+     It carries the same weight as the rest, which is the club saying taste is
+     one voice at the table rather than the verdict or a footnote. */
+  ['aproveitamento', 'Aproveitamento',
+    'O seu, e só o seu: o quanto você aproveitou esse filme. Não é o quanto ele é bom — é se você ficou feliz de ter assistido. Aqui vale gostar do que não se defende e não gostar do que é irretocável; é o único critério em que o argumento é você.']
 ];
 
 /* ── o que cada gênero troca na base ──────────────────────────────────────
@@ -111,7 +152,11 @@ const BASE_SWAP = {
   }
 };
 
-/** The two that carry double weight: what each genre is actually for. */
+/* ── os dois que o gênero traz ────────────────────────────────────────────
+   What each genre is actually for. These used to weigh double; now they weigh
+   the same as everything else and their whole distinction is that the film
+   decides which two they are. Atmosfera is asked of a horror film and never of
+   a comedy, which is a sharper statement than any multiplier was. */
 const GENRE_CRIT = {
   'Terror': [
     ['atmosfera', 'Atmosfera',
@@ -261,27 +306,77 @@ const GENRE_TO_TMDB = {
   'Romance': '10749'
 };
 
-/** The eight this genre is asked, with its swaps applied in place. */
+/** The nine this genre is asked, with its swaps applied in place. */
 function baseFor(genre) {
   const swap = BASE_SWAP[genre] || {};
   return BASE.map(slot => swap[slot[0]] || slot);
 }
 
+/* ── os três grupos ───────────────────────────────────────────────────────
+   The client used to group the card by weight: ×1 was the craft, ×2 was the
+   genre. With every weight at 1 that proxy says nothing, and the grouping it
+   was standing in for is real and worth stating outright — the eight about how
+   the film is made, the two its genre brings, and the one that is about you.
+
+   Sent as a field rather than inferred from the key, so the interface never has
+   to hold a list of which criteria are which. */
+const CRAFT = 'oficio';
+const GENRE = 'genero';
+const PERSONAL = 'pessoal';
+
+/** The key of the one criterion that asks about the viewer and not the film. */
+const PERSONAL_KEY = 'aproveitamento';
+
+const spell = (t, group) => ({ key: t[0], name: t[1], hint: t[2], w: 1, group });
+
+/* Craft, then genre, then the personal one — which is last on purpose. You say
+   whether you enjoyed it after taking the film apart, not before, and a card
+   that asks it in the middle invites the other answers to be adjusted to
+   agree with it. */
 function critsFor(genre) {
   const named = GENRE_CRIT[genre] ? genre : 'Drama';
-  return baseFor(named)
-    .map(t => ({ key: t[0], name: t[1], hint: t[2], w: 1 }))
-    .concat(GENRE_CRIT[named].map(t => ({ key: t[0], name: t[1], hint: t[2], w: 2 })));
+  const base = baseFor(named);
+  return base
+    .filter(t => t[0] !== PERSONAL_KEY)
+    .map(t => spell(t, CRAFT))
+    .concat(GENRE_CRIT[named].map(t => spell(t, GENRE)))
+    .concat(base.filter(t => t[0] === PERSONAL_KEY).map(t => spell(t, PERSONAL)));
 }
 
+/* ── a nota ───────────────────────────────────────────────────────────────
+   The mean of what this take answers, weighted — which today means the plain
+   mean, because every weight is 1.
+
+   The divisor is counted rather than assumed, and that is the part worth
+   reading twice. A take recorded before Aproveitamento existed has ten marks,
+   not eleven, and the eleventh is not a zero — it is a question nobody asked.
+   Counting only the criteria the take actually carries keeps that take on the
+   same 0–10 as a new one instead of docking it a point for a change it could
+   not have known about.
+
+   An absent criterion and a criterion marked zero are different things here, so
+   the test is on the key being present and not on the value being truthy. */
 function finalOf(genre, scores) {
-  const cs = critsFor(genre);
   let sum = 0;
-  cs.forEach(c => { sum += (scores[c.key] ?? 0) * c.w; });
-  return sum / 12;
+  let weight = 0;
+  for (const c of critsFor(genre)) {
+    const value = scores?.[c.key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    sum += value * c.w;
+    weight += c.w;
+  }
+  return weight ? sum / weight : 0;
+}
+
+/* What a take answers, in the order the card asks it. Criteria the take has no
+   mark for are left out rather than printed as zero: an archive that shows
+   "Aproveitamento 0,0" on a film rated in June is inventing an opinion. */
+function answeredIn(genre, scores) {
+  return critsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }
 
 module.exports = {
   BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB,
-  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf
+  CRAFT, GENRE, PERSONAL, PERSONAL_KEY,
+  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn
 };

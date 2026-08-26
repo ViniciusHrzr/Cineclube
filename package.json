@@ -13,6 +13,7 @@
     "backfill:runtimes": "node scripts/backfill-runtimes.js",
     "backfill:notas": "node scripts/backfill-tmdb-scores.js",
     "backfill:ingles": "node scripts/backfill-english-titles.js",
+    "recalcular:notas": "node scripts/recompute-finals.js",
     "build": "npm --prefix client install && npm --prefix client run build"
   },
   "engines": {

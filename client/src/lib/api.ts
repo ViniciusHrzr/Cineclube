@@ -45,9 +45,62 @@ export const profile = {
     }),
 };
 
-export type Criterion = { key: string; name: string; hint: string; w: number };
+/* ── os três grupos de uma ficha ──────────────────────────────────────────
+   `oficio` são os oito sobre como o filme é feito, `genero` são os dois que o
+   filme escolhe, `pessoal` é o único que pergunta sobre você.
 
-export type BreakdownRow = { key: string; name: string; w: number; value: number };
+   Vem do servidor em vez de ser deduzido da chave ou do peso. O peso era o que
+   agrupava antes — ×1 era ofício, ×2 era gênero — e no dia em que os pesos
+   ficaram iguais esse atalho passou a não dizer nada. */
+export type CriterionGroup = 'oficio' | 'genero' | 'pessoal';
+
+export type Criterion = { key: string; name: string; hint: string; w: number; group: CriterionGroup };
+
+export type BreakdownRow = {
+  key: string;
+  name: string;
+  w: number;
+  group?: CriterionGroup;
+  value: number;
+};
+
+/* ── o primeiro indício de rede social ────────────────────────────────────
+   O clube discute por voz e a discussão morre com a chamada. Estas duas coisas
+   sobrevivem a ela, e as duas se penduram numa avaliação específica, porque a
+   ficha de alguém é a coisa concreta que se discute. */
+
+export type ReviewComment = {
+  id: string;
+  reviewId: string;
+  reviewerId: string;
+  reviewerName: string;
+  reviewerDot: string;
+  body: string;
+  /** ISO, com hora: uma conversa é lida na ordem em que aconteceu. */
+  createdAt: string;
+};
+
+/** Um voto de uma pessoa em uma nota. +1 ou −1; não votar é não existir. */
+export type CriterionVote = {
+  reviewId: string;
+  key: string;
+  reviewerId: string;
+  value: 1 | -1;
+};
+
+export const social = {
+  all: () => api<{ comments: ReviewComment[]; votes: CriterionVote[] }>('/api/social'),
+  comment: (reviewId: string, body: string) =>
+    post<ReviewComment>(`/api/social/reviews/${reviewId}/comments`, { body }),
+  uncomment: (id: string) => del(`/api/social/comments/${id}`),
+  /** 0 tira o voto. Devolve o voto gravado, ou null quando foi retirado. */
+  vote: (reviewId: string, key: string, value: 1 | -1 | 0) =>
+    api<{ vote: CriterionVote | null }>(`/api/social/reviews/${reviewId}/criteria/${key}/vote`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
+};
 
 export type Review = {
   id: string;
@@ -174,12 +227,26 @@ export const del = (path: string) => api<null>(path, { method: 'DELETE' });
    The server owns the formula (app/criteria.js). The client recomputes it only
    so the score answers the hand without a round trip; it never decides it. */
 
+/* A média do que a ficha responde, ponderada — o que hoje é a média simples,
+   porque todo peso é 1. O divisor é contado e não constante: uma avaliação
+   gravada antes de Aproveitamento existir tem dez marcas e não onze, e a
+   décima primeira não é um zero, é uma pergunta que ninguém fez. Mesma conta
+   do servidor, em criteria.js, que é quem decide. */
 export function finalOf(criteria: Criterion[], scores: Record<string, number>) {
-  return criteria.reduce((sum, c) => sum + (scores[c.key] ?? 0) * c.w, 0) / 12;
+  const weight = totalWeight(criteria, scores);
+  return weight ? weightedSum(criteria, scores) / weight : 0;
 }
 
 export function weightedSum(criteria: Criterion[], scores: Record<string, number>) {
-  return criteria.reduce((sum, c) => sum + (scores[c.key] ?? 0) * c.w, 0);
+  return criteria.reduce(
+    (sum, c) => (typeof scores[c.key] === 'number' ? sum + scores[c.key] * c.w : sum),
+    0
+  );
+}
+
+/** O divisor: a soma dos pesos das perguntas que esta ficha respondeu. */
+export function totalWeight(criteria: Criterion[], scores: Record<string, number>) {
+  return criteria.reduce((sum, c) => (typeof scores[c.key] === 'number' ? sum + c.w : sum), 0);
 }
 
 export function fmt(n: number) {
@@ -218,8 +285,17 @@ export function initialsOf(name: string) {
    assigns once per person, never from roster position, so removing a member
    cannot recolour everyone else's history. */
 const LEGACY_DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#b2b6ca', '#d2cefd', '#9397ab'];
+/* As dez cores de carretel. A segunda era o ciano do sistema e virou verdete
+   quando o ciano saiu do produto inteiro — o slot é o mesmo, então quem já
+   usava continua sendo a segunda pessoa do clube, só que noutro tom.
+
+   Verdete e não latão, apesar de latão ser a cor de estado agora: identidade e
+   estado não podem ser a mesma tinta. Uma pessoa cuja etiqueta tem exatamente a
+   cor do anel de foco é uma pessoa que parece selecionada o tempo todo. Pelo
+   mesmo motivo o âmbar do índice 2 ficou vizinho do latão e é o próximo a se
+   mexer, se alguém achar que embaralha. */
 const REEL = [
-  '#e0362c', '#43b8c6', '#e8b44a', '#7bc47f', '#c77dd6',
+  '#e0362c', '#4fa98c', '#e8b44a', '#7bc47f', '#c77dd6',
   '#f08a5d', '#5b8dd9', '#d95f8a', '#8fce7c', '#c9bfae',
 ];
 function hashOf(s: string) {

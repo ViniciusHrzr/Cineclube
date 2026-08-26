@@ -4,10 +4,10 @@ import type { Config } from 'tailwindcss';
    SALA DE PROJEÇÃO — the design system.
 
    A dark auditorium, not a piece of equipment. The image arrives as light
-   thrown through celluloid, so the palette is the one film itself is made of:
-   three-strip Technicolor dye — red, cyan, cream — over the blue-black of a
-   room with the house lights down. Nothing here is a neon accent on grey; the
-   colour comes from the medium.
+   thrown through celluloid, and the palette comes from the room it arrives in:
+   the red of the curtain, the cream of the beam and the brass of the marquee,
+   over the blue-black of a house with the lights down. Nothing here is a neon
+   accent on grey; the colour comes from the place.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export default {
@@ -39,8 +39,29 @@ export default {
           red: '#d12a20',      // fills: the commit key, the REC lamp, the curtain
           'red-lit': '#f2564a', // red as text: links, destructive hover
           'red-deep': '#8c1e18',
-          cyan: '#43b8c6',     // state, selection, the cool half of the frame
-          'cyan-deep': '#1d5f68',
+          /* ── latão ────────────────────────────────────────────────────────
+             State and selection: the focus ring, the engaged chip, the genre
+             criteria's legend, the vote you cast, the ADM mark, the field you
+             are typing in.
+
+             This was cyan — the cool half of the Technicolor frame — until the
+             owner asked for something that reads as a cinema rather than as a
+             process. Brass is the marquee bulb, the handrail and the gilding on
+             a proscenium, which is the most literal answer there is to "sala de
+             cinema".
+
+             The cost is stated rather than hidden, because it is real: brass
+             sits in the same family as `beam`, so state and light are no longer
+             separated by hue. What separates them now is saturation and value —
+             beam is a pale, near-white cream at 92% lightness; brass is a
+             saturated metal at 55% — plus role and position, which were always
+             doing most of the work. If a selected chip ever starts reading as
+             "lit" instead of "chosen", this is the line that caused it and
+             darkening `brass` toward `brass-deep` is the fix.
+
+             8,9:1 on `house`, so it clears the floor for text with room over. */
+          brass: '#d9a441',
+          'brass-deep': '#7a5a1e',
           /* Green belongs here more than it looks like it should. Three-strip
              Technicolor separates an image onto three records — red, green and
              blue — and the room was already using two of them; this is the one

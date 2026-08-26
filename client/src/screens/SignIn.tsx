@@ -112,7 +112,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                   </span>
                   <span className="text-center text-[14px] text-ink-dim transition-colors group-hover:text-beam">
                     {r.name}
-                    {r.isAdmin ? <span className="ml-1 text-[10px] text-dye-cyan">ADM</span> : null}
+                    {r.isAdmin ? <span className="ml-1 text-[10px] text-dye-brass">ADM</span> : null}
                     {!r.hasPin ? (
                       <span className="mt-0.5 block font-display text-[10px] uppercase tracking-[0.12em] text-dye-red-lit">
                         PIN pendente
@@ -223,7 +223,7 @@ function PinEntry({
               key={i}
               className={cn(
                 'flex h-14 w-12 items-center justify-center rounded-cell bg-house-deep font-display text-[26px] text-beam ring-1 transition-colors duration-150',
-                error ? 'ring-dye-red-lit/70' : pin.length === i ? 'ring-dye-cyan' : 'ring-house-rail'
+                error ? 'ring-dye-red-lit/70' : pin.length === i ? 'ring-dye-brass' : 'ring-house-rail'
               )}
             >
               {pin[i] ? '•' : ''}
@@ -269,7 +269,7 @@ function NewReviewer({ onCancel, onCreated }: { onCancel: () => void; onCreated:
   }
 
   const field =
-    'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[15px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-cyan';
+    'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[15px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass';
 
   return (
     <div className="plate space-y-4 p-6">

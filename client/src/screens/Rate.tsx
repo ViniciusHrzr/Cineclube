@@ -15,6 +15,7 @@ import {
   finalOf,
   post,
   runtimeOf,
+  totalWeight,
   verdictFor,
   weightedSum,
   type Criterion,
@@ -45,8 +46,8 @@ export function RateScreen({
      and until now something had to choose — a priority list did, and it was
      guessing at what the person watching already knows. So the choice moves to
      them: every genre the film carries is offered, and the card follows the one
-     they pick — the two ×2 criteria always, and for animation and documentary a
-     slot of the eight as well.
+     they pick — the two criteria the genre brings always, and for animation and
+     documentary a slot of the craft eight as well.
 
      It is held here rather than read off the film because it is a decision
      about this take and not a fact about the film. Two members can rate the
@@ -125,6 +126,7 @@ export function RateScreen({
 
   const final = movie ? finalOf(criteria, scores) : 0;
   const sum = movie ? weightedSum(criteria, scores) : 0;
+  const weight = movie ? totalWeight(criteria, scores) : 0;
   const existing =
     movie && club.reviews.find(r => r.reviewerId === reviewerId && r.movieId === movie.id);
 
@@ -218,7 +220,7 @@ export function RateScreen({
                     value={comment}
                     onChange={e => setComment(e.target.value)}
                     placeholder="O que ficou da sessão?"
-                    className="w-full resize-y rounded-cell bg-house-deep px-3 py-2.5 text-[14px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-cyan"
+                    className="w-full resize-y rounded-cell bg-house-deep px-3 py-2.5 text-[14px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass"
                   />
                 </label>
               </Bay>
@@ -230,6 +232,7 @@ export function RateScreen({
           hasMovie={!!movie}
           final={final}
           sum={sum}
+          weight={weight}
           canSave={!!movie && !!reviewerId && !saving}
           saving={saving}
           saved={saved}
@@ -395,7 +398,7 @@ function MovieSearch({ onPick }: { onPick: (id: number) => void }) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 rounded-cell bg-house-deep px-3 ring-1 ring-house-rail focus-within:ring-dye-cyan">
+      <div className="flex items-center gap-3 rounded-cell bg-house-deep px-3 ring-1 ring-house-rail focus-within:ring-dye-brass">
         <Search className="h-4 w-4 flex-none text-ink-dim" strokeWidth={1.7} />
         <input
           type="text"
@@ -464,25 +467,43 @@ function Channels({
   crew?: Record<string, string[]>;
   onChange: (key: string, value: number) => void;
 }) {
-  const tech = criteria.filter(c => c.w === 1);
-  const gen = criteria.filter(c => c.w === 2);
+  /* Agrupado pelo que o servidor declara, e não mais pelo peso. O peso era o
+     atalho — ×1 era ofício, ×2 era gênero — e no dia em que todo peso virou 1
+     esse atalho passou a juntar as onze perguntas numa lista só. O agrupamento
+     que ele representava é real e agora é explícito. */
+  const craft = criteria.filter(c => c.group === 'oficio');
+  const gen = criteria.filter(c => c.group === 'genero');
+  const personal = criteria.filter(c => c.group === 'pessoal');
   let i = 0;
   const row = (c: Criterion) => (
     <Channel key={c.key} c={c} index={i++} value={scores[c.key] ?? 5} signers={crew?.[c.key]} onChange={onChange} />
   );
   return (
     <div className="plate overflow-hidden px-4 pb-4 sm:px-5">
-      {/* Not "técnicos" any more. Two genres replace a slot of these eight —
-          animation is asked about its voice cast instead of its acting,
-          documentary about access and archive instead of acting and production
-          design — so the word that used to describe the group now describes it
-          wrongly for two of the nine. */}
-      <p className="legend py-4">8 critérios ×1</p>
-      {tech.map(row)}
-      <p className="legend mt-5 border-t border-white/[0.07] pt-5 text-dye-cyan">
-        2 critérios de {genre.toLowerCase()} ×2
+      {/* Not "técnicos". Two genres replace a slot of these eight — animation is
+          asked about its voice cast instead of its acting, documentary about
+          access and archive instead of acting and production design — so the
+          word that used to describe the group describes it wrongly for two. */}
+      <p className="legend py-4">Como o filme é feito</p>
+      {craft.map(row)}
+
+      {/* Cyan, as the pair always was here. It never meant "worth double" — it
+          means "this part of the card is the film's own choice", which is
+          exactly what survived the weights going away. */}
+      <p className="legend mt-5 border-t border-white/[0.07] pt-5 text-dye-brass">
+        O que {genre.toLowerCase()} pede
       </p>
       {gen.map(row)}
+
+      {/* ── e o único que não é sobre o filme ─────────────────────────────
+          Its own region, at the end, because it is a different question and
+          reading it as the ninth thing about the film is how it stops being
+          answered honestly. Everything above asks what the film does; this asks
+          what it did to you, and you answer it after taking the film apart. */}
+      <p className="legend mt-5 border-t border-white/[0.07] pt-5">
+        E o seu
+      </p>
+      {personal.map(row)}
     </div>
   );
 }
@@ -537,16 +558,13 @@ function Channel({
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 9) * 0.026 }}
       className="group border-t border-white/[0.06] py-4 first-of-type:border-0"
     >
+      {/* No weight badge. It used to read ×1 or ×2 and carried the one fact
+          that separated the two halves of the card; with every criterion at the
+          same weight it would print ×1 eleven times, which is a column of
+          nothing dressed as data. The grouping legends above say what the badge
+          was really being read for. */}
       <div className="flex items-baseline gap-2">
         <span className="font-display text-[15px] uppercase tracking-[0.1em] text-ink">{c.name}</span>
-        <span
-          className={cn(
-            'q rounded-[1px] px-1.5 py-px text-[10px] ring-1',
-            c.w === 2 ? 'text-dye-cyan ring-dye-cyan/50' : 'text-ink-dim ring-house-rail'
-          )}
-        >
-          ×{c.w}
-        </span>
         <span className="q ml-auto text-[21px] font-medium tabular-nums text-ink transition-colors duration-150 group-hover:text-beam group-focus-within:text-beam">
           {fmt(value)}
         </span>
@@ -580,7 +598,7 @@ function Channel({
           step={0.5}
           value={value}
           onChange={e => onChange(c.key, parseFloat(e.target.value))}
-          aria-label={`${c.name}, peso ${c.w}`}
+          aria-label={c.name}
           aria-describedby={`hint-${c.key}`}
           className="peer film-range absolute inset-0 z-10 w-full"
         />
@@ -608,7 +626,7 @@ function Channel({
             'film-gate pointer-events-none absolute top-1 -ml-[2px] h-[26px] w-[4px]',
             'transition-[left,transform,box-shadow] duration-[130ms] ease-beam',
             'peer-active:scale-y-[1.16] peer-active:shadow-[0_0_0_1px_rgba(4,5,10,0.9),0_2px_10px_rgba(0,0,0,0.8),0_0_22px_rgba(255,214,150,0.7)]',
-            'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.cyan),0_0_18px_rgba(255,214,150,0.5)]'
+            'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.brass),0_0_18px_rgba(255,214,150,0.5)]'
           )}
         />
       </div>
@@ -627,6 +645,7 @@ function MasterCard({
   hasMovie,
   final,
   sum,
+  weight,
   canSave,
   saving,
   saved,
@@ -638,6 +657,8 @@ function MasterCard({
   hasMovie: boolean;
   final: number;
   sum: number;
+  /** The divisor: how many questions this card is asking. */
+  weight: number;
   canSave: boolean;
   saving: boolean;
   saved: boolean;
@@ -664,8 +685,12 @@ function MasterCard({
           )}
           <span className="q text-[13px] text-ink-dim">/10</span>
         </div>
+        {/* The arithmetic, printed rather than hidden — and the divisor is read
+            off the card instead of being a constant in this line, because it is
+            one now: a take answers eleven questions today and answered ten
+            before Aproveitamento existed. */}
         <p className="q ml-auto pb-1 text-[11px] text-ink-dim lg:ml-0 lg:mt-3 lg:pb-0">
-          {hasMovie ? `${fmt(sum)} pontos ÷ 12 pesos` : '8 critérios ×1 + 2 critérios ×2'}
+          {hasMovie ? `${fmt(sum)} pontos ÷ ${weight} critérios` : '11 critérios, todos iguais'}
         </p>
       </div>
       <Strip value={hasMovie ? final : 0} cells={20} live className="mt-3 h-3 lg:h-4" />

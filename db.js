@@ -122,6 +122,46 @@ async function migrate() {
       added_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    /* ── a conversa em cima de uma avaliação ─────────────────────────────
+       The club argues on a Discord call and the argument evaporates with it.
+       This is the first thing in the product that keeps any of it: a thread
+       hanging off one person's take, so "discordo do teu 9 em fotografia" has
+       somewhere to live that is not a voice channel nobody recorded.
+
+       Pendurado na avaliação e não no filme, de propósito. A ficha de cada
+       pessoa é a coisa concreta que se discute, e a mesma escolha vale para os
+       votos abaixo — os dois respondem a um take específico.
+
+       ON DELETE CASCADE nas duas pontas: uma avaliação apagada leva a conversa
+       sobre ela, e alguém que sai do clube leva o que escreveu. */
+    CREATE TABLE IF NOT EXISTS review_comments (
+      id TEXT PRIMARY KEY,
+      review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS review_comments_review ON review_comments(review_id);
+
+    /* ── e o voto em uma nota isolada ─────────────────────────────────────
+       Concordar com uma pessoa inteira é raro; concordar com o 9 dela em
+       fotografia e achar o 4 em roteiro absurdo é o que acontece de verdade. O
+       voto é por critério por isso.
+
+       A chave primária é (avaliação, critério, quem votou), então uma pessoa
+       tem no máximo um voto em cada nota e trocar de ideia é um UPDATE, nunca
+       uma segunda linha. A coluna value é +1 ou -1 e nunca 0 — tirar o voto
+       apaga a linha, que é a diferença entre "não votei" e "votei neutro". */
+    CREATE TABLE IF NOT EXISTS criterion_votes (
+      review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+      criterion_key TEXT NOT NULL,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      value INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (review_id, criterion_key, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS criterion_votes_review ON criterion_votes(review_id);
+
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,

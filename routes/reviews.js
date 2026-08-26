@@ -3,7 +3,7 @@ const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
-const { critsFor, finalOf, GENRES } = require('../criteria');
+const { answeredIn, critsFor, finalOf, GENRES } = require('../criteria');
 const { fillEnglishTitle } = require('../english');
 
 const router = express.Router();
@@ -46,13 +46,32 @@ const savedStmt = db.prepare(`
   WHERE rv.reviewer_id = ? AND rv.movie_id = ?
 `);
 const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
+/* ── o que uma regravação faz com os votos ────────────────────────────────
+   Um voto é em uma nota, não em um critério: "concordo com o teu 9 em
+   fotografia". Se a nota vira 6, aquele voto passa a dizer que duas pessoas
+   concordaram com um número que não está mais lá.
+
+   Então uma regravação limpa os votos dos critérios cuja nota mudou, e só
+   deles — quem regravou para mexer em roteiro não perde a concordância que já
+   tinha em som. Os comentários ficam: um argumento sobre o filme continua
+   valendo depois de a nota ser ajustada, e é justamente para isso que se
+   ajusta. */
+const priorScoresStmt = db.prepare(
+  'SELECT id, scores FROM reviews WHERE reviewer_id = ? AND movie_id = ?'
+);
+const dropVoteStmt = 'DELETE FROM criterion_votes WHERE review_id = ? AND criterion_key = ?';
 const deleteStmt = db.prepare('DELETE FROM reviews WHERE id = ?');
 const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
 
 function toReviewDTO(row) {
   const genre = GENRES.includes(row.movie_genre) ? row.movie_genre : 'Drama';
   const scores = JSON.parse(row.scores);
-  const breakdown = critsFor(genre).map(c => ({ key: c.key, name: c.name, w: c.w, value: scores[c.key] ?? 0 }));
+  /* Only what this take answers. A take from before Aproveitamento existed has
+     ten marks, and printing an eleventh at 0,0 would put an opinion in somebody's
+     mouth — see answeredIn in criteria.js. */
+  const breakdown = answeredIn(genre, scores).map(c => ({
+    key: c.key, name: c.name, w: c.w, group: c.group, value: scores[c.key]
+  }));
   return {
     id: row.id,
     reviewerId: row.reviewer_id,
@@ -125,6 +144,21 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
   const cleanComment = typeof comment === 'string' ? comment.trim().slice(0, 2000) : null;
 
+  /* Lido antes da escrita, porque depois dela o valor antigo não existe mais. */
+  const prior = await priorScoresStmt.get(reviewerId, movie.id);
+  const stale = [];
+  if (prior) {
+    let before = {};
+    try {
+      before = JSON.parse(prior.scores) || {};
+    } catch {
+      /* scores ilegíveis: nada para comparar, e nada a limpar */
+    }
+    for (const c of cs) {
+      if (before[c.key] !== undefined && before[c.key] !== cleanScores[c.key]) stale.push(c.key);
+    }
+  }
+
   await upsertStmt.run({
     id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
@@ -134,6 +168,9 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
       : null,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
+  if (stale.length) {
+    await db.batch(stale.map(key => ({ sql: dropVoteStmt, args: [prior.id, key] })));
+  }
   await deleteWatchlistStmt.run(movie.id);
   /* O acervo é a outra tela que filtra o banco, e um filme avaliado fica nele
      para sempre — então é aqui que ele precisa aprender os nomes por que vai

@@ -69,7 +69,7 @@
     outline: none;
   }
   :focus-visible {
-    outline: 2px solid theme('colors.dye.cyan');
+    outline: 2px solid theme('colors.dye.brass');
     outline-offset: 2px;
   }
   * {

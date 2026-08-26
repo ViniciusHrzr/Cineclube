@@ -215,7 +215,7 @@ export function PortraitGate({
                 if (e.key === '-') return void (e.preventDefault(), zoomTo(frame.zoom / 1.15));
               }}
               style={{ width: GATE, height: GATE, touchAction: 'none' }}
-              className="relative mx-auto mt-4 cursor-grab overflow-hidden rounded-cell bg-house-deep ring-1 ring-house-rail focus-visible:ring-2 focus-visible:ring-dye-cyan active:cursor-grabbing"
+              className="relative mx-auto mt-4 cursor-grab overflow-hidden rounded-cell bg-house-deep ring-1 ring-house-rail focus-visible:ring-2 focus-visible:ring-dye-brass active:cursor-grabbing"
             >
               <PictureLayer
                 source={loaded.source}
@@ -243,7 +243,7 @@ export function PortraitGate({
                    the thumb along with everything else, and this control does
                    not earn the twenty lines that would draw a new one. The
                    accent colour is enough to keep it in the room. */
-                className="w-full cursor-pointer accent-dye-cyan"
+                className="w-full cursor-pointer accent-dye-brass"
               />
             </label>
 

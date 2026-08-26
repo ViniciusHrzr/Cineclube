@@ -318,7 +318,8 @@ test('saves a review and computes the final score server-side', async () => {
   assert.equal(body.movieGenre, 'Terror');
   assert.equal(body.reviewerName, reviewer.name);
   assert.equal(body.comment, 'Excelente.');
-  assert.equal(body.breakdown.length, 10);
+  assert.equal(body.breakdown.length, 11);
+  assert.deepEqual([...new Set(body.breakdown.map(b => b.w))], [1], 'os pesos deixaram de ser iguais');
 });
 
 test('a review is signed by the session, not by the request body', async () => {

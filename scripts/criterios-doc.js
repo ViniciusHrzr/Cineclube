@@ -18,7 +18,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, GENRE_TO_TMDB, TMDB_GENRE_MAP, critsFor
+  BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, GENRE_TO_TMDB, TMDB_GENRE_MAP,
+  PERSONAL_KEY, critsFor
 } = require('../criteria');
 
 const OUT = path.join(__dirname, '..', '..', 'criterios-cineclube.txt');
@@ -61,30 +62,44 @@ say();
 say('COMO A NOTA É CALCULADA');
 say(RULE);
 say();
-say('    nota = (soma de cada critério × seu peso) ÷ 12');
+say('    nota = média dos critérios que a ficha responde');
 say();
-say('    8 critérios da base   × peso 1  =  8');
-say('    2 critérios do gênero × peso 2  =  4');
-say('                                       --');
-say('    soma dos pesos                     12');
+say('    8 critérios de ofício   — como o filme é feito');
+say('    2 critérios do gênero   — o que aquele tipo de filme pede');
+say('    1 critério pessoal      — o quanto você aproveitou');
+say('                             --');
+say('    11 perguntas, todas com o mesmo peso');
 say();
 say('Cada critério vai de 0 a 10, em passos de 0,5. Um card cheio de 10 dá 10,0;');
-say('um card cheio de 0 dá 0,0. Os dois critérios do gênero pesam o dobro de');
-say('cada um da base, ou seja: juntos valem o mesmo que quatro da base.');
+say('um card cheio de 0 dá 0,0.');
+say();
+say('Até 25/08/2026 os dois critérios do gênero pesavam o dobro e o divisor era');
+say('a constante 12. O peso duplo era uma afirmação que nunca foi medida — que o');
+say('que um gênero é PARA vale duas vezes o como o filme é feito — e ele decidia');
+say('em silêncio toda discussão do clube. Os pesos foram igualados para ver o');
+say('acervo sem ele. Os critérios por gênero continuam: qual par é perguntado');
+say('ainda depende do filme, e essa sempre foi a metade mais interessante.');
+say();
+say('O divisor é contado e não constante. Uma avaliação gravada antes de');
+say('Aproveitamento existir tem dez marcas, e a décima primeira não é um zero —');
+say('é uma pergunta que ninguém fez. Ela é dividida por dez, uma nova por onze,');
+say('e as duas são médias na mesma escala de 0 a 10.');
 say();
 say();
-say('A BASE — as oito perguntas padrão (peso ×1)');
+say('A BASE — as nove perguntas padrão');
 say(RULE);
 say();
 say(wrap(
   'Valem para todo filme, com duas exceções declaradas mais abaixo: animação e ' +
   'documentário trocam alguma destas perguntas por outra, porque a original não ' +
-  'tem do que falar naquele gênero.', 76, ''
+  'tem do que falar naquele gênero. A última é a única que não pergunta sobre o ' +
+  'filme, e nenhum gênero pode trocá-la.', 76, ''
 ));
 say();
 
 BASE.forEach(([key, name, hint], i) => {
-  say(` ${String(i + 1).padStart(2)}. ${name}`);
+  const mark = key === PERSONAL_KEY ? '   ← o pessoal, e o último do card' : '';
+  say(` ${String(i + 1).padStart(2)}. ${name}${mark}`);
   say(`     [${key}]`);
   say(wrap(hint, 71, '     '));
   say();
@@ -115,7 +130,7 @@ for (const [genre, swap] of Object.entries(BASE_SWAP)) {
 }
 
 say();
-say('POR GÊNERO — os dois critérios de peso ×2');
+say('POR GÊNERO — os dois critérios que o filme escolhe');
 say(RULE);
 say();
 say(wrap(
@@ -127,7 +142,7 @@ say();
 for (const genre of GENRES) {
   say(genre.toUpperCase());
   GENRE_CRIT[genre].forEach(([key, name, hint], i) => {
-    say(`  ${9 + i}. ${name}   (peso ×2)`);
+    say(`  ${9 + i}. ${name}`);
     say(`     [${key}]`);
     say(wrap(hint, 71, '     '));
   });
@@ -173,10 +188,11 @@ say('    a renomeação entre em scripts/migrate-criteria-keys.js. Existe um tes
 say('    que trava uma troca de chave sem a migração correspondente.');
 say();
 say(wrap(
-  'E o número de critérios: são 8 ×1 mais 2 ×2 em todo gênero, e o divisor 12 ' +
-  'vem daí. Acrescentar ou tirar um critério exige mudar o divisor, senão todas ' +
-  'as notas mudam de escala em silêncio. Um teste trava isso também — inclusive ' +
-  'a regra de que uma troca na base substitui um slot em vez de somar um.', 76, ''
+  'E o número de critérios: são 8 de ofício, 2 do gênero e 1 pessoal, em todo ' +
+  'gênero. O divisor não é constante — é a soma dos pesos que a ficha responde — ' +
+  'então acrescentar um critério não muda a escala das notas antigas, mas muda a ' +
+  'das novas. Um teste trava a contagem e os grupos, inclusive a regra de que uma ' +
+  'troca na base substitui um slot em vez de somar um.', 76, ''
 ));
 say();
 
@@ -185,7 +201,7 @@ say();
 for (const genre of GENRES) {
   const cs = critsFor(genre);
   const total = cs.reduce((sum, c) => sum + c.w, 0);
-  if (total !== 12) throw new Error(`${genre} soma ${total} pesos — o texto diria uma mentira`);
+  if (total !== 11) throw new Error(`${genre} soma ${total} pesos — o texto diria uma mentira`);
 }
 
 /* With a BOM, and CRLF. The file the club opens is opened on Windows, by

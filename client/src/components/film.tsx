@@ -399,7 +399,7 @@ function Verdicts({
         : <p className="q text-[12px] text-ink-dim">sem avaliação do clube</p>}
       {crowd ? verdict('TMDB', crowd.score, `${votes(crowd.votes)} votos`, false) : null}
       {apart ? (
-        <p className="q mt-0.5 text-[11.5px] text-dye-cyan">
+        <p className="q mt-0.5 text-[11.5px] text-dye-brass">
           {fmt(Math.abs(gap!))} {gap! > 0 ? 'acima' : 'abaixo'} do TMDB
         </p>
       ) : gap != null ? (

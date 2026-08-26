@@ -823,7 +823,7 @@ function SourcePanel({
       <div
         className={cn(
           'rounded-cell border border-dashed px-5 py-8 text-center transition-colors duration-150',
-          over ? 'border-dye-cyan bg-dye-cyan/[0.06]' : 'border-house-rail bg-house-deep/60'
+          over ? 'border-dye-brass bg-dye-brass/[0.06]' : 'border-house-rail bg-house-deep/60'
         )}
       >
         {/* Leads with the file because that is the path that works, and it is

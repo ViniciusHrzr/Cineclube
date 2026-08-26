@@ -9,10 +9,13 @@ import {
   initialsOf,
   post,
   reelColor,
+  social,
   type Criterion,
+  type CriterionVote,
   type Movie,
   type Reviewer,
   type Review,
+  type ReviewComment,
   type SessionUser,
   type WatchItem,
 } from '@/lib/api';
@@ -51,6 +54,18 @@ type Club = {
   watchlist: WatchItem[];
   criteria: Record<string, Criterion[]>;
   genres: string[];
+  /* ── a conversa em cima das avaliações ──────────────────────────────────
+     Carregada inteira no boot, junto com o resto do clube, e não por avaliação.
+     A tela de avaliados desenha o acervo todo: buscar por ficha seriam quarenta
+     requisições e um estado de carregando dentro de cada gaveta. Num clube de
+     quatro pessoas isto é da ordem de centenas de linhas. */
+  comments: ReviewComment[];
+  votes: CriterionVote[];
+  /** Escreve, e devolve o comentário gravado — a lista já se atualizou. */
+  comment: (reviewId: string, body: string) => Promise<void>;
+  uncomment: (id: string) => Promise<void>;
+  /** +1, −1, ou 0 para tirar. Pressionar o voto que já está posto tira ele. */
+  voteOn: (reviewId: string, key: string, value: 1 | -1 | 0) => Promise<void>;
   reload: (patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => void;
   criteriaFor: (genre: string) => Criterion[];
   averages: Record<number, { avg: number; count: number }>;
@@ -84,6 +99,8 @@ export default function App() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [criteria, setCriteria] = useState<Record<string, Criterion[]>>({});
   const [genres, setGenres] = useState<string[]>([]);
+  const [comments, setComments] = useState<ReviewComment[]>([]);
+  const [votes, setVotes] = useState<CriterionVote[]>([]);
   const [booted, setBooted] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [me, setMe] = useState<SessionUser | null>(null);
@@ -113,17 +130,20 @@ export default function App() {
   const boot = useCallback(async () => {
     setBootError(null);
     try {
-      const [rv, rs, cr, wl] = await Promise.all([
+      const [rv, rs, cr, wl, sc] = await Promise.all([
         api<{ reviewers: Reviewer[] }>('/api/reviewers'),
         api<{ reviews: Review[] }>('/api/reviews'),
         api<{ genres: string[]; criteria: Record<string, Criterion[]> }>('/api/catalog/criteria-all'),
         api<{ watchlist: WatchItem[] }>('/api/watchlist'),
+        social.all(),
       ]);
       setReviewers(rv.reviewers);
       setReviews(rs.reviews);
       setCriteria(cr.criteria);
       setGenres(cr.genres);
       setWatchlist(wl.watchlist);
+      setComments(sc.comments);
+      setVotes(sc.votes);
       setBooted(true);
     } catch (e) {
       setBootError((e as Error).message);
@@ -191,6 +211,10 @@ export default function App() {
     window.setTimeout(() => setToast(null), 6000);
   }, []);
 
+  /* A string, não o objeto: quem está logado é redolhado a cada refreshMe, e um
+     callback que depende do objeto inteiro se recria à toa. */
+  const meId = me?.id ?? null;
+
   const averages = useMemo(() => {
     const acc: Record<number, number[]> = {};
     reviews.forEach(r => {
@@ -235,6 +259,38 @@ export default function App() {
     [fault]
   );
 
+  /* ── escrever na conversa ────────────────────────────────────────────────
+     A resposta do servidor é a verdade e entra na lista local, então a tela se
+     atualiza sem recarregar o clube inteiro. Nada é aplicado antes da resposta:
+     um comentário que aparece e some depois é pior que um que demora meio
+     segundo para aparecer, e a mesma escolha vale para o voto — o contador é a
+     coisa que o clube vai ler como placar, e ele não pode piscar. */
+  const comment = useCallback(
+    async (reviewId: string, body: string) => {
+      const saved = await social.comment(reviewId, body);
+      setComments(prev => [...prev, saved]);
+    },
+    []
+  );
+
+  const uncomment = useCallback(async (id: string) => {
+    await social.uncomment(id);
+    setComments(prev => prev.filter(c => c.id !== id));
+  }, []);
+
+  const voteOn = useCallback(
+    async (reviewId: string, key: string, value: 1 | -1 | 0) => {
+      const { vote } = await social.vote(reviewId, key, value);
+      setVotes(prev => {
+        const rest = prev.filter(
+          v => !(v.reviewId === reviewId && v.key === key && v.reviewerId === meId)
+        );
+        return vote ? [...rest, vote] : rest;
+      });
+    },
+    [meId]
+  );
+
   const reload = useCallback((patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => {
     if (patch.reviewers) setReviewers(patch.reviewers);
     if (patch.reviews) setReviews(patch.reviews);
@@ -273,6 +329,11 @@ export default function App() {
             watchlist,
             criteria,
             genres,
+            comments,
+            votes,
+            comment,
+            uncomment,
+            voteOn,
             reload,
             criteriaFor,
             averages,
@@ -295,6 +356,11 @@ export default function App() {
       watchlist,
       criteria,
       genres,
+      comments,
+      votes,
+      comment,
+      uncomment,
+      voteOn,
       reload,
       criteriaFor,
       averages,
@@ -340,7 +406,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => void boot()}
-                  className="mt-4 rounded-cell px-4 py-2.5 font-display text-[13px] uppercase tracking-[0.14em] text-ink ring-1 ring-house-rail hover:text-dye-cyan hover:ring-dye-cyan"
+                  className="mt-4 rounded-cell px-4 py-2.5 font-display text-[13px] uppercase tracking-[0.14em] text-ink ring-1 ring-house-rail hover:text-dye-brass hover:ring-dye-brass"
                 >
                   Tentar de novo
                 </button>
