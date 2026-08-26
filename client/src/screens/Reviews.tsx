@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   ChevronDown,
+  Link as LinkIcon,
   Pencil,
   Plus,
   ThumbsDown,
@@ -28,6 +29,57 @@ export function ReviewsScreen() {
   /* Da maior para a menor por padrão: o arquivo é lido para achar o que o clube
      mais gostou muito mais vezes do que para achar o que ele detestou. */
   const [desc, setDesc] = useState(true);
+
+  /* ── a ficha que o endereço pede ────────────────────────────────────────
+     `#reviews/r1a2b3c` chega aqui como `club.focusReview`, e três coisas têm de
+     acontecer para que o link tenha valor: a carta que contém a ficha se abre,
+     a ficha se abre, e a página rola até ela.
+
+     A ordem importa e o tempo também. As gavetas animam de `0fr` a `1fr` em
+     240ms, e rolar antes disso mira um elemento que ainda tem altura zero — a
+     página para no lugar errado e a ficha aparece fora da tela. Por isso o
+     scroll espera a gaveta terminar.
+
+     O alvo é limpado assim que é consumido: sem isso, fechar a carta à mão
+     seria desfeito no próximo redesenho, e o acervo teria uma ficha que se
+     recusa a fechar.
+
+     Uma avaliação apagada — ou de um filme que a busca escondeu — não abre nada
+     e não rola nada. O endereço fica, a aba abre, e é isso: é o que sobra de
+     honesto quando a coisa apontada não está mais lá. */
+  const wanted = club.focusReview;
+  const { clearFocusReview } = club;
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!wanted) return;
+    const target = club.reviews.find(r => r.id === wanted);
+    if (!target) {
+      clearFocusReview();
+      return;
+    }
+
+    // A ficha abre; a carta que a contém é aberta pela visão, que sabe se
+    // agrupa por pessoa ou por filme.
+    setOpenIds(prev => (prev.has(wanted) ? prev : new Set(prev).add(wanted)));
+    setFlash(wanted);
+    clearFocusReview();
+
+    const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const scroll = window.setTimeout(() => {
+      document.getElementById(`take-${wanted}`)?.scrollIntoView({
+        behavior: gentle ? 'auto' : 'smooth',
+        block: 'center',
+      });
+    }, 300);
+    // Longo o bastante para o olho encontrar depois de a rolagem terminar,
+    // curto o bastante para não virar um estado permanente da carta.
+    const off = window.setTimeout(() => setFlash(null), 2600);
+    return () => {
+      window.clearTimeout(scroll);
+      window.clearTimeout(off);
+    };
+  }, [wanted, club.reviews, clearFocusReview]);
   const [query, setQuery] = useState('');
 
   /* Title or person, in one field. This screen is the club's record and it is
@@ -126,6 +178,7 @@ export function ReviewsScreen() {
           filtering={filtering}
           desc={desc}
           openIds={openIds}
+          lit={flash}
           onToggle={toggle}
           onDelete={r => void remove(r)}
         />
@@ -134,6 +187,7 @@ export function ReviewsScreen() {
           reviews={shown}
           desc={desc}
           openIds={openIds}
+          lit={flash}
           onToggle={toggle}
           onDelete={r => void remove(r)}
         />
@@ -679,14 +733,77 @@ function Conversation({ review }: { review: Review }) {
   );
 }
 
-function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onToggle: () => void; onDelete: () => void }) {
+/* ── o endereço desta ficha, para colar no chat ───────────────────────────
+   Um link que só o sino sabe produzir é meio recurso. O clube combina o filme
+   por voz e discorda por escrito depois, e "abre a minha do Parasita" é uma
+   frase que agora cabe num link.
+
+   `navigator.clipboard` não existe fora de https e de localhost, e o clube roda
+   nos dois — no Render por https, na máquina de quem desenvolve por localhost.
+   Onde ele falta, o botão diz o endereço em vez de fingir que copiou. */
+function ShareTake({ id, title, who }: { id: string; title: string; who: string }) {
+  const [done, setDone] = useState(false);
+  const club = useClub();
+  const link = `${location.origin}${location.pathname}#reviews/${encodeURIComponent(id)}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setDone(true);
+      window.setTimeout(() => setDone(false), 2000);
+    } catch {
+      club.fault(`Copie o link à mão: ${link}`);
+    }
+  }
+
+  return (
+    <Key
+      tone="ghost"
+      onClick={() => void copy()}
+      aria-label={`Copiar o link da avaliação de ${title} por ${who}`}
+    >
+      <LinkIcon className="h-3.5 w-3.5" strokeWidth={1.8} />
+      {done ? 'Copiado' : 'Copiar link'}
+    </Key>
+  );
+}
+
+function Take({
+  r,
+  open,
+  lit,
+  onToggle,
+  onDelete,
+}: {
+  r: Review;
+  open: boolean;
+  /** Recém-chegado por link: a ficha acende por alguns segundos. */
+  lit?: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
   return (
     /* A row inside the person's card, not a card of its own. The surface here
        belongs to the reviewer — everything under that header is one person's
        record — and a plate for each film sitting on top of that plate would be
        two boxes claiming the same thing. A hairline is enough to say where one
        film ends, exactly as the by-film view separates the people under it. */
-    <div className="border-t border-white/[0.06]">
+    <div
+      id={`take-${r.id}`}
+      /* ── acabou de chegar por link ──────────────────────────────────────
+         Uma folha do facho por cima da fileira, apagando sozinha. Não é um anel
+         nem uma borda colorida: aquilo desenharia uma caixa nova em volta de
+         uma fileira que não tem caixa, e ela ficaria com uma forma diferente
+         das vizinhas pelo tempo do brilho. Uma lâmina de luz por trás some sem
+         deixar geometria para trás.
+
+         `scroll-mt` porque a marquise é fixa: sem isso o `scrollIntoView`
+         entrega a fileira debaixo do cabeçalho. */
+      className={cn(
+        'scroll-mt-24 border-t border-white/[0.06] transition-colors duration-700',
+        lit && 'bg-beam/[0.07]'
+      )}
+    >
       <button
         type="button"
         onClick={onToggle}
@@ -710,7 +827,10 @@ function Take({ r, open, onToggle, onDelete }: { r: Review; open: boolean; onTog
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
           <Conversation review={r} />
-          <TakeActions r={r} onDelete={onDelete} className="mt-4" />
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <TakeActions r={r} onDelete={onDelete} />
+            <ShareTake id={r.id} title={r.movieTitle} who={r.reviewerName} />
+          </div>
         </div>
       </Drawer>
     </div>
@@ -753,6 +873,7 @@ function ByReviewer({
   filtering,
   desc,
   openIds,
+  lit,
   onToggle,
   onDelete,
 }: {
@@ -764,6 +885,8 @@ function ByReviewer({
   /** Which way the score runs. Decided once, above both views. */
   desc: boolean;
   openIds: ReadonlySet<string>;
+  /** A ficha que acabou de chegar por link, acesa por alguns segundos. */
+  lit: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
@@ -800,8 +923,12 @@ function ByReviewer({
            the name of someone who rated the film you typed and then hide the
            film itself — the card would be the answer to a question you did not
            ask. Clearing the field hands the cards back to whatever you had
-           opened by hand. */
-        const expanded = filtering || open.has(p.id);
+           opened by hand.
+
+           Um link faz o mesmo com a carta de quem assinou a ficha pedida, pelo
+           mesmo motivo: levar a uma fileira dentro de uma gaveta fechada é não
+           levar a lugar nenhum. */
+        const expanded = filtering || open.has(p.id) || items.some(r => r.id === lit);
         /* Nothing to open on someone who has not rated anything: a chevron that
            unfolds an empty drawer is a promise the card cannot keep. The header
            already says "nenhuma avaliação". */
@@ -862,6 +989,7 @@ function ByReviewer({
                     key={r.id}
                     r={r}
                     open={openIds.has(r.id)}
+                    lit={lit === r.id}
                     onToggle={() => onToggle(r.id)}
                     onDelete={() => onDelete(r)}
                   />
@@ -886,6 +1014,7 @@ function ByMovie({
   reviews,
   desc,
   openIds,
+  lit,
   onToggle,
   onDelete,
 }: {
@@ -895,6 +1024,8 @@ function ByMovie({
   /** Which way the score runs — the films, and the takes inside each one. */
   desc: boolean;
   openIds: ReadonlySet<string>;
+  /** A ficha que acabou de chegar por link, acesa por alguns segundos. */
+  lit: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
@@ -954,8 +1085,12 @@ function ByMovie({
            that number are one press away.
 
            Two levels, and they mean different things. Opening the film asks
-           who; opening a person asks what they gave each criterion. */
-        const expanded = open.has(head.movieId);
+           who; opening a person asks what they gave each criterion.
+
+           E a carta que contém a ficha pedida por link abre sozinha: sem isso o
+           link levaria a uma fileira dentro de uma gaveta fechada, que é o
+           mesmo que não levar a lugar nenhum. */
+        const expanded = open.has(head.movieId) || items.some(r => r.id === lit);
 
         return (
           /* Here the card is the film and every take on it — the group is the
@@ -1022,7 +1157,18 @@ function ByMovie({
             <Drawer open={expanded}>
               <div className="flex flex-col">
                 {sorted.map(r => (
-                  <div key={r.id} className="border-t border-white/[0.06]">
+                  /* O mesmo id e o mesmo acender da outra visão: um link tem de
+                     achar a ficha esteja o acervo agrupado por pessoa ou por
+                     filme, e quem colou o link não sabe em qual das duas quem
+                     recebeu está. */
+                  <div
+                    key={r.id}
+                    id={`take-${r.id}`}
+                    className={cn(
+                      'scroll-mt-24 border-t border-white/[0.06] transition-colors duration-700',
+                      lit === r.id && 'bg-beam/[0.07]'
+                    )}
+                  >
                     <button
                       type="button"
                       onClick={() => onToggle(r.id)}
@@ -1046,7 +1192,10 @@ function ByMovie({
                       <div className="px-3 pb-4 pt-1">
                         <Breakdown r={r} comment={r.comment} />
                         <Conversation review={r} />
-                        <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <TakeActions r={r} onDelete={() => onDelete(r)} invite={false} />
+                          <ShareTake id={r.id} title={r.movieTitle} who={r.reviewerName} />
+                        </div>
                       </div>
                     </Drawer>
                   </div>

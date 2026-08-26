@@ -77,6 +77,13 @@ type Club = {
   inWatchlist: (id: number) => boolean;
   toggleWatch: (m: Movie | WatchItem) => Promise<void>;
   goTab: (t: TabId) => void;
+  /* Abre o acervo numa avaliação específica, e escreve o endereço dela. É o que
+     o sino chama e o que "copiar link" produz. */
+  goReview: (reviewId: string) => void;
+  /** Qual ficha o endereço está pedindo, ou null. */
+  focusReview: string | null;
+  /** Chamado pela tela quando ela já abriu e rolou até o alvo. */
+  clearFocusReview: () => void;
   openSheet: (id: number) => void;
   rateMovie: (id: number) => void;
   fault: (msg: string) => void;
@@ -89,9 +96,27 @@ export function useClub() {
   return c;
 }
 
+/* ── o endereço de uma avaliação ──────────────────────────────────────────
+   A seção sempre morou no hash; uma ficha dentro dela não morava em lugar
+   nenhum. `#reviews/r1a2b3c` é o endereço dela.
+
+   A chave é o id da avaliação e não o par filme+avaliador, porque é o id que o
+   aviso do sino carrega e é ele que sobrevive a uma regravação — o upsert casa
+   por (avaliador, filme) e não toca na coluna `id`, então um link colado no
+   Discord continua valendo depois de a pessoa ajustar a própria nota.
+
+   Uma seção desconhecida cai no catálogo, como sempre caiu; um id que não
+   existe mais abre a aba e não foca nada, que é o que sobra de honesto quando
+   a coisa apontada foi apagada. */
+function routeFromHash(): { tab: TabId | null; review: string | null } {
+  const raw = (location.hash || '').replace(/^#/, '');
+  const [head, tail] = raw.split('/');
+  const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
+  return { tab, review: tab === 'reviews' && tail ? decodeURIComponent(tail) : null };
+}
+
 function tabFromHash(): TabId | null {
-  const h = (location.hash || '').replace(/^#/, '');
-  return (TABS as readonly { id: string }[]).some(t => t.id === h) ? (h as TabId) : null;
+  return routeFromHash().tab;
 }
 
 export default function App() {
@@ -99,6 +124,8 @@ export default function App() {
      you have already picked, so it is the second step, not the front door — and
      a link shared with a section in it still wins over the default. */
   const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'catalog');
+  /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
+  const [focusReview, setFocusReview] = useState<string | null>(() => routeFromHash().review);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -194,8 +221,11 @@ export default function App() {
 
   useEffect(() => {
     const onHash = () => {
-      const t = tabFromHash();
+      const { tab: t, review } = routeFromHash();
       if (t) setTab(t);
+      /* Só quando há um id no endereço. Voltar para `#reviews` limpo não deve
+         apagar o foco que a tela acabou de consumir, nem acender um antigo. */
+      if (review) setFocusReview(review);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -205,6 +235,21 @@ export default function App() {
     setTab(t);
     if (tabFromHash() !== t) location.hash = t;
   }, []);
+
+  /* Ir para uma ficha específica: a aba, o endereço e o alvo, de uma vez. O
+     endereço é escrito mesmo quando já se está na aba, porque é ele que a
+     pessoa copia — e porque recarregar tem de voltar para o mesmo lugar. */
+  const goReview = useCallback((reviewId: string) => {
+    setTab('reviews');
+    setFocusReview(reviewId);
+    const next = `reviews/${encodeURIComponent(reviewId)}`;
+    if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+  }, []);
+
+  /* Consumido pela tela assim que ela abre a ficha e rola até ela. Sem isto o
+     mesmo alvo voltaria a se abrir a cada redesenho, e fechar a gaveta à mão
+     seria desfeito no instante seguinte. */
+  const clearFocusReview = useCallback(() => setFocusReview(null), []);
 
   const fault = useCallback((msg: string) => {
     // A 24h session ends quietly mid-use; drop to the sign-in screen instead of
@@ -363,6 +408,9 @@ export default function App() {
             inWatchlist,
             toggleWatch,
             goTab,
+            goReview,
+            focusReview,
+            clearFocusReview,
             openSheet: setSheetId,
             rateMovie,
             fault,
@@ -392,6 +440,9 @@ export default function App() {
       inWatchlist,
       toggleWatch,
       goTab,
+      goReview,
+      focusReview,
+      clearFocusReview,
       rateMovie,
       fault,
     ]
@@ -417,7 +468,13 @@ export default function App() {
       <HolographicWall asBackdrop />
 
       <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
-        <Marquee tab={tab} onTab={goTab} me={me} onSignOut={() => void signOut()} />
+        <Marquee
+          tab={tab}
+          onTab={goTab}
+          onOpenReview={goReview}
+          me={me}
+          onSignOut={() => void signOut()}
+        />
 
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
           {bootError ? (
@@ -484,11 +541,14 @@ export default function App() {
 function Marquee({
   tab,
   onTab,
+  onOpenReview,
   me,
   onSignOut,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
+  /** Onde um aviso do sino leva: a ficha que ele é sobre. */
+  onOpenReview: (reviewId: string) => void;
   me: SessionUser;
   onSignOut: () => void;
 }) {
@@ -530,7 +590,7 @@ function Marquee({
         </nav>
 
         <div className="flex items-center gap-2">
-          <Notices onOpenReview={() => onTab('reviews')} />
+          <Notices onOpenReview={onOpenReview} />
           {/* Your own face is the door to the room of faces. */}
           <button
             type="button"

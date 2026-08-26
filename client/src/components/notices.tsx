@@ -35,7 +35,7 @@ function iconOf(kind: Notice['kind'], value?: number) {
   return value === -1 ? ThumbsDown : ThumbsUp;
 }
 
-export function Notices({ onOpenReview }: { onOpenReview: () => void }) {
+export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => void }) {
   const [items, setItems] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -164,9 +164,13 @@ export function Notices({ onOpenReview }: { onOpenReview: () => void }) {
                   <li key={n.id}>
                     <button
                       type="button"
+                      /* Leva à ficha de que o aviso fala, aberta e à vista —
+                         não à aba onde ela está em algum lugar. Um aviso que
+                         entrega uma lista de quarenta cartas e deixa a busca
+                         com o leitor não terminou de avisar. */
                       onClick={() => {
                         setOpen(false);
-                        onOpenReview();
+                        onOpenReview(n.reviewId);
                       }}
                       className="flex w-full gap-2.5 border-b border-white/[0.05] px-4 py-3 text-left transition-colors last:border-0 hover:bg-beam/[0.05]"
                     >
