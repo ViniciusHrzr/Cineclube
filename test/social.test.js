@@ -199,6 +199,97 @@ test('apagar a avaliação leva a conversa sobre ela junto', async () => {
   assert.equal((await social()).body.comments.filter(c => c.reviewId === take.id).length, 0);
 });
 
+/* ── responder um comentário ─────────────────────────────────────────── */
+
+const comment = (take, body, who) =>
+  req('POST', `/api/social/reviews/${take.id}/comments`, { body }, who.cookie);
+const reply = (take, parentId, body, who) =>
+  req('POST', `/api/social/reviews/${take.id}/comments`, { body, parentId }, who.cookie);
+
+test('uma resposta se pendura no comentário e sabe de quem', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  const parent = (await comment(take, 'o roteiro cai no terceiro ato', a)).body;
+
+  const posted = await reply(take, parent.id, 'discordo, o corte salva', b);
+  assert.equal(posted.status, 201);
+  assert.equal(posted.body.parentId, parent.id);
+  assert.equal(posted.body.reviewId, take.id);
+
+  const all = (await social()).body.comments;
+  assert.equal(all.find(c => c.id === parent.id).parentId, null, 'o pai virou resposta');
+});
+
+test('uma resposta não recebe resposta — a profundidade é um', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  const parent = (await comment(take, 'primeiro', a)).body;
+  const child = (await reply(take, parent.id, 'segundo', b)).body;
+
+  const refused = await reply(take, child.id, 'terceiro', a);
+  assert.equal(refused.status, 400);
+});
+
+test('não dá para responder um comentário de outra ficha', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const here = await newTake(author);
+  const elsewhere = await newTake(author);
+  const parent = (await comment(elsewhere, 'lá', reader)).body;
+
+  const refused = await reply(here, parent.id, 'aqui', reader);
+  assert.equal(refused.status, 400, 'costurou um fio entre duas fichas');
+});
+
+test('responder um comentário que não existe é recusado', async () => {
+  const author = await newReviewer();
+  const reader = await newReviewer();
+  const take = await newTake(author);
+  assert.equal((await reply(take, 'cnaoexiste', 'oi', reader)).status, 400);
+});
+
+test('apagar o comentário leva as respostas dele junto', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  const parent = (await comment(take, 'pai', a)).body;
+  await reply(take, parent.id, 'filha', b);
+  await reply(take, parent.id, 'outra filha', author);
+
+  assert.equal((await req('DELETE', `/api/social/comments/${parent.id}`, null, a.cookie)).status, 204);
+  const left = (await social()).body.comments.filter(c => c.reviewId === take.id);
+  assert.equal(left.length, 0, 'sobrou resposta sem o que ela responde');
+});
+
+test('apagar uma resposta não mexe no comentário', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  const parent = (await comment(take, 'pai', a)).body;
+  const child = (await reply(take, parent.id, 'filha', b)).body;
+
+  await req('DELETE', `/api/social/comments/${child.id}`, null, b.cookie);
+  const left = (await social()).body.comments.filter(c => c.reviewId === take.id);
+  assert.deepEqual(left.map(c => c.id), [parent.id]);
+});
+
+test('uma resposta é curtível como qualquer comentário', async () => {
+  const author = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(author);
+  const parent = (await comment(take, 'pai', a)).body;
+  const child = (await reply(take, parent.id, 'filha', b)).body;
+
+  assert.equal((await req('PUT', `/api/social/comments/${child.id}/like`, { liked: true }, a.cookie)).status, 200);
+});
+
 /* ── curtidas em um comentário ───────────────────────────────────────── */
 
 const like = (comment, liked, who) =>

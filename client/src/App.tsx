@@ -92,8 +92,9 @@ type Club = {
   comments: ReviewComment[];
   votes: CriterionVote[];
   commentLikes: CommentLike[];
-  /** Escreve, e devolve o comentário gravado — a lista já se atualizou. */
-  comment: (reviewId: string, body: string) => Promise<void>;
+  /* Escreve, e devolve o comentário gravado — a lista já se atualizou.
+     `parentId` faz dele uma resposta; a profundidade para em um. */
+  comment: (reviewId: string, body: string, parentId?: string | null) => Promise<void>;
   uncomment: (id: string) => Promise<void>;
   /** Curtir e descurtir o comentário de outra pessoa. */
   likeComment: (id: string, liked: boolean) => Promise<void>;
@@ -347,8 +348,8 @@ export default function App() {
      segundo para aparecer, e a mesma escolha vale para o voto — o contador é a
      coisa que o clube vai ler como placar, e ele não pode piscar. */
   const comment = useCallback(
-    async (reviewId: string, body: string) => {
-      const saved = await social.comment(reviewId, body);
+    async (reviewId: string, body: string, parentId?: string | null) => {
+      const saved = await social.comment(reviewId, body, parentId);
       setComments(prev => [...prev, saved]);
     },
     []

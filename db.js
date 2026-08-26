@@ -139,6 +139,9 @@ async function migrate() {
       review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
       body TEXT NOT NULL,
+      /* Uma resposta, e a profundidade para em um — ver a migração abaixo, que
+         é o que dá esta coluna aos bancos criados antes dela existir. */
+      parent_id TEXT REFERENCES review_comments(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS review_comments_review ON review_comments(review_id);
@@ -341,6 +344,29 @@ async function migrate() {
      Isso custa não ter estado por item — não dá para marcar uma notificação
      como lida e as outras não — que é exatamente o que um contador de não-lidas
      precisa e nada mais. */
+  /* ── responder um comentário ───────────────────────────────────────────
+     Um nível, e só um. O Instagram e o Facebook chegaram no mesmo lugar por um
+     motivo que vale aqui também: uma árvore de respostas dentro de uma gaveta
+     dentro de uma carta é uma escada que ninguém consegue ler numa coluna de
+     760px. Uma resposta a uma resposta pertence ao mesmo fio.
+
+     A rota recusa pendurar uma resposta em outra resposta (ver routes/social),
+     então a profundidade é uma propriedade garantida na escrita e não uma regra
+     que a tela precisa lembrar de respeitar ao desenhar.
+
+     CASCADE: apagar um comentário leva as respostas dele. Uma resposta órfã é
+     metade de um diálogo, e ninguém consegue ler o que ela responde. */
+  const commentCols = await columnsOf('review_comments');
+  if (!commentCols.includes('parent_id')) {
+    await exec(
+      'ALTER TABLE review_comments ADD COLUMN parent_id TEXT REFERENCES review_comments(id) ON DELETE CASCADE'
+    );
+  }
+  /* Depois da coluna existir, e nunca junto do CREATE TABLE: num banco antigo o
+     bloco lá em cima roda antes desta migração, e um índice sobre uma coluna
+     que ainda não chegou derruba o boot inteiro. */
+  await exec('CREATE INDEX IF NOT EXISTS review_comments_parent ON review_comments(parent_id)');
+
   await addReviewerCol('notifications_seen_at', 'notifications_seen_at TEXT');
 
   /* ── e até onde esta pessoa já dispensou ──────────────────────────────

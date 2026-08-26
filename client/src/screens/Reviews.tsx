@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { Bill, Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
+import { MentionField, WithMentions } from '@/components/mention';
 import { del, fmt, initialsOf, reelColor, runtimeOf, type Review, type ReviewComment } from '@/lib/api';
 import { cn, named, norm, plural, whenOf } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -424,9 +425,11 @@ function Breakdown({ r, comment }: { r: Review; comment?: string }) {
           </div>
         ))}
       </div>
+      {/* O comentário da própria ficha também chama gente pelo nome: é o outro
+          lugar do produto onde se escreve. */}
       {comment ? (
         <p className="mt-2 border-t border-white/[0.06] pt-2.5 text-[13px] italic leading-relaxed text-ink-dim">
-          “{comment}”
+          “<WithMentions text={comment} />”
         </p>
       ) : null}
     </div>
@@ -626,19 +629,209 @@ function CommentLikes({ comment }: { comment: ReviewComment }) {
   );
 }
 
+/** Quantos comentários a conversa mostra antes de pedir licença. */
+const FIRST_PAGE = 3;
+
+/* ── um comentário e o que veio dele ──────────────────────────────────────
+   O comentário, as respostas dele e o campo para responder — tudo dentro de uma
+   unidade, porque é assim que se lê: ninguém lê "a terceira resposta da segunda
+   conversa", lê-se um argumento e o que disseram sobre ele.
+
+   As respostas ficam recolhidas atrás de "ver N respostas", como no Instagram e
+   no Facebook, e pela razão que fez os dois chegarem lá: uma discussão longa
+   dentro de um fio empurra os OUTROS fios para fora da tela, e quem abriu a
+   gaveta queria ver a conversa inteira, não uma dela. */
+function Comment({
+  c,
+  replies,
+  review,
+  onRemove,
+}: {
+  c: ReviewComment;
+  replies: ReviewComment[];
+  review: Review;
+  onRemove: (id: string) => void;
+}) {
+  const club = useClub();
+  const [open, setOpen] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const mine = c.reviewerId === club.me.id;
+
+  async function send() {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    try {
+      await club.comment(review.id, body, c.id);
+      setDraft('');
+      setWriting(false);
+      // Responder é querer ver: a resposta recém-escrita não pode nascer
+      // escondida atrás do botão que a esconderia.
+      setOpen(true);
+    } catch (e) {
+      club.fault('Não foi possível responder: ' + (e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <li className="flex gap-2.5">
+      <Reel color={reelColor(c.reviewerDot, c.reviewerId)} src={club.avatarOf(c.reviewerId)} size="sm">
+        {initialsOf(c.reviewerName)}
+      </Reel>
+      <div className="min-w-0 flex-1">
+        {/* A curtida fica na linha do nome e da hora, empurrada para o fim: é
+            sobre o comentário inteiro, e uma linha de ação própria embaixo de
+            cada um somaria uma altura por comentário numa gaveta que já é a
+            mais alta da tela. */}
+        <p className="flex flex-wrap items-center gap-x-2">
+          <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
+            {c.reviewerName}
+          </span>
+          <span className="q text-[10.5px] text-ink-dim" title={c.createdAt}>
+            {whenOf(c.createdAt)}
+          </span>
+          <span className="ml-auto flex items-center gap-2 pl-2">
+            <CommentLikes comment={c} />
+            {mine || club.me.isAdmin ? (
+              <button
+                type="button"
+                onClick={() => onRemove(c.id)}
+                aria-label={mine ? 'Apagar seu comentário' : `Apagar o comentário de ${c.reviewerName}`}
+                className="rounded-cell p-1 text-ink-faint transition-colors hover:text-dye-red-lit"
+              >
+                <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+            ) : null}
+          </span>
+        </p>
+        {/* `break-words` porque um link colado sem espaço é uma palavra de
+            duzentos caracteres, e ela empurraria a gaveta para fora da carta. */}
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-dim">
+          <WithMentions text={c.body} />
+        </p>
+
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setWriting(v => !v);
+              setOpen(true);
+            }}
+            className="font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-faint transition-colors hover:text-beam"
+          >
+            Responder
+          </button>
+          {replies.length ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen(v => !v)}
+              className="q text-[11px] leading-none text-ink-dim transition-colors hover:text-beam"
+            >
+              {open ? 'ocultar respostas' : `ver ${plural(replies.length, 'resposta', 'respostas')}`}
+            </button>
+          ) : null}
+        </div>
+
+        {open && (replies.length || writing) ? (
+          /* Uma régua à esquerda em vez de recuo puro: a coluna já é estreita,
+             e uma segunda margem tiraria dez caracteres de cada linha. A linha
+             diz "isto pende daquilo" sem gastar largura. */
+          <ul className="mt-2.5 flex flex-col gap-2.5 border-l border-white/[0.07] pl-3">
+            {replies.map(r => {
+              const own = r.reviewerId === club.me.id;
+              return (
+                <li key={r.id} className="flex gap-2">
+                  <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={club.avatarOf(r.reviewerId)} size="sm">
+                    {initialsOf(r.reviewerName)}
+                  </Reel>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-x-2">
+                      <span className="font-display text-[12px] uppercase tracking-[0.1em] text-ink">
+                        {r.reviewerName}
+                      </span>
+                      <span className="q text-[10px] text-ink-dim" title={r.createdAt}>
+                        {whenOf(r.createdAt)}
+                      </span>
+                      <span className="ml-auto flex items-center gap-2 pl-2">
+                        <CommentLikes comment={r} />
+                        {own || club.me.isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={() => onRemove(r.id)}
+                            aria-label={own ? 'Apagar sua resposta' : `Apagar a resposta de ${r.reviewerName}`}
+                            className="rounded-cell p-1 text-ink-faint transition-colors hover:text-dye-red-lit"
+                          >
+                            <X className="h-3 w-3" strokeWidth={1.8} />
+                          </button>
+                        ) : null}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink-dim">
+                      <WithMentions text={r.body} />
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+
+            {writing ? (
+              <li className="flex flex-wrap items-end gap-2 pt-0.5">
+                <MentionField
+                  className="min-w-[14ch] flex-1"
+                  label={`Responder ${c.reviewerName}`}
+                  value={draft}
+                  onChange={setDraft}
+                  onSubmit={() => void send()}
+                  maxLength={MAX_COMMENT}
+                  rows={2}
+                  placeholder={`Responder ${c.reviewerName.split(' ')[0]}…`}
+                />
+                <Key tone="flush" disabled={!draft.trim() || sending} onClick={() => void send()}>
+                  {sending ? 'Enviando…' : 'Responder'}
+                </Key>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
 function Conversation({ review }: { review: Review }) {
   const club = useClub();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  /* Quantos comentários a lista está mostrando. Cresce de três em três e nunca
+     encolhe: recolher sozinho o que a pessoa acabou de pedir para ver seria a
+     tela discordando dela. */
+  const [showing, setShowing] = useState(FIRST_PAGE);
   /* Na sua própria ficha você está respondendo quem te respondeu; na dos outros
      você está comentando. O campo e a chave dizem o mesmo verbo — um botão que
      diz "Comentar" embaixo de um campo que diz "Responder" faz a pessoa parar
      para conferir se são duas coisas. */
   const own = review.reviewerId === club.me.id;
 
-  const thread = club.comments
-    .filter(c => c.reviewId === review.id)
+  const here = club.comments.filter(c => c.reviewId === review.id);
+  /* Só os de primeiro nível entram na paginação; uma resposta pertence ao pai e
+     conta dentro dele. Contar respostas aqui faria "carregar mais" aparecer numa
+     conversa de dois comentários só porque um deles rendeu. */
+  const roots = here
+    .filter(c => !c.parentId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const repliesOf = (id: string) =>
+    here.filter(c => c.parentId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  /* Os mais NOVOS ficam à vista e os antigos recuam para trás do botão. Uma
+     conversa é lida do começo, mas retomada pelo fim: quem abre a gaveta quer
+     saber o que disseram por último. */
+  const hidden = Math.max(0, roots.length - showing);
+  const shown = roots.slice(hidden);
 
   async function send() {
     const body = draft.trim();
@@ -666,97 +859,44 @@ function Conversation({ review }: { review: Review }) {
     <div className="mt-4 border-t border-white/[0.06] pt-4">
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="legend">Conversa</span>
-        {thread.length ? (
-          <span className="q text-[11px] text-ink-dim">{plural(thread.length, 'resposta', 'respostas')}</span>
+        {here.length ? (
+          <span className="q text-[11px] text-ink-dim">{plural(here.length, 'resposta', 'respostas')}</span>
         ) : null}
       </div>
 
-      {thread.length ? (
-        <ul className="mt-3 flex flex-col gap-3">
-          {thread.map(c => {
-            const mine = c.reviewerId === club.me.id;
-            return (
-              <li key={c.id} className="flex gap-2.5">
-                <Reel color={reelColor(c.reviewerDot, c.reviewerId)} src={club.avatarOf(c.reviewerId)} size="sm">
-                  {initialsOf(c.reviewerName)}
-                </Reel>
-                <div className="min-w-0 flex-1">
-                  {/* A curtida fica na linha do nome e da hora, empurrada para
-                      o fim: é sobre o comentário inteiro, e uma linha de ação
-                      própria embaixo de cada um deles somaria uma altura por
-                      comentário numa gaveta que já é a mais alta da tela. */}
-                  <p className="flex flex-wrap items-center gap-x-2">
-                    <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
-                      {c.reviewerName}
-                    </span>
-                    <span className="q text-[10.5px] text-ink-dim" title={c.createdAt}>
-                      {whenOf(c.createdAt)}
-                    </span>
-                    <span className="ml-auto pl-2">
-                      <CommentLikes comment={c} />
-                    </span>
-                  </p>
-                  {/* `break-words` porque um link colado sem espaço é uma
-                      palavra de duzentos caracteres, e ela empurraria a gaveta
-                      inteira para fora da carta. */}
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-dim">
-                    {c.body}
-                  </p>
-                </div>
-                {mine || club.me.isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={() => void remove(c.id)}
-                    aria-label={mine ? 'Apagar seu comentário' : `Apagar o comentário de ${c.reviewerName}`}
-                    className="h-fit flex-none rounded-cell p-1 text-ink-faint transition-colors hover:text-dye-red-lit"
-                  >
-                    <X className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
+      {hidden ? (
+        <button
+          type="button"
+          onClick={() => setShowing(n => n + FIRST_PAGE)}
+          className="mt-3 font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+        >
+          Carregar mais {hidden > FIRST_PAGE ? `(${hidden})` : ''}
+        </button>
+      ) : null}
+
+      {shown.length ? (
+        <ul className="mt-3 flex flex-col gap-3.5">
+          {shown.map(c => (
+            <Comment key={c.id} c={c} replies={repliesOf(c.id)} review={review} onRemove={remove} />
+          ))}
         </ul>
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="relative min-w-[16ch] flex-1">
-          <span className="sr-only">Comentar a avaliação de {review.reviewerName}</span>
-          <textarea
-            rows={2}
-            value={draft}
-            /* O mesmo teto do servidor. Sem isto, quem escrevesse um parágrafo
-               a mais só descobria no 400 depois de apertar — o erro chegava
-               como um toast vermelho no fim de um texto já escrito, que é a
-               pior hora possível para descobrir um limite. */
-            maxLength={MAX_COMMENT}
-            onChange={e => setDraft(e.target.value)}
-            /* Enter envia, Shift+Enter quebra linha. Uma caixa de conversa em
-               que Enter não envia é uma caixa que faz a pessoa procurar o
-               botão toda vez, e a discussão aqui é rápida por definição — ela
-               está acontecendo em paralelo a uma chamada. */
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            placeholder={own ? 'Responder' : 'Comentar'}
-            className="w-full resize-y rounded-cell bg-house-deep px-3 py-2 text-[13px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass"
-          />
-          {/* Só perto do fim. Um contador ligado desde o primeiro caractere
-              conta uma coisa que ninguém está tentando saber; aparecendo no
-              último quinto, ele responde a pergunta no momento em que ela
-              passa a existir. */}
-          {draft.length > MAX_COMMENT * 0.8 ? (
-            <span
-              aria-live="polite"
-              className="q pointer-events-none absolute bottom-1.5 right-2 text-[10.5px] text-ink-dim"
-            >
-              {MAX_COMMENT - draft.length}
-            </span>
-          ) : null}
-        </label>
+        <MentionField
+          className="min-w-[16ch] flex-1"
+          label={`Comentar a avaliação de ${review.reviewerName}`}
+          value={draft}
+          onChange={setDraft}
+          onSubmit={() => void send()}
+          /* O mesmo teto do servidor. Sem isto, quem escrevesse um parágrafo a
+             mais só descobria no 400 depois de apertar — o erro chegava como um
+             toast vermelho no fim de um texto já escrito, que é a pior hora
+             possível para descobrir um limite. */
+          maxLength={MAX_COMMENT}
+          rows={2}
+          placeholder={own ? 'Responder' : 'Comentar'}
+        />
         <Key tone="flush" disabled={!draft.trim() || sending} onClick={() => void send()}>
           {sending ? 'Enviando…' : own ? 'Responder' : 'Comentar'}
         </Key>

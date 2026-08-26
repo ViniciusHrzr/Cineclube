@@ -6,6 +6,10 @@ export type Reviewer = {
   id: string;
   name: string;
   dot: string;
+  /* O apelido de menção, `@beren`. Calculado pelo servidor sobre o clube
+     inteiro, porque a unicidade depende de quem mais existe — ver handles.js.
+     Null só em resposta antiga de um servidor que ainda não mandava. */
+  handle?: string | null;
   isAdmin?: boolean;
   /** false means the account exists but nobody has set a PIN for it yet. */
   hasPin?: boolean;
@@ -76,6 +80,9 @@ export type ReviewComment = {
   reviewerName: string;
   reviewerDot: string;
   body: string;
+  /* Null num comentário; o id do pai numa resposta. A profundidade é um — o
+     servidor recusa pendurar uma resposta em outra resposta. */
+  parentId?: string | null;
   /** ISO, com hora: uma conversa é lida na ordem em que aconteceu. */
   createdAt: string;
 };
@@ -165,8 +172,8 @@ export const social = {
     api<{ comments: ReviewComment[]; votes: CriterionVote[]; commentLikes: CommentLike[] }>(
       '/api/social'
     ),
-  comment: (reviewId: string, body: string) =>
-    post<ReviewComment>(`/api/social/reviews/${reviewId}/comments`, { body }),
+  comment: (reviewId: string, body: string, parentId?: string | null) =>
+    post<ReviewComment>(`/api/social/reviews/${reviewId}/comments`, { body, parentId: parentId ?? null }),
   uncomment: (id: string) => del(`/api/social/comments/${id}`),
   likeComment: (id: string, liked: boolean) =>
     api<{ liked: boolean }>(`/api/social/comments/${id}/like`, {

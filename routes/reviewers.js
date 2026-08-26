@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
+const { handlesFor } = require('../handles');
 
 const router = express.Router();
 
@@ -37,11 +38,17 @@ const setAvatarStmt = db.prepare(
    forever, because `rev` changes whenever the picture does. */
 const avatarUrl = row => (row.avatar_rev ? `/api/reviewers/${row.id}/avatar?v=${row.avatar_rev}` : null);
 
-function toDTO(row) {
+/* `handle` é o apelido de menção, e ele depende do clube inteiro: "bruno" só
+   serve enquanto não houver dois. Por isso é calculado sobre a lista toda e
+   entregue junto de cada pessoa, em vez de derivado do nome dela sozinha — ver
+   handles.js. Um DTO de uma pessoa só não tem como saber se está sozinha com
+   aquele primeiro nome, então quem lista passa o mapa pronto. */
+function toDTO(row, handles) {
   return {
     id: row.id,
     name: row.name,
     dot: row.dot,
+    handle: handles?.[row.id] ?? null,
     isAdmin: !!row.is_admin,
     hasPin: !!row.has_pin,
     avatar: avatarUrl(row),
@@ -74,7 +81,8 @@ function readDataUrl(value) {
 
 router.get('/', wrap(async (req, res) => {
   const rows = await listStmt.all();
-  res.json({ reviewers: rows.map(toDTO) });
+  const handles = handlesFor(rows);
+  res.json({ reviewers: rows.map(r => toDTO(r, handles)) });
 }));
 
 /* Joining the club. Open by design — this is a room of friends, not a service

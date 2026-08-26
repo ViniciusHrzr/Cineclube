@@ -9,6 +9,7 @@ import {
 } from 'framer-motion';
 import { Check, Play, Search } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
+import { MentionField } from '@/components/mention';
 import {
   api,
   fmt,
@@ -211,17 +212,24 @@ export function RateScreen({
                 />
               </Bay>
 
-              <Bay legend="Comentário" note="opcional">
-                <label className="block">
-                  <span className="sr-only">Comentário sobre o filme</span>
-                  <textarea
-                    rows={3}
-                    value={comment}
-                    onChange={e => setComment(e.target.value)}
-                    placeholder="O que ficou da sessão?"
-                    className="w-full resize-y rounded-cell bg-house-deep px-3 py-2.5 text-[14px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass"
-                  />
-                </label>
+              <Bay legend="Comentário" note="opcional · @ chama alguém">
+                {/* O mesmo campo da conversa, e por isso o mesmo `@`. Chamar
+                    alguém é a mesma ação nos dois lugares, e um arroba que
+                    funciona num e não no outro é um arroba que ninguém confia.
+
+                    Sem `onSubmit`: aqui Enter quebra linha. Este texto é um
+                    parágrafo sobre um filme e não uma fala numa conversa, e
+                    gravar é a chave vermelha ali do lado. */}
+                <MentionField
+                  label="Comentário sobre o filme"
+                  value={comment}
+                  onChange={v => {
+                    setComment(v);
+                    setSaved(false);
+                  }}
+                  rows={3}
+                  placeholder="O que ficou da sessão?"
+                />
               </Bay>
             </>
           ) : null}

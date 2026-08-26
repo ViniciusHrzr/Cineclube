@@ -34,7 +34,7 @@ const router = express.Router();
 const MAX_BODY = 1000;
 
 const commentsStmt = db.prepare(`
-  SELECT c.id, c.review_id, c.reviewer_id, c.body, c.created_at,
+  SELECT c.id, c.review_id, c.reviewer_id, c.body, c.created_at, c.parent_id,
          r.name AS reviewer_name, r.dot AS reviewer_dot
   FROM review_comments c
   JOIN reviewers r ON r.id = c.reviewer_id
@@ -54,17 +54,24 @@ const unlikeStmt = db.prepare(
 );
 
 const oneCommentStmt = db.prepare(`
-  SELECT c.id, c.review_id, c.reviewer_id, c.body, c.created_at,
+  SELECT c.id, c.review_id, c.reviewer_id, c.body, c.created_at, c.parent_id,
          r.name AS reviewer_name, r.dot AS reviewer_dot
   FROM review_comments c
   JOIN reviewers r ON r.id = c.reviewer_id
   WHERE c.id = ?
 `);
 const insertCommentStmt = db.prepare(
-  'INSERT INTO review_comments (id, review_id, reviewer_id, body) VALUES (?, ?, ?, ?)'
+  'INSERT INTO review_comments (id, review_id, reviewer_id, body, parent_id) VALUES (?, ?, ?, ?, ?)'
 );
-const commentOwnerStmt = db.prepare('SELECT id, reviewer_id FROM review_comments WHERE id = ?');
+const commentOwnerStmt = db.prepare(
+  'SELECT id, reviewer_id, review_id, parent_id FROM review_comments WHERE id = ?'
+);
 const deleteCommentStmt = db.prepare('DELETE FROM review_comments WHERE id = ?');
+/* Explícito, além do ON DELETE CASCADE da coluna. A cascata depende de as
+   chaves estrangeiras estarem ligadas, o que é verdade aqui e é uma coisa a
+   menos para depender: uma resposta órfã não some da tela, ela fica invisível
+   num pai que não existe mais — que é pior do que sumir. */
+const deleteRepliesStmt = db.prepare('DELETE FROM review_comments WHERE parent_id = ?');
 
 const reviewStmt = db.prepare('SELECT id, reviewer_id, scores FROM reviews WHERE id = ?');
 const castVoteStmt = db.prepare(`
@@ -85,6 +92,8 @@ function toCommentDTO(row) {
     reviewerName: row.reviewer_name,
     reviewerDot: row.reviewer_dot,
     body: row.body,
+    /** Null num comentário de primeiro nível; o id do pai numa resposta. */
+    parentId: row.parent_id || null,
     createdAt: row.created_at
   };
 }
@@ -125,8 +134,28 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, wrap(async (req,
     return res.status(400).json({ error: `Comentário longo demais (máximo ${MAX_BODY} caracteres).` });
   }
 
+  /* ── responder, e só um nível ──────────────────────────────────────────
+     O pai tem de existir, tem de estar nesta mesma ficha, e tem de ser um
+     comentário de primeiro nível. A terceira condição é o que mantém a
+     profundidade em um: sem ela, uma resposta a uma resposta seria aceita e a
+     tela teria de decidir na hora de desenhar o que fazer com uma escada que
+     ela não sabe desenhar.
+
+     A segunda evita um fio costurado entre duas fichas — uma resposta que
+     aparece numa conversa cujo pai está em outra. */
+  const parentId = req.body?.parentId ?? null;
+  if (parentId != null) {
+    const parent = await commentOwnerStmt.get(String(parentId));
+    if (!parent || parent.review_id !== review.id) {
+      return res.status(400).json({ error: 'Não dá para responder a esse comentário.' });
+    }
+    if (parent.parent_id) {
+      return res.status(400).json({ error: 'Uma resposta não recebe resposta — responda o comentário.' });
+    }
+  }
+
   const id = 'c' + crypto.randomUUID();
-  await insertCommentStmt.run(id, review.id, req.session.reviewer_id, body);
+  await insertCommentStmt.run(id, review.id, req.session.reviewer_id, body, parentId ? String(parentId) : null);
   res.status(201).json(toCommentDTO(await oneCommentStmt.get(id)));
 }));
 
@@ -139,6 +168,9 @@ router.delete('/comments/:id', auth.requireSession, wrap(async (req, res) => {
   if (row.reviewer_id !== req.session.reviewer_id && !req.session.is_admin) {
     return res.status(403).json({ error: 'Você só pode apagar os seus comentários.' });
   }
+  // As respostas vão junto: uma resposta sem o que ela responde é metade de um
+  // diálogo, e ninguém consegue ler a metade que sobrou.
+  await deleteRepliesStmt.run(row.id);
   await deleteCommentStmt.run(row.id);
   res.status(204).end();
 }));

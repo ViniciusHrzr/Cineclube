@@ -162,6 +162,103 @@ test('curtir meu comentário vira aviso, mesmo na ficha de outra pessoa', async 
   assert.equal(mine[0].excerpt, 'a cena do corredor');
 });
 
+/* ── responder e mencionar ───────────────────────────────────────────── */
+
+test('responder meu comentário me avisa, mesmo na ficha de outra pessoa', async () => {
+  const host = await newReviewer();
+  const writer = await newReviewer();
+  const answerer = await newReviewer();
+  const take = await newTake(host);
+  const parent = (await comment(take, 'o roteiro cai', writer)).body;
+  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+    body: 'discordo', parentId: parent.id
+  }, answerer.cookie);
+
+  const { body } = await feed(writer);
+  const mine = body.items.filter(i => i.kind === 'reply');
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].actor.id, answerer.id);
+  assert.equal(mine[0].excerpt, 'discordo');
+});
+
+test('o dono da ficha não recebe dois avisos pelo mesmo texto', async () => {
+  // Uma resposta pendurada num comentário da minha ficha me avisaria como
+  // "comentou sua avaliação" E como resposta, sendo que nem fui eu que escrevi
+  // o comentário respondido.
+  const host = await newReviewer();
+  const a = await newReviewer();
+  const b = await newReviewer();
+  const take = await newTake(host);
+  const parent = (await comment(take, 'primeiro', a)).body;
+  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+    body: 'respondendo', parentId: parent.id
+  }, b.cookie);
+
+  const { body } = await feed(host);
+  assert.equal(body.items.length, 1, 'o dono da ficha foi avisado duas vezes');
+  assert.equal(body.items[0].excerpt, 'primeiro');
+});
+
+test('ser mencionado num comentário acende o sino', async () => {
+  const host = await newReviewer('Dono da Ficha');
+  const chamado = await newReviewer('Beren Costa');
+  const quemChama = await newReviewer('Bruno Sá');
+  const take = await newTake(host);
+  await comment(take, '@beren o terceiro ato desmonta', quemChama);
+
+  const { body } = await feed(chamado);
+  const mention = body.items.filter(i => i.kind === 'mention');
+  assert.equal(mention.length, 1);
+  assert.equal(mention[0].actor.id, quemChama.id);
+  assert.match(mention[0].text, /mencionou você/);
+});
+
+test('ser mencionado no comentário de uma avaliação também acende', async () => {
+  // O outro lugar do produto onde se escreve.
+  const chamado = await newReviewer('Cauro Neves');
+  const quemAvalia = await newReviewer();
+  await req('POST', '/api/reviews', {
+    movie: movie(), scores: scoresFor('Terror', 7), comment: 'discordo do @cauro nessa'
+  }, quemAvalia.cookie);
+
+  const { body } = await feed(chamado);
+  assert.equal(body.items.filter(i => i.kind === 'mention').length, 1);
+});
+
+test('mencionar a si mesmo não acende nada', async () => {
+  const eu = await newReviewer('Gipico Alves');
+  const host = await newReviewer();
+  const take = await newTake(host);
+  await comment(take, 'como o @gipico disse', eu);
+
+  assert.equal((await feed(eu)).body.items.length, 0);
+});
+
+test('responder e mencionar na mesma frase é um aviso, não dois', async () => {
+  const host = await newReviewer();
+  const writer = await newReviewer('Leonardo Dias');
+  const answerer = await newReviewer();
+  const take = await newTake(host);
+  const parent = (await comment(take, 'primeiro', writer)).body;
+  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+    body: '@leonardo discordo', parentId: parent.id
+  }, answerer.cookie);
+
+  const { body } = await feed(writer);
+  assert.equal(body.items.length, 1, 'o mesmo texto virou dois avisos');
+  assert.equal(body.items[0].kind, 'reply', 'a resposta é o fato mais forte');
+});
+
+test('um e-mail no comentário não menciona ninguém', async () => {
+  const chamado = await newReviewer('Ana Reis');
+  const host = await newReviewer();
+  const outro = await newReviewer();
+  const take = await newTake(host);
+  await comment(take, 'manda pro ana@gmail.com', outro);
+
+  assert.equal((await feed(chamado)).body.items.length, 0);
+});
+
 /* ── o que não acende ────────────────────────────────────────────────── */
 
 test('o que você mesmo faz nunca vira aviso para você', async () => {
