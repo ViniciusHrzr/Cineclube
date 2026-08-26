@@ -21,10 +21,13 @@ const listStmt = db.prepare(`
   LEFT JOIN movies_cache mc ON mc.tmdb_id = w.movie_id
   ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
 `);
+/* `added_by` é a sessão, como toda escrita neste app. A fila continua sendo do
+   clube — quem pôs não ganha nenhum direito sobre a linha, qualquer um tira —
+   mas o mural precisa saber de quem foi a ideia para ter o que contar. */
 const insertStmt = db.prepare(`
-  INSERT INTO watchlist (movie_id, movie_title, movie_year, movie_genre, movie_poster, position)
+  INSERT INTO watchlist (movie_id, movie_title, movie_year, movie_genre, movie_poster, position, added_by)
   VALUES (@movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
-          (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist))
+          (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist), @addedBy)
   ON CONFLICT(movie_id) DO NOTHING
 `);
 const idsStmt = db.prepare('SELECT movie_id FROM watchlist');
@@ -59,7 +62,8 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
   const genre = GENRES.includes(movie.genre) ? movie.genre : 'Drama';
   await insertStmt.run({
     movieId: movie.id, movieTitle: movie.title, movieYear: movie.year ?? null,
-    movieGenre: genre, moviePoster: movie.poster ?? null
+    movieGenre: genre, moviePoster: movie.poster ?? null,
+    addedBy: req.session.reviewer_id
   });
   /* A fila é uma das telas que filtram o banco, então o filme entra nela já
      sabendo por quais nomes pode ser procurado depois. */

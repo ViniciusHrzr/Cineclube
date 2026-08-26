@@ -115,6 +115,40 @@ export type Notice = {
   criterion?: string;
 };
 
+/* ── o mural ──────────────────────────────────────────────────────────────
+   O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
+   tabelas de sempre — ver routes/feed.js —, então uma linha nunca sobrevive ao
+   acontecimento que ela anuncia.
+
+   Um tipo só para os quatro acontecimentos, com os campos que só alguns deles
+   têm marcados como opcionais. A alternativa é uma união discriminada, que aqui
+   custaria quatro interfaces e um `switch` de tipo em cada leitura para
+   descrever quatro formas que compartilham nove campos dos onze. */
+export type WallEvent = {
+  id: string;
+  kind: 'review' | 'comment' | 'vote' | 'queued';
+  at: string;
+  actor: { id: string; name: string; dot: string };
+  movieId: number;
+  movieTitle: string;
+  moviePoster: string | null;
+  /** Ausente só na fila: um filme entra nela sem ninguém ter avaliado nada. */
+  reviewId?: string;
+  /** De quem é a ficha em que se comentou ou votou. */
+  owner?: { id: string; name: string };
+  /** Só em avaliação. */
+  final?: number;
+  genre?: string;
+  /* Onde a pessoa se entusiasmou e onde se decepcionou. Null quando a ficha não
+     tem distância entre os extremos — ver `endsOf` no servidor. */
+  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  /** Só em voto. */
+  value?: number;
+  criterion?: string;
+  /** O que foi escrito: o comentário da ficha, ou o comentário em si. */
+  excerpt?: string | null;
+};
+
 export const notifications = {
   all: () =>
     api<{ items: Notice[]; unread: number; seenAt: string | null; clearedAt: string | null }>(

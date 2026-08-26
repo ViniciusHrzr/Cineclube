@@ -23,9 +23,12 @@ const listStmt = db.prepare(`
 `);
 const reviewerExistsStmt = db.prepare('SELECT id FROM reviewers WHERE id = ?');
 const upsertStmt = db.prepare(`
-  INSERT INTO reviews (id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment)
-  VALUES (@id, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment)
+  INSERT INTO reviews (id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
+  VALUES (@id, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
   ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
+    -- Regravar é um acontecimento: o mural mostra a ficha de novo, na hora em
+    -- que ela mudou, em vez de escondê-la no dia em que foi criada.
+    recorded_at = datetime('now'),
     movie_title = excluded.movie_title, movie_year = excluded.movie_year, movie_genre = excluded.movie_genre,
     movie_poster = excluded.movie_poster, movie_director = excluded.movie_director,
     movie_runtime = COALESCE(excluded.movie_runtime, reviews.movie_runtime),

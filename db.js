@@ -296,6 +296,36 @@ async function migrate() {
     await exec('ALTER TABLE reviews ADD COLUMN movie_runtime INTEGER');
   }
 
+  /* ── a hora, e não só o dia ────────────────────────────────────────────
+     `date` é YYYY-MM-DD e sempre bastou: o arquivo é lido como ranking, e o dia
+     em que alguém preencheu a ficha não diz nada sobre o filme.
+
+     O mural é a primeira tela lida em ordem de tempo, e ali um dia inteiro
+     empatado é uma pilha sem ordem — quatro pessoas avaliando no mesmo domingo
+     apareceriam em ordem arbitrária, mudando a cada consulta.
+
+     Escrito a cada gravação, inclusive numa regravação: mexer na própria nota é
+     um acontecimento, e o mural mostrar isso é mais honesto do que esconder.
+
+     As linhas antigas recebem o `date` que já tinham. Comparado como texto,
+     '2026-08-20' vem antes de '2026-08-20 10:00:00', então elas caem no começo
+     do próprio dia — que é o mais próximo da verdade que existe sem inventar
+     uma hora que ninguém registrou. */
+  if (!reviewCols.includes('recorded_at')) {
+    await exec('ALTER TABLE reviews ADD COLUMN recorded_at TEXT');
+    await prepare('UPDATE reviews SET recorded_at = date WHERE recorded_at IS NULL').run();
+  }
+
+  /* ── quem pôs o filme na fila ──────────────────────────────────────────
+     A fila é do clube e nunca precisou saber de quem foi a ideia. O mural
+     precisa: "alguém pôs Fréamhacha na fila" não é um acontecimento, é um
+     boletim. Linhas anteriores a esta coluna ficam sem autor e simplesmente não
+     viram evento — melhor faltar uma linha do que atribuir a escolha a
+     ninguém. */
+  if (!(await columnsOf('watchlist')).includes('added_by')) {
+    await exec('ALTER TABLE watchlist ADD COLUMN added_by TEXT');
+  }
+
   /* ── até onde esta pessoa já viu ──────────────────────────────────────
      A marca d'água das notificações, e a única coisa que este produto grava
      sobre elas.

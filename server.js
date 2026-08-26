@@ -24,6 +24,7 @@ app.use('/api/watchlist', require('./routes/watchlist'));
 app.use('/api/screening', require('./routes/screening'));
 app.use('/api/social', require('./routes/social'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/feed', require('./routes/feed'));
 
 /* The build stamps a content hash into every asset's name, so a file under
    /assets can never change without changing its URL — which is exactly the
