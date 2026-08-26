@@ -131,11 +131,33 @@ export default {
           '48%': { opacity: '0.86' },
           '52%': { opacity: '1' },
         },
+        /* ── o aviso que chega sozinho ────────────────────────────────────
+           Um distintivo que aparece sem movimento não aparece: são quinze
+           pixels no canto de um ícone, num cabeçalho que ninguém está olhando.
+           Passa do tamanho final e volta — é o que faz o olho subir — e
+           termina em repouso, porque o estado permanente é ter avisos, não
+           estar pulando. */
+        pop: {
+          '0%': { opacity: '0', transform: 'scale(0.4)' },
+          '55%': { opacity: '1', transform: 'scale(1.25)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        /* O badalo do sino. Amplitude pequena de propósito: a diferença entre
+           um ícone que avisa e um ícone que implora são uns poucos graus. */
+        nudge: {
+          '0%, 100%': { transform: 'rotate(0deg)' },
+          '15%': { transform: 'rotate(-11deg)' },
+          '35%': { transform: 'rotate(9deg)' },
+          '55%': { transform: 'rotate(-6deg)' },
+          '75%': { transform: 'rotate(3deg)' },
+        },
       },
       animation: {
         'frame-in': 'frame-in 320ms cubic-bezier(0.16,1,0.3,1) backwards',
         'beam-in': 'beam-in 260ms cubic-bezier(0.16,1,0.3,1)',
         flicker: 'flicker 4s ease-in-out infinite',
+        pop: 'pop 420ms cubic-bezier(0.16,1,0.3,1)',
+        nudge: 'nudge 640ms ease-in-out',
       },
     },
   },

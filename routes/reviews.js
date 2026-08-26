@@ -5,6 +5,7 @@ const auth = require('../auth');
 const wrap = require('../wrap');
 const { answeredIn, critsFor, finalOf, GENRES } = require('../criteria');
 const { fillEnglishTitle } = require('../english');
+const live = require('../live');
 
 const router = express.Router();
 
@@ -180,6 +181,16 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
      ser procurado. Antes de reler a linha, para a resposta já sair com eles. */
   await fillEnglishTitle(movie.id);
 
+  /* Dois avisos porque gravar uma nota mexe em duas coleções: a ficha entra no
+     acervo e o filme sai da fila (`deleteWatchlistStmt`, acima). Um aviso só
+     deixaria a fila de todo mundo com um filme que já foi visto e avaliado — e
+     seria a tela ao vivo divergindo da tela recarregada, que é o defeito exato
+     que este mecanismo não pode ter. Votos em critérios que mudaram de nota
+     também caem aqui: `stale` apaga linhas que a conversa desenha. */
+  live.emit('reviews', reviewerId);
+  live.emit('watchlist', reviewerId);
+  if (stale.length) live.emit('social', reviewerId);
+
   const saved = await savedStmt.get(reviewerId, movie.id);
   res.status(201).json(toReviewDTO(saved));
 }));
@@ -198,6 +209,10 @@ router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
     return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });
   }
   await deleteStmt.run(row.id);
+  /* A ficha leva a conversa dela junto, em cascata — então a conversa também
+     mudou para quem está com a tela aberta. */
+  live.emit('reviews', req.session.reviewer_id);
+  live.emit('social', req.session.reviewer_id);
   res.status(204).end();
 }));
 

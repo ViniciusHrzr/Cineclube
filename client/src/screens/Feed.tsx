@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Bill, Blank, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
 import { api, fmt, initialsOf, reelColor, type FeedEvent } from '@/lib/api';
+import { useLive } from '@/lib/live';
 import { plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -105,6 +106,15 @@ export function FeedScreen() {
       document.removeEventListener('visibilitychange', tick);
     };
   }, [load]);
+
+  /* Um feed que chega dois minutos atrasado não custava nada quando o clube não
+     tinha outro jeito de saber. Agora tem: a linha nasce na tela de todo mundo
+     no instante em que alguém escreve, e esta é a tela em que isso mais se
+     nota — é a única aberta enquanto se conversa no Discord. A volta do relógio
+     acima continua sendo a rede de baixo, para quando a conexão ao vivo cair. */
+  useLive(kinds => {
+    if (kinds.has('social') || kinds.has('reviews')) void load();
+  });
 
   if (error && !items) {
     return (

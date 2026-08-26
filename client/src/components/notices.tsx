@@ -3,6 +3,7 @@ import { Bell, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Reel } from '@/components/bits';
 import { useClub } from '@/App';
 import { initialsOf, notifications, reelColor, type Notice } from '@/lib/api';
+import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -23,12 +24,23 @@ import { cn, plural, whenOf } from '@/lib/utils';
    gravada sobre ele é uma data por pessoa. Abrir o sino é o que move essa data.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* De um minuto e meio, e só com a aba à vista. O clube está no Discord com a
-   página aberta ao lado por horas, e uma consulta a cada poucos segundos seria
-   trabalho constante numa instância que dorme por falta dele. `visibilitychange`
-   é o que evita que uma aba esquecida num monitor secundário fique batendo no
-   servidor a noite inteira. */
+/* ── a pergunta periódica, que agora é a rede de baixo ────────────────────
+   De um minuto e meio, e só com a aba à vista. Era o único jeito de o sino
+   saber de alguma coisa: quem respondesse você às 21h04 acendia o seu sino
+   quando desse a próxima volta do relógio, e no meio disso o painel dizia zero
+   com toda a confiança do mundo.
+
+   O aviso ao vivo (`useLive`, abaixo) passou a ser o caminho normal, e este
+   ficou sendo o que segura o produto quando aquele cai — uma sessão que expirou,
+   abas demais, um proxy que fechou a conexão. Ao vivo é mais rápido; isto é o
+   que garante que nada fica escondido para sempre.
+
+   `visibilitychange` continua evitando que uma aba esquecida num monitor
+   secundário fique batendo no servidor a noite inteira. */
 const POLL_MS = 90_000;
+
+/** Quanto tempo o distintivo fica pulando quando chega coisa nova. */
+const POP_MS = 700;
 
 function iconOf(kind: Notice['kind'], value?: number) {
   if (kind === 'comment') return MessageSquare;
@@ -78,6 +90,57 @@ export function Notices({
       document.removeEventListener('visibilitychange', tick);
     };
   }, [load]);
+
+  /* ── e agora, na hora ───────────────────────────────────────────────────
+     `social` cobre comentário, resposta, curtida e voto; `reviews` cobre a
+     menção que alguém escreve no comentário da própria ficha ao avaliar — as
+     duas coisas que routes/notifications.js lê. O aviso não diz o que houve,
+     só que houve: quem monta a frase é o servidor, e ele a monta na segunda
+     pessoa, o que só pode ser feito por quem sabe quem está perguntando.
+
+     Com o painel aberto, chegar é ser visto: o item entra na lista debaixo dos
+     olhos de alguém, e um contador subindo para "1" enquanto o "1" está na tela
+     é o painel dizendo que não acredita nos próprios olhos. */
+  const openRef = useRef(open);
+  openRef.current = open;
+  useLive(kinds => {
+    if (!kinds.has('social') && !kinds.has('reviews')) return;
+    void (async () => {
+      await load();
+      if (!openRef.current) return;
+      setUnread(0);
+      try {
+        await notifications.seen();
+      } catch {
+        /* a conta volta no próximo carregamento, que é o certo */
+      }
+    })();
+  });
+
+  /* ── o pulo ─────────────────────────────────────────────────────────────
+     Um aviso que aparece sem mover nada não aparece: o distintivo é uma
+     etiqueta de quinze pixels no canto de um ícone de dezoito, num cabeçalho
+     que a pessoa não está olhando — ela está lendo a conversa embaixo. O pulo é
+     o que faz o olho subir.
+
+     Só quando SOBE, e nunca na primeira carga. Um sino que chacoalha a cada F5
+     está anunciando o carregamento da página, não uma novidade — e o que se
+     pediu é que a novidade apareça ao vivo. */
+  const [pop, setPop] = useState(false);
+  const before = useRef(0);
+  const first = useRef(true);
+  useEffect(() => {
+    const grew = unread > before.current;
+    before.current = unread;
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!grew) return;
+    setPop(true);
+    const id = window.setTimeout(() => setPop(false), POP_MS);
+    return () => window.clearTimeout(id);
+  }, [unread]);
 
   /* Abrir é ver. A conta zera na hora, sem esperar o servidor, porque a pessoa
      está olhando para a lista enquanto o pedido viaja — e um contador que
@@ -148,14 +211,31 @@ export function Notices({
           open || unread ? 'text-dye-brass' : 'text-ink-dim hover:text-ink'
         )}
       >
-        <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+        {/* O badalo é curto e não se repete: o sino balança uma vez quando
+            chega alguma coisa e volta a ser um ícone. Um chacoalhar em laço
+            seria a marquise pedindo atenção o tempo todo, que é a versão de
+            interface de alguém falando alto até ser respondido.
+
+            `motion-reduce` aqui, ao contrário das gavetas: uma gaveta que abre
+            é a resposta a um clique que a pessoa deu, e isto é movimento que
+            começa sozinho no canto do olho — exatamente o que a preferência do
+            sistema existe para desligar. O distintivo continua aparecendo. */}
+        <Bell
+          className={cn('h-[18px] w-[18px]', pop && 'animate-nudge motion-reduce:animate-none')}
+          strokeWidth={1.8}
+        />
         {/* O contador é latão porque ter avisos por ler é um estado, e o
             vermelho desta sala é reservado para ação e gravação. Um distintivo
             vermelho permanente na marquise competiria com a chave de gravar em
             todas as telas — e a regra da lâmpada diz uma superfície vermelha
             por tela, no máximo. */}
         {unread ? (
-          <span className="q absolute -right-0.5 -top-0.5 min-w-[15px] rounded-[2px] bg-dye-brass px-[3px] text-[9.5px] font-semibold leading-[15px] text-house-deep">
+          <span
+            className={cn(
+              'q absolute -right-0.5 -top-0.5 min-w-[15px] rounded-[2px] bg-dye-brass px-[3px] text-[9.5px] font-semibold leading-[15px] text-house-deep',
+              pop && 'animate-pop'
+            )}
+          >
             {unread > 9 ? '9+' : unread}
           </span>
         ) : null}

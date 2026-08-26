@@ -21,6 +21,7 @@ import {
   type SessionUser,
   type WatchItem,
 } from '@/lib/api';
+import { useLive, type LiveKind } from '@/lib/live';
 import { Reel } from '@/components/bits';
 import { SignIn } from '@/screens/SignIn';
 import { cn } from '@/lib/utils';
@@ -403,6 +404,58 @@ export default function App() {
     },
     [meId]
   );
+
+  /* ── o clube ao vivo ────────────────────────────────────────────────────
+     Tudo aqui em cima era uma fotografia tirada no boot. O clube conversa em
+     horas diferentes, com a página aberta ao lado do Discord por horas, e uma
+     aba aberta às oito da noite mostrava às onze exatamente o que mostrava às
+     oito: o comentário que alguém escreveu no meio disso existia no banco e não
+     na tela de mais ninguém até um F5.
+
+     O servidor agora avisa (ver live.js), e o aviso diz só QUAL coleção mudou.
+     Buscar de novo, e não aplicar um delta que veio junto, é a decisão de
+     desenho inteira: existe uma única forma de cada coleção chegar — a rota — e
+     por isso não há como a tela ao vivo divergir da tela recarregada.
+
+     Um erro aqui morre em silêncio de propósito. Ninguém pediu esta busca; ela
+     é a consequência de outra pessoa ter feito alguma coisa, e um toast
+     vermelho por cima da tela de quem não pediu nada seria o produto reclamando
+     de um trabalho que ele mesmo inventou. O que se perde é uma rodada, e a
+     próxima — ou a pergunta periódica do sino e do feed — recupera. */
+  const applyLive = useCallback((kinds: ReadonlySet<LiveKind>) => {
+    const quiet = () => {
+      /* engolido: ver acima */
+    };
+    if (kinds.has('social')) {
+      void social
+        .all()
+        .then(s => {
+          setComments(s.comments);
+          setVotes(s.votes);
+          setCommentLikes(s.commentLikes);
+        })
+        .catch(quiet);
+    }
+    if (kinds.has('reviews')) {
+      void api<{ reviews: Review[] }>('/api/reviews')
+        .then(r => setReviews(r.reviews))
+        .catch(quiet);
+    }
+    if (kinds.has('watchlist')) {
+      void api<{ watchlist: WatchItem[] }>('/api/watchlist')
+        .then(w => setWatchlist(w.watchlist))
+        .catch(quiet);
+    }
+    if (kinds.has('reviewers')) {
+      void api<{ reviewers: Reviewer[] }>('/api/reviewers')
+        .then(r => setReviewers(r.reviewers))
+        .catch(quiet);
+    }
+  }, []);
+
+  /* Só depois de entrar: sem sessão a rota responde 401, e insistir gastaria as
+     tentativas do fluxo antes de alguém sequer ter digitado o PIN. */
+  useLive(applyLive, !!me && booted);
 
   const reload = useCallback((patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => {
     if (patch.reviewers) setReviewers(patch.reviewers);

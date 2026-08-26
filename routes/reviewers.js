@@ -4,6 +4,7 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const { handlesFor } = require('../handles');
+const live = require('../live');
 
 const router = express.Router();
 
@@ -102,6 +103,7 @@ router.post('/', wrap(async (req, res) => {
   await insertStmt.run(id, name, dot);
   await auth.setPin(id, pin);
 
+  live.emit('reviewers', id);
   res.status(201).json({ id, name, dot, isAdmin: false, hasPin: true, avatar: null, review_count: 0 });
 }));
 
@@ -134,6 +136,11 @@ router.patch('/me', auth.requireSession, wrap(async (req, res) => {
       await setAvatarStmt.run(read.data, read.mime, crypto.randomBytes(6).toString('hex'), id);
     }
   }
+
+  /* Um nome e um retrato aparecem ao lado de tudo o que a pessoa já disse aqui,
+     então trocar qualquer um dos dois redesenha o produto inteiro para o resto
+     do clube — não só a tela de avaliadores. */
+  live.emit('reviewers', id);
 
   const row = await db
     .prepare('SELECT id, name, dot, is_admin, avatar_rev FROM reviewers WHERE id = ?')
@@ -188,6 +195,11 @@ router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
 
   await auth.destroyAllSessions(target.id);
   await deleteStmt.run(target.id);
+  /* As avaliações vão junto (ON DELETE CASCADE), e com elas as conversas
+     penduradas nelas. Três avisos porque três coleções mudaram de uma vez. */
+  live.emit('reviewers', req.session.reviewer_id);
+  live.emit('reviews', req.session.reviewer_id);
+  live.emit('social', req.session.reviewer_id);
   res.status(204).end();
 }));
 

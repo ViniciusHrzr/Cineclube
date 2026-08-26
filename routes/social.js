@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
+const live = require('../live');
 
 const router = express.Router();
 
@@ -156,6 +157,10 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, wrap(async (req,
 
   const id = 'c' + crypto.randomUUID();
   await insertCommentStmt.run(id, review.id, req.session.reviewer_id, body, parentId ? String(parentId) : null);
+  /* Depois da escrita, sempre. Um aviso emitido antes do commit manda o clube
+     inteiro buscar um estado que ainda não existe — e não há segundo aviso a
+     caminho para consertar isso. Ver live.js. */
+  live.emit('social', req.session.reviewer_id);
   res.status(201).json(toCommentDTO(await oneCommentStmt.get(id)));
 }));
 
@@ -172,6 +177,7 @@ router.delete('/comments/:id', auth.requireSession, wrap(async (req, res) => {
   // diálogo, e ninguém consegue ler a metade que sobrou.
   await deleteRepliesStmt.run(row.id);
   await deleteCommentStmt.run(row.id);
+  live.emit('social', req.session.reviewer_id);
   res.status(204).end();
 }));
 
@@ -197,6 +203,7 @@ router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
   const who = req.session.reviewer_id;
   if (liked) await likeStmt.run(comment.id, who);
   else await unlikeStmt.run(comment.id, who);
+  live.emit('social', who);
   res.json({ liked });
 }));
 
@@ -241,9 +248,11 @@ router.put('/reviews/:reviewId/criteria/:key/vote', auth.requireSession, wrap(as
   const voter = req.session.reviewer_id;
   if (value === 0) {
     await clearVoteStmt.run(review.id, key, voter);
+    live.emit('social', voter);
     return res.json({ vote: null });
   }
   await castVoteStmt.run(review.id, key, voter, value);
+  live.emit('social', voter);
   res.json({ vote: { reviewId: review.id, key, reviewerId: voter, value } });
 }));
 

@@ -4,6 +4,7 @@ const auth = require('../auth');
 const wrap = require('../wrap');
 const { fillEnglishTitle } = require('../english');
 const { GENRES } = require('../criteria');
+const live = require('../live');
 
 const router = express.Router();
 
@@ -68,6 +69,11 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
   /* A fila é uma das telas que filtram o banco, então o filme entra nela já
      sabendo por quais nomes pode ser procurado depois. */
   await fillEnglishTitle(movie.id);
+  /* A fila é do clube inteiro, e é a coleção em que duas pessoas mais tropeçam
+     uma na outra: sem isto, dois membros escolhendo o filme da semana ao mesmo
+     tempo põem o mesmo título duas vezes porque nenhum dos dois viu o do
+     outro. */
+  live.emit('watchlist', req.session.reviewer_id);
   res.status(201).json({ ok: true });
 }));
 
@@ -92,11 +98,13 @@ router.put('/order', auth.requireSession, wrap(async (req, res) => {
   }
 
   const listed = await listStmt.all();
+  live.emit('watchlist', req.session.reviewer_id);
   res.json({ watchlist: listed.map(toDTO) });
 }));
 
 router.delete('/:movieId', auth.requireSession, wrap(async (req, res) => {
   await deleteStmt.run(Number(req.params.movieId));
+  live.emit('watchlist', req.session.reviewer_id);
   res.status(204).end();
 }));
 
