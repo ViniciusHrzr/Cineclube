@@ -442,9 +442,15 @@ function Breakdown({ r, comment }: { r: Review; comment?: string }) {
    pequenas. O que o clube diz de verdade é sobre o take: "boa avaliação",
    "achei alto demais". É um voto.
 
-   Com um só por ficha, os botões podem ter palavras. Os onze eram mudos porque
-   onze rótulos não caberiam em lugar nenhum — este cabe, e "Concordo" é mais
-   claro do que um polegar que a pessoa precisa interpretar.
+   Mudo, e na fileira. O par teve rótulos escritos enquanto morava dentro da
+   gaveta, onde havia largura sobrando; agora ele fica na linha da ficha, ao lado
+   da nota, que é onde a pessoa está olhando quando forma a opinião — e ali a
+   linha já carrega pôster, título, ficha técnica, nota e o TMDB. Duas palavras
+   em versalete a mais empurrariam o título para fora antes do tablet.
+
+   O polegar sozinho não é um enigma: para cima e para baixo é a convenção mais
+   estabelecida que existe numa tela, o `title` diz a palavra a quem parar em
+   cima, e o `aria-label` diz a frase inteira a quem lê por áudio.
 
    O resto das regras não mudou:
 
@@ -488,21 +494,23 @@ function TakeVotes({ review, className }: { review: Review; className?: string }
   if (own) {
     if (!up && !down) return null;
     return (
-      <div className={cn('flex flex-wrap items-center gap-4 text-ink-faint', className)}>
+      <div className={cn('flex flex-none items-center gap-2.5 text-ink-faint', className)}>
         {up ? (
-          <span className="flex items-center gap-1.5">
+          <span
+            className="flex items-center gap-1"
+            title={up === 1 ? '1 concorda' : `${up} concordam`}
+          >
             <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
-            <span className="text-[12px] text-ink-dim">
-              {up === 1 ? '1 concorda' : `${up} concordam`}
-            </span>
+            <span className="q text-[11px] leading-none text-ink-dim">{up}</span>
           </span>
         ) : null}
         {down ? (
-          <span className="flex items-center gap-1.5">
+          <span
+            className="flex items-center gap-1"
+            title={down === 1 ? '1 discorda' : `${down} discordam`}
+          >
             <ThumbsDown className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden />
-            <span className="text-[12px] text-ink-dim">
-              {down === 1 ? '1 discorda' : `${down} discordam`}
-            </span>
+            <span className="q text-[11px] leading-none text-ink-dim">{down}</span>
           </span>
         ) : null}
       </div>
@@ -522,12 +530,13 @@ function TakeVotes({ review, className }: { review: Review; className?: string }
           `${on ? 'Tirar seu voto: ' : ''}${word} com a avaliação de ${review.reviewerName}` +
           (n ? `, ${n} até agora` : '')
         }
+        title={on ? `${word} — clique para tirar seu voto` : word}
         onClick={() => void press(side)}
-        /* Altura de 28px e área de toque inteira: este é um controle por ficha
-           agora, não um de onze espremidos numa linha, e um alvo de mão vale
-           mais do que os poucos pixels que ele custa. */
+        /* Altura de 28px e um mínimo de largura mesmo sem contador: sem o
+           rótulo o botão encolheria para o tamanho do ícone, e um alvo de
+           14px não é um alvo de dedo. */
         className={cn(
-          'flex h-7 items-center gap-1.5 rounded-cell px-2 ring-1 transition-colors duration-150',
+          'flex h-7 min-w-[30px] items-center justify-center gap-1 rounded-cell px-1.5 ring-1 transition-colors duration-150',
           'disabled:opacity-40',
           on
             ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
@@ -535,19 +544,42 @@ function TakeVotes({ review, className }: { review: Review; className?: string }
         )}
       >
         <Icon className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
-        <span className="font-display text-[11.5px] uppercase leading-none tracking-[0.1em]">
-          {word}
-        </span>
         {n ? <span className="q text-[10.5px] leading-none opacity-80">{n}</span> : null}
       </button>
     );
   };
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+    <div className={cn('flex flex-none items-center gap-1.5', className)}>
       {key(1, up)}
       {key(-1, down)}
     </div>
+  );
+}
+
+/* ── a seta da gaveta, ao lado dos votos ──────────────────────────────────
+   A fileira inteira abre a ficha, e a seta diz que ela abre. Enquanto a linha
+   era um botão só, a seta morava dentro dele; com o par de polegares na mesma
+   linha isso deixou de ser possível — um botão dentro de outro não é uma coisa
+   que o navegador monte — e a linha virou um botão largo com os votos e a seta
+   ao lado.
+
+   Escondida do leitor de tela de propósito: o gesto que ela oferece é o mesmo
+   do botão que ocupa o resto da fileira, e um segundo controle anunciando o
+   mesmo `aria-expanded` seria a mesma frase dita duas vezes seguidas. Para o
+   mouse ela continua clicável, que é o que ela sempre foi. */
+function DrawerArrow({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <span
+      aria-hidden
+      onClick={onToggle}
+      className="flex flex-none cursor-pointer items-center py-3 pl-0.5"
+    >
+      <ChevronDown
+        className={cn('h-4 w-4 text-ink-dim transition-transform duration-200', open && 'rotate-180')}
+        strokeWidth={1.7}
+      />
+    </span>
   );
 }
 
@@ -1045,32 +1077,37 @@ function Take({
         lit && 'bg-beam/[0.07]'
       )}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-beam/[0.05]"
-      >
-        <Poster src={r.moviePoster} className="h-[52px] w-[35px] flex-none" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-semibold">{r.movieTitle}</span>
-          <span className="q block text-[11px] text-ink-dim">
-            {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
+      {/* Os polegares saíram da gaveta e vieram para cá, encostados na nota —
+          é dela que se concorda ou se discorda, e enterrados dois cliques
+          abaixo eles só eram encontrados por quem já tinha aberto a ficha por
+          outro motivo. Ficam FORA do botão que abre a gaveta porque um botão
+          dentro de outro não existe em HTML, e porque reagir a uma nota nunca
+          deveria também dobrar um painel. */}
+      <div className="flex items-center gap-2 px-3 transition-colors hover:bg-beam/[0.05]">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+        >
+          <Poster src={r.moviePoster} className="h-[52px] w-[35px] flex-none" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-semibold">{r.movieTitle}</span>
+            <span className="q block text-[11px] text-ink-dim">
+              {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
+            </span>
           </span>
-        </span>
-        <span className="flex flex-none flex-col items-end gap-1">
-          <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
-          <CrowdNote crowd={r.crowd} />
-        </span>
-        <ChevronDown className={cn('h-4 w-4 flex-none text-ink-dim transition-transform duration-200', open && 'rotate-180')} strokeWidth={1.7} />
-      </button>
+          <span className="flex flex-none flex-col items-end gap-1">
+            <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
+            <CrowdNote crowd={r.crowd} />
+          </span>
+        </button>
+        <TakeVotes review={r} />
+        <DrawerArrow open={open} onToggle={onToggle} />
+      </div>
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
-          {/* Logo abaixo do detalhamento e acima da conversa, que é a ordem em
-              que a coisa acontece: leem-se as notas, reage-se a elas, e quem
-              tem mais a dizer do que um polegar desce e escreve. */}
-          <TakeVotes review={r} className="mt-3" />
           <Conversation review={r} />
           <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
@@ -1441,25 +1478,27 @@ function ByMovie({
                       lit === r.id && 'bg-beam/[0.07]'
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onToggle(r.id)}
-                      aria-expanded={openIds.has(r.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-beam/[0.05]"
-                    >
-                      <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
-                        {initialsOf(r.reviewerName)}
-                      </Reel>
-                      <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
-                      <span className="q text-[17px]">{fmt(r.final)}</span>
-                      <ChevronDown
-                        className={cn(
-                          'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
-                          openIds.has(r.id) && 'rotate-180'
-                        )}
-                        strokeWidth={1.7}
-                      />
-                    </button>
+                    {/* O mesmo par de polegares da outra visão, no mesmo
+                        lugar: colado na nota de quem assinou a ficha. É a
+                        mesma pergunta nas duas — "achei alto demais" —, então
+                        ela não pode existir só num dos dois jeitos de olhar o
+                        mesmo acervo. */}
+                    <div className="flex items-center gap-2 px-3 transition-colors hover:bg-beam/[0.05]">
+                      <button
+                        type="button"
+                        onClick={() => onToggle(r.id)}
+                        aria-expanded={openIds.has(r.id)}
+                        className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
+                      >
+                        <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
+                          {initialsOf(r.reviewerName)}
+                        </Reel>
+                        <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
+                        <span className="q flex-none text-[17px]">{fmt(r.final)}</span>
+                      </button>
+                      <TakeVotes review={r} />
+                      <DrawerArrow open={openIds.has(r.id)} onToggle={() => onToggle(r.id)} />
+                    </div>
                     <Drawer open={openIds.has(r.id)}>
                       <div className="px-3 pb-4 pt-1">
                         <Breakdown r={r} comment={r.comment} />
