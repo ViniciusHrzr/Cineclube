@@ -8,7 +8,7 @@ import {
   useVelocity,
 } from 'framer-motion';
 import { Check, Play, Search } from 'lucide-react';
-import { Blank, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
+import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
 import {
   api,
   fmt,
@@ -159,11 +159,10 @@ export function RateScreen({
 
   return (
     <section>
-      <header className="mb-7">
-        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
-          Avaliar filme
-        </h1>
-      </header>
+      {/* Quantas perguntas esta ficha faz, e nada além disso: a escala e o passo
+          já estão escritos na legenda dos critérios logo abaixo, e dizer duas
+          vezes na mesma tela faz o leitor conferir se são a mesma coisa. */}
+      <Bill title="Avaliar filme" note={movie ? plural(weight, 'critério', 'critérios') : undefined} />
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="min-w-0 space-y-7">
@@ -301,32 +300,26 @@ function Slate({
 
           {/* ── what this film is being rated as ──────────────────────────
               A film with one genre states it; a film with several asks. The
-              two ×2 criteria below change with the answer, so this is not a
-              label — it is the second half of the form, and it is placed
+              two criteria the genre brings change with the answer, so this is
+              not a label — it is the second half of the form, and it is placed
               before the criteria because it decides what they are. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* O componente do sistema, não uma cópia dele. Isto era um chip
+                escrito à mão aqui, com a mesma marcação e a mesma lógica de
+                aceso/apagado — e no dia em que o chip do catálogo virou latão,
+                este continuou vermelho. Uma escolha entre opções tem uma forma
+                só neste produto. */}
             {choices.length > 1 ? (
-              choices.map(g => {
-                const on = g === genre;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => onGenre(g)}
-                    className={cn(
-                      'rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] ring-1 transition-colors duration-150',
-                      on
-                        ? 'text-dye-red-lit ring-dye-red-lit/70 shadow-[inset_0_0_12px_rgba(209,42,32,0.2)]'
-                        : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
-                    )}
-                  >
-                    {g}
-                  </button>
-                );
-              })
+              choices.map(g => (
+                <Chip key={g} size="sm" on={g === genre} onClick={() => onGenre(g)}>
+                  {g}
+                </Chip>
+              ))
             ) : (
-              <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
+              /* Um gênero só: não há escolha a oferecer, mas o filme está sendo
+                 avaliado como aquilo. Ocupa a posição exata de um chip aceso e
+                 usa a mesma tinta, sem ser um botão que não faz nada. */
+              <span className="rounded-[1px] bg-house-seat/70 px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-brass ring-1 ring-dye-brass/70">
                 {genre || movie.genre}
               </span>
             )}
@@ -336,8 +329,8 @@ function Slate({
           </div>
           {choices.length > 1 ? (
             <p className="mt-2 text-[12px] leading-relaxed text-ink-dim">
-              Este filme é de mais de um gênero. O escolhido decide os dois critérios que valem dobro —
-              e, em animação e documentário, também troca uma das oito perguntas da base.
+              Este filme é de mais de um gênero. O escolhido decide as duas perguntas que o gênero traz —
+              e, em animação e documentário, também troca uma das oito perguntas de ofício.
             </p>
           ) : null}
         </div>
@@ -355,7 +348,7 @@ function Slate({
               href={movie.trailerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-[#ff7a6e]"
+              className="mt-3 inline-flex items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-dye-red-glow"
             >
               <Play className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
               Assistir trailer

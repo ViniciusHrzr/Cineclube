@@ -141,6 +141,55 @@ export function Reel({
   );
 }
 
+/* ── the bill ─────────────────────────────────────────────────────────────
+   The board outside a cinema, naming what is playing. Every section had one and
+   every section built its own: the same five classes typed out in five files,
+   with the margin drifting to `mb-7` in one of them and the count line present
+   in three. Same role, same type, one component.
+
+   The rule is the part that is new. A single word set at 46px leaves most of a
+   1240px line empty, and the emptiness read as the layout not having finished
+   loading rather than as air. A hairline running from the lettering to the edge
+   of the deck closes it, and it is drawn in the beam's own colour at a fifth of
+   its strength, fading out — the light spilling off the title and falling away
+   across the board.
+
+   Beam and not brass, deliberately. Brass means *selected* in this room, and
+   spending it on a decoration at the top of all five screens would spend the
+   one thing that makes a chosen chip legible as chosen. Beam is light, it is
+   already the colour of the lettering it runs out of, and light has no state to
+   dilute. */
+export function Bill({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  /** The line under the title: a count, a source, what the filter left. */
+  note?: React.ReactNode;
+  /** Anything that belongs on the title's own line, at the far end. */
+  children?: React.ReactNode;
+}) {
+  return (
+    <header className="mb-6">
+      {/* Centred on the line box rather than on the baseline: the display face
+          is caps-only, so there are no descenders and the optical middle of the
+          lettering is the middle of the box. */}
+      <div className="flex items-center gap-4">
+        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
+          {title}
+        </h1>
+        <span
+          aria-hidden
+          className="h-px min-w-[2rem] flex-1 bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
+        />
+        {children}
+      </div>
+      {note ? <p className="q mt-2.5 text-[12.5px] text-ink-dim">{note}</p> : null}
+    </header>
+  );
+}
+
 /* ── keys ─────────────────────────────────────────────────────────────────
    One action shape across the whole product. `tone` names what it does, never
    how loud it should look. */
@@ -159,7 +208,7 @@ export function Key({
         'transition-[background-color,color,border-color,transform] duration-150 active:translate-y-px',
         'disabled:cursor-not-allowed disabled:opacity-40',
         tone === 'commit' &&
-          'bg-dye-red text-beam-hot ring-1 ring-dye-red hover:bg-[#e2352a] disabled:bg-house-seat disabled:text-ink-dim disabled:ring-house-rail',
+          'bg-dye-red text-beam-hot ring-1 ring-dye-red hover:bg-dye-red-hot disabled:bg-house-seat disabled:text-ink-dim disabled:ring-house-rail',
         /* The chip's surface, for the chip's reason: these keys sit on the film
            wall too — under every poster in the bin, and at the foot of the
            catalogue — and a ring around nothing leaves the lettering to fend for
@@ -216,20 +265,45 @@ export function IconKey({
    not decoration: these sit straight on the film wall, in tracked caps at
    12.5px, and the wall is lit and moving underneath them — a ring alone left
    the dim ink reading against whatever happened to be behind it that second.
-   On the seat colour it holds 6.4:1 unlit and lit alike, because the surface no
-   longer lets the room through.
+   The surface holds whatever is written on it at 8:1 or better, lit and unlit
+   alike, because it no longer lets the room through.
 
-   Both states share that surface. What marks the chosen one is the red of the
-   marquee's underline, said twice — in the lettering and in the ring — over an
-   inner glow of the same dye. Filling it with a tenth of red instead, as it was,
-   meant the selected chip was the one place the wall still showed through. */
+   ── por que latão, e não vermelho ───────────────────────────────────────
+   The chosen chip was red until 25/08/2026 — the same dye as the marquee's
+   underline — and that was a rule being broken in the most visible place the
+   product has. Brass carries state and selection everywhere else: the focus
+   ring, the field being typed in, the genre criteria's legend, the vote you
+   cast. Red carries two other things, action and recording, and it is kept
+   scarce so those two stay legible.
+
+   The distinction the product actually needs is the one it now draws: **red
+   says where you are** — the lit tab of the section you are standing in — and
+   **brass says what you chose**. A chip is a choice, not a location, so it
+   wears brass.
+
+   What survives from the red version is the reason it was made: the wash. The
+   chosen chip is opaque and glowing from the inside, not a tint that let the
+   wall show through it. Only the dye changed. */
+/* Two geometries, one control. `md` is the filter row that stands on its own
+   line — the catalogue's sort and its genres. `sm` is the same choice made
+   inline beside something else, where a full-size chip would outweigh the thing
+   it is attached to: the genre a take is being rated as, sitting on the slate
+   next to the film's own name. The state, the surface and the dye are shared;
+   only the size is not. */
+const CHIP_SIZE = {
+  sm: 'rounded-[1px] px-2 py-0.5 text-[11px] tracking-[0.14em]',
+  md: 'rounded-cell px-3 py-1.5 text-[12.5px] tracking-[0.12em]',
+} as const;
+
 export function Chip({
   on,
   onClick,
+  size = 'md',
   children,
 }: {
   on: boolean;
   onClick: () => void;
+  size?: keyof typeof CHIP_SIZE;
   children: React.ReactNode;
 }) {
   return (
@@ -238,10 +312,11 @@ export function Chip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        'rounded-cell bg-house-seat/70 px-3 py-1.5 font-display text-[12.5px] uppercase tracking-[0.12em]',
+        'bg-house-seat/70 font-display uppercase',
+        CHIP_SIZE[size],
         'ring-1 transition-colors duration-150',
         on
-          ? 'text-dye-red-lit ring-dye-red-lit/70 shadow-[inset_0_0_14px_rgba(209,42,32,0.22)]'
+          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
           : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
       )}
     >

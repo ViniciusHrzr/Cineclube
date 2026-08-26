@@ -268,7 +268,7 @@ export function ProjectionSheet({
                   href={movie.trailerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-flex w-fit items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-[#ff7a6e]"
+                  className="mt-3 inline-flex w-fit items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-dye-red-glow"
                 >
                   <Play className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
                   Assistir trailer

@@ -11,7 +11,7 @@ import {
   useVelocity,
 } from 'framer-motion';
 import { GripVertical } from 'lucide-react';
-import { Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
+import { Bill, Blank, Chip, Fault, Key, Poster, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { api, del, type Movie, type WatchItem } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -116,18 +116,18 @@ export function CatalogScreen() {
 
   return (
     <section>
-      <header className="mb-6">
-        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">Catálogo</h1>
-        <p className="q mt-2 text-[12.5px] text-ink-dim">
-          {firstLoad
+      <Bill
+        title="Catálogo"
+        note={
+          firstLoad
             ? 'carregando…'
             : searchMode
             ? `${plural(items.length, 'resultado', 'resultados')} para “${query.trim()}”`
             : sort === 'club'
             ? `${plural(items.length, 'filme já avaliado', 'filmes já avaliados')} pelo clube`
-            : `${plural(items.length, 'filme', 'filmes')} · fonte TMDB`}
-        </p>
-      </header>
+            : `${plural(items.length, 'filme', 'filmes')} · fonte TMDB`
+        }
+      />
 
       <div className="mb-5 max-w-[440px]">
         <SearchField
@@ -473,15 +473,15 @@ export function WatchlistScreen() {
 
   return (
     <section>
-      <header className="mb-6">
-        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">Quero ver</h1>
-        <p className="q mt-2 text-[12.5px] text-ink-dim">
-          {filtering
+      <Bill
+        title="Quero ver"
+        note={
+          (filtering
             ? `${shown.length} de ${plural(club.watchlist.length, 'filme', 'filmes')}`
-            : `${plural(club.watchlist.length, 'filme', 'filmes')} na fila do clube`}
-          {rest > 0 ? ` · mostrando ${paged.length}` : ''}
-        </p>
-      </header>
+            : `${plural(club.watchlist.length, 'filme', 'filmes')} na fila do clube`) +
+          (rest > 0 ? ` · mostrando ${paged.length}` : '')
+        }
+      />
 
       {club.watchlist.length ? (
         <div className="mb-5 max-w-[440px]">

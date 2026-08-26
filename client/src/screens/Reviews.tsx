@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Pencil, Plus, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
-import { Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
+import { Bill, Blank, Chip, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -50,14 +50,14 @@ export function ReviewsScreen() {
 
   return (
     <section>
-      <header className="mb-6">
-        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">Avaliados</h1>
-        <p className="q mt-2 text-[12.5px] text-ink-dim">
-          {filtering
+      <Bill
+        title="Avaliados"
+        note={
+          filtering
             ? `${shown.length} de ${club.reviews.length} avaliações`
-            : `${club.reviews.length} avaliações · ${club.reviewers.length} avaliadores`}
-        </p>
-      </header>
+            : `${club.reviews.length} avaliações · ${club.reviewers.length} avaliadores`
+        }
+      />
 
       {club.reviews.length ? (
         <div className="mb-5 max-w-[440px]">
@@ -443,6 +443,9 @@ function whenOf(iso: string) {
    Não tem chave commit vermelha. A regra da lâmpada vale: no máximo uma
    superfície vermelha por tela, e esta tela pode ter seis gavetas abertas ao
    mesmo tempo. */
+/** O mesmo teto que routes/social.js aplica. Espelhado, nunca decidido aqui. */
+const MAX_COMMENT = 1000;
+
 function Conversation({ review }: { review: Review }) {
   const club = useClub();
   const [draft, setDraft] = useState('');
@@ -530,11 +533,16 @@ function Conversation({ review }: { review: Review }) {
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="min-w-[16ch] flex-1">
+        <label className="relative min-w-[16ch] flex-1">
           <span className="sr-only">Comentar a avaliação de {review.reviewerName}</span>
           <textarea
             rows={2}
             value={draft}
+            /* O mesmo teto do servidor. Sem isto, quem escrevesse um parágrafo
+               a mais só descobria no 400 depois de apertar — o erro chegava
+               como um toast vermelho no fim de um texto já escrito, que é a
+               pior hora possível para descobrir um limite. */
+            maxLength={MAX_COMMENT}
             onChange={e => setDraft(e.target.value)}
             /* Enter envia, Shift+Enter quebra linha. Uma caixa de conversa em
                que Enter não envia é uma caixa que faz a pessoa procurar o
@@ -549,6 +557,18 @@ function Conversation({ review }: { review: Review }) {
             placeholder={own ? 'Responder' : 'Comentar'}
             className="w-full resize-y rounded-cell bg-house-deep px-3 py-2 text-[13px] leading-relaxed text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass"
           />
+          {/* Só perto do fim. Um contador ligado desde o primeiro caractere
+              conta uma coisa que ninguém está tentando saber; aparecendo no
+              último quinto, ele responde a pergunta no momento em que ela
+              passa a existir. */}
+          {draft.length > MAX_COMMENT * 0.8 ? (
+            <span
+              aria-live="polite"
+              className="q pointer-events-none absolute bottom-1.5 right-2 text-[10.5px] text-ink-dim"
+            >
+              {MAX_COMMENT - draft.length}
+            </span>
+          ) : null}
         </label>
         <Key tone="flush" disabled={!draft.trim() || sending} onClick={() => void send()}>
           {sending ? 'Enviando…' : own ? 'Responder' : 'Comentar'}

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Camera, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
-import { Blank, Fault, IconKey, Key, Reel } from '@/components/bits';
+import { Bill, Blank, Fault, IconKey, Key, Reel } from '@/components/bits';
 import { auth, del, initialsOf, post, profile, reelColor, type Reviewer } from '@/lib/api';
 import { PortraitGate } from '@/components/portrait';
 import { cn } from '@/lib/utils';
@@ -14,11 +14,7 @@ const onlyDigits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
 export function PeopleScreen() {
   return (
     <section className="max-w-[640px]">
-      <header className="mb-6">
-        <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
-          Avaliadores
-        </h1>
-      </header>
+      <Bill title="Avaliadores" />
 
       <MyProfile />
       <MyPin />

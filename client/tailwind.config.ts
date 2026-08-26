@@ -37,7 +37,9 @@ export default {
            is how the primary button ended up at 4.14:1. */
         dye: {
           red: '#d12a20',      // fills: the commit key, the REC lamp, the curtain
+          'red-hot': '#e2352a', // the fill under the pointer, one step brighter
           'red-lit': '#f2564a', // red as text: links, destructive hover
+          'red-glow': '#ff7a6e', // red text under the pointer — the trailer link
           'red-deep': '#8c1e18',
           /* ── latão ────────────────────────────────────────────────────────
              State and selection: the focus ring, the engaged chip, the genre
