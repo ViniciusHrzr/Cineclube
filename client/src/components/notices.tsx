@@ -36,7 +36,11 @@ function iconOf(kind: Notice['kind'], value?: number) {
   return value === -1 ? ThumbsDown : ThumbsUp;
 }
 
-export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => void }) {
+export function Notices({
+  onOpenReview,
+}: {
+  onOpenReview: (reviewId: string, commentId?: string | null) => void;
+}) {
   /* O retrato vem do clube, que já carrega a lista de avaliadores, e não do
      feed: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
      cada item repetiria a mesma URL dezenas de vezes na mesma resposta. */
@@ -206,7 +210,7 @@ export function Notices({ onOpenReview }: { onOpenReview: (reviewId: string) => 
                          com o leitor não terminou de avisar. */
                       onClick={() => {
                         setOpen(false);
-                        onOpenReview(n.reviewId);
+                        onOpenReview(n.reviewId, n.commentId);
                       }}
                       className="flex w-full gap-2.5 border-b border-white/[0.05] px-4 py-3 text-left transition-colors last:border-0 hover:bg-beam/[0.05]"
                     >

@@ -645,15 +645,27 @@ function Comment({
   c,
   replies,
   review,
+  lit,
   onRemove,
 }: {
   c: ReviewComment;
   replies: ReviewComment[];
   review: Review;
+  /** O texto que um aviso apontou, aceso por alguns segundos. */
+  lit: string | null;
   onRemove: (id: string) => void;
 }) {
   const club = useClub();
-  const [open, setOpen] = useState(false);
+  /* ── abertas por padrão ─────────────────────────────────────────────────
+     Nasciam recolhidas, como no Instagram, e o defeito apareceu no uso: quem
+     clicava num aviso de "respondeu você" chegava na ficha certa com a resposta
+     escondida atrás de um botão. Um aviso que leva a um lugar onde a coisa
+     anunciada não está visível não terminou de avisar.
+
+     E o recolhimento estava resolvendo um problema que este clube não tem: são
+     seis pessoas, e um fio com dez respostas é raro. O botão continua, agora
+     como "ocultar" — quem tiver uma discussão longa pode fechá-la. */
+  const [open, setOpen] = useState(true);
   const [writing, setWriting] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -678,7 +690,15 @@ function Comment({
   }
 
   return (
-    <li className="flex gap-2.5">
+    <li
+      id={`comment-${c.id}`}
+      /* `scroll-mt-24` pela marquise fixa, igual às fichas. O acender é a mesma
+         folha de facho por trás, e some sozinho. */
+      className={cn(
+        'flex scroll-mt-24 gap-2.5 rounded-cell transition-colors duration-700',
+        lit === c.id && 'bg-beam/[0.07]'
+      )}
+    >
       <Reel color={reelColor(c.reviewerDot, c.reviewerId)} src={club.avatarOf(c.reviewerId)} size="sm">
         {initialsOf(c.reviewerName)}
       </Reel>
@@ -745,7 +765,14 @@ function Comment({
             {replies.map(r => {
               const own = r.reviewerId === club.me.id;
               return (
-                <li key={r.id} className="flex gap-2">
+                <li
+                  key={r.id}
+                  id={`comment-${r.id}`}
+                  className={cn(
+                    'flex scroll-mt-24 gap-2 rounded-cell transition-colors duration-700',
+                    lit === r.id && 'bg-beam/[0.07]'
+                  )}
+                >
                   <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={club.avatarOf(r.reviewerId)} size="sm">
                     {initialsOf(r.reviewerName)}
                   </Reel>
@@ -830,6 +857,54 @@ function Conversation({ review }: { review: Review }) {
   /* Os mais NOVOS ficam à vista e os antigos recuam para trás do botão. Uma
      conversa é lida do começo, mas retomada pelo fim: quem abre a gaveta quer
      saber o que disseram por último. */
+  /* ── o texto que um aviso apontou ───────────────────────────────────────
+     Chegar aqui pelo sino tem de terminar com o comentário À VISTA, e havia
+     dois jeitos de ele não estar: recolhido dentro do pai (resolvido abrindo
+     por padrão) ou atrás do "carregar mais", que é este.
+
+     Uma resposta conta pelo pai: é a posição DELE na lista que decide se o par
+     está visível. Achado o índice, a lista cresce o quanto for preciso — não
+     três, o suficiente. */
+  const wanted = club.focusComment;
+  const { clearFocusComment } = club;
+  const [flash, setFlash] = useState<string | null>(null);
+  const timers = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (!wanted) return;
+    const target = here.find(c => c.id === wanted);
+    // De outra ficha, ou já apagado: não é desta conversa e não é problema dela.
+    if (!target) return;
+
+    const rootId = target.parentId || target.id;
+    const at = roots.findIndex(c => c.id === rootId);
+    if (at >= 0) setShowing(n => Math.max(n, roots.length - at));
+    setFlash(wanted);
+    clearFocusComment();
+
+    const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /* Guardados em ref e limpos só na desmontagem: este efeito apaga o próprio
+       gatilho, então o cleanup dele roda no instante seguinte e cancelaria os
+       dois temporizadores que acabaram de ser marcados. Mesma armadilha do foco
+       da ficha, mesmo conserto. */
+    timers.current.push(
+      window.setTimeout(() => {
+        document
+          .getElementById(`comment-${wanted}`)
+          ?.scrollIntoView({ behavior: gentle ? 'auto' : 'smooth', block: 'center' });
+      }, 360),
+      window.setTimeout(() => setFlash(null), 2600)
+    );
+  }, [wanted, here, roots, clearFocusComment]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(window.clearTimeout);
+      pending.length = 0;
+    };
+  }, []);
+
   const hidden = Math.max(0, roots.length - showing);
   const shown = roots.slice(hidden);
 
@@ -877,7 +952,14 @@ function Conversation({ review }: { review: Review }) {
       {shown.length ? (
         <ul className="mt-3 flex flex-col gap-3.5">
           {shown.map(c => (
-            <Comment key={c.id} c={c} replies={repliesOf(c.id)} review={review} onRemove={remove} />
+            <Comment
+              key={c.id}
+              c={c}
+              replies={repliesOf(c.id)}
+              review={review}
+              lit={flash}
+              onRemove={remove}
+            />
           ))}
         </ul>
       ) : null}

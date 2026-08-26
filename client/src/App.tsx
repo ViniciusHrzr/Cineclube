@@ -108,11 +108,14 @@ type Club = {
   goTab: (t: TabId) => void;
   /* Abre o acervo numa avaliação específica, e escreve o endereço dela. É o que
      o sino chama e o que "copiar link" produz. */
-  goReview: (reviewId: string) => void;
+  goReview: (reviewId: string, commentId?: string | null) => void;
   /** Qual ficha o endereço está pedindo, ou null. */
   focusReview: string | null;
   /** Chamado pela tela quando ela já abriu e rolou até o alvo. */
   clearFocusReview: () => void;
+  /** E qual comentário dentro dela, quando o aviso aponta para um texto. */
+  focusComment: string | null;
+  clearFocusComment: () => void;
   openSheet: (id: number) => void;
   rateMovie: (id: number) => void;
   fault: (msg: string) => void;
@@ -137,11 +140,16 @@ export function useClub() {
    Uma seção desconhecida cai no catálogo, como sempre caiu; um id que não
    existe mais abre a aba e não foca nada, que é o que sobra de honesto quando
    a coisa apontada foi apagada. */
-function routeFromHash(): { tab: TabId | null; review: string | null } {
+function routeFromHash(): { tab: TabId | null; review: string | null; comment: string | null } {
   const raw = (location.hash || '').replace(/^#/, '');
-  const [head, tail] = raw.split('/');
+  const [head, tail, deeper] = raw.split('/');
   const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
-  return { tab, review: tab === 'reviews' && tail ? decodeURIComponent(tail) : null };
+  const review = tab === 'reviews' && tail ? decodeURIComponent(tail) : null;
+  /* Um terceiro segmento endereça o comentário dentro da ficha, e é o que faz
+     um aviso levar ao texto em vez de à carta inteira. Sem ele o sino abria a
+     avaliação certa e deixava a pessoa procurando qual das respostas era a que
+     ele anunciou. */
+  return { tab, review, comment: review && deeper ? decodeURIComponent(deeper) : null };
 }
 
 function tabFromHash(): TabId | null {
@@ -156,6 +164,8 @@ export default function App() {
   const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'feed');
   /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
   const [focusReview, setFocusReview] = useState<string | null>(() => routeFromHash().review);
+  /** E o comentário dentro dela, quando o endereço vai tão fundo. */
+  const [focusComment, setFocusComment] = useState<string | null>(() => routeFromHash().comment);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -251,11 +261,12 @@ export default function App() {
 
   useEffect(() => {
     const onHash = () => {
-      const { tab: t, review } = routeFromHash();
+      const { tab: t, review, comment: within } = routeFromHash();
       if (t) setTab(t);
       /* Só quando há um id no endereço. Voltar para `#reviews` limpo não deve
          apagar o foco que a tela acabou de consumir, nem acender um antigo. */
       if (review) setFocusReview(review);
+      if (within) setFocusComment(within);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -269,10 +280,13 @@ export default function App() {
   /* Ir para uma ficha específica: a aba, o endereço e o alvo, de uma vez. O
      endereço é escrito mesmo quando já se está na aba, porque é ele que a
      pessoa copia — e porque recarregar tem de voltar para o mesmo lugar. */
-  const goReview = useCallback((reviewId: string) => {
+  const goReview = useCallback((reviewId: string, commentId?: string | null) => {
     setTab('reviews');
     setFocusReview(reviewId);
-    const next = `reviews/${encodeURIComponent(reviewId)}`;
+    setFocusComment(commentId ?? null);
+    const next =
+      `reviews/${encodeURIComponent(reviewId)}` +
+      (commentId ? `/${encodeURIComponent(commentId)}` : '');
     if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
   }, []);
 
@@ -280,6 +294,9 @@ export default function App() {
      mesmo alvo voltaria a se abrir a cada redesenho, e fechar a gaveta à mão
      seria desfeito no instante seguinte. */
   const clearFocusReview = useCallback(() => setFocusReview(null), []);
+  /* Limpado pela conversa, e não pela tela: só ela sabe quando já abriu o
+     suficiente e rolou até o texto. */
+  const clearFocusComment = useCallback(() => setFocusComment(null), []);
 
   const fault = useCallback((msg: string) => {
     // A 24h session ends quietly mid-use; drop to the sign-in screen instead of
@@ -441,6 +458,8 @@ export default function App() {
             goReview,
             focusReview,
             clearFocusReview,
+            focusComment,
+            clearFocusComment,
             openSheet: setSheetId,
             rateMovie,
             fault,
@@ -473,6 +492,8 @@ export default function App() {
       goReview,
       focusReview,
       clearFocusReview,
+      focusComment,
+      clearFocusComment,
       rateMovie,
       fault,
     ]

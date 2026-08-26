@@ -195,6 +195,10 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
   const handles = handlesFor(roster);
   const items = [];
 
+  /* `commentId` é o que faz o aviso levar ao texto e não só à ficha. Sem ele o
+     link abria a avaliação certa e deixava a pessoa procurando qual das
+     respostas era a que o sino anunciou — pior ainda quando a conversa é longa
+     e o comentário está atrás do "carregar mais". */
   for (const row of comments) {
     items.push({
       id: `c:${row.id}`,
@@ -203,6 +207,7 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
       actor: actorOf(row),
       movieId: Number(row.movie_id),
       reviewId: row.review_id,
+      commentId: row.id,
       text: say('comment', row),
       excerpt: excerpt(row.body)
     });
@@ -216,6 +221,7 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
       actor: actorOf(row),
       movieId: Number(row.movie_id),
       reviewId: row.review_id,
+      commentId: row.id,
       text: say('reply', row),
       excerpt: excerpt(row.body)
     });
@@ -240,6 +246,7 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
       actor: { id: row.reviewer_id, name: row.actor_name, dot: row.actor_dot },
       movieId: Number(row.movie_id),
       reviewId: row.review_id,
+      commentId: row.id,
       text: say('mention', row),
       excerpt: excerpt(row.body)
     });
@@ -289,6 +296,7 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
       actor: actorOf(row),
       movieId: Number(row.movie_id),
       reviewId: row.review_id,
+      commentId: row.comment_id,
       text: say('like', row),
       excerpt: excerpt(row.body)
     });

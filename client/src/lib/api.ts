@@ -113,6 +113,10 @@ export type Notice = {
   actor: { id: string; name: string; dot: string };
   movieId: number;
   reviewId: string;
+  /* O texto exato de que o aviso fala, quando há um. É o que faz o link levar
+     ao comentário em vez de à ficha inteira — sem ele a pessoa chega na
+     avaliação certa e procura qual das respostas era. */
+  commentId?: string | null;
   /** A frase inteira: "comentou sua avaliação de Parasita". */
   text: string;
   /** Um pedaço do que foi escrito, em comentário e curtida. */
