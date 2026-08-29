@@ -139,6 +139,13 @@ export function useTorrent() {
   const bootRef = useRef<Promise<Client> | null>(null);
   /** The link currently being loaded, so the same one is not started twice. */
   const loadingRef = useRef<string | null>(null);
+  /* ── the seeder's own copy ────────────────────────────────────────────────
+     When this browser is the source, the film is a `File` sitting on this
+     person's disk. `link` plays it from there, and this is what it holds. The
+     URL is kept beside it because an object URL is a document-lifetime
+     registration: made once and revoked by hand, or it pins the whole file. */
+  const localRef = useRef<File | null>(null);
+  const localURLRef = useRef<string | null>(null);
 
   const patch = useCallback((p: Partial<TorrentStatus>) => {
     setStatus(prev => ({ ...prev, ...p }));
@@ -150,8 +157,42 @@ export function useTorrent() {
      when both are here. */
   const link = useCallback(() => {
     const el = elemRef.current;
+    if (!el) return;
+
+    /* ── the seeder does not watch through the swarm ────────────────────────
+       This was the fifty-minute stutter, and only ever for the one person who
+       had brought the film.
+
+       `file.streamURL` is a URL served by the service worker out of the
+       torrent's chunk store, and for somebody receiving that is the only way
+       there is. For the seeder it is a detour with the whole engine inside it:
+       every second of picture is read back out of the browser's origin-private
+       filesystem, through the piece cache, across the worker boundary, on the
+       same main thread that is hashing pieces and pushing bytes down a WebRTC
+       channel to everybody else in the room. It costs nothing at first because
+       there is nothing to compete with. An hour in there are peers who have
+       reconnected, a store that has been written end to end, and a cache that
+       is answering somebody else's request every time this player wants a
+       frame — so the seeder, the one machine that has the entire film sitting
+       on its own disk, is the one that starts to judder while the room it is
+       feeding runs clean.
+
+       So it does not use the pipe it is filling. The `File` is right here; the
+       browser can read it directly, at disk speed, with no JavaScript on the
+       path at all. Seeding then costs the seeder's picture nothing, and cannot
+       — the two no longer touch.
+
+       It also means the film starts the moment the file is chosen instead of
+       after the engine has hashed it, which is the behaviour the room wanted
+       anyway. */
+    if (localRef.current) {
+      localURLRef.current ??= URL.createObjectURL(localRef.current);
+      if (el.getAttribute('src') !== localURLRef.current) el.src = localURLRef.current;
+      return;
+    }
+
     const file = fileRef.current;
-    if (!el || !file) return;
+    if (!file) return;
     /* A file whose torrent has been destroyed still exists as an object, and
        asking it for a URL reads through a back-reference that destruction set
        to null. The throw would happen inside React's ref callback — during
@@ -215,7 +256,15 @@ export function useTorrent() {
          talked into providing, and this file is the same code with that already
          resolved. */
       const { default: WebTorrent } = await import('webtorrent/dist/webtorrent.min.js');
-      const client = new WebTorrent();
+      /* The engine's own ceiling is 55 connections, which is the right number
+         for a public swarm and the wrong one for a living room. Nobody without
+         the link can reach this infohash, so the real population is the club —
+         but a connection that drops is not always collected the moment it
+         does, and members reload. Over an evening the seeder is the one that
+         accumulates them, because everybody connects to it and it connects to
+         everybody. Sixteen is generous for a room of people and low enough
+         that the pile cannot grow all night. */
+      const client = new WebTorrent({ maxConns: 16 });
       client.createServer({ controller: reg });
       client.on('error', err => {
         patch({ phase: 'error', error: String(err instanceof Error ? err.message : err) });
@@ -244,6 +293,13 @@ export function useTorrent() {
     }
     torrentRef.current = null;
     if (elemRef.current) elemRef.current.removeAttribute('src');
+  }, []);
+
+  /** Lets go of the seeded file, and of the URL that was pinning it in memory. */
+  const dropLocal = useCallback(() => {
+    if (localURLRef.current) URL.revokeObjectURL(localURLRef.current);
+    localURLRef.current = null;
+    localRef.current = null;
   }, []);
 
   const hold = useCallback(
@@ -299,6 +355,9 @@ export function useTorrent() {
       loadingRef.current = typeof wanted === 'string' ? wanted : null;
 
       patch({ ...IDLE, phase: 'booting' });
+      /* Receiving after seeding: the film on this disk is not the film being
+         asked for, and the element must stop playing it. */
+      dropLocal();
       try {
         const client = await boot();
         clearTorrent();
@@ -311,7 +370,7 @@ export function useTorrent() {
         patch({ phase: 'error', error: (e as Error).message });
       }
     },
-    [boot, clearTorrent, hold, patch]
+    [boot, clearTorrent, dropLocal, hold, patch]
   );
 
   /** The other direction: this browser has the file, and hands out the link. */
@@ -319,9 +378,18 @@ export function useTorrent() {
     async (file: File) => {
       loadingRef.current = null;
       patch({ ...IDLE, phase: 'booting' });
+
+      /* Before the engine, not after it. Whatever was playing goes, and the
+         chosen file goes on straight away — the picture is a disk read and owes
+         nothing to hashing, trackers or peers. By the time the swarm has a link
+         to hand out, this person has been watching for a while. */
+      dropLocal();
+      clearTorrent();
+      localRef.current = file;
+      link();
+
       try {
         const client = await boot();
-        clearTorrent();
         patch({ phase: 'searching' });
         client.seed(file, { announce: TRACKERS }, torrent => {
           hold(torrent, 'seeding');
@@ -330,7 +398,7 @@ export function useTorrent() {
         patch({ phase: 'error', error: (e as Error).message });
       }
     },
-    [boot, clearTorrent, hold, patch]
+    [boot, clearTorrent, dropLocal, hold, link, patch]
   );
 
   /** The player, handed over by `SyncedVideo`'s callback ref. */
@@ -344,9 +412,10 @@ export function useTorrent() {
 
   const stop = useCallback(() => {
     loadingRef.current = null;
+    dropLocal();
     clearTorrent();
     setStatus(IDLE);
-  }, [clearTorrent]);
+  }, [clearTorrent, dropLocal]);
 
   /* Peers and progress are read on a timer rather than from the `download`
      event, which fires once per received chunk — hundreds of times a second on
@@ -393,6 +462,12 @@ export function useTorrent() {
       clientRef.current = null;
       torrentRef.current = null;
       bootRef.current = null;
+      /* An object URL outlives the component that made it — it is registered
+         against the document, and the film it points at stays held until this
+         runs. */
+      if (localURLRef.current) URL.revokeObjectURL(localURLRef.current);
+      localURLRef.current = null;
+      localRef.current = null;
     },
     []
   );
