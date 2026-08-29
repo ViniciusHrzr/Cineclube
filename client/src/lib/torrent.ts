@@ -103,6 +103,37 @@ const IDLE: TorrentStatus = {
   error: null,
 };
 
+/* ── asking not to be evicted mid-film ────────────────────────────────────
+   What a receiver downloads lives in the origin's storage, and by default that
+   storage is *best-effort*: the browser is free to throw it away when the disk
+   gets tight, without asking and without telling the page. Mid-film that is
+   the store disappearing under a running player.
+
+   Marking it persistent is the one call that takes it out of that category,
+   and it is worth making precisely because it is so cheap — no bytes, no
+   ongoing cost, and the browser is allowed to simply say no.
+
+   Only on the receiving side. The seeder plays and serves from the file the
+   member chose, and keeps nothing in origin storage at all, so asking there
+   would be requesting a guarantee about data that does not exist.
+
+   Every step is allowed to fail and none of them is allowed to matter: this is
+   an improvement to how well the download survives, not a condition for
+   starting one. `persisted()` first because a browser that has already granted
+   this should not be asked again — and where the request is a prompt rather
+   than a heuristic, that is the difference between asking once and asking at
+   the start of every screening. */
+async function askToPersist() {
+  try {
+    if (!navigator.storage?.persist || !navigator.storage.persisted) return;
+    if (await navigator.storage.persisted()) return;
+    await navigator.storage.persist();
+  } catch {
+    /* Not supported, refused, or unavailable in this context. The download
+       works either way. */
+  }
+}
+
 /** A magnet link, wherever it came from — a drop, a paste, a field. */
 export function isMagnet(value: string) {
   return /^magnet:\?/i.test(value.trim());
@@ -359,6 +390,9 @@ export function useTorrent() {
       /* Receiving after seeding: the film on this disk is not the film being
          asked for, and the element must stop playing it. */
       dropLocal();
+      /* Not awaited: see `askToPersist`. The film must not wait on a question
+         about storage policy. */
+      void askToPersist();
       try {
         const client = await boot();
         clearTorrent();
