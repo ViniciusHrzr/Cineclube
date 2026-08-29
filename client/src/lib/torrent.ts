@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { localChunkStore } from '@/lib/chunkStore';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The receiver.
@@ -391,9 +392,23 @@ export function useTorrent() {
       try {
         const client = await boot();
         patch({ phase: 'searching' });
-        client.seed(file, { announce: TRACKERS }, torrent => {
-          hold(torrent, 'seeding');
-        });
+        client.seed(
+          file,
+          {
+            announce: TRACKERS,
+            /* See `localChunkStore`: peers are served out of the file itself,
+               and nothing is copied to disk. */
+            store: localChunkStore(file),
+            /* Twenty pieces of a feature film is a couple of hundred megabytes
+               held in memory for a saving this store does not need — reading
+               the file again is a page-cache hit. A few slots still spare the
+               disk when several peers ask for the same piece at once. */
+            storeCacheSlots: 6,
+          } as Parameters<typeof client.seed>[1],
+          torrent => {
+            hold(torrent, 'seeding');
+          }
+        );
       } catch (e) {
         patch({ phase: 'error', error: (e as Error).message });
       }
