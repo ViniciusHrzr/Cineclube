@@ -509,6 +509,17 @@ export function ScreeningScreen() {
             {[movie.year, movie.genre, runtimeOf(movie.runtime)].filter(Boolean).join(' · ')}
           </p>
         </div>
+        {/* Ir avaliar é o passo seguinte a assistir, e até agora custava sair
+            da sessão, achar o filme no catálogo e abri-lo de novo. Fica aqui,
+            ao lado do filme que se está avaliando, e não junto dos controles da
+            fonte — avaliar é sobre a obra, trocar fonte é sobre esta aba. */}
+        <RateKey
+          /* Sair daqui desmonta a tela, e desmontar a tela destrói o motor.
+             Para quem semeia com gente pendurada, esse clique é o fim do filme
+             para os outros — então ele pergunta antes, e só nesse caso. */
+          costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
+          onRate={() => club.rateMovie(movie.id)}
+        />
         <Key tone="danger" onClick={() => void closeFilm()}>
           Encerrar sessão
         </Key>
@@ -608,9 +619,14 @@ export function ScreeningScreen() {
           {ended ? (
             <div className="plate mt-3 flex flex-wrap items-center gap-3 px-4 py-3.5">
               <span className="legend">Fim de sessão</span>
-              <Key tone="commit" onClick={() => club.rateMovie(movie.id)}>
-                Avaliar agora
-              </Key>
+              {/* A mesma porta e a mesma pergunta da chave lá em cima. Os
+                  créditos rolando aqui não querem dizer que rolaram para todo
+                  mundo — cópias diferem em alguns segundos — então a fonte que
+                  sai neste instante ainda pode cortar o fim de alguém. */}
+              <RateKey
+                costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
+                onRate={() => club.rateMovie(movie.id)}
+              />
             </div>
           ) : null}
         </div>
@@ -753,6 +769,60 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
         ))}
       </div>
       )}
+    </div>
+  );
+}
+
+/* ── going to rate, and what it costs the seeder ──────────────────────────
+   An evening ends the same way every time: the credits roll and everybody goes
+   to write down what they thought. Until now that meant leaving the session,
+   finding the film in the catalogue and opening it again — three steps to get
+   to the one screen the whole product is for.
+
+   The complication is that leaving is not free for everybody. This screen owns
+   the torrent engine, and `rateMovie` changes the route, which unmounts the
+   screen, which destroys the engine. For somebody receiving that costs them
+   their own stream and nobody else's. For the person seeding it is the film
+   ending for the entire room — the same fact the sentence under the player
+   already states about closing the tab.
+
+   So the key asks first, and only when the answer could actually cost the room
+   something: seeding, with somebody still connected. On every other path — a
+   receiver, a seeder alone, anyone who watched from a file — it simply goes.
+   A confirmation that appears when there is nothing to confirm is how people
+   learn to click through the one that mattered.
+
+   Armed rather than modal, because a dialog over a film that four people are
+   still watching is a worse interruption than the thing it is warning about. */
+function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () => void }) {
+  const [armed, setArmed] = useState(false);
+
+  /* Disarms itself when the risk goes away — the last peer leaving, or the
+     seed stopping — so a question nobody needs to answer does not sit on the
+     screen waiting to be answered. */
+  useEffect(() => {
+    if (!costsTheRoom) setArmed(false);
+  }, [costsTheRoom]);
+
+  if (!armed) {
+    return (
+      <Key onClick={() => (costsTheRoom ? setArmed(true) : onRate())}>Avaliar filme</Key>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <p className="q max-w-[34ch] text-right text-[11.5px] text-ink-dim">
+        Você é a fonte. Sair daqui agora tira o filme de quem ainda está assistindo.
+      </p>
+      <div className="flex items-center gap-2">
+        <Key tone="ghost" onClick={() => setArmed(false)}>
+          Ficar
+        </Key>
+        <Key tone="commit" onClick={onRate}>
+          Avaliar assim mesmo
+        </Key>
+      </div>
     </div>
   );
 }
