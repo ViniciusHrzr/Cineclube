@@ -6,12 +6,22 @@
    second copy of a file this disk already holds, written in full before the
    magnet even exists, and then read back out of all evening.
 
-   Three costs, and the seeder pays all of them. A multi-gigabyte write racing
-   the player's own reads for the same disk, at exactly the moment the film is
-   starting. A storage quota that a couple of features will exhaust, after
-   which the write fails mid-session. And a copy that outlives the screening,
-   because nothing deletes it — so the disk carries every film the club has
-   ever watched.
+   Three costs, and the seeder pays all of them.
+
+   A multi-gigabyte write racing the player's own reads for the same disk, at
+   exactly the moment the film is starting.
+
+   A storage quota — the origin's, shared by everything this site keeps — that
+   a couple of features will exhaust, after which the write fails mid-session.
+   Nothing here asks for persistent storage either, so what is written is
+   best-effort and the browser may evict it under disk pressure without asking.
+
+   And a store that another tab can delete underneath it. `fsa-chunk-store`
+   wipes the whole `chunks/` directory when its module is imported — its own
+   comment reads "this can be bad when multiple instances of this app are
+   running", and it is: a second tab of this site booting the engine destroys
+   the store the first tab is streaming from. Seeding out of the file instead
+   puts the seeder out of that reach entirely.
 
    None of it buys anything. The bytes peers ask for are in the `File`, and a
    browser reads a slice of a file natively and off the main thread. So this is
