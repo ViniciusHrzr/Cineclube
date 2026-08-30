@@ -368,6 +368,47 @@ export function SearchField({
   );
 }
 
+/* ── the drawer ───────────────────────────────────────────────────────────
+   Opening used to animate height from 0 to `auto`, which cannot be done without
+   measuring: the panel mounts, its full height is read, and only then does the
+   animation start from zero. If the browser paints in between — and it does —
+   one frame lands at full height, and everything below the panel jumps down and
+   comes straight back. That was the flick.
+
+   A grid row measured in fractions needs no measurement. `0fr` to `1fr`
+   interpolates natively, the browser resolves the content's height itself on
+   every frame, and there is never a frame at the wrong size. The content stays
+   mounted, so `visibility` is what closes it to the keyboard and to a screen
+   reader — it is transitioned rather than switched, which lets it turn visible
+   at the start of the opening and stay visible until the closing has finished.
+
+   Mora aqui, e não na tela que a inventou, porque duas telas abrem gavetas: o
+   acervo abre a ficha de alguém e o feed abre a conversa em cima dela. Uma
+   segunda cópia deste truque seria uma segunda chance de ele ser feito errado. */
+export function Drawer({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      /* No `motion-reduce` escape here, by the owner's standing decision: this
+         is the same call as the wall's drift. Opening a drawer is a response to
+         a click and not a performance played at the reader, and the height it
+         travels is the only thing that says where the panel came from. */
+      className={cn(
+        'grid transition-[grid-template-rows] duration-[240ms] ease-beam',
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+      )}
+    >
+      <div
+        className={cn(
+          'overflow-hidden transition-[visibility] duration-[240ms]',
+          open ? 'visible' : 'invisible'
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ── states ───────────────────────────────────────────────────────────── */
 
 export function Blank({ title, children }: { title: string; children?: React.ReactNode }) {

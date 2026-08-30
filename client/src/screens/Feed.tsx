@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Bill, Blank, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
+import { Bill, Blank, Drawer, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
+/* As mesmas peças que o acervo usa, e não uma cópia compacta delas: são as
+   mesmas regras de voto e de conversa, e regras escritas duas vezes são regras
+   que divergem na terceira. Ver a nota de abertura em components/social.tsx. */
+import { Conversation, TakeVotes } from '@/components/social';
 import { api, fmt, initialsOf, reelColor, type FeedEvent } from '@/lib/api';
 import { useLive } from '@/lib/live';
-import { plural } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -42,6 +46,24 @@ import { useClub } from '@/App';
    pessoa, e uma noite de discussão enterrava a ficha embaixo das linhas sobre
    ela. O voto continua na tela como contagem na própria ficha, que é onde ele
    significa alguma coisa.
+
+   ── e agora se responde daqui ───────────────────────────────────────────
+   Por um tempo esta tela só CONTAVA a reação: três respostas, duas
+   concordâncias, uma discordância, em ícones mudos no pé da placa. Reagir era
+   outra viagem — abrir o acervo, achar o filme, abrir a carta, abrir a ficha,
+   abrir a gaveta —, e no fim disso a conversa já era sobre outra coisa.
+
+   Um feed que mostra o placar e não deixa mexer nele é um boletim. O clube
+   avalia à noite, com esta aba aberta ao lado do Discord, e o instante em que
+   se quer discordar da montagem de alguém é o instante em que a linha aparece.
+   Então a placa ganhou uma barra de ação — concordo, discordo, e a conversa
+   inteira numa gaveta —, e a contagem muda virou o controle que produz o
+   número que ela mostrava.
+
+   Os controles são os MESMOS do acervo, importados e não copiados: as regras
+   são as mesmas (não se vota na própria ficha, o contador cala no zero, a
+   resposta para em um nível) e a linha do feed é a mesma avaliação. Duas
+   implementações da mesma regra é a regra divergindo na terceira.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* De dois minutos, e só com a aba à vista — a mesma regra do sino, pelo mesmo
@@ -221,126 +243,176 @@ export function FeedScreen() {
 /* ── a ficha, que é o assunto ─────────────────────────────────────────────
    A única linha do feed que ganha uma placa, e ela ganha porque é a única que
    tem conteúdo próprio: uma nota, uma régua, dois critérios e, quando existe,
-   o que a pessoa escreveu. As outras três são sobre esta.
+   o que a pessoa escreveu. As outras são sobre esta.
 
-   Toda a placa é um botão, e isso é uma decisão contra o hábito: a alternativa
-   é um título clicável dentro de um cartão inerte, que faz a pessoa mirar em
-   quatro palavras quando a placa inteira quer dizer a mesma coisa. Nada dentro
-   é clicável, então não há controle dentro de controle. */
+   ── a placa deixou de ser um botão só ───────────────────────────────────
+   Ela era um botão inteiro, e a nota que justificava isso dizia "nada dentro é
+   clicável, então não há controle dentro de controle". Isso continua verdade —
+   um `<button>` dentro de outro não é uma coisa que o navegador monte —, mas a
+   premissa mudou: agora há o que apertar dentro da placa, e por isso ela virou
+   três coisas empilhadas.
+
+   Em cima, o corpo, que continua sendo um botão largo e leva à ficha completa:
+   a alternativa é um título clicável dentro de um cartão inerte, que faz a
+   pessoa mirar em quatro palavras quando a placa toda quer dizer o mesmo.
+
+   Embaixo, uma barra com os controles, separada por uma régua. A régua não é
+   decoração: é o que diz que dali para baixo o clique faz outra coisa que não
+   navegar — sem ela, dois polegares soltos dentro de uma superfície clicável
+   pareceriam parte dela.
+
+   E, quando pedida, a conversa, numa gaveta que empurra o resto do feed para
+   baixo em vez de abrir por cima dele. Um painel sobreposto tiraria da tela
+   exatamente o contexto que faz alguém querer responder. */
 function Rated({ e, onOpen }: { e: FeedEvent; onOpen: () => void }) {
   const club = useClub();
-  const talk = club.comments.filter(c => c.reviewId === e.reviewId).length;
-  /* ── concordar e discordar são dois números ─────────────────────────────
-     Eram um só, somados e desenhados sob um polegar para cima — então uma ficha
-     com três discordâncias anunciava "👍 3", que é o contrário do que
-     aconteceu. Um contador que junta as duas direções não está contando
-     reação, está contando barulho, e o ícone escolhia um lado pelos dois.
+  /* A avaliação inteira, e não só o que a linha do feed carrega: os controles
+     precisam de quem assinou a ficha para saber se é a sua, e o clube tem o
+     acervo em memória desde o boot — nada é buscado para isto.
 
-     Separados e silenciosos no zero, a mesma regra do voto no arquivo: uma
-     ficha só com discordância mostra só o polegar para baixo. */
-  const cast = club.votes.filter(v => v.reviewId === e.reviewId);
-  const agree = cast.filter(v => v.value === 1).length;
-  const differ = cast.filter(v => v.value === -1).length;
+     Nula só no intervalo entre alguém apagar uma avaliação e o feed ser buscado
+     de novo. Aí a placa continua legível e a barra some: oferecer um polegar
+     para uma ficha que não existe mais é prometer um 404. */
+  const review = club.reviews.find(r => r.id === e.reviewId) ?? null;
+  const talk = club.comments.filter(c => c.reviewId === e.reviewId).length;
   const clock = clockOf(e.at);
 
+  /* Fechada ao chegar, e é o padrão certo: oitenta conversas abertas não é um
+     feed, é um arquivo. */
+  const [talking, setTalking] = useState(false);
+  /* Aberta uma vez, montada para sempre — enquanto a placa viver. Desmontar ao
+     fechar faria a gaveta recolher de altura zero para altura zero, um sumiço
+     seco no lugar da animação; e montar as oitenta de saída gastaria uma tela
+     inteira de trabalho para o que ninguém pediu ainda. */
+  const [touched, setTouched] = useState(false);
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Abrir a avaliação de ${e.movieTitle} por ${e.actor.name}`}
-      className="plate group mb-3 flex w-full gap-4 p-4 text-left transition-colors duration-150 hover:bg-house-seat"
-    >
-      <Poster src={e.moviePoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
+    <div className="plate mb-3">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Abrir a avaliação de ${e.movieTitle} por ${e.actor.name}`}
+        className="group flex w-full gap-4 p-4 text-left transition-colors duration-150 hover:bg-house-seat"
+      >
+        <Poster src={e.moviePoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
 
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Reel color={reelColor(e.actor.dot, e.actor.id)} src={club.avatarOf(e.actor.id)} size="sm">
-            {initialsOf(e.actor.name)}
-          </Reel>
-          <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
-            {e.actor.name}
-          </span>
-          <span className="text-[12.5px] text-ink-dim">avaliou</span>
-          {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
-        </span>
-
-        <span className="mt-1.5 flex flex-wrap items-baseline gap-x-3">
-          <span className="font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
-            {e.movieTitle}
-          </span>
-          <span className="q text-[11.5px] text-ink-dim">{e.genre}</span>
-        </span>
-
-        {/* A nota como número e como comprimento, do mesmo jeito que o arquivo
-            a mostra: a régua é o que deixa duas fichas comparáveis com o olho,
-            sem ler os dois números. */}
-        <span className="mt-2.5 flex items-center gap-3">
-          <Strip value={e.final ?? 0} cells={10} className="h-[6px] w-[120px] flex-none" />
-          <span className="q text-[15px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
-          <span className="q text-[11px] text-ink-faint">/10</span>
-        </span>
-
-        {/* ── onde ela se entusiasmou e onde se decepcionou ───────────────
-            O que só este produto sabe dizer. Ausente quando a ficha não tem
-            distância entre o alto e o baixo — ver `endsOf` no servidor: onze
-            notas iguais não têm extremos, e apontá-los seria inventar uma
-            opinião que ninguém teve. */}
-        {e.ends ? (
-          <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
-            <span className="flex items-center gap-1.5 text-ink-dim">
-              <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
-              {e.ends.high.name}
-              <span className="q text-beam">{fmt(e.ends.high.value)}</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Reel color={reelColor(e.actor.dot, e.actor.id)} src={club.avatarOf(e.actor.id)} size="sm">
+              {initialsOf(e.actor.name)}
+            </Reel>
+            <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
+              {e.actor.name}
             </span>
-            <span className="flex items-center gap-1.5 text-ink-dim">
-              <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
-              {e.ends.low.name}
-              <span className="q text-ink">{fmt(e.ends.low.value)}</span>
+            <span className="text-[12.5px] text-ink-dim">avaliou</span>
+            {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
+          </span>
+
+          <span className="mt-1.5 flex flex-wrap items-baseline gap-x-3">
+            <span className="font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
+              {e.movieTitle}
             </span>
+            <span className="q text-[11.5px] text-ink-dim">{e.genre}</span>
           </span>
-        ) : null}
 
-        {e.excerpt ? (
-          <span className="mt-2.5 block break-words text-[13px] italic leading-relaxed text-ink-dim">
-            “{e.excerpt}”
+          {/* A nota como número e como comprimento, do mesmo jeito que o arquivo
+              a mostra: a régua é o que deixa duas fichas comparáveis com o olho,
+              sem ler os dois números. */}
+          <span className="mt-2.5 flex items-center gap-3">
+            <Strip value={e.final ?? 0} cells={10} className="h-[6px] w-[120px] flex-none" />
+            <span className="q text-[15px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
+            <span className="q text-[11px] text-ink-faint">/10</span>
           </span>
-        ) : null}
 
-        {/* Quantas pessoas responderam a esta ficha. Contado do que o clube já
-            carregou, e não pedido ao servidor: os comentários e os votos já
-            estão na memória desta aba desde o boot. Silencioso no zero — uma
-            fileira de zeros embaixo de cada ficha conta que ninguém falou nada,
-            que é ruído com formato de dado. */}
-        {talk || agree || differ ? (
-          <span className="mt-2.5 flex items-center gap-4 text-ink-faint">
-            {talk ? (
-              <span className="flex items-center gap-1.5" title={plural(talk, 'resposta', 'respostas')}>
-                <MessageSquare className="h-3 w-3" strokeWidth={1.9} aria-hidden />
-                <span className="q text-[11px] text-ink-dim">{talk}</span>
+          {/* ── onde ela se entusiasmou e onde se decepcionou ───────────────
+              O que só este produto sabe dizer. Ausente quando a ficha não tem
+              distância entre o alto e o baixo — ver `endsOf` no servidor: onze
+              notas iguais não têm extremos, e apontá-los seria inventar uma
+              opinião que ninguém teve. */}
+          {e.ends ? (
+            <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+              <span className="flex items-center gap-1.5 text-ink-dim">
+                <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                {e.ends.high.name}
+                <span className="q text-beam">{fmt(e.ends.high.value)}</span>
               </span>
-            ) : null}
-            {agree ? (
-              <span
-                className="flex items-center gap-1.5"
-                title={`${plural(agree, 'concordância', 'concordâncias')} com um critério desta ficha`}
-              >
-                <ThumbsUp className="h-3 w-3" strokeWidth={1.9} aria-hidden />
-                <span className="q text-[11px] text-ink-dim">{agree}</span>
+              <span className="flex items-center gap-1.5 text-ink-dim">
+                <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                {e.ends.low.name}
+                <span className="q text-ink">{fmt(e.ends.low.value)}</span>
               </span>
-            ) : null}
-            {differ ? (
-              <span
-                className="flex items-center gap-1.5"
-                title={`${plural(differ, 'discordância', 'discordâncias')} de um critério desta ficha`}
-              >
-                <ThumbsDown className="h-3 w-3" strokeWidth={1.9} aria-hidden />
-                <span className="q text-[11px] text-ink-dim">{differ}</span>
-              </span>
-            ) : null}
-          </span>
+            </span>
+          ) : null}
+
+          {e.excerpt ? (
+            <span className="mt-2.5 block break-words text-[13px] italic leading-relaxed text-ink-dim">
+              “{e.excerpt}”
+            </span>
+          ) : null}
+        </span>
+      </button>
+
+      {/* ── a barra de ação ──────────────────────────────────────────────
+          Onde ficava a fileira de contadores mudos. Os números não sumiram:
+          eles moram dentro dos próprios controles agora, que é o desenho
+          inteiro desta mudança — o polegar que diz "duas pessoas concordaram"
+          é o mesmo que se aperta para ser a terceira.
+
+          Some junto com a ficha, e não fica vazia: uma régua com nada embaixo
+          seria a placa anunciando um rodapé que não existe. */}
+      {review ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] px-4 py-2.5">
+          <TakeVotes review={review} labelled />
+
+          {/* Abre a conversa AQUI, e não leva para o acervo. A viagem — abrir a
+              aba, achar o filme, abrir a carta, abrir a ficha, abrir a gaveta —
+              é longa o bastante para que, ao chegar, já se esteja falando de
+              outro filme. O `onOpen` da placa continua existindo para quem quer
+              a ficha inteira, com os onze critérios; isto é para quem quer só
+              responder. */}
+          <button
+            type="button"
+            aria-expanded={talking}
+            aria-label={
+              `${talking ? 'Fechar' : 'Abrir'} a conversa da avaliação de ${e.actor.name}` +
+              (talk ? `, ${plural(talk, 'resposta', 'respostas')}` : '')
+            }
+            title={talking ? 'Fechar a conversa' : 'Comentar esta avaliação'}
+            onClick={() => {
+              setTalking(v => !v);
+              setTouched(true);
+            }}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-cell px-2.5 ring-1 transition-colors duration-150',
+              talking
+                ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
+                : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
+            )}
+          >
+            <MessageSquare className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
+            {/* A palavra cai antes do número em tela estreita, como no par de
+                polegares: sem rótulo sobra um balão, que se entende; sem número
+                sobra um placar que mente por omissão. */}
+            <span className="hidden font-display text-[11px] uppercase leading-none tracking-[0.12em] sm:inline">
+              {talking ? 'Fechar' : 'Comentar'}
+            </span>
+            {talk ? <span className="q text-[10.5px] leading-none opacity-80">{talk}</span> : null}
+          </button>
+        </div>
+      ) : null}
+
+      <Drawer open={talking}>
+        {touched && review ? (
+          /* Sem a régua e sem o título "Conversa": aqui a gaveta não contém
+             mais nada além dela, e nomear a única coisa dentro de uma caixa é
+             falar duas vezes. No acervo ela abre embaixo do detalhamento, e lá
+             a régua é o que separa os onze números do que se disse deles. */
+          <div className="px-4 pb-4">
+            <Conversation review={review} ruled={false} />
+          </div>
         ) : null}
-      </span>
-    </button>
+      </Drawer>
+    </div>
   );
 }
 
