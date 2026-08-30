@@ -10,7 +10,6 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from 'lucide-react';
-import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react';
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
 /* As mesmas peças que o acervo e o feed usam. A ficha abre nesta página agora —
    ver a nota em `Takes` — e o que ela mostra não pode ser uma segunda versão do
@@ -981,41 +980,34 @@ function Queued({ person }: { person: Reviewer }) {
         <div className="relative">
           <ul
             ref={rail}
-            /* ── o recuo é o que faz as pontas ficarem retas ────────────────
-               Os mesmos 44px em três papéis, e os três dependem dele existir.
+            /* `scroll-px-11` são os mesmos 44px da máscara, e ele é a peça de
+               teclado desta lista: cada pôster é um botão, então o Tab já
+               percorre o trilho e o navegador rola sozinho até o que recebeu
+               foco — mas rolaria até encostá-lo na borda, que é justamente onde
+               a máscara o apaga e a seta o cobre. Com o recuo, o pôster focado
+               para dentro do claro.
 
-               O primeiro é o giro: um pôster se vira ao chegar perto da borda,
-               e sem recuo o PRIMEIRO da fila estaria virado com o trilho parado
-               no começo — anunciando que continua para um lado onde não há
-               nada. Com o recuo, ele repousa dentro da zona reta e só se vira
-               quando alguém rola por cima dele.
+               A barra de rolagem some porque mora sobre a fileira e a corta; as
+               setas e as máscaras é que dizem que há mais. */
+            className="flex gap-3 overflow-x-auto scroll-px-11 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{
+              /* A máscara é o gesto: a fileira não termina numa borda reta, ela
+                 se apaga onde continua. Só do lado em que há mais — apagar uma
+                 ponta que já acabou seria dizer que existe conteúdo ali.
 
-               O segundo é o teclado: cada pôster é um botão, o Tab já percorre
-               o trilho e o navegador rola sozinho até o que recebeu foco — mas
-               rolaria até encostá-lo na borda, que é onde a seta o cobre.
-               `scroll-px-11` para o pôster focado dentro do claro.
-
-               O terceiro é a seta, que passa a ter onde pousar sem tapar um
-               pôster inteiro.
-
-               A barra de rolagem some porque mora sobre a fileira e a corta; o
-               giro das pontas e as setas é que dizem que há mais. */
-            className="flex gap-3 overflow-x-auto scroll-px-11 px-11 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            /* A perspectiva mora no trilho e não em cada pôster: uma por
-               elemento dá a cada um o seu próprio ponto de fuga, e a fileira
-               inteira passa a ser vista de doze lugares ao mesmo tempo. Uma só,
-               no pai, é uma câmera olhando a fileira. */
-            style={{ perspective: '900px' }}
+                 Escrita em duas paradas por lado para que os lados possam ser
+                 ligados e desligados de forma independente. */
+              maskImage: `linear-gradient(to right, ${
+                edge.start ? 'black 0' : 'transparent 0, black 44px'
+              }, ${edge.end ? 'black 100%' : 'black calc(100% - 44px), transparent 100%'})`,
+              WebkitMaskImage: `linear-gradient(to right, ${
+                edge.start ? 'black 0' : 'transparent 0, black 44px'
+              }, ${edge.end ? 'black 100%' : 'black calc(100% - 44px), transparent 100%'})`,
+            }}
           >
             {items.map(w => (
-              /* `preserve-3d` na `<li>` é o que faz a perspectiva do trilho
-                 alcançar o pôster. `perspective` só vale para os filhos
-                 DIRETOS, e entre a fileira e o elemento que gira existe este
-                 item de lista — sem isto o `rotateY` renderiza achatado, uma
-                 largura encolhendo em vez de uma carta virando, e o efeito
-                 parece um bug de escala. */
-              <li key={w.id} className="w-[84px] flex-none [transform-style:preserve-3d]">
-                <RailPoster rail={rail} item={w} onOpen={() => club.openSheet(w.id)} />
+              <li key={w.id} className="w-[84px] flex-none">
+                <QueuedPoster item={w} onOpen={() => club.openSheet(w.id)} />
               </li>
             ))}
           </ul>
@@ -1051,63 +1043,6 @@ function Queued({ person }: { person: Reviewer }) {
         ) : null}
       </Drawer>
     </Region>
-  );
-}
-
-/* ── um pôster que se vira ao sair de cena ────────────────────────────────
-   O pôster do trilho, ligado à rolagem do próprio trilho.
-
-   `useScroll` com `target` mede o progresso DESTE pôster dentro do trilho, de 0
-   (encostando na borda direita) a 1 (saindo pela esquerda). Ligado a `rotateY`,
-   `scale` e `opacity` por `useTransform`, ele vira uma animação de rolagem
-   ligada ao `ScrollTimeline` do navegador — a doc é explícita: progresso levado
-   por `useTransform` a `transform` ou `opacity` roda na GPU, sem medição por
-   quadro. É por isso que são estas três propriedades e nenhuma outra.
-
-   ── a zona reta é a maior parte ─────────────────────────────────────────
-   As paradas são 0 · 0,12 · 0,88 · 1, então o pôster passa 76% da travessia
-   plano e só se vira nas beiradas. Não é um coverflow de vitrine, onde o item
-   do meio é o escolhido e os outros se afastam dele: aqui são filmes que
-   alguém quer ver, todos com o mesmo peso, e eleger o do centro seria a
-   interface opinando sobre uma lista que não tem ordem de importância. O giro
-   diz "a fileira continua", e é só isso que ele diz.
-
-   Sob `prefers-reduced-motion` não há efeito nenhum: o pôster é o mesmo da
-   grade, plano e opaco. Movimento ligado à rolagem é exatamente o que essa
-   preferência existe para desligar. */
-function RailPoster({
-  rail,
-  item,
-  onOpen,
-}: {
-  rail: React.RefObject<HTMLUListElement>;
-  item: WatchItem;
-  onOpen: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const gentle = useReducedMotion();
-  const { scrollXProgress } = useScroll({
-    container: rail,
-    target: ref,
-    axis: 'x',
-    offset: ['start end', 'end start'],
-  });
-
-  const rotateY = useTransform(scrollXProgress, [0, 0.12, 0.88, 1], [-26, 0, 0, 26]);
-  const scale = useTransform(scrollXProgress, [0, 0.12, 0.88, 1], [0.9, 1, 1, 0.9]);
-  const opacity = useTransform(scrollXProgress, [0, 0.12, 0.88, 1], [0.45, 1, 1, 0.45]);
-
-  return (
-    <motion.div
-      ref={ref}
-      /* Sem `willChange` escrito à mão. A tentação é declará-lo aqui, e o
-         Motion já o liga e desliga sozinho no que está animando — repetir isso
-         não acelera nada e deixa trinta pôsteres promovidos a camada
-         permanente, que é memória de vídeo gasta para não fazer diferença. */
-      style={gentle ? undefined : { rotateY, scale, opacity }}
-    >
-      <QueuedPoster item={item} onOpen={onOpen} />
-    </motion.div>
   );
 }
 

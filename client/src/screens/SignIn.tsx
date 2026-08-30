@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { Fault, Key, Reel } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
