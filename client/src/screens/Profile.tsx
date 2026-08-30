@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   MessageSquare,
@@ -9,6 +9,11 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
+/* As mesmas peças que o acervo e o feed usam. A ficha abre nesta página agora —
+   ver a nota em `Takes` — e o que ela mostra não pode ser uma segunda versão do
+   que o acervo mostra. */
+import { Breakdown } from '@/components/take';
+import { Conversation, TakeVotes } from '@/components/social';
 import { SettingsSheet } from '@/components/settings';
 import { fmt, initialsOf, reelColor, type Review, type Reviewer } from '@/lib/api';
 import {
@@ -76,6 +81,54 @@ export function ProfileScreen() {
   const club = useClub();
   const [settings, setSettings] = useState(false);
 
+  /* ── qual ficha está aberta ─────────────────────────────────────────────
+     Mora aqui e não dentro da lista porque quatro lugares desta página apontam
+     para uma ficha — os extremos, a maior distância do TMDB, uma faixa da régua
+     e a própria lista — e todos os quatro têm de abrir a MESMA gaveta. Guardado
+     na lista, cada um deles teria de mandar a pessoa para outro lugar de novo,
+     que é exatamente o que esta mudança veio desfazer. */
+  const [openTake, setOpenTake] = useState<string | null>(null);
+  const timers = useRef<number[]>([]);
+
+  /* Abre a ficha na lista e leva a página até ela. `start` e não `center`
+     porque a gaveta cresce PARA BAIXO: alinhada pelo topo, a fileira fica onde
+     parou e o conteúdo se abre embaixo dela; centrada, ela seria empurrada para
+     fora da tela pelo próprio conteúdo que acabou de abrir.
+
+     Os 60ms são o commit do React, não a animação: a fileira precisa existir no
+     DOM — a lista pode ter acabado de crescer para além das doze — antes de
+     alguém poder rolar até ela. */
+  const showTake = useCallback((id: string) => {
+    setOpenTake(id);
+    const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    timers.current.push(
+      window.setTimeout(() => {
+        document
+          .getElementById(`ficha-${id}`)
+          ?.scrollIntoView({ behavior: gentle ? 'auto' : 'smooth', block: 'start' });
+      }, 60)
+    );
+  }, []);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(window.clearTimeout);
+      pending.length = 0;
+    };
+  }, []);
+
+  /* Trocar de pessoa fecha o que estava aberto. Sem isto, ir de um perfil a
+     outro carregaria um id que não pertence a esta lista — inofensivo, porque
+     nada casa com ele, e ainda assim um estado mentindo sobre o que está na
+     tela. */
+  const personKey = club.personId ?? club.me.id;
+  const seeded = useRef(personKey);
+  if (seeded.current !== personKey) {
+    seeded.current = personKey;
+    setOpenTake(null);
+  }
+
   /* Sem id no endereço, o perfil é o seu. Resolvido aqui e não na rota porque
      só a sessão sabe quem é você, e ela não existe quando o endereço é lido. */
   const id = club.personId ?? club.me.id;
@@ -115,11 +168,16 @@ export function ProfileScreen() {
           "com quem ela concorda" é uma pergunta que só ocorre depois de a
           primeira ter sido respondida. */}
       <div className="mt-8 flex flex-col gap-8">
-        <Ends person={person} />
-        <Crowd person={person} mine={mine} />
-        <Ruler person={person} />
+        <Ends person={person} onOpenTake={showTake} />
+        <Crowd person={person} mine={mine} onOpenTake={showTake} />
+        <Ruler person={person} onOpenTake={showTake} />
         <Queued person={person} />
-        <Takes person={person} mine={mine} />
+        <Takes
+          person={person}
+          mine={mine}
+          open={openTake}
+          onToggle={id => setOpenTake(o => (o === id ? null : id))}
+        />
         <Affinities person={person} mine={mine} />
         <Genres person={person} />
       </div>
@@ -340,7 +398,7 @@ function Header({
    Lado a lado e do mesmo tamanho, de propósito. O de cima em destaque e o de
    baixo pequeno seria a página opinando sobre qual dos dois vale mais — e o
    filme que alguém odiou é tão informativo quanto o que amou. */
-function Ends({ person }: { person: Reviewer }) {
+function Ends({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: string) => void }) {
   const club = useClub();
   const ends = endsOf(club.reviews, person.id);
   if (!ends) return null;
@@ -348,19 +406,26 @@ function Ends({ person }: { person: Reviewer }) {
   return (
     <Region title="Extremos">
       <div className="grid gap-3 sm:grid-cols-2">
-        <EndCard review={ends.best} label="O que mais gostou" />
-        <EndCard review={ends.worst} label="O que menos gostou" />
+        <EndCard review={ends.best} label="O que mais gostou" onOpen={onOpenTake} />
+        <EndCard review={ends.worst} label="O que menos gostou" onOpen={onOpenTake} />
       </div>
     </Region>
   );
 }
 
-function EndCard({ review, label }: { review: Review; label: string }) {
-  const club = useClub();
+function EndCard({
+  review,
+  label,
+  onOpen,
+}: {
+  review: Review;
+  label: string;
+  onOpen: (id: string) => void;
+}) {
   return (
     <button
       type="button"
-      onClick={() => club.goReview(review.id)}
+      onClick={() => onOpen(review.id)}
       aria-label={`Abrir a avaliação de ${review.movieTitle}`}
       className="plate group flex gap-4 p-4 text-left transition-colors duration-150 hover:bg-house-seat"
     >
@@ -389,7 +454,15 @@ function EndCard({ review, label }: { review: Review; label: string }) {
    parecer um relatório. A frase carrega o caso junto — o filme onde a distância
    foi maior — porque um número sem exemplo é estatística e com exemplo é
    argumento. */
-function Crowd({ person, mine }: { person: Reviewer; mine: boolean }) {
+function Crowd({
+  person,
+  mine,
+  onOpenTake,
+}: {
+  person: Reviewer;
+  mine: boolean;
+  onOpenTake: (id: string) => void;
+}) {
   const club = useClub();
   const crowd = crowdGapOf(club.reviews, person.id);
   if (!crowd) return null;
@@ -419,7 +492,7 @@ function Crowd({ person, mine }: { person: Reviewer; mine: boolean }) {
         A maior distância foi em{' '}
         <button
           type="button"
-          onClick={() => club.goReview(crowd.widest.id)}
+          onClick={() => onOpenTake(crowd.widest.id)}
           className="text-ink underline decoration-white/20 underline-offset-4 transition-colors hover:text-beam hover:decoration-beam/50"
         >
           {crowd.widest.movieTitle}
@@ -455,7 +528,7 @@ function Crowd({ person, mine }: { person: Reviewer; mine: boolean }) {
    Passar o mouse mostra; clicar prende, e é o que faz isto funcionar no dedo,
    onde não existe passar por cima. Uma faixa vazia não é botão: não há o que
    ela possa mostrar, e um alvo que não responde é pior do que nenhum. */
-function Ruler({ person }: { person: Reviewer }) {
+function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: string) => void }) {
   const club = useClub();
   const spread = spreadOf(club.reviews, person.id);
   /* Duas fontes para o mesmo destaque: a passagem do mouse, que é efêmera, e o
@@ -558,7 +631,7 @@ function Ruler({ person }: { person: Reviewer }) {
               <li key={r.id}>
                 <button
                   type="button"
-                  onClick={() => club.goReview(r.id)}
+                  onClick={() => onOpenTake(r.id)}
                   aria-label={`Abrir a avaliação de ${r.movieTitle}`}
                   className="group flex w-full items-center gap-3 rounded-cell px-1 py-1.5 text-left transition-colors hover:bg-beam/[0.05]"
                 >
@@ -825,10 +898,36 @@ function Queued({ person }: { person: Reviewer }) {
    O arquivo dela, do mais recente para o mais antigo — a única lista da página
    em ordem de tempo, porque é a única que responde "o que andou vendo".
 
-   Cada linha leva à ficha no acervo, onde estão os onze critérios e a conversa.
-   Este perfil não redesenha nada disso: repetir a ficha aqui seria um segundo
-   lugar onde a mesma coisa pode ficar diferente. */
-function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
+   ── a ficha abre AQUI ───────────────────────────────────────────────────
+   Cada linha levava ao acervo, e isso estava errado de um jeito que só aparece
+   usando: quem está percorrendo doze fichas de uma pessoa clica numa, é jogado
+   para outra aba, e não volta. O perfil virava um índice de saída em vez de um
+   lugar onde se explora alguém — e explorar era a coisa toda.
+
+   Agora a linha desdobra na própria lista: os onze critérios, o que a pessoa
+   escreveu, o par de polegares e a conversa inteira. Não é uma cópia de nada —
+   são as MESMAS peças do acervo e do feed (`Breakdown`, `TakeVotes`,
+   `Conversation`), que é o motivo de o detalhamento ter saído de screens/
+   e virado componente.
+
+   Uma de cada vez, e essa é a diferença deliberada para o acervo, onde várias
+   ficam abertas juntas. Lá a tela existe para COMPARAR — duas fichas do mesmo
+   filme lado a lado é a pergunta que ela responde. Aqui todas as fichas são da
+   mesma pessoa, não há nada para comparar entre elas, e doze gavetas abertas
+   fariam a página perder o pé. */
+function Takes({
+  person,
+  mine,
+  open,
+  onToggle,
+}: {
+  person: Reviewer;
+  mine: boolean;
+  /* Qual ficha está aberta. Vem de cima porque quatro lugares da página abrem
+     uma — ver a nota em `ProfileScreen`. */
+  open: string | null;
+  onToggle: (id: string) => void;
+}) {
   const club = useClub();
   const takes = takesOf(club.reviews, person.id);
   const [all, setAll] = useState(false);
@@ -851,7 +950,10 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
     );
   }
 
-  const shown = all ? takes : takes.slice(0, 12);
+  /* Uma ficha aberta nunca fica escondida atrás do "ver as outras": abrir uma
+     coisa e ela não aparecer é o botão mentindo. */
+  const openIndex = open ? takes.findIndex(r => r.id === open) : -1;
+  const shown = all || openIndex >= 12 ? takes : takes.slice(0, 12);
   const hidden = takes.length - shown.length;
 
   return (
@@ -859,7 +961,7 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
       <ul className="flex flex-col">
         {shown.map(r => (
           <li key={r.id} className="border-t border-white/[0.06] first:border-t-0">
-            <TakeLine review={r} />
+            <TakeLine review={r} open={open === r.id} onToggle={() => onToggle(r.id)} />
           </li>
         ))}
       </ul>
@@ -876,7 +978,15 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
   );
 }
 
-function TakeLine({ review }: { review: Review }) {
+function TakeLine({
+  review,
+  open,
+  onToggle,
+}: {
+  review: Review;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const club = useClub();
   /* A reação que a ficha juntou, contada do que o clube já carregou. Muda no
      zero, como em todo lugar: uma fileira de zeros embaixo de cada linha conta
@@ -886,13 +996,27 @@ function TakeLine({ review }: { review: Review }) {
   const down = cast.filter(v => v.value === -1).length;
   const talk = club.comments.filter(c => c.reviewId === review.id).length;
 
+  /* Aberta uma vez, montada para sempre — enquanto a fileira viver. Montar as
+     doze de saída seria uma tela inteira de trabalho, com doze conversas e doze
+     detalhamentos, pelo que ninguém pediu ainda; e desmontar ao fechar faria a
+     gaveta recolher de altura zero para altura zero, um sumiço seco no lugar da
+     animação. Mesma decisão que a conversa do feed já tinha tomado. */
+  const [touched, setTouched] = useState(open);
+  if (open && !touched) setTouched(true);
+
   return (
-    <button
-      type="button"
-      onClick={() => club.goReview(review.id)}
-      aria-label={`Abrir a avaliação de ${review.movieTitle}`}
-      className="group flex w-full items-center gap-3 rounded-cell px-2 py-2.5 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
-    >
+    <div id={`ficha-${review.id}`} className="scroll-mt-24">
+      {/* Os contadores de reação só aparecem com a gaveta FECHADA. Abertos, os
+          controles de verdade estão logo abaixo com os mesmos números dentro —
+          e o mesmo par de números duas vezes na mesma fileira faz o olho parar
+          para procurar a diferença entre eles. */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={`ficha-corpo-${review.id}`}
+        className="group flex w-full items-center gap-3 rounded-cell px-2 py-2.5 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
+      >
       <Poster src={review.moviePoster} className="h-[52px] w-[35px] flex-none" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] text-ink transition-colors group-hover:text-beam">
@@ -901,7 +1025,7 @@ function TakeLine({ review }: { review: Review }) {
         <span className="q block text-[11px] text-ink-dim">
           {[review.movieYear ?? '—', review.movieGenre].filter(Boolean).join(' · ')}
         </span>
-        {talk || up || down ? (
+        {!open && (talk || up || down) ? (
           <span className="mt-1 flex items-center gap-3 text-ink-faint">
             {talk ? (
               <span className="flex items-center gap-1" title={plural(talk, 'resposta', 'respostas')}>
@@ -930,7 +1054,45 @@ function TakeLine({ review }: { review: Review }) {
       <span className="flex flex-none items-center gap-2.5">
         <Strip value={review.final} cells={10} className="hidden h-[6px] w-[80px] sm:flex" />
         <span className="q w-[34px] text-right text-[16px] text-beam">{fmt(review.final)}</span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+            open && 'rotate-180'
+          )}
+          strokeWidth={1.7}
+          aria-hidden
+        />
       </span>
-    </button>
+      </button>
+
+      {/* ── a ficha aberta ────────────────────────────────────────────────
+          As mesmas peças do acervo e do feed, montadas aqui. `Breakdown` traz
+          os onze critérios e o que a pessoa escreveu; `TakeVotes` traz o par de
+          polegares com as mesmas regras de sempre (na própria ficha os botões
+          somem e sobra o placar); `Conversation` traz o fio inteiro, com
+          resposta, menção e curtida. */}
+      <Drawer open={open}>
+        {touched ? (
+          <div id={`ficha-corpo-${review.id}`} className="px-2 pb-4 pt-1">
+            <Breakdown r={review} comment={review.comment} />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <TakeVotes review={review} labelled />
+              {/* O caminho para o acervo continua existindo, como uma saída e
+                  não como o gesto principal: lá a ficha aparece ao lado das dos
+                  outros sobre o mesmo filme, que é a única coisa que esta
+                  página não sabe mostrar. */}
+              <button
+                type="button"
+                onClick={() => club.goReview(review.id)}
+                className="font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+              >
+                Ver no acervo
+              </button>
+            </div>
+            <Conversation review={review} />
+          </div>
+        ) : null}
+      </Drawer>
+    </div>
   );
 }
