@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronDown,
   MessageSquare,
   Plus,
@@ -25,8 +23,6 @@ import {
   reactionsOf,
   spreadOf,
   takesOf,
-  tasteOf,
-  type TasteRow,
 } from '@/lib/taste';
 import { cn, plural, whenOf } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -45,23 +41,28 @@ import { useClub } from '@/App';
    components/settings.tsx) e isto tomou o cômodo.
 
    ── por que este perfil não é o perfil de qualquer app de filme ──────────
-   Porque a unidade deste produto é a ficha de onze critérios, e onze critérios
-   descrevem um gosto com uma precisão que nenhuma contagem de filmes alcança.
-   Um perfil que dissesse "45 filmes · média 7,4" seria intercambiável com
-   qualquer outro; este diz *o que a pessoa olha num filme* — em que critério
-   ela está acima do clube e em qual está abaixo —, e essa frase só existe
-   porque há onze perguntas e um coletivo para comparar.
+   Porque ele não abre com uma contagem. "45 filmes · média 7,4" é uma frase que
+   qualquer produto de cinema sabe escrever; o que só este clube sabe é onde uma
+   pessoa se entusiasmou, onde ela se decepcionou, o quanto ela se afasta do
+   público lá fora e com quem ela costuma brigar. São todas perguntas sobre
+   relação — com um filme, com o mundo, com as outras cinco pessoas —, e é isso
+   que uma página sobre alguém deveria responder.
 
-   Por isso a primeira coisa abaixo do cabeçalho é a **ficha do gosto**, e não
-   uma grade de pôsteres. Pôster é o que a pessoa viu; a ficha é quem ela é.
+   > **A ficha do gosto saiu em 30/08/2026, por decisão do dono.** Ela abria a
+   > página: os onze critérios com a média da pessoa na régua de células e a
+   > média do clube marcada por cima, ordenados pela distância entre as duas.
+   > Era o módulo com o argumento mais forte no papel e o dono o cortou depois
+   > de ver na tela. O cálculo foi junto — ver lib/taste.ts. Se alguém quiser
+   > ressuscitá-lo, o histórico tem a implementação inteira, e o motivo de ela
+   > ter saído não está registrado aqui porque não foi dito: bastou não gostar.
 
    ── a página se cala quando não sabe ────────────────────────────────────
    Todo módulo aqui pode não aparecer, e essa é a decisão de desenho mais
-   importante do arquivo. Uma média em Fotografia tirada de duas fichas não é
-   um gosto, é um acidente com formato de dado — e desenhada na mesma régua de
-   quem tem cinquenta, ela seria indistinguível. Os pisos moram em lib/taste.ts,
-   um por pergunta, e um `null` de lá significa "esta página ainda não tem o que
-   dizer sobre isso".
+   importante do arquivo. Uma média tirada de duas fichas não é um gosto, é um
+   acidente com formato de dado — e desenhada com a mesma firmeza da de quem tem
+   cinquenta, ela seria indistinguível. Os pisos moram em lib/taste.ts, um por
+   pergunta, e um `null` de lá significa "esta página ainda não tem o que dizer
+   sobre isso".
 
    O que sobra no silêncio nunca é um vazio: é o que a pessoa já fez. Um perfil
    novo mostra as fichas que tem e diz quantas faltam para o resto acender —
@@ -105,7 +106,6 @@ export function ProfileScreen() {
       <Header person={person} mine={mine} onSettings={() => setSettings(true)} />
 
       <div className="mt-8 flex flex-col gap-8">
-        <Taste person={person} />
         <Ends person={person} />
         <Crowd person={person} mine={mine} />
         <Ruler person={person} />
@@ -154,12 +154,6 @@ function Region({
       {children}
     </section>
   );
-}
-
-/* Um módulo que ainda não tem material. Diz o que falta e quanto falta, e nunca
-   desenha o gráfico vazio: uma régua sem marca é uma promessa de dado. */
-function Hushed({ children }: { children: React.ReactNode }) {
-  return <p className="max-w-[56ch] text-[13px] leading-relaxed text-ink-dim">{children}</p>;
 }
 
 /* ══ o cabeçalho ══════════════════════════════════════════════════════════
@@ -342,149 +336,6 @@ function Stat({
         <span className="text-ink">{n}</span> {n === 1 ? one : many}
       </span>
     </>
-  );
-}
-
-/* ══ a ficha do gosto ═════════════════════════════════════════════════════
-   O coração da página, e a única coisa aqui que nenhum outro app de filme
-   consegue desenhar.
-
-   Onze critérios, a média dela em cada um, na mesma régua de células que
-   desenha uma nota em todo o resto do produto — então é reconhecível como nota
-   antes de ser lida. Sobre a régua, a média do clube como uma marca: é ela que
-   transforma "8,4 em Fotografia" em *ela vê a câmera*, porque um número sozinho
-   não diz se é muito.
-
-   Ordenado por distância até o clube e não por nota. Por nota, a lista seria
-   quase a mesma para todo mundo — os critérios têm médias diferentes entre si,
-   e todo mundo é mais generoso com trilha do que com roteiro. Por distância, a
-   primeira linha é o que essa pessoa tem de próprio, que é a pergunta que
-   trouxe alguém até aqui. */
-function Taste({ person }: { person: Reviewer }) {
-  const club = useClub();
-  const rows = tasteOf(club.reviews, person.id);
-  const takes = takesOf(club.reviews, person.id).length;
-
-  if (!rows) {
-    return (
-      <Region title="O gosto">
-        <Hushed>
-          A ficha do gosto acende com {FLOOR.taste} avaliações — {person.name.split(' ')[0]} tem{' '}
-          {takes}. Antes disso, uma média por critério descreveria as últimas noites e não um
-          gosto, e ela pareceria tão firme quanto a de quem avaliou cinquenta filmes.
-        </Hushed>
-      </Region>
-    );
-  }
-
-  return (
-    <Region title="O gosto" note={`${plural(takes, 'ficha', 'fichas')}`}>
-      <div className="plate px-4 py-3">
-        <ul>
-          {rows.map((row, i) => (
-            <li
-              key={row.key}
-              className={cn('py-2.5', i > 0 && 'border-t border-white/[0.06]')}
-            >
-              <TasteLine row={row} />
-            </li>
-          ))}
-        </ul>
-        {/* A legenda da marca, uma vez, no pé. Repetida por linha seria onze
-            explicações de uma convenção que se aprende na primeira.
-
-            Em `ink-dim` e não `ink-faint`: isto é uma frase que precisa ser
-            lida para a marca fazer sentido, e a tinta apagada deste sistema é
-            estrutural — perfuração, tique, célula sem luz. Regra do piso
-            legível, em DESIGN.md. */}
-        <p className="q mt-2 flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-[10.5px] text-ink-dim">
-          <span aria-hidden className="inline-block h-3 w-[2px] flex-none bg-ink-dim" />
-          onde o resto do clube ficou
-        </p>
-      </div>
-    </Region>
-  );
-}
-
-/* Uma linha da ficha do gosto: nome, régua com a marca do clube, nota, delta.
-
-   A régua tem vinte células e não dez, o mesmo número da nota mestra: é uma
-   média, então ela cai em qualquer lugar entre dois pontos, e dez células
-   arredondariam meio ponto de diferença para o mesmo desenho. */
-function TasteLine({ row }: { row: TasteRow }) {
-  /* Um ponto inteiro é onde a diferença deixa de ser feitio da amostra e vira
-     preferência — o mesmo limiar que o feed usa para apontar os extremos de uma
-     ficha. Abaixo dele o delta continua escrito, em tinta apagada; a partir dele
-     ele acende em facho.
-
-     Facho e não vermelho, pela mesma razão que a régua de divergência acende em
-     facho: discordar é informação, não defeito. E não existe verde do outro
-     lado — a direção é a seta, nunca a cor. */
-  const loud = row.delta != null && Math.abs(row.delta) >= 1;
-  const up = (row.delta ?? 0) > 0;
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="w-[104px] flex-none truncate text-[12.5px] text-ink sm:w-[128px]">
-        {row.name}
-      </span>
-
-      <span className="relative min-w-0 flex-1">
-        <Strip value={row.value} cells={20} className="h-[7px]" />
-        {row.club != null ? (
-          /* A marca do clube por cima da régua, e não uma segunda régua embaixo:
-             duas trilhas paralelas obrigam o olho a medir a distância entre elas,
-             e a distância é justamente o que a página quer entregar pronto.
-
-             Estende um pixel para fora em cima e embaixo para não sumir dentro
-             de uma célula acesa, e sai do fluxo de leitura por áudio — a frase
-             que ela desenha já é dita pelo delta ao lado. */
-          <span
-            aria-hidden
-            title={`clube ${fmt(row.club)}`}
-            className="absolute -top-[2px] bottom-[-2px] w-[2px] -translate-x-1/2 rounded-[1px] bg-ink-dim"
-            style={{ left: `${Math.max(0, Math.min(100, row.club * 10))}%` }}
-          />
-        ) : null}
-      </span>
-
-      <span className="q w-[34px] flex-none text-right text-[12.5px] text-beam">
-        {fmt(row.value)}
-      </span>
-
-      {/* O delta numa coluna de largura fixa, com ou sem valor: sem ela as notas
-          da coluna anterior dançariam de linha para linha conforme o critério
-          tivesse ou não clube para comparar. */}
-      <span className="flex w-[52px] flex-none items-center justify-end gap-1">
-        {row.delta == null ? (
-          <span className="q text-[11px] text-ink-faint" title="ninguém mais marcou este critério">
-            —
-          </span>
-        ) : (
-          <>
-            {up ? (
-              <ArrowUp
-                className={cn('h-3 w-3 flex-none', loud ? 'text-beam' : 'text-ink-faint')}
-                strokeWidth={2}
-                aria-hidden
-              />
-            ) : (
-              <ArrowDown
-                className={cn('h-3 w-3 flex-none', loud ? 'text-beam' : 'text-ink-faint')}
-                strokeWidth={2}
-                aria-hidden
-              />
-            )}
-            <span
-              className={cn('q text-[11.5px]', loud ? 'text-beam' : 'text-ink-dim')}
-              title={`${fmt(Math.abs(row.delta))} ${up ? 'acima' : 'abaixo'} do clube`}
-            >
-              {fmt(Math.abs(row.delta))}
-            </span>
-          </>
-        )}
-      </span>
-    </div>
   );
 }
 
@@ -991,8 +842,8 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
       <Region title="As fichas">
         <Blank title={mine ? 'Você ainda não avaliou nada' : `${person.name.split(' ')[0]} ainda não avaliou nada`}>
           {mine
-            ? 'Escolha um filme no catálogo ou na fila e responda as onze perguntas. A partir da quinta ficha, esta página começa a dizer o que você olha num filme.'
-            : 'Quando essa pessoa gravar a primeira ficha, ela aparece aqui — e o gosto dela acende depois da quinta.'}
+            ? 'Escolha um filme no catálogo ou na fila e responda as onze perguntas. Da terceira ficha em diante esta página começa a ter o que dizer sobre você.'
+            : 'Quando essa pessoa gravar a primeira ficha, ela aparece aqui.'}
         </Blank>
         {mine ? (
           <Key tone="flush" onClick={() => club.goTab('catalog')}>

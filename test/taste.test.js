@@ -11,7 +11,6 @@ import {
   reactionsOf,
   spreadOf,
   takesOf,
-  tasteOf,
 } from '../client/src/lib/taste.ts';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -25,21 +24,20 @@ import {
    fotografia. Ninguém tem como perceber olhando.
 
    O que estes testes protegem, acima de tudo, são os SILÊNCIOS. Metade deste
-   módulo é a decisão de não responder: a ficha do gosto se cala abaixo de
-   cinco avaliações, os extremos abaixo de três, o TMDB abaixo de quatro
-   filmes com nota, a afinidade abaixo de três filmes em comum. Um piso que
-   quebre em silêncio não deixa a página errada — deixa a página confiante, que
-   é pior, e é exatamente o defeito que ninguém revisando a tela vai enxergar.
+   módulo é a decisão de não responder: os extremos se calam abaixo de três
+   fichas, o TMDB abaixo de quatro filmes com nota, a afinidade abaixo de três
+   filmes em comum. Um piso que quebre em silêncio não deixa a página errada —
+   deixa a página confiante, que é pior, e é exatamente o defeito que ninguém
+   revisando a tela vai enxergar.
 
-   Duas regras finas que também estão fixadas aqui, porque as duas já foram
-   escritas do jeito errado em produtos parecidos:
+   Uma regra fina que também está fixada aqui, porque já foi escrita do jeito
+   errado em produtos parecidos: a afinidade soma DISTÂNCIAS e não diferenças
+   com sinal. Com sinal, quem dá dois pontos a mais num filme e dois a menos no
+   outro aparece em acordo perfeito, que é o contrário do que aconteceu.
 
-   · a média do clube EXCLUI a própria pessoa. Incluí-la é comparar alguém
-     consigo mesmo, e num clube de duas pessoas ativas isso corta todo delta
-     pela metade — todo mundo seria morno, por construção;
-   · a afinidade soma DISTÂNCIAS e não diferenças com sinal. Com sinal, quem dá
-     dois pontos a mais num filme e dois a menos no outro aparece em acordo
-     perfeito, que é o contrário do que aconteceu.
+   > Quatro testes saíram daqui em 30/08/2026 junto com `tasteOf`, que o dono
+   > cortou do perfil. Um deles fixava que a média do clube exclui a própria
+   > pessoa — se a ficha do gosto voltar, esse é o teste a escrever primeiro.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const ANA = 'pAna';
@@ -67,54 +65,6 @@ function take(reviewerId, movieId, final, marks, extra = {}) {
 }
 
 const person = id => ({ id, name: id, dot: '#b5abfc' });
-
-/* ── o piso da ficha do gosto ──────────────────────────────────────────── */
-
-test('a ficha do gosto se cala abaixo de cinco fichas', () => {
-  const four = [1, 2, 3, 4].map(m => take(ANA, m, 7, { foto: 8, roteiro: 6 }));
-  assert.equal(tasteOf(four, ANA), null);
-  const five = [...four, take(ANA, 5, 7, { foto: 8, roteiro: 6 })];
-  assert.notEqual(tasteOf(five, ANA), null);
-});
-
-test('a media do clube exclui a propria pessoa', () => {
-  // Ana marca 8 em foto nas cinco. Bia marca 4. O clube de Ana é só a Bia.
-  const reviews = [
-    ...[1, 2, 3, 4, 5].map(m => take(ANA, m, 8, { foto: 8 })),
-    take(BIA, 1, 4, { foto: 4 }),
-  ];
-  const rows = tasteOf(reviews, ANA);
-  const foto = rows.find(r => r.key === 'foto');
-  assert.equal(foto.value, 8);
-  assert.equal(foto.club, 4, 'a media do clube nao pode conter a propria Ana');
-  assert.equal(foto.delta, 4);
-  assert.equal(foto.n, 5);
-});
-
-test('um criterio que so ela marcou nao inventa um clube', () => {
-  const reviews = [
-    ...[1, 2, 3, 4, 5].map(m => take(ANA, m, 8, { foto: 8, solo: 9 })),
-    take(BIA, 1, 4, { foto: 4 }),
-  ];
-  const rows = tasteOf(reviews, ANA);
-  const solo = rows.find(r => r.key === 'solo');
-  assert.equal(solo.club, null);
-  assert.equal(solo.delta, null);
-  // E ele cai para o fim da lista: nao responde a pergunta que ordena.
-  assert.equal(rows[rows.length - 1].key, 'solo');
-});
-
-test('a lista corre do mais acima do clube para o mais abaixo', () => {
-  const reviews = [
-    ...[1, 2, 3, 4, 5].map(m => take(ANA, m, 7, { alto: 9, meio: 6, baixo: 3 })),
-    take(BIA, 9, 7, { alto: 5, meio: 6, baixo: 8 }),
-  ];
-  const rows = tasteOf(reviews, ANA).filter(r => r.delta != null);
-  assert.deepEqual(rows.map(r => r.key), ['alto', 'meio', 'baixo']);
-  assert.equal(rows[0].delta, 4); // 9 - 5
-  assert.equal(rows[1].delta, 0); // 6 - 6
-  assert.equal(rows[2].delta, -5); // 3 - 8
-});
 
 /* ── os extremos ───────────────────────────────────────────────────────── */
 
@@ -267,7 +217,6 @@ test('as fichas saem da mais nova para a mais velha', () => {
 });
 
 test('uma pessoa sem fichas nao quebra nada', () => {
-  assert.equal(tasteOf([], ANA), null);
   assert.equal(endsOf([], ANA), null);
   assert.equal(crowdGapOf([], ANA), null);
   assert.equal(spreadOf([], ANA), null);

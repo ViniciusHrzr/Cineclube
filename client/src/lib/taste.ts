@@ -9,17 +9,24 @@ import type { Review, Reviewer } from '@/lib/api';
    uma requisição levaria para ser montada.
 
    Derivado é também a razão de isto existir. O perfil de um app de filme
-   costuma ser uma foto, um nome e uma contagem; este produto tem onze critérios
-   por ficha, e onze critérios descrevem um gosto com uma precisão que nenhuma
-   contagem alcança. A pergunta que o perfil responde não é "quantos filmes" —
-   é "o que essa pessoa olha num filme".
+   costuma ser uma foto, um nome e uma contagem; aqui as perguntas são sobre
+   relação — onde a pessoa se entusiasmou, o quanto ela se afasta do público lá
+   fora, com quem ela costuma brigar —, e nenhuma delas é respondível contando
+   filmes.
+
+   > **`tasteOf` saiu em 30/08/2026, por decisão do dono.** Ela era a função
+   > mais ambiciosa do arquivo: a média da pessoa nos onze critérios, com a
+   > média do clube ao lado, ordenada pela distância entre as duas. O módulo que
+   > a desenhava abria o perfil e foi cortado depois de ser visto na tela, então
+   > o cálculo saiu junto — código sem chamador é peso. `FLOOR.taste` foi com
+   > ela. O histórico tem a implementação e os quatro testes que a fixavam.
 
    ── a regra que rege o arquivo inteiro: o piso ───────────────────────────
    Cada função aqui devolve `null` quando não tem material para responder, e
    nunca um número fraco. Isto não é cautela, é o produto se recusando a mentir:
-   uma "média em Fotografia" tirada de duas fichas não é um gosto, é um acidente
-   com formato de dado — e desenhada na mesma régua que uma média de cinquenta
-   fichas, ela seria indistinguível dela.
+   uma média tirada de duas fichas não é uma opinião, é um acidente com formato
+   de dado — e apresentada com a mesma firmeza da de quem tem cinquenta, ela
+   seria indistinguível dela.
 
    O piso já é doutrina neste código: `endsOf` no servidor se cala quando a
    ficha não tem um ponto de distância entre o alto e o baixo, e o detalhamento
@@ -33,11 +40,6 @@ import type { Review, Reviewer } from '@/lib/api';
 /* ── os pisos, todos num lugar ────────────────────────────────────────────
    Números diferentes porque as perguntas afirmam coisas diferentes.
 
-   `TASTE` é o mais alto dos quatro. Ele governa a afirmação mais forte que a
-   página faz — "esta pessoa valoriza fotografia acima do clube" — e essa frase
-   precisa de mais de um punhado de filmes por trás. Cinco é onde uma média
-   deixa de virar de lado quando uma ficha nova entra.
-
    `ENDS` é três porque "o que mais amou e o que mais detestou" é uma escolha
    entre extremos existentes, não uma média: com três fichas os extremos são
    reais, só são poucos.
@@ -47,7 +49,7 @@ import type { Review, Reviewer } from '@/lib/api';
 
    `SHARED` é três porque afinidade é sobre duas pessoas: menos que isso e o
    número descreve uma noite, não um gosto em comum. */
-export const FLOOR = { taste: 5, ends: 3, crowd: 4, shared: 3 } as const;
+export const FLOOR = { ends: 3, crowd: 4, shared: 3 } as const;
 
 const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
 
@@ -56,100 +58,6 @@ export function takesOf(reviews: Review[], reviewerId: string) {
   return reviews
     .filter(r => r.reviewerId === reviewerId)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-}
-
-/* ── a ficha da pessoa ────────────────────────────────────────────────────
-   O instrumento do produto virado contra o membro. O clube decompõe filme em
-   onze critérios; isto decompõe uma pessoa nos mesmos onze.
-
-   `delta` é a metade que importa. Uma média de 8,4 em Fotografia não diz nada
-   sozinha — pode ser que a pessoa seja generosa em tudo, pode ser que o clube
-   inteiro tenha visto filmes bonitos. O que diz alguma coisa é a distância até
-   o clube: +1,3 significa *ela vê a câmera*, e é uma frase que só existe porque
-   há um coletivo para comparar.
-
-   ── por que a média do clube exclui a própria pessoa ────────────────────
-   Porque incluí-la é comparar alguém consigo mesmo. Num clube de duas pessoas
-   ativas — que é o clube real hoje — a média "do clube" contendo você puxa a
-   referência para o seu lado e encolhe todo delta pela metade: você seria
-   sempre morno, por construção. Fora dela, o delta responde a pergunta certa:
-   "quanto esta pessoa se afasta de todo mundo que não é ela".
-
-   Um critério só entra quando os DOIS lados existem. Um gênero que só ela
-   avaliou não tem clube para comparar, e imprimir o delta contra o nada seria
-   inventar o consenso mais conveniente. */
-export type TasteRow = {
-  key: string;
-  name: string;
-  /** A média dela naquele critério. */
-  value: number;
-  /** A média de todo mundo que não é ela, ou null quando ninguém mais marcou. */
-  club: number | null;
-  /** `value − club`, e null pelo mesmo motivo. */
-  delta: number | null;
-  /** Em quantas fichas dela este critério foi respondido. */
-  n: number;
-};
-
-export function tasteOf(reviews: Review[], reviewerId: string): TasteRow[] | null {
-  const mine = takesOf(reviews, reviewerId);
-  if (mine.length < FLOOR.taste) return null;
-
-  /* Acumulado por chave e não por nome: um critério guarda a mesma chave entre
-     gêneros mesmo quando o rótulo muda, e é a chave que o servidor persiste. O
-     nome vem da ficha mais recente que o usou, que é o rótulo que a pessoa viu
-     por último. */
-  const ours = new Map<string, { name: string; values: number[] }>();
-  for (const r of mine) {
-    for (const b of r.breakdown) {
-      if (typeof b.value !== 'number') continue;
-      const slot = ours.get(b.key) ?? { name: b.name, values: [] };
-      slot.values.push(b.value);
-      ours.set(b.key, slot);
-    }
-  }
-  if (!ours.size) return null;
-
-  const theirs = new Map<string, number[]>();
-  for (const r of reviews) {
-    if (r.reviewerId === reviewerId) continue;
-    for (const b of r.breakdown) {
-      if (typeof b.value !== 'number') continue;
-      const list = theirs.get(b.key) ?? [];
-      list.push(b.value);
-      theirs.set(b.key, list);
-    }
-  }
-
-  const rows: TasteRow[] = [];
-  for (const [key, slot] of ours) {
-    const others = theirs.get(key);
-    const club = others?.length ? mean(others) : null;
-    const value = mean(slot.values);
-    rows.push({
-      key,
-      name: slot.name,
-      value,
-      club,
-      delta: club == null ? null : value - club,
-      n: slot.values.length,
-    });
-  }
-
-  /* Ordenado pela distância até o clube, do mais acima para o mais abaixo — e
-     não pela nota. Uma lista ordenada por nota diz em que a pessoa é generosa,
-     que é quase sempre a mesma ordem para todo mundo (ninguém é duro com trilha
-     e mole com roteiro por acaso: os critérios têm médias diferentes entre si).
-     Ordenada por delta, a lista diz o que é *dela*, e a primeira linha é a
-     resposta à pergunta que trouxe alguém ao perfil.
-
-     Um critério sem clube para comparar cai para o fim, porque ele não responde
-     essa pergunta — mas fica, porque a nota dela existe e é verdade. */
-  return rows.sort((a, b) => {
-    if (a.delta == null) return b.delta == null ? b.value - a.value : 1;
-    if (b.delta == null) return -1;
-    return b.delta - a.delta;
-  });
 }
 
 /* ── o que ela mais amou e o que mais detestou ────────────────────────────
