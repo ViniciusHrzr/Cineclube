@@ -6,7 +6,7 @@ import {
   useSpring,
   useTransform,
   useVelocity,
-} from 'framer-motion';
+} from 'motion/react';
 import { Check, Play, Search } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
 import { MentionField } from '@/components/mention';

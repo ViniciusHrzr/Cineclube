@@ -9,7 +9,7 @@ import {
   useSpring,
   useTransform,
   useVelocity,
-} from 'framer-motion';
+} from 'motion/react';
 import { GripVertical } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Reel, SearchField, Skeleton } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
