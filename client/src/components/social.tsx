@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThumbsDown, ThumbsUp, X } from 'lucide-react';
-import { Key, Reel } from '@/components/bits';
+import { Key } from '@/components/bits';
 import { MentionField, WithMentions } from '@/components/mention';
-import { initialsOf, reelColor, type Review, type ReviewComment } from '@/lib/api';
+import { PersonName, PersonReel } from '@/components/person';
+import { type Review, type ReviewComment } from '@/lib/api';
 import { cn, plural, whenOf } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -328,18 +329,20 @@ function Comment({
         lit === c.id && 'bg-beam/[0.07]'
       )}
     >
-      <Reel color={reelColor(c.reviewerDot, c.reviewerId)} src={club.avatarOf(c.reviewerId)} size="sm">
-        {initialsOf(c.reviewerName)}
-      </Reel>
+      {/* O rosto e o nome levam ao perfil de quem escreveu. Aqui isto é de
+          graça: o comentário é um item de lista e não um botão, então nenhum
+          controle está sendo aninhado em outro. */}
+      <PersonReel person={{ id: c.reviewerId, name: c.reviewerName, dot: c.reviewerDot }} size="sm" />
       <div className="min-w-0 flex-1">
         {/* A curtida fica na linha do nome e da hora, empurrada para o fim: é
             sobre o comentário inteiro, e uma linha de ação própria embaixo de
             cada um somaria uma altura por comentário numa gaveta que já é a
             mais alta da tela. */}
         <p className="flex flex-wrap items-center gap-x-2">
-          <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
-            {c.reviewerName}
-          </span>
+          <PersonName
+            person={{ id: c.reviewerId, name: c.reviewerName, dot: c.reviewerDot }}
+            className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
+          />
           <span className="q text-[10.5px] text-ink-dim" title={c.createdAt}>
             {whenOf(c.createdAt)}
           </span>
@@ -402,14 +405,16 @@ function Comment({
                     lit === r.id && 'bg-beam/[0.07]'
                   )}
                 >
-                  <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={club.avatarOf(r.reviewerId)} size="sm">
-                    {initialsOf(r.reviewerName)}
-                  </Reel>
+                  <PersonReel
+                    person={{ id: r.reviewerId, name: r.reviewerName, dot: r.reviewerDot }}
+                    size="sm"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-x-2">
-                      <span className="font-display text-[12px] uppercase tracking-[0.1em] text-ink">
-                        {r.reviewerName}
-                      </span>
+                      <PersonName
+                        person={{ id: r.reviewerId, name: r.reviewerName, dot: r.reviewerDot }}
+                        className="font-display text-[12px] uppercase tracking-[0.1em] text-ink"
+                      />
                       <span className="q text-[10px] text-ink-dim" title={r.createdAt}>
                         {whenOf(r.createdAt)}
                       </span>

@@ -13,8 +13,13 @@ const DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#b2b6ca', '#d2cefd', '#9397ab'];
 // The sign-in screen needs this list before anyone is signed in, so it stays
 // readable without a session — but it exposes only what a profile picker needs.
 // `pin_hash` and `pin_salt` are never selected here, on purpose.
+/* `created_at` e `bio` entram aqui para o perfil, e os dois pelo mesmo motivo:
+   um perfil é uma página sobre uma pessoa, e "no clube desde agosto" e a linha
+   que ela escreveu sobre si são as duas únicas coisas dela que não dá para
+   derivar das avaliações. A coluna já existia — o `ORDER BY` abaixo sempre a
+   usou —, ela só nunca tinha saído desta rota. */
 const listStmt = db.prepare(`
-  SELECT r.id, r.name, r.dot, r.is_admin, r.avatar_rev,
+  SELECT r.id, r.name, r.dot, r.is_admin, r.avatar_rev, r.bio, r.created_at,
          (r.pin_hash IS NOT NULL) AS has_pin,
          COUNT(rv.id) AS review_count
   FROM reviewers r
@@ -31,6 +36,15 @@ const avatarStmt = db.prepare('SELECT avatar, avatar_mime FROM reviewers WHERE i
 const setAvatarStmt = db.prepare(
   'UPDATE reviewers SET avatar = ?, avatar_mime = ?, avatar_rev = ? WHERE id = ?'
 );
+const setBioStmt = db.prepare('UPDATE reviewers SET bio = ? WHERE id = ?');
+
+/* ── o teto da bio ────────────────────────────────────────────────────────
+   Uma linha, não um parágrafo. O perfil desenha isto embaixo do nome, numa
+   coluna, e o que a pessoa tem a dizer de verdade sobre um filme tem mil
+   caracteres na conversa — este espaço é para o tom de voz, não para o
+   argumento. Cento e quarenta porque é o comprimento em que uma frase ainda é
+   uma frase e não vira um texto que precisa de parágrafo. */
+const MAX_BIO = 140;
 
 /* The picture is a URL and not the bytes. Putting base64 in this DTO would mean
    every list of reviewers — which the sign-in screen fetches before anyone is
@@ -53,6 +67,11 @@ function toDTO(row, handles) {
     isAdmin: !!row.is_admin,
     hasPin: !!row.has_pin,
     avatar: avatarUrl(row),
+    /* Vazio e ausente são a mesma coisa aqui, e viram `null`: uma bio apagada
+       grava string vazia, e o perfil que recebesse `""` teria de decidir de
+       novo, na tela, se aquilo é uma linha para desenhar. */
+    bio: row.bio || null,
+    createdAt: row.created_at ?? null,
     review_count: row.review_count ?? 0,
   };
 }
@@ -137,13 +156,31 @@ router.patch('/me', auth.requireSession, wrap(async (req, res) => {
     }
   }
 
+  /* ── a bio ──────────────────────────────────────────────────────────────
+     Mesma regra do nome e do retrato, e ela é a razão de esta rota não receber
+     id nenhum: escrever "sou o cara do terror" na página de outra pessoa é
+     falar pela boca dela. Nem o admin — a exceção dele é deixar alguém entrar
+     de volta, não dizer quem alguém é.
+
+     Uma linha em branco apaga. `null` e `''` chegam pelo mesmo caminho porque
+     do lado de lá são o mesmo gesto: limpar o campo e salvar. Gravar vazio em
+     vez de `null` seria uma segunda forma de "não tem bio", e a leitura acima
+     teria de conhecer as duas. */
+  if ('bio' in patch) {
+    const bio = patch.bio == null ? '' : String(patch.bio).trim();
+    if (bio.length > MAX_BIO) {
+      return res.status(400).json({ error: `A bio pode ter no máximo ${MAX_BIO} caracteres.` });
+    }
+    await setBioStmt.run(bio || null, id);
+  }
+
   /* Um nome e um retrato aparecem ao lado de tudo o que a pessoa já disse aqui,
      então trocar qualquer um dos dois redesenha o produto inteiro para o resto
      do clube — não só a tela de avaliadores. */
   live.emit('reviewers', id);
 
   const row = await db
-    .prepare('SELECT id, name, dot, is_admin, avatar_rev FROM reviewers WHERE id = ?')
+    .prepare('SELECT id, name, dot, is_admin, avatar_rev, bio FROM reviewers WHERE id = ?')
     .get(id);
   res.json({
     reviewer: {
@@ -152,6 +189,7 @@ router.patch('/me', auth.requireSession, wrap(async (req, res) => {
       dot: row.dot,
       isAdmin: !!row.is_admin,
       avatar: avatarUrl(row),
+      bio: row.bio || null,
     },
   });
 }));

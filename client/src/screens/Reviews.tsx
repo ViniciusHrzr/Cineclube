@@ -15,7 +15,6 @@ import {
   IconKey,
   Key,
   Poster,
-  Reel,
   SearchField,
   Strip,
 } from '@/components/bits';
@@ -24,7 +23,8 @@ import { WithMentions } from '@/components/mention';
    oferecer os dois na porta de entrada do clube, e são as mesmas regras. Ver a
    nota de abertura em components/social.tsx. */
 import { Conversation, TakeVotes } from '@/components/social';
-import { del, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
+import { PersonReel } from '@/components/person';
+import { del, fmt, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -626,48 +626,60 @@ function ByReviewer({
             key={p.id}
             className="mb-4 overflow-hidden rounded-cell bg-house-seat/55 ring-1 ring-inset ring-white/[0.06]"
           >
-            <button
-              type="button"
-              disabled={!openable}
-              onClick={() => toggleGroup(p.id)}
-              aria-expanded={openable ? expanded : undefined}
+            {/* ── o rosto abre a pessoa, a fileira abre a lista ──────────────
+                Duas perguntas diferentes na mesma linha, e por isso dois
+                controles irmãos em vez de um dentro do outro: o retrato leva ao
+                perfil de quem assinou, e o resto da fileira desdobra o que ela
+                avaliou. Enquanto tudo isto era um botão só, o retrato aqui era
+                pixel morto. */}
+            <div
               className={cn(
-                'group flex w-full items-center gap-3 px-3 py-3 text-left transition-colors',
+                'group flex items-center gap-3 px-3 transition-colors',
                 openable && 'hover:bg-beam/[0.05]'
               )}
             >
-              <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
-                {initialsOf(p.name)}
-              </Reel>
-              <span className="min-w-0 flex-1">
-                <span
-                  className={cn(
-                    'block truncate font-display text-[17px] uppercase tracking-[0.1em] text-ink transition-colors',
-                    openable && 'group-hover:text-beam'
-                  )}
-                >
-                  {p.name}
+              {/* `solo`: o nome desta pessoa mora dentro do botão da gaveta e
+                  não pode virar link, então o retrato é o único caminho até o
+                  perfil dela — e um caminho que só o mouse alcança não é um
+                  caminho. */}
+              <PersonReel person={p} size="md" solo />
+              <button
+                type="button"
+                disabled={!openable}
+                onClick={() => toggleGroup(p.id)}
+                aria-expanded={openable ? expanded : undefined}
+                className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'block truncate font-display text-[17px] uppercase tracking-[0.1em] text-ink transition-colors',
+                      openable && 'group-hover:text-beam'
+                    )}
+                  >
+                    {p.name}
+                  </span>
+                  {/* How many films, and nothing else. A person's overall average
+                      is not a fact about the person — it is a fact about whatever
+                      they happened to have watched, and printed at the head of the
+                      card it reads as a grade, inviting a comparison between two
+                      members who never rated the same films. The numbers that mean
+                      something are inside, one per film. */}
+                  <span className="q block text-[11px] text-ink-dim">
+                    {items.length ? plural(items.length, 'filme', 'filmes') : 'nenhuma avaliação'}
+                  </span>
                 </span>
-                {/* How many films, and nothing else. A person's overall average
-                    is not a fact about the person — it is a fact about whatever
-                    they happened to have watched, and printed at the head of the
-                    card it reads as a grade, inviting a comparison between two
-                    members who never rated the same films. The numbers that mean
-                    something are inside, one per film. */}
-                <span className="q block text-[11px] text-ink-dim">
-                  {items.length ? plural(items.length, 'filme', 'filmes') : 'nenhuma avaliação'}
-                </span>
-              </span>
-              {openable ? (
-                <ChevronDown
-                  className={cn(
-                    'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
-                    expanded && 'rotate-180'
-                  )}
-                  strokeWidth={1.7}
-                />
-              ) : null}
-            </button>
+                {openable ? (
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 flex-none text-ink-dim transition-transform duration-200',
+                      expanded && 'rotate-180'
+                    )}
+                    strokeWidth={1.7}
+                  />
+                ) : null}
+              </button>
+            </div>
 
             <Drawer open={expanded && openable}>
               <div className="flex flex-col">
@@ -719,8 +731,6 @@ function ByMovie({
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
-  const { avatarOf } = useClub();
-
   /* Which films are showing their takes. Per film, and kept here rather than in
      the card, because the card is redrawn whenever anything in the record
      changes and state that lives inside it would fold itself back up.
@@ -873,16 +883,21 @@ function ByMovie({
                         mesma pergunta nas duas — "achei alto demais" —, então
                         ela não pode existir só num dos dois jeitos de olhar o
                         mesmo acervo. */}
+                    {/* O retrato de quem assinou fica fora do botão da gaveta,
+                        pela mesma razão que os polegares ficam: leva ao perfil
+                        dela, e um controle não se aninha em outro. */}
                     <div className="flex items-center gap-2 px-3 transition-colors hover:bg-beam/[0.05]">
+                      <PersonReel
+                        person={{ id: r.reviewerId, name: r.reviewerName, dot: r.reviewerDot }}
+                        size="md"
+                        solo
+                      />
                       <button
                         type="button"
                         onClick={() => onToggle(r.id)}
                         aria-expanded={openIds.has(r.id)}
                         className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
                       >
-                        <Reel color={reelColor(r.reviewerDot, r.reviewerId)} src={avatarOf(r.reviewerId)} size="md">
-                          {initialsOf(r.reviewerName)}
-                        </Reel>
                         <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
                         <span className="q flex-none text-[17px]">{fmt(r.final)}</span>
                       </button>

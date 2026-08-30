@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Reel } from '@/components/bits';
-import { useClub } from '@/App';
-import { initialsOf, notifications, reelColor, type Notice } from '@/lib/api';
+import { PersonReel } from '@/components/person';
+import { notifications, type Notice } from '@/lib/api';
 import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
 
@@ -54,9 +53,10 @@ export function Notices({
   onOpenReview: (reviewId: string, commentId?: string | null) => void;
 }) {
   /* O retrato vem do clube, que já carrega a lista de avaliadores, e não do
-     feed: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
-     cada item repetiria a mesma URL dezenas de vezes na mesma resposta. */
-  const { avatarOf } = useClub();
+     aviso: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
+     cada item repetiria a mesma URL dezenas de vezes na mesma resposta. Quem
+     resolve isso agora é `PersonReel`, que faz a mesma consulta ao clube para
+     todo rosto do produto. */
   const [items, setItems] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -281,7 +281,25 @@ export function Notices({
               {items.map(n => {
                 const Icon = iconOf(n.kind, n.value);
                 return (
-                  <li key={n.id}>
+                  <li
+                    key={n.id}
+                    className="flex gap-2.5 border-b border-white/[0.05] px-4 py-3 transition-colors last:border-0 hover:bg-beam/[0.05]"
+                  >
+                    {/* Com o retrato de quem reagiu, e ele leva ao perfil dessa
+                        pessoa. Ficou fora do botão da linha porque um controle
+                        não se aninha em outro, e porque são dois destinos
+                        diferentes: o rosto pergunta "quem é essa pessoa" e o
+                        resto da linha responde "o que ela fez".
+
+                        O painel se fecha antes de navegar: ele é ancorado ao
+                        sino e ficaria aberto por cima do perfil que acabou de
+                        abrir, falando de uma tela que não está mais embaixo. */}
+                    <PersonReel
+                      person={n.actor}
+                      size="sm"
+                      solo
+                      onNavigate={() => setOpen(false)}
+                    />
                     <button
                       type="button"
                       /* Leva à ficha de que o aviso fala, aberta e à vista —
@@ -292,20 +310,8 @@ export function Notices({
                         setOpen(false);
                         onOpenReview(n.reviewId, n.commentId);
                       }}
-                      className="flex w-full gap-2.5 border-b border-white/[0.05] px-4 py-3 text-left transition-colors last:border-0 hover:bg-beam/[0.05]"
+                      className="flex min-w-0 flex-1 gap-2.5 text-left"
                     >
-                      {/* Com o retrato de quem reagiu. O sino é a única lista
-                          de pessoas do produto que estava mostrando só as
-                          iniciais: o `Reel` aceita `src` e não estava
-                          recebendo nenhum, então todo mundo aparecia como
-                          etiqueta colorida mesmo tendo foto. */}
-                      <Reel
-                        color={reelColor(n.actor.dot, n.actor.id)}
-                        src={avatarOf(n.actor.id)}
-                        size="sm"
-                      >
-                        {initialsOf(n.actor.name)}
-                      </Reel>
                       <span className="min-w-0 flex-1">
                         <span className="block text-[12.5px] leading-snug text-ink-dim">
                           <span className="font-display uppercase tracking-[0.08em] text-ink">

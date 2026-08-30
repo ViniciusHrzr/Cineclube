@@ -406,6 +406,20 @@ async function migrate() {
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');
 
+  /* ── a linha que a pessoa escreve sobre si ────────────────────────────────
+     A única coisa neste banco que uma pessoa afirma sobre si mesma. Todo o
+     resto que o perfil mostra é derivado do que ela fez — as onze médias, os
+     extremos, com quem ela concorda —, e derivado é mais honesto: ninguém
+     escreve "sou o cara da fotografia", isso se prova avaliando.
+
+     Existe mesmo assim porque há uma coisa que o histórico não sabe dizer, e é
+     o tom de voz. "Só vim pelo terror" é uma frase que nenhuma média produz.
+
+     Nula é o estado normal, não um defeito: um perfil sem bio não mostra uma
+     linha vazia, mostra o que a pessoa avaliou — que era para ser o assunto de
+     qualquer jeito. */
+  await addReviewerCol('bio', 'bio TEXT');
+
   // The queue is something the club arranges, not just a bag of films, so it
   // carries an explicit order. Existing rows are backfilled from added_at so the
   // list people already have keeps the order they already saw.

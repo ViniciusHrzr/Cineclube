@@ -29,7 +29,7 @@ import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
 import { ReviewsScreen } from '@/screens/Reviews';
-import { PeopleScreen } from '@/screens/People';
+import { ProfileScreen } from '@/screens/Profile';
 import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
@@ -60,13 +60,22 @@ export const TABS = [
      evening: you pick the film, you watch it, you rate it. */
   { id: 'screening', label: 'Sessão' },
   { id: 'reviews', label: 'Avaliados' },
-  /* Pela mesma razão de `rate`, e com o mesmo mecanismo: já se chega aqui pelo
-     próprio rosto na marquise, que é onde a pessoa procura quando quer mexer no
-     próprio nome, na própria foto ou no próprio PIN. Uma aba ao lado disso era
-     a segunda porta para o mesmo cômodo.
+  /* ── o perfil ───────────────────────────────────────────────────────────
+     Chega-se por um rosto: o seu na marquise, o de qualquer pessoa em qualquer
+     lugar do app. Nunca por uma aba — uma aba "Perfil" só poderia levar ao seu,
+     e o que faz disto uma rede social é justamente ele existir para todo mundo.
 
-     Continua roteável: `#people` é um endereço que alguém pode ter guardado, e
-     um endereço que a tabela não reconhece cai no feed sem dizer por quê. */
+     `#perfil/<id>` carrega de quem é. Sem id, é o seu — que é o que o rosto na
+     marquise pede e o que um `#perfil` colado sem nada significa.
+
+     Substituiu a tela `Avaliadores`, que era um painel de formulários com o
+     nome de uma seção. O que ela fazia — nome, foto, PIN, cadastrar, remover —
+     mora agora na folha de ajustes, atrás da engrenagem do próprio perfil. */
+  { id: 'perfil', label: 'Perfil', hidden: true },
+  /* O endereço antigo, mantido roteável e nada mais. Alguém pode ter `#people`
+     guardado, e um endereço que a tabela não reconhece derruba o Voltar e joga
+     o recarregar no feed sem dizer por quê. Ele cai no seu próprio perfil, que
+     é o cômodo para onde a porta dele sempre apontou. */
   { id: 'people', label: 'Avaliadores', hidden: true },
 ] as const;
 export type TabId = (typeof TABS)[number]['id'];
@@ -107,6 +116,15 @@ type Club = {
   inWatchlist: (id: number) => boolean;
   toggleWatch: (m: Movie | WatchItem) => Promise<void>;
   goTab: (t: TabId) => void;
+  /* ── abrir o perfil de alguém ───────────────────────────────────────────
+     Chamado por todo rosto do app. Sem id, abre o seu.
+
+     É esta função que transforma o produto numa rede social, e ela é de uma
+     linha: o que faltava nunca foi a página, era o clube ser feito de pessoas
+     clicáveis em vez de nomes desenhados. */
+  goPerson: (reviewerId?: string | null) => void;
+  /** De quem é o perfil aberto agora, ou null enquanto for o seu. */
+  personId: string | null;
   /* Abre o acervo numa avaliação específica, e escreve o endereço dela. É o que
      o sino chama e o que "copiar link" produz. */
   goReview: (reviewId: string, commentId?: string | null) => void;
@@ -141,7 +159,12 @@ export function useClub() {
    Uma seção desconhecida cai no catálogo, como sempre caiu; um id que não
    existe mais abre a aba e não foca nada, que é o que sobra de honesto quando
    a coisa apontada foi apagada. */
-function routeFromHash(): { tab: TabId | null; review: string | null; comment: string | null } {
+function routeFromHash(): {
+  tab: TabId | null;
+  review: string | null;
+  comment: string | null;
+  person: string | null;
+} {
   const raw = (location.hash || '').replace(/^#/, '');
   const [head, tail, deeper] = raw.split('/');
   const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
@@ -150,7 +173,11 @@ function routeFromHash(): { tab: TabId | null; review: string | null; comment: s
      um aviso levar ao texto em vez de à carta inteira. Sem ele o sino abria a
      avaliação certa e deixava a pessoa procurando qual das respostas era a que
      ele anunciou. */
-  return { tab, review, comment: review && deeper ? decodeURIComponent(deeper) : null };
+  const comment = review && deeper ? decodeURIComponent(deeper) : null;
+  /* De quem é o perfil. `#perfil` sem id, e o endereço antigo `#people`, são o
+     seu — quem escreveu qualquer um dos dois estava pedindo a própria página. */
+  const person = tab === 'perfil' && tail ? decodeURIComponent(tail) : null;
+  return { tab, review, comment, person };
 }
 
 function tabFromHash(): TabId | null {
@@ -167,6 +194,10 @@ export default function App() {
   const [focusReview, setFocusReview] = useState<string | null>(() => routeFromHash().review);
   /** E o comentário dentro dela, quando o endereço vai tão fundo. */
   const [focusComment, setFocusComment] = useState<string | null>(() => routeFromHash().comment);
+  /* De quem é o perfil aberto. Null significa "o meu" — e não "nenhum": a tela
+     resolve isso contra a sessão, que é a única que sabe quem é você. Guardar o
+     seu id aqui seria gravar a resposta antes de a sessão existir. */
+  const [personId, setPersonId] = useState<string | null>(() => routeFromHash().person);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -262,12 +293,17 @@ export default function App() {
 
   useEffect(() => {
     const onHash = () => {
-      const { tab: t, review, comment: within } = routeFromHash();
+      const { tab: t, review, comment: within, person } = routeFromHash();
       if (t) setTab(t);
       /* Só quando há um id no endereço. Voltar para `#reviews` limpo não deve
          apagar o foco que a tela acabou de consumir, nem acender um antigo. */
       if (review) setFocusReview(review);
       if (within) setFocusComment(within);
+      /* O perfil é a exceção, e ela é deliberada: aqui o id NÃO é um foco que
+         se consome, é qual página está aberta. `#perfil` sem id significa "o
+         meu", então o null tem de chegar — sem isto, ir do perfil de alguém
+         para o seu pelo botão Voltar deixaria a pessoa anterior na tela. */
+      if (t === 'perfil' || t === 'people') setPersonId(person);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -276,6 +312,26 @@ export default function App() {
   const goTab = useCallback((t: TabId) => {
     setTab(t);
     if (tabFromHash() !== t) location.hash = t;
+  }, []);
+
+  /* ── ir ao perfil de alguém ─────────────────────────────────────────────
+     A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
+     inclusive já estando num perfil: é ele que a pessoa cola no Discord, e ir
+     de um perfil a outro tem de mexer no Voltar.
+
+     `null` explícito e não ausência: chamar sem id é o gesto de pedir o SEU
+     perfil, e ele tem de apagar quem estava aberto antes.
+
+     A rolagem volta ao topo porque isto é troca de página e não de aba: quem
+     desce até a afinidade de alguém, clica num nome de lá e continua na mesma
+     altura chega no meio de outra pessoa sem ver de quem. */
+  const goPerson = useCallback((reviewerId?: string | null) => {
+    const id = reviewerId ?? null;
+    setTab('perfil');
+    setPersonId(id);
+    const next = 'perfil' + (id ? `/${encodeURIComponent(id)}` : '');
+    if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, []);
 
   /* Ir para uma ficha específica: a aba, o endereço e o alvo, de uma vez. O
@@ -538,6 +594,8 @@ export default function App() {
             inWatchlist,
             toggleWatch,
             goTab,
+            goPerson,
+            personId,
             goReview,
             focusReview,
             clearFocusReview,
@@ -572,6 +630,8 @@ export default function App() {
       inWatchlist,
       toggleWatch,
       goTab,
+      goPerson,
+      personId,
       goReview,
       focusReview,
       clearFocusReview,
@@ -606,6 +666,7 @@ export default function App() {
           tab={tab}
           onTab={goTab}
           onOpenReview={goReview}
+          onOpenSelf={() => goPerson()}
           me={me}
           onSignOut={() => void signOut()}
         />
@@ -645,7 +706,10 @@ export default function App() {
                   Neither should outlive somebody's interest in watching. */}
               {tab === 'screening' && <ScreeningScreen />}
               {tab === 'reviews' && <ReviewsScreen />}
-              {tab === 'people' && <PeopleScreen />}
+              {/* Uma tela para as duas rotas. `#people` é o endereço antigo e
+                  não tem página própria: ele sempre quis dizer "a minha", e
+                  agora diz isso levando ao perfil sem id. */}
+              {(tab === 'perfil' || tab === 'people') && <ProfileScreen />}
             </div>
           )}
         </main>
@@ -677,6 +741,7 @@ function Marquee({
   tab,
   onTab,
   onOpenReview,
+  onOpenSelf,
   me,
   onSignOut,
 }: {
@@ -684,6 +749,8 @@ function Marquee({
   onTab: (t: TabId) => void;
   /** Onde um aviso do sino leva: a ficha que ele é sobre. */
   onOpenReview: (reviewId: string) => void;
+  /** O seu próprio rosto, que é a porta do seu perfil. */
+  onOpenSelf: () => void;
   me: SessionUser;
   onSignOut: () => void;
 }) {
@@ -726,12 +793,14 @@ function Marquee({
 
         <div className="flex items-center gap-2">
           <Notices onOpenReview={onOpenReview} />
-          {/* Your own face is the door to the room of faces. */}
+          {/* O seu rosto é a porta do seu perfil — e é o mesmo gesto que abre o
+              de qualquer outra pessoa em qualquer lugar do app. Levava à sala
+              de formulários chamada Avaliadores; agora leva à sua página. */}
           <button
             type="button"
-            onClick={() => onTab('people')}
-            title={me.isAdmin ? 'Administrador do clube' : 'Ver avaliadores'}
-            aria-label={`${me.name} — ver avaliadores`}
+            onClick={onOpenSelf}
+            title={me.isAdmin ? 'Administrador do clube' : 'Meu perfil'}
+            aria-label={`${me.name} — abrir meu perfil`}
             className="flex items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
           >
             <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">

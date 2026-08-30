@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Bill, Blank, Drawer, Fault, Poster, Reel, Skeleton, Strip } from '@/components/bits';
+import { Bill, Blank, Drawer, Fault, Poster, Skeleton, Strip } from '@/components/bits';
 /* As mesmas peças que o acervo usa, e não uma cópia compacta delas: são as
    mesmas regras de voto e de conversa, e regras escritas duas vezes são regras
    que divergem na terceira. Ver a nota de abertura em components/social.tsx. */
 import { Conversation, TakeVotes } from '@/components/social';
-import { api, fmt, initialsOf, reelColor, type FeedEvent } from '@/lib/api';
+import { PersonName, PersonReel } from '@/components/person';
+import { api, fmt, type FeedEvent } from '@/lib/api';
 import { useLive } from '@/lib/live';
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -288,27 +289,39 @@ function Rated({ e, onOpen }: { e: FeedEvent; onOpen: () => void }) {
 
   return (
     <div className="plate mb-3">
+      {/* ── quem avaliou, fora do botão ─────────────────────────────────
+          Esta linha morava dentro do botão que abre a ficha, e o rosto dentro
+          dela era pixel morto — um `<button>` dentro de outro não é uma coisa
+          que o navegador monte, então o nome não tinha como levar a lugar
+          nenhum. Puxada para fora, ela vira o que sempre deveria ter sido: a
+          assinatura da placa, com uma porta para quem assinou.
+
+          O `px-4 pt-4` daqui e o `pt-2.5` do botão abaixo somam o mesmo respiro
+          que o `p-4` de antes dava: a placa não mudou de forma, só de esqueleto.
+
+          O `hover` do botão para no botão, e isso é deliberado: a assinatura
+          continua sendo assinatura quando o resto da placa acende, porque ela
+          responde a outra coisa. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4">
+        <PersonReel person={e.actor} size="sm" />
+        <PersonName
+          person={e.actor}
+          className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
+        />
+        <span className="text-[12.5px] text-ink-dim">avaliou</span>
+        {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
+      </div>
+
       <button
         type="button"
         onClick={onOpen}
         aria-label={`Abrir a avaliação de ${e.movieTitle} por ${e.actor.name}`}
-        className="group flex w-full gap-4 p-4 text-left transition-colors duration-150 hover:bg-house-seat"
+        className="group flex w-full gap-4 px-4 pb-4 pt-2.5 text-left transition-colors duration-150 hover:bg-house-seat"
       >
         <Poster src={e.moviePoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
 
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Reel color={reelColor(e.actor.dot, e.actor.id)} src={club.avatarOf(e.actor.id)} size="sm">
-              {initialsOf(e.actor.name)}
-            </Reel>
-            <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
-              {e.actor.name}
-            </span>
-            <span className="text-[12.5px] text-ink-dim">avaliou</span>
-            {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
-          </span>
-
-          <span className="mt-1.5 flex flex-wrap items-baseline gap-x-3">
+          <span className="flex flex-wrap items-baseline gap-x-3">
             <span className="font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
               {e.movieTitle}
             </span>

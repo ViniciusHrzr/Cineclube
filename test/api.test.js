@@ -201,6 +201,92 @@ test('review_count reflects saved reviews', async () => {
   assert.equal(found.review_count, 2);
 });
 
+/* ── a bio ────────────────────────────────────────────────────────────────
+   A única coisa deste banco que uma pessoa afirma sobre si mesma. Todo o resto
+   que o perfil desenha é derivado do que ela fez, e por isso as regras aqui são
+   as mesmas do nome e do retrato: é dela, e a rota não recebe id nenhum. */
+
+async function rosterRow(id) {
+  const list = await req('GET', '/api/reviewers');
+  return list.body.reviewers.find(r => r.id === id);
+}
+
+test('uma pessoa nasce sem bio, e sem bio é null e não string vazia', async () => {
+  const reviewer = await newReviewer('Sem Bio');
+  const row = await rosterRow(reviewer.id);
+  assert.equal(row.bio, null);
+});
+
+test('escreve a própria bio, e ela sai na lista do clube', async () => {
+  const reviewer = await newReviewer('Com Bio');
+  const res = await req('PATCH', '/api/reviewers/me', { bio: '  Só vim pelo terror.  ' }, reviewer.cookie);
+  assert.equal(res.status, 200);
+  // Aparada na gravação: o espaço que sobra de um campo de texto não é conteúdo.
+  assert.equal(res.body.reviewer.bio, 'Só vim pelo terror.');
+  assert.equal((await rosterRow(reviewer.id)).bio, 'Só vim pelo terror.');
+});
+
+test('uma bio em branco apaga, e o que fica é null', async () => {
+  const reviewer = await newReviewer('Apaga Bio');
+  await req('PATCH', '/api/reviewers/me', { bio: 'algo' }, reviewer.cookie);
+  // Os dois gestos que significam "limpei o campo" chegam pelo mesmo caminho.
+  for (const empty of ['   ', null]) {
+    await req('PATCH', '/api/reviewers/me', { bio: 'algo' }, reviewer.cookie);
+    const res = await req('PATCH', '/api/reviewers/me', { bio: empty }, reviewer.cookie);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.reviewer.bio, null);
+    assert.equal((await rosterRow(reviewer.id)).bio, null);
+  }
+});
+
+test('recusa uma bio maior que o teto, e não grava nada', async () => {
+  const reviewer = await newReviewer('Bio Longa');
+  await req('PATCH', '/api/reviewers/me', { bio: 'curta' }, reviewer.cookie);
+  const res = await req('PATCH', '/api/reviewers/me', { bio: 'x'.repeat(141) }, reviewer.cookie);
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /140/);
+  assert.equal((await rosterRow(reviewer.id)).bio, 'curta');
+});
+
+test('exatamente no teto passa', async () => {
+  const reviewer = await newReviewer('Bio No Limite');
+  const res = await req('PATCH', '/api/reviewers/me', { bio: 'x'.repeat(140) }, reviewer.cookie);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reviewer.bio.length, 140);
+});
+
+test('ninguém escreve a bio de outra pessoa — nem o admin', async () => {
+  const admin = await newAdmin('Chefe Sem Voz');
+  const alvo = await newReviewer('Alvo');
+  /* A rota não recebe id: escrever pela pessoa não é algo a proibir, é algo que
+     não há como pedir. O admin manda o patch e ele pousa na conta DELE. */
+  const res = await req('PATCH', '/api/reviewers/me', { bio: 'falei por você' }, admin.cookie);
+  assert.equal(res.status, 200);
+  assert.equal((await rosterRow(alvo.id)).bio, null);
+  assert.equal((await rosterRow(admin.id)).bio, 'falei por você');
+});
+
+test('um visitante sem sessão não escreve bio nenhuma', async () => {
+  const reviewer = await newReviewer('Bio Protegida');
+  const res = await req('PATCH', '/api/reviewers/me', { bio: 'invasor' });
+  assert.equal(res.status, 401);
+  assert.equal((await rosterRow(reviewer.id)).bio, null);
+});
+
+test('a lista do clube diz desde quando cada pessoa está aqui', async () => {
+  const reviewer = await newReviewer('Membro Datado');
+  const row = await rosterRow(reviewer.id);
+  // O formato do banco: 'YYYY-MM-DD HH:MM:SS'. O perfil lê o mês e o ano dele.
+  assert.match(row.createdAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+});
+
+test('mexer na bio não mexe no nome nem no retrato', async () => {
+  const reviewer = await newReviewer('Intacto');
+  const res = await req('PATCH', '/api/reviewers/me', { bio: 'nova bio' }, reviewer.cookie);
+  assert.equal(res.body.reviewer.name, 'Intacto');
+  assert.equal(res.body.reviewer.avatar, null);
+});
+
 /* ── sign-in ─────────────────────────────────────────────────────────── */
 
 test('signs in with the right PIN and reports who you are', async () => {

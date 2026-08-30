@@ -13,6 +13,12 @@ export type Reviewer = {
   isAdmin?: boolean;
   /** false means the account exists but nobody has set a PIN for it yet. */
   hasPin?: boolean;
+  /* A única coisa que uma pessoa afirma sobre si mesma neste produto. Todo o
+     resto que o perfil mostra é derivado do que ela avaliou — ver lib/taste.ts.
+     Null é o estado normal, não a falta de algo. */
+  bio?: string | null;
+  /** Quando entrou no clube. O perfil lê o mês e o ano; o dia não interessa. */
+  createdAt?: string | null;
   /** URL of the portrait, versioned so it can be cached forever. Null: none. */
   avatar?: string | null;
   review_count?: number;
@@ -24,6 +30,7 @@ export type SessionUser = {
   dot: string;
   isAdmin: boolean;
   avatar?: string | null;
+  bio?: string | null;
 };
 
 export const auth = {
@@ -37,11 +44,11 @@ export const auth = {
     post<{ ok: true }>('/api/auth/pin/reset', { reviewerId, newPin }),
 };
 
-/* Your own name and your own portrait. The route takes no id — it edits
-   whoever the session says you are, which is why there is no way to ask it to
-   edit somebody else. */
+/* Your own name, your own portrait and your own bio. The route takes no id — it
+   edits whoever the session says you are, which is why there is no way to ask
+   it to edit somebody else. */
 export const profile = {
-  update: (patch: { name?: string; avatar?: string | null }) =>
+  update: (patch: { name?: string; avatar?: string | null; bio?: string | null }) =>
     api<{ reviewer: SessionUser }>('/api/reviewers/me', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
