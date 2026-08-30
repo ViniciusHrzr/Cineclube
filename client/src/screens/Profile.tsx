@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   MessageSquare,
   Plus,
   Settings,
@@ -15,7 +17,14 @@ import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
 import { Breakdown } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
 import { SettingsSheet } from '@/components/settings';
-import { fmt, initialsOf, reelColor, type Review, type Reviewer } from '@/lib/api';
+import {
+  fmt,
+  initialsOf,
+  reelColor,
+  type Review,
+  type Reviewer,
+  type WatchItem,
+} from '@/lib/api';
 import {
   affinityOf,
   clashesOf,
@@ -862,35 +871,236 @@ function Genres({ person }: { person: Reviewer }) {
 /* ══ o que ela pôs na fila ════════════════════════════════════════════════
    A fila é do clube, mas cada filme nela foi ideia de alguém — e o que uma
    pessoa quer ver é tão revelador quanto o que ela já viu. É a única coisa
-   neste perfil que fala do futuro. */
+   neste perfil que fala do futuro.
+
+   ── um trilho, não uma parede ───────────────────────────────────────────
+   Era uma grade que crescia para baixo, e numa fila de trinta filmes ela
+   empurrava tudo o que vem depois para fora da tela: quem estava lendo o perfil
+   de alguém passava a rolar um mural de pôsteres de filmes que ninguém viu
+   ainda. A fila é a seção menos importante da página e estava ocupando mais
+   espaço que qualquer outra.
+
+   Uma linha só, que corre para o lado. O que sobra da tela continua sendo da
+   página, e a fila diz o tamanho dela sem tomar a altura.
+
+   ── por que sem biblioteca de animação ──────────────────────────────────
+   Porque `scrollBy({ behavior: 'smooth' })` é a rolagem animada do próprio
+   navegador: composta fora da thread principal, interrompível pelo dedo no meio
+   do movimento, e já obediente a `prefers-reduced-motion` sem ninguém pedir.
+   Qualquer animação escrita à mão aqui seria uma reimplementação pior — e o
+   projeto teria de carregar um segundo pacote de animação para isso.
+
+   O que é animado à mão é o que o navegador não dá: as máscaras das bordas, que
+   acendem só do lado em que ainda há filme, e a gaveta do "ver todos", que é a
+   mesma transição de `grid-template-rows` que o resto do produto usa. */
 function Queued({ person }: { person: Reviewer }) {
   const club = useClub();
   const items = club.watchlist.filter(w => w.addedBy === person.id);
+  const [open, setOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const rail = useRef<HTMLUListElement>(null);
+  /* O que a régua de rolagem sabe sobre si mesma. Medido, nunca deduzido da
+     contagem: quantos pôsteres cabem depende da largura da janela, do zoom da
+     interface e do tamanho da fonte, e chutar isso erra em metade das telas. */
+  const [edge, setEdge] = useState({ start: true, end: true, over: false });
+
+  /* Uma medição só, chamada pela rolagem, pelo redimensionamento e pela troca
+     de conteúdo. `passive` porque isto nunca cancela o gesto — segurar a
+     rolagem para decidir se uma máscara acende é exatamente o defeito que essa
+     bandeira existe para evitar.
+
+     A folga de 2px absorve o arredondamento subpixel: em zoom fracionário
+     `scrollLeft + clientWidth` fica dezenas de milésimos abaixo de
+     `scrollWidth`, e sem ela a máscara da direita nunca apagaria. */
+  const measure = useCallback(() => {
+    const el = rail.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdge({ start: el.scrollLeft <= 2, end: el.scrollLeft >= max - 2, over: max > 2 });
+  }, []);
+
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    // As crianças também: um pôster que chega troca a largura do conteúdo sem
+    // trocar a do trilho, e só o observador do trilho não veria isso.
+    for (const child of Array.from(el.children)) ro.observe(child);
+    el.addEventListener('scroll', measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('scroll', measure);
+    };
+  }, [measure, items.length, open]);
+
   if (!items.length) return null;
 
+  /* Oitenta por cento da largura visível, e não uma contagem de pôsteres: uma
+     seta que anda "três filmes" anda distâncias diferentes em cada tela. O
+     resto de vinte por cento é a âncora — sobra sempre um pôster do que estava
+     à vista, e é ele que diz que a fileira andou em vez de ter trocado. */
+  const nudge = (dir: 1 | -1) => {
+    const el = rail.current;
+    if (!el) return;
+    const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: gentle ? 'auto' : 'smooth' });
+  };
+
   return (
-    <Region title="Na fila" note={plural(items.length, 'filme', 'filmes')}>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-3">
-        {items.map(w => (
-          <li key={w.id}>
-            <button
-              type="button"
-              onClick={() => club.openSheet(w.id)}
-              aria-label={`Abrir ${w.title}`}
-              className="group block w-full text-left"
-            >
-              <Poster
-                src={w.poster}
-                className="aspect-[2/3] w-full transition-[box-shadow] group-hover:ring-white/25"
-              />
-              <span className="mt-1.5 block truncate text-[11.5px] text-ink-dim transition-colors group-hover:text-beam">
-                {w.title}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <Region
+      title="Na fila"
+      note={
+        /* A opção de abrir tudo só existe quando há o que abrir. Com seis
+           pôsteres numa tela larga nada está escondido, e um "ver todos" ali
+           seria um botão que não faz nada visível. */
+        edge.over || open ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(v => !v);
+              setTouched(true);
+            }}
+            className="font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+          >
+            {open ? 'Recolher' : `Ver todos (${items.length})`}
+          </button>
+        ) : (
+          plural(items.length, 'filme', 'filmes')
+        )
+      }
+    >
+      {/* ── o trilho ───────────────────────────────────────────────────────
+          Recolhe quando a grade abre, e as duas transições correm juntas: a
+          altura do trilho fecha no mesmo tempo em que a da grade abre, então a
+          seção nunca salta de tamanho no meio da troca. */}
+      <Drawer open={!open}>
+        <div className="relative">
+          <ul
+            ref={rail}
+            /* `scroll-px-11` são os mesmos 44px da máscara, e ele é a peça de
+               teclado desta lista: cada pôster é um botão, então o Tab já
+               percorre o trilho e o navegador rola sozinho até o que recebeu
+               foco — mas rolaria até encostá-lo na borda, que é justamente onde
+               a máscara o apaga e a seta o cobre. Com o recuo, o pôster focado
+               para dentro do claro.
+
+               A barra de rolagem some porque mora sobre a fileira e a corta; as
+               setas e as máscaras é que dizem que há mais. */
+            className="flex gap-3 overflow-x-auto scroll-px-11 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{
+              /* A máscara é o gesto: a fileira não termina numa borda reta, ela
+                 se apaga onde continua. Só do lado em que há mais — apagar uma
+                 ponta que já acabou seria dizer que existe conteúdo ali.
+
+                 Escrita em duas paradas por lado para que os lados possam ser
+                 ligados e desligados de forma independente. */
+              maskImage: `linear-gradient(to right, ${
+                edge.start ? 'black 0' : 'transparent 0, black 44px'
+              }, ${edge.end ? 'black 100%' : 'black calc(100% - 44px), transparent 100%'})`,
+              WebkitMaskImage: `linear-gradient(to right, ${
+                edge.start ? 'black 0' : 'transparent 0, black 44px'
+              }, ${edge.end ? 'black 100%' : 'black calc(100% - 44px), transparent 100%'})`,
+            }}
+          >
+            {items.map(w => (
+              <li key={w.id} className="w-[84px] flex-none">
+                <QueuedPoster item={w} onOpen={() => club.openSheet(w.id)} />
+              </li>
+            ))}
+          </ul>
+
+          {/* As setas, uma por lado, e só a que tem para onde ir. Ficam fora do
+              `<ul>` porque a máscara as apagaria junto com os pôsteres, e
+              escondidas do leitor de tela porque um trilho de rolagem já é
+              percorrível pelo teclado — para quem lê por áudio elas seriam dois
+              controles a mais oferecendo o que a lista já faz. */}
+          <RailKey side="left" show={!edge.start} onClick={() => nudge(-1)} />
+          <RailKey side="right" show={!edge.end} onClick={() => nudge(1)} />
+        </div>
+      </Drawer>
+
+      {/* A grade inteira, com a mesma medida de pôster do trilho, para que
+          expandir seja a mesma fileira quebrando em linhas e não um segundo
+          desenho da mesma coisa.
+
+          Montada só depois do primeiro "ver todos": as duas formas desenham os
+          mesmos filmes, e montá-las juntas de saída seria pedir ao navegador
+          duas imagens por filme numa seção que a maioria das pessoas nunca vai
+          abrir. Depois de aberta ela fica, senão o recolher animaria de altura
+          zero para altura zero. */}
+      <Drawer open={open}>
+        {touched ? (
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-3 pb-1">
+            {items.map(w => (
+              <li key={w.id}>
+                <QueuedPoster item={w} onOpen={() => club.openSheet(w.id)} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Drawer>
     </Region>
+  );
+}
+
+/** Um pôster da fila. O mesmo nas duas formas — o trilho e a grade. */
+function QueuedPoster({ item, onOpen }: { item: WatchItem; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Abrir ${item.title}`}
+      className="group block w-full text-left"
+    >
+      <Poster
+        src={item.poster}
+        className="aspect-[2/3] w-full transition-[box-shadow] duration-150 group-hover:ring-white/25"
+      />
+      <span className="mt-1.5 block truncate text-[11.5px] text-ink-dim transition-colors group-hover:text-beam">
+        {item.title}
+      </span>
+    </button>
+  );
+}
+
+/* A seta que empurra o trilho. Aparece e some com uma opacidade — some, e não
+   deixa de ser desenhada, porque um controle que salta para fora do DOM ao ser
+   apertado tira o foco de baixo do dedo no fim do gesto. `pointer-events`
+   acompanham a opacidade para que a seta apagada não intercepte o clique do
+   pôster que está embaixo dela. */
+function RailKey({
+  side,
+  show,
+  onClick,
+}: {
+  side: 'left' | 'right';
+  show: boolean;
+  onClick: () => void;
+}) {
+  const Icon = side === 'left' ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      aria-hidden
+      tabIndex={-1}
+      onClick={onClick}
+      /* 63px é a metade da altura de um pôster: 84px de largura na proporção
+         2:3 dão 126px. Centrada no PÔSTER e não na fileira, porque a fileira
+         inclui a linha do título embaixo e a seta desceria para o meio do
+         texto. Um valor fixo funciona porque a largura do item também é fixa. */
+      className={cn(
+        'absolute top-[63px] flex h-8 w-8 -translate-y-1/2 items-center justify-center',
+        'rounded-cell bg-house/85 text-ink-dim ring-1 ring-house-rail',
+        'transition-[opacity,color] duration-200 hover:text-beam',
+        side === 'left' ? 'left-0' : 'right-0',
+        show ? 'opacity-100' : 'pointer-events-none opacity-0'
+      )}
+    >
+      <Icon className="h-4 w-4" strokeWidth={1.8} />
+    </button>
   );
 }
 
