@@ -264,14 +264,16 @@ function Header({
   const takes = takesOf(club.reviews, person.id);
   const since = memberSince(person.createdAt);
 
-  /* Os oito de maior nota, com pôster. Oito porque é o que atravessa uma tela
-     larga sem repetir e o que ainda cobre uma estreita sem espremer. */
+  /* Os de maior nota, com pôster. Catorze porque agora eles ficam na proporção
+     real — 115px de largura para os 172px de altura da faixa —, e catorze é o
+     que atravessa uma tela larga sem sobrar buraco. Quem tem menos que isso
+     ocupa o que ocupar, e a máscara da direita cuida do resto. */
   const cover = useMemo(
     () =>
       [...takes]
         .filter(r => r.moviePoster)
         .sort((a, b) => b.final - a.final)
-        .slice(0, 8),
+        .slice(0, 14),
     [takes]
   );
 
@@ -281,32 +283,68 @@ function Header({
     <header className="relative">
       {cover.length ? (
         /* ── a capa ──────────────────────────────────────────────────────
-            Recortada em `overflow-hidden` e mascarada para transparente na
-            base: sem a máscara ela termina numa borda reta, e uma borda reta
-            no alto de uma página é uma faixa colada em cima do conteúdo. Com
-            ela, a fileira se apaga dentro da sala.
+            Os pôsteres do que a pessoa mais gostou, atrás do retrato dela.
+
+            ── nada é recortado ──────────────────────────────────────────
+            Cada pôster foi `flex-1` com `object-cover` por um dia, e as duas
+            coisas juntas eram o defeito: a fileira dava a cada pôster uma
+            fatia igual da largura, e o `cover` esticava um retrato 2:3 para
+            preencher uma caixa quase quadrada. O que sobrava era uma tira
+            horizontal do meio de cada arte, com os títulos cortados na
+            metade — a capa parecia uma imagem quebrada, não uma atmosfera.
+
+            Agora a altura manda e a largura segue: `h-full w-auto` mantém a
+            proporção do pôster, então nenhum deles é cortado. Cabem menos por
+            tela, e é por isso que a lista subiu para catorze.
+
+            ── as duas máscaras, uma por eixo ────────────────────────────
+            A de baixo é a que sempre existiu: sem ela a faixa termina numa
+            borda reta, e uma borda reta no alto de uma página é uma tira
+            colada em cima do conteúdo.
+
+            A de cima é nova, e conserta a outra metade do mesmo problema: a
+            máscara começava opaca em 0%, então o topo dos pôsteres era um
+            corte reto atravessando a página inteira. Uma rampa curta de 20px
+            desmancha essa linha sem comer a arte.
+
+            A horizontal mora no elemento de dentro, e não junta com a
+            vertical na mesma declaração de propósito: máscaras compostas
+            precisam de `mask-composite`, e duas máscaras em dois elementos
+            fazem o mesmo trabalho sem depender dele. Ela existe para o caso
+            de a fileira não chegar até a borda — alguém com quatro fichas —,
+            em que a capa se apaga em vez de parar no meio do nada.
 
             `aria-hidden` porque isto é o mesmo dado que a página inteira já
-            diz por escrito logo abaixo, e narrar oito títulos de filme antes
-            do nome da pessoa é fazer quem ouve esperar pelo assunto. */
+            diz por escrito logo abaixo, e narrar catorze títulos de filme
+            antes do nome da pessoa é fazer quem ouve esperar pelo assunto. */
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-[172px] overflow-hidden rounded-plate"
           style={{
-            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 92%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 92%)',
+            maskImage:
+              'linear-gradient(to bottom, transparent 0, rgba(0,0,0,0.92) 20px, rgba(0,0,0,0.92) 48%, transparent 97%)',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, transparent 0, rgba(0,0,0,0.92) 20px, rgba(0,0,0,0.92) 48%, transparent 97%)',
           }}
         >
-          <div className="flex h-full gap-[2px]">
+          <div
+            className="flex h-full gap-[2px]"
+            style={{
+              maskImage: 'linear-gradient(to right, black 0, black 74%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to right, black 0, black 74%, transparent 100%)',
+            }}
+          >
             {cover.map(r => (
-              <div key={r.id} className="h-full min-w-0 flex-1">
-                <img
-                  src={r.moviePoster as string}
-                  alt=""
-                  loading="lazy"
-                  className="h-full w-full object-cover opacity-[0.22]"
-                />
-              </div>
+              <img
+                key={r.id}
+                src={r.moviePoster as string}
+                alt=""
+                loading="lazy"
+                /* `max-w-none` porque o preflight do Tailwind põe
+                   `max-width: 100%` em toda imagem, e aqui a largura tem de
+                   sair da altura — sem isto o pôster volta a ser espremido. */
+                className="h-full w-auto max-w-none flex-none opacity-[0.24]"
+              />
             ))}
           </div>
         </div>
