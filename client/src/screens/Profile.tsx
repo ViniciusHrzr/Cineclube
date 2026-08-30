@@ -9,7 +9,6 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
-import { WithMentions } from '@/components/mention';
 import { SettingsSheet } from '@/components/settings';
 import { fmt, initialsOf, reelColor, type Review, type Reviewer } from '@/lib/api';
 import {
@@ -20,11 +19,10 @@ import {
   FLOOR,
   genresOf,
   memberSince,
-  reactionsOf,
   spreadOf,
   takesOf,
 } from '@/lib/taste';
-import { cn, plural, whenOf } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -105,15 +103,25 @@ export function ProfileScreen() {
     <section>
       <Header person={person} mine={mine} onSettings={() => setSettings(true)} />
 
+      {/* ── a ordem ──────────────────────────────────────────────────────
+          Primeiro o que a pessoa achou dos filmes: os extremos, o quanto ela se
+          afasta do público, como ela distribui as notas, o que quer ver, e
+          então o arquivo inteiro. Só depois disso o que ela é EM RELAÇÃO ao
+          clube — com quem concorda e em que gêneros vive.
+
+          Afinidade e gêneros vinham antes das fichas e o dono os mandou para
+          baixo. Está certo: os dois são leitura de segunda passagem. Quem abre o
+          perfil de alguém está perguntando "o que essa pessoa viu e achou", e
+          "com quem ela concorda" é uma pergunta que só ocorre depois de a
+          primeira ter sido respondida. */}
       <div className="mt-8 flex flex-col gap-8">
         <Ends person={person} />
         <Crowd person={person} mine={mine} />
         <Ruler person={person} />
+        <Queued person={person} />
+        <Takes person={person} mine={mine} />
         <Affinities person={person} mine={mine} />
         <Genres person={person} />
-        <Written person={person} />
-        <Queued person={person} mine={mine} />
-        <Takes person={person} mine={mine} />
       </div>
 
       {mine ? <SettingsSheet open={settings} onClose={() => setSettings(false)} /> : null}
@@ -122,15 +130,22 @@ export function ProfileScreen() {
 }
 
 /* ── uma região da página ─────────────────────────────────────────────────
-   Legenda, régua fina, conteúdo. Sem placa: nove placas empilhadas seriam nove
+   Legenda, régua fina, conteúdo. Sem placa: sete placas empilhadas seriam sete
    caixas do mesmo tamanho fazendo o papel de estrutura, que é o jeito preguiçoso
    de dividir uma página — o olho lê a moldura e não o que está dentro. Cada
-   módulo aqui tem a forma do que ele diz: a ficha do gosto é uma pilha de
-   réguas, os extremos são dois pôsteres, a comparação são duas colunas.
+   módulo aqui tem a forma do que ele diz: os extremos são dois pôsteres, a
+   régua é uma pilha de células, a comparação são duas colunas.
 
-   A régua repete o gesto do cabeçalho de seção do produto (ver `Bill` em
-   bits.tsx): a luz escorrendo da lettering e se apagando pela linha. Aqui em
-   escala menor, porque isto é uma região e não uma tela. */
+   Os títulos são substantivos secos — Extremos, Régua, Fichas, Gêneros — por
+   decisão do dono em 30/08/2026. Tinham artigo ("As fichas", "A régua"), e o
+   artigo é uma sílaba de cortesia em versalete tracked de 13px: ele alarga a
+   legenda sem dizer nada. Os dois títulos que continuam sendo frase — "Contra
+   o público" e "Com quem concorda" — continuam porque não são rótulos de uma
+   coisa, são a pergunta que a seção responde.
+
+   A linha ao lado do título repete o gesto do cabeçalho de seção do produto
+   (ver `Bill` em bits.tsx): a luz escorrendo da lettering e se apagando pela
+   linha. Aqui em escala menor, porque isto é uma região e não uma tela. */
 function Region({
   title,
   note,
@@ -194,7 +209,6 @@ function Header({
   );
 
   const avg = takes.length ? takes.reduce((s, r) => s + r.final, 0) / takes.length : null;
-  const got = reactionsOf(club.votes, club.commentLikes, club.comments, club.reviews, person.id);
 
   return (
     <header className="relative">
@@ -285,18 +299,25 @@ function Header({
           <p className="mt-4 max-w-[62ch] text-[14px] leading-relaxed text-ink">{person.bio}</p>
         ) : null}
 
-        {/* ── os números, numa linha ──────────────────────────────────────
-            Uma frase tabular e não uma fileira de cartões. Quatro caixas com um
-            número grande e um rótulo pequeno é o gabarito que todo painel usa,
-            e ele gasta um quarto da tela para dizer o que cabe numa linha —
-            além de dar a quatro fatos de importâncias diferentes exatamente o
-            mesmo peso. Aqui os números são `ink` e as palavras são `ink-dim`,
-            então o olho pega os números primeiro e o resto se lê como texto.
+        {/* ── os dois números que interessam ──────────────────────────────
+            Quantos filmes e a média. Uma frase tabular e não uma fileira de
+            cartões: caixas com um número grande e um rótulo pequeno gastam um
+            quarto da tela para dizer o que cabe numa linha. Os números são
+            `ink` e as palavras são `ink-dim`, então o olho pega os números
+            primeiro e o resto se lê como texto.
 
-            Silencioso no zero, item por item: "0 comentários" num perfil novo é
-            ruído com formato de dado, e são três deles. */}
+            Havia mais quatro aqui — comentários escritos, concordâncias,
+            discordâncias e curtidas recebidas — e o dono os cortou em
+            30/08/2026. Estavam medindo a coisa errada no lugar errado: um
+            perfil abre dizendo o que a pessoa VIU, e um placar de reação
+            recebida logo abaixo do nome transforma isso num boletim de
+            popularidade. A reação continua onde ela significa alguma coisa,
+            que é ao lado da ficha que a recebeu. */}
         <p className="q mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-ink-dim">
-          <Stat n={takes.length} one="filme avaliado" many="filmes avaliados" always />
+          <span>
+            <span className="text-ink">{takes.length}</span>{' '}
+            {takes.length === 1 ? 'filme avaliado' : 'filmes avaliados'}
+          </span>
           {avg != null ? (
             <>
               <span aria-hidden>·</span>
@@ -305,37 +326,9 @@ function Header({
               </span>
             </>
           ) : null}
-          <Stat n={got.wrote} one="comentário" many="comentários" />
-          <Stat n={got.agree} one="concordância" many="concordâncias" />
-          <Stat n={got.differ} one="discordância" many="discordâncias" />
-          <Stat n={got.likes} one="curtida" many="curtidas" />
         </p>
       </div>
     </header>
-  );
-}
-
-/** Um número da linha do cabeçalho. Cala no zero, a não ser que seja o primeiro. */
-function Stat({
-  n,
-  one,
-  many,
-  always,
-}: {
-  n: number;
-  one: string;
-  many: string;
-  /** O total de fichas aparece mesmo em zero: é o assunto da página. */
-  always?: boolean;
-}) {
-  if (!n && !always) return null;
-  return (
-    <>
-      {always ? null : <span aria-hidden>·</span>}
-      <span>
-        <span className="text-ink">{n}</span> {n === 1 ? one : many}
-      </span>
-    </>
   );
 }
 
@@ -353,7 +346,7 @@ function Ends({ person }: { person: Reviewer }) {
   if (!ends) return null;
 
   return (
-    <Region title="Os extremos">
+    <Region title="Extremos">
       <div className="grid gap-3 sm:grid-cols-2">
         <EndCard review={ends.best} label="O que mais gostou" />
         <EndCard review={ends.worst} label="O que menos gostou" />
@@ -446,53 +439,151 @@ function Crowd({ person, mine }: { person: Reviewer; mine: boolean }) {
    Feito das mesmas células de película do resto do produto, empilhadas em vez
    de enfileiradas. Não é um gráfico de barras emprestado de um painel: é a
    mesma matéria, virada de lado. */
+/* ── uma faixa se aponta, e ela responde ──────────────────────────────────
+   A primeira versão eram dez blocos de altura proporcional, e ela falhava em
+   duas coisas de uma vez. Não dava para LER — quatro colunas de alturas
+   parecidas não dizem se são duas ou três fichas, e a faixa vazia virava um
+   fiapo indistinguível do eixo. E não respondia a pergunta que ela mesma
+   provoca: alguém que vê três filmes entre 7 e 8 quer saber quais.
+
+   A altura agora é uma pilha de células, uma por filme. A contagem se lê
+   contando, que é exato, em vez de se estimar por comprimento, que não é. E é
+   a mesma matéria do resto do produto — a régua de nota é uma fileira de
+   células, esta é a mesma coisa virada de lado.
+
+   Apontar uma faixa acende ela em facho e derrama os filmes dela embaixo.
+   Passar o mouse mostra; clicar prende, e é o que faz isto funcionar no dedo,
+   onde não existe passar por cima. Uma faixa vazia não é botão: não há o que
+   ela possa mostrar, e um alvo que não responde é pior do que nenhum. */
 function Ruler({ person }: { person: Reviewer }) {
   const club = useClub();
   const spread = spreadOf(club.reviews, person.id);
+  /* Duas fontes para o mesmo destaque: a passagem do mouse, que é efêmera, e o
+     clique, que fica. O `??` é o que deixa o ponteiro pré-visualizar sem tirar
+     do lugar o que alguém prendeu. */
+  const [hover, setHover] = useState<number | null>(null);
+  const [pinned, setPinned] = useState<number | null>(null);
   if (!spread || spread.n < FLOOR.ends) return null;
+
+  const active = hover ?? pinned;
+  const band = active != null ? spread.bands[active] : null;
 
   return (
     <Region
-      title="A régua"
+      title="Régua"
       note={
-        <>
-          de <span className="text-ink">{fmt(spread.low)}</span> a{' '}
-          <span className="text-ink">{fmt(spread.high)}</span>
-        </>
+        band && active != null ? (
+          <>
+            <span className="text-ink">{band.length}</span>{' '}
+            {band.length === 1 ? 'filme' : 'filmes'} entre{' '}
+            <span className="text-ink">{active}</span> e{' '}
+            <span className="text-ink">{active + 1}</span>
+          </>
+        ) : (
+          <>
+            de <span className="text-ink">{fmt(spread.low)}</span> a{' '}
+            <span className="text-ink">{fmt(spread.high)}</span>
+          </>
+        )
       }
     >
-      <div className="plate px-4 py-4">
-        <div className="flex items-end gap-[3px]" role="img" aria-label={rulerLabel(spread.bins)}>
-          {spread.bins.map((n, i) => (
-            <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-              {/* Altura pela contagem, com um mínimo visível na faixa vazia: uma
-                  coluna de altura zero some, e o buraco é justamente o dado —
-                  é onde essa pessoa nunca pôs uma nota. */}
-              <div
-                className={cn(
-                  'w-full rounded-[1px]',
-                  n ? 'bg-beam/45' : 'bg-white/[0.06]'
+      <div className="plate px-3 py-4 sm:px-4">
+        <ul
+          className="flex items-end gap-[3px]"
+          onMouseLeave={() => setHover(null)}
+        >
+          {spread.bands.map((films, i) => {
+            const on = active === i;
+            const label = films.length
+              ? `${plural(films.length, 'filme', 'filmes')} entre ${i} e ${i + 1}`
+              : `nenhum filme entre ${i} e ${i + 1}`;
+            return (
+              <li key={i} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                {films.length ? (
+                  <button
+                    type="button"
+                    aria-pressed={pinned === i}
+                    aria-label={label}
+                    title={label}
+                    onMouseEnter={() => setHover(i)}
+                    onFocus={() => setHover(i)}
+                    onBlur={() => setHover(null)}
+                    onClick={() => setPinned(p => (p === i ? null : i))}
+                    className="flex w-full flex-col-reverse gap-[2px] rounded-[1px] pt-4"
+                  >
+                    {/* Uma célula por filme, empilhada de baixo para cima. Doze
+                        pixels de altura: o bastante para se contar de relance e
+                        pouco o bastante para uma pessoa com quinze fichas numa
+                        faixa não estourar a placa. */}
+                    {films.map(r => (
+                      <span
+                        key={r.id}
+                        className={cn(
+                          'h-[12px] w-full rounded-[1px] transition-colors duration-150',
+                          on ? 'bg-beam' : 'bg-beam/45'
+                        )}
+                      />
+                    ))}
+                  </button>
+                ) : (
+                  /* A faixa vazia é o dado mais fácil de perder e um dos mais
+                     interessantes: é onde essa pessoa nunca pôs uma nota. Fica
+                     como uma célula apagada, da altura de uma só, para o buraco
+                     ter forma em vez de virar um fiapo colado no eixo. */
+                  <span
+                    aria-label={label}
+                    title={label}
+                    className="mt-4 h-[12px] w-full rounded-[1px] bg-white/[0.05]"
+                  />
                 )}
-                style={{ height: n ? `${12 + (n / spread.peak) * 56}px` : '4px' }}
-              />
-              {/* O número da faixa é lido — é ele que diz de que nota a coluna
-                  fala —, então ele carrega a tinta do piso legível e não a das
-                  perfurações. */}
-              <span className="q text-[10px] leading-none text-ink-dim">{i}</span>
-            </div>
-          ))}
-        </div>
+                <span
+                  className={cn(
+                    'q text-[10px] leading-none transition-colors duration-150',
+                    on ? 'text-beam' : 'text-ink-dim'
+                  )}
+                >
+                  {i}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Os filmes da faixa apontada, na própria placa. Uma gaveta aqui seria
+            um painel que empurra a página inteira a cada passagem de mouse; a
+            lista só troca de conteúdo, e a placa cresce uma vez. */}
+        {band?.length ? (
+          <ul className="mt-4 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
+            {band.map(r => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => club.goReview(r.id)}
+                  aria-label={`Abrir a avaliação de ${r.movieTitle}`}
+                  className="group flex w-full items-center gap-3 rounded-cell px-1 py-1.5 text-left transition-colors hover:bg-beam/[0.05]"
+                >
+                  <Poster src={r.moviePoster} className="h-[34px] w-[23px] flex-none" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink transition-colors group-hover:text-beam">
+                    {r.movieTitle}
+                  </span>
+                  <span className="q flex-none text-[13px] text-beam">{fmt(r.final)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {/* A instrução aparece só enquanto ninguém apontou nada. Depois disso a
+            pessoa já sabe, e uma linha permanente explicando um gesto que já foi
+            feito é ruído. */}
+        {active == null ? (
+          <p className="q mt-3 text-[10.5px] text-ink-dim">
+            aponte uma faixa para ver os filmes dela
+          </p>
+        ) : null}
       </div>
     </Region>
   );
-}
-
-function rulerLabel(bins: number[]) {
-  const said = bins
-    .map((n, i) => (n ? `${n} entre ${i} e ${i + 1}` : null))
-    .filter(Boolean)
-    .join(', ');
-  return said ? `Distribuição das notas: ${said}.` : 'Nenhuma nota.';
 }
 
 /* ══ com quem ela concorda ════════════════════════════════════════════════
@@ -675,7 +766,7 @@ function Genres({ person }: { person: Reviewer }) {
   if (list.length < 2) return null;
 
   return (
-    <Region title="Os gêneros">
+    <Region title="Gêneros">
       <ul className="flex flex-wrap gap-2">
         {list.map(g => (
           <li
@@ -695,112 +786,17 @@ function Genres({ person }: { person: Reviewer }) {
   );
 }
 
-/* ══ o que ela escreveu ═══════════════════════════════════════════════════
-   Os textos, num lugar só. Duas origens que o produto sempre tratou como coisas
-   diferentes e que, para quem lê uma pessoa, são a mesma: o que ela escreveu na
-   própria ficha e o que ela escreveu na dos outros.
-
-   As duas juntas em ordem de tempo, com a origem dita em uma linha acima do
-   texto. Separá-las em duas listas obrigaria quem lê a alternar entre elas para
-   remontar a cronologia que já existia. */
-type Wrote =
-  | { kind: 'take'; at: string; body: string; review: Review }
-  | { kind: 'comment'; at: string; body: string; reviewId: string; commentId: string; title: string };
-
-function Written({ person }: { person: Reviewer }) {
-  const club = useClub();
-
-  const items = useMemo<Wrote[]>(() => {
-    const out: Wrote[] = [];
-    for (const r of takesOf(club.reviews, person.id)) {
-      if (r.comment?.trim()) out.push({ kind: 'take', at: r.date, body: r.comment, review: r });
-    }
-    const titles = new Map(club.reviews.map(r => [r.id, r.movieTitle]));
-    for (const c of club.comments) {
-      if (c.reviewerId !== person.id) continue;
-      out.push({
-        kind: 'comment',
-        at: c.createdAt,
-        body: c.body,
-        reviewId: c.reviewId,
-        commentId: c.id,
-        title: titles.get(c.reviewId) ?? 'uma ficha',
-      });
-    }
-    return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  }, [club.reviews, club.comments, person.id]);
-
-  const [all, setAll] = useState(false);
-  if (!items.length) return null;
-  /* Cinco e o resto atrás de um botão, como a conversa faz com três: uma pessoa
-     que escreve muito não pode empurrar o resto do perfil para fora da tela. */
-  const shown = all ? items : items.slice(0, 5);
-  const hidden = items.length - shown.length;
-
-  return (
-    <Region title="O que escreveu" note={plural(items.length, 'texto', 'textos')}>
-      <ul className="flex flex-col gap-4">
-        {shown.map(w => (
-          <li key={w.kind === 'take' ? `t:${w.review.id}` : `c:${w.commentId}`}>
-            <button
-              type="button"
-              onClick={() =>
-                w.kind === 'take' ? club.goReview(w.review.id) : club.goReview(w.reviewId, w.commentId)
-              }
-              className="group block w-full rounded-cell border-l border-white/[0.09] py-0.5 pl-3.5 text-left transition-colors hover:border-beam/40"
-            >
-              <span className="q flex flex-wrap items-center gap-x-2 text-[11px] text-ink-dim">
-                <MessageSquare className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
-                {w.kind === 'take' ? (
-                  <>
-                    na própria ficha de{' '}
-                    <span className="text-ink transition-colors group-hover:text-beam">
-                      {w.review.movieTitle}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    numa conversa em{' '}
-                    <span className="text-ink transition-colors group-hover:text-beam">{w.title}</span>
-                  </>
-                )}
-                <span aria-hidden>·</span>
-                <span title={w.at}>{whenOf(w.at)}</span>
-              </span>
-              <span className="mt-1 block whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-ink-dim">
-                <WithMentions text={w.body} />
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {hidden ? (
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="mt-4 font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
-        >
-          Ver os outros {hidden}
-        </button>
-      ) : null}
-    </Region>
-  );
-}
-
 /* ══ o que ela pôs na fila ════════════════════════════════════════════════
    A fila é do clube, mas cada filme nela foi ideia de alguém — e o que uma
    pessoa quer ver é tão revelador quanto o que ela já viu. É a única coisa
    neste perfil que fala do futuro. */
-function Queued({ person, mine }: { person: Reviewer; mine: boolean }) {
+function Queued({ person }: { person: Reviewer }) {
   const club = useClub();
   const items = club.watchlist.filter(w => w.addedBy === person.id);
   if (!items.length) return null;
 
   return (
-    <Region
-      title={mine ? 'O que você pôs na fila' : 'O que pôs na fila'}
-      note={plural(items.length, 'filme', 'filmes')}
-    >
+    <Region title="Na fila" note={plural(items.length, 'filme', 'filmes')}>
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-3">
         {items.map(w => (
           <li key={w.id}>
@@ -839,7 +835,7 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
 
   if (!takes.length) {
     return (
-      <Region title="As fichas">
+      <Region title="Fichas">
         <Blank title={mine ? 'Você ainda não avaliou nada' : `${person.name.split(' ')[0]} ainda não avaliou nada`}>
           {mine
             ? 'Escolha um filme no catálogo ou na fila e responda as onze perguntas. Da terceira ficha em diante esta página começa a ter o que dizer sobre você.'
@@ -859,7 +855,7 @@ function Takes({ person, mine }: { person: Reviewer; mine: boolean }) {
   const hidden = takes.length - shown.length;
 
   return (
-    <Region title="As fichas" note={plural(takes.length, 'avaliação', 'avaliações')}>
+    <Region title="Fichas" note={plural(takes.length, 'avaliação', 'avaliações')}>
       <ul className="flex flex-col">
         {shown.map(r => (
           <li key={r.id} className="border-t border-white/[0.06] first:border-t-0">

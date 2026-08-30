@@ -8,7 +8,6 @@ import {
   endsOf,
   genresOf,
   memberSince,
-  reactionsOf,
   spreadOf,
   takesOf,
 } from '../client/src/lib/taste.ts';
@@ -106,7 +105,7 @@ test('o TMDB e a media das diferencas por filme, com piso de quatro', () => {
 
 /* ── a regua ───────────────────────────────────────────────────────────── */
 
-test('a regua conta por faixa e o dez cai na ultima', () => {
+test('a regua agrupa por faixa e o dez cai na ultima', () => {
   const reviews = [
     take(ANA, 1, 10, {}),
     take(ANA, 2, 9.5, {}),
@@ -114,13 +113,24 @@ test('a regua conta por faixa e o dez cai na ultima', () => {
     take(ANA, 4, 7.4, {}),
   ];
   const s = spreadOf(reviews, ANA);
-  assert.equal(s.bins[9], 2, '10,0 e 9,5 dividem a ultima faixa');
-  assert.equal(s.bins[0], 1);
-  assert.equal(s.bins[7], 1);
-  assert.equal(s.bins.length, 10);
+  assert.equal(s.bands.length, 10);
+  assert.equal(s.bands[9].length, 2, '10,0 e 9,5 dividem a ultima faixa');
+  assert.equal(s.bands[0].length, 1);
+  assert.equal(s.bands[7].length, 1);
+  assert.equal(s.bands[5].length, 0, 'faixa vazia e uma lista vazia, nao um buraco');
+  assert.equal(s.peak, 2);
   assert.equal(s.low, 0);
   assert.equal(s.high, 10);
   assert.equal(s.n, 4);
+});
+
+test('a faixa devolve as fichas, da maior nota para a menor', () => {
+  /* A régua desenha uma célula por filme e derrama a faixa apontada embaixo,
+     então o que ela precisa não é a contagem: é a lista, e numa ordem. */
+  const reviews = [take(ANA, 1, 7.2, {}), take(ANA, 2, 7.9, {}), take(ANA, 3, 7.5, {})];
+  const s = spreadOf(reviews, ANA);
+  assert.deepEqual(s.bands[7].map(r => r.final), [7.9, 7.5, 7.2]);
+  assert.deepEqual(s.bands[7].map(r => r.movieTitle), ['Filme 2', 'Filme 3', 'Filme 1']);
 });
 
 /* ── afinidade ─────────────────────────────────────────────────────────── */
@@ -175,26 +185,6 @@ test('a comparacao corre do maior desacordo para o menor', () => {
   assert.equal(rows[0].gap, 5);
   assert.equal(rows[0].mine, 9);
   assert.equal(rows[0].theirs, 4);
-});
-
-/* ── reacao recebida ───────────────────────────────────────────────────── */
-
-test('conta so a reacao recebida, nunca a dada', () => {
-  const reviews = [take(ANA, 1, 8, {}), take(BIA, 2, 8, {})];
-  const anaReview = reviews[0].id;
-  const biaReview = reviews[1].id;
-  const votes = [
-    { reviewId: anaReview, reviewerId: BIA, value: 1 },
-    { reviewId: anaReview, reviewerId: CAI, value: -1 },
-    { reviewId: biaReview, reviewerId: ANA, value: 1 }, // dada pela Ana: nao conta
-  ];
-  const comments = [
-    { id: 'c1', reviewerId: ANA },
-    { id: 'c2', reviewerId: BIA },
-  ];
-  const likes = [{ commentId: 'c1' }, { commentId: 'c1' }, { commentId: 'c2' }];
-  const got = reactionsOf(votes, likes, comments, reviews, ANA);
-  assert.deepEqual(got, { agree: 1, differ: 1, likes: 2, wrote: 1 });
 });
 
 /* ── desde quando ──────────────────────────────────────────────────────── */

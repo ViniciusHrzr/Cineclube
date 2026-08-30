@@ -109,19 +109,31 @@ export function crowdGapOf(reviews: Review[], reviewerId: string) {
 
    Duas pessoas com média 7,4 podem ser completamente diferentes — uma que dá
    7 e 8 em tudo e outra que dá 3 e 10 —, e a segunda é muito mais interessante
-   de ter no clube. A média não distingue as duas; isto distingue. */
+   de ter no clube. A média não distingue as duas; isto distingue.
+
+   ── por que devolve os FILMES e não a contagem ──────────────────────────
+   Devolvia `number[]`, e com isso a régua só sabia desenhar alturas: quatro
+   blocos de tamanhos parecidos que ninguém consegue ler nem comparar, e nenhum
+   jeito de responder a pergunta que a própria régua provoca — "três filmes
+   entre 7 e 8, quais?".
+
+   Com as fichas na mão, a faixa vira uma pilha de células (uma por filme, então
+   a contagem se lê contando em vez de estimando por altura) e passa a ter o que
+   mostrar quando alguém aponta para ela. Ordenadas da maior nota para a menor
+   dentro da faixa, que é como se lê um pequeno ranking. */
 export function spreadOf(reviews: Review[], reviewerId: string) {
   const mine = takesOf(reviews, reviewerId);
   if (!mine.length) return null;
-  const bins = Array.from({ length: 10 }, () => 0);
+  const bands: Review[][] = Array.from({ length: 10 }, () => []);
   for (const r of mine) {
     // 10,0 pertence à última faixa, não a uma décima primeira que não existe.
-    bins[Math.min(9, Math.max(0, Math.floor(r.final)))] += 1;
+    bands[Math.min(9, Math.max(0, Math.floor(r.final)))].push(r);
   }
+  for (const band of bands) band.sort((a, b) => b.final - a.final);
   const finals = mine.map(r => r.final);
   return {
-    bins,
-    peak: Math.max(...bins),
+    bands,
+    peak: Math.max(...bands.map(b => b.length)),
     low: Math.min(...finals),
     high: Math.max(...finals),
     avg: mean(finals),
@@ -245,33 +257,6 @@ export function genresOf(reviews: Review[], reviewerId: string) {
   return [...acc.entries()]
     .map(([genre, finals]) => ({ genre, n: finals.length, avg: mean(finals) }))
     .sort((a, b) => b.n - a.n || b.avg - a.avg);
-}
-
-/* ── o que o clube devolveu para ela ──────────────────────────────────────
-   Reação recebida, nunca dada: quantas concordâncias e discordâncias as fichas
-   dela juntaram, e quantas curtidas o que ela escreveu recebeu.
-
-   Recebida e não dada porque um perfil é sobre como a pessoa é lida pelo clube.
-   Quantas vezes ela curtiu os outros é um fato sobre o comportamento dela, e
-   exibi-lo transformaria a página num relatório de atividade. */
-export function reactionsOf(
-  votes: { reviewId: string; value: number }[],
-  commentLikes: { commentId: string }[],
-  comments: { id: string; reviewerId: string }[],
-  reviews: Review[],
-  reviewerId: string
-) {
-  const hers = new Set(takesOf(reviews, reviewerId).map(r => r.id));
-  let agree = 0;
-  let differ = 0;
-  for (const v of votes) {
-    if (!hers.has(v.reviewId)) continue;
-    if (v.value === 1) agree += 1;
-    else if (v.value === -1) differ += 1;
-  }
-  const written = new Set(comments.filter(c => c.reviewerId === reviewerId).map(c => c.id));
-  const likes = commentLikes.filter(l => written.has(l.commentId)).length;
-  return { agree, differ, likes, wrote: written.size };
 }
 
 /* ── desde quando ─────────────────────────────────────────────────────────

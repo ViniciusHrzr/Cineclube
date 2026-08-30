@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Blank, Fault, Key, Poster, Reel, SearchField } from '@/components/bits';
 import { SyncedVideo } from '@/components/SyncedVideo';
 import { useClub } from '@/App';
-import { initialsOf, reelColor, runtimeOf, type WatchItem } from '@/lib/api';
+import { api, initialsOf, reelColor, runtimeOf, type Movie, type WatchItem } from '@/lib/api';
 import { useScreening } from '@/lib/screening';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -706,69 +706,176 @@ function Head({ connected, viewers }: { connected: boolean; viewers: number }) {
   );
 }
 
-/* ── choosing the film ──────────────────────────────────────────────────── */
+/* ── choosing the film ────────────────────────────────────────────────────
+   A fila é a porta principal e continua sendo: a sessão de uma noite quase
+   sempre é uma coisa que o clube combinou antes e marcou em Quero ver.
+
+   Mas ela não pode ser a única. O clube assiste junto pelo Discord e decide na
+   hora com muito mais frequência do que este picker admitia — alguém lembra de
+   um filme no meio da conversa, e ele não está na fila. O caminho era sair da
+   sessão, achar o filme no catálogo, pôr na fila só para poder tirar depois, e
+   voltar. Uma fila é uma intenção guardada, não uma permissão.
+
+   Então o campo procura nos dois lugares ao mesmo tempo: filtra a fila, que é
+   local e instantânea, e pergunta ao TMDB, que é o resto do cinema. As duas
+   respostas ficam separadas e nessa ordem, porque um filme que o clube já
+   escolheu vale mais do que um que ele acabou de encontrar.
+
+   Nada disto precisou de servidor: `/api/catalog/search` grava o que devolve em
+   `movies_cache`, e é de lá que `/api/screening/open` lê o filme. Procurar já
+   era, sem ninguém ter projetado assim, o que tornava um filme abrível. */
 function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id: number) => void }) {
   const [query, setQuery] = useState('');
-  const filtering = query.trim().length > 0;
-  const shown = filtering
-    ? watchlist.filter(w => named(norm(query.trim()), w.title, w.original, w.english))
+  const [found, setFound] = useState<Movie[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const timer = useRef<number>();
+
+  const q = query.trim();
+  const filtering = q.length > 0;
+
+  /* O mesmo compasso do catálogo: 350ms depois da última tecla. Buscar a cada
+     letra são oito requisições para uma palavra, e sete delas chegam já
+     desatualizadas. */
+  useEffect(() => {
+    window.clearTimeout(timer.current);
+    if (!q) {
+      setFound(null);
+      setSearching(false);
+      setFailed(null);
+      return;
+    }
+    setSearching(true);
+    setFailed(null);
+    timer.current = window.setTimeout(() => {
+      api<{ results: Movie[] }>(`/api/catalog/search?q=${encodeURIComponent(q)}`)
+        .then(r => setFound(r.results))
+        .catch(e => {
+          setFound([]);
+          /* Cair aqui não é fatal: a fila continua filtrada e utilizável do lado
+             de cá. A frase existe para ninguém concluir que o filme não existe
+             quando o que faltou foi a rede. */
+          setFailed((e as Error).message);
+        })
+        .finally(() => setSearching(false));
+    }, 350);
+    return () => window.clearTimeout(timer.current);
+  }, [q]);
+
+  const queued = filtering
+    ? watchlist.filter(w => named(norm(q), w.title, w.original, w.english))
     : watchlist;
 
-  /* Before the field, not after: an empty queue has nothing to filter, and a
-     search box over a "the queue is empty" notice is a control for a list that
-     does not exist. */
-  if (!watchlist.length) {
-    return (
-      <Blank title="A fila está vazia">
-        A sessão começa por um filme da fila. Marque alguma coisa em <span className="q">Quero ver</span> e
-        volte aqui.
-      </Blank>
-    );
-  }
+  /* O que já está na fila não se repete embaixo. O mesmo pôster duas vezes na
+     mesma tela faz a pessoa parar para procurar a diferença entre eles. */
+  const inQueue = new Set(watchlist.map(w => String(w.id)));
+  const elsewhere = (found ?? []).filter(m => !inQueue.has(String(m.id)));
 
   return (
-    <div className="mt-6">
-      {/* The same field the queue has, for the same reason: a club that has
-          been marking films for a few months is choosing tonight's out of
-          eighty posters, and scrolling a wall of them to find the one already
-          agreed on in the chat is the errand. Local, because this list is
-          already here — nothing to ask the server for. */}
+    <div>
       <div className="mb-5 max-w-[440px]">
         <SearchField
           value={query}
           onChange={setQuery}
-          placeholder="Filtrar a fila…"
-          hint={filtering ? `${plural(shown.length, 'filme', 'filmes')} na fila` : undefined}
+          placeholder="Buscar um filme para a sessão…"
+          hint={
+            filtering
+              ? searching
+                ? 'procurando no TMDB…'
+                : `${plural(queued.length, 'filme', 'filmes')} na fila · ${plural(
+                    elsewhere.length,
+                    'filme',
+                    'filmes'
+                  )} no TMDB`
+              : 'a fila do clube, ou qualquer filme do TMDB'
+          }
         />
       </div>
 
-      {!shown.length ? (
-        <Blank title="Nenhum filme na fila com esse título">Limpe o filtro para ver a fila inteira.</Blank>
-      ) : (
-      /* No paragraph explaining what pressing a poster does. It opens the
-         session, which is the only thing this screen is for, and three lines
-         of prose above the posters were the app talking about itself. */
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
-        {shown.map(w => (
-          <button
-            key={w.id}
-            type="button"
-            onClick={() => onPick(w.id)}
-            className="group text-left"
-            title={`Abrir sessão de ${w.title}`}
-          >
-            <Poster
-              src={w.poster}
-              alt={w.title}
-              className="aspect-[2/3] w-full transition-[box-shadow] duration-150 group-hover:ring-beam/70"
-            />
-            <span className="mt-2 block text-[12.5px] leading-tight text-ink-dim transition-colors group-hover:text-beam">
-              {w.title}
-            </span>
-          </button>
-        ))}
-      </div>
-      )}
+      {failed ? (
+        <div className="mb-5 max-w-[60ch]">
+          <Fault detail={failed}>
+            Não foi possível buscar no TMDB. A fila abaixo continua valendo.
+          </Fault>
+        </div>
+      ) : null}
+
+      {/* A fila. Sem busca ela é a tela inteira e não ganha título: é a única
+          coisa aqui, e nomear a única coisa de uma tela é falar duas vezes. */}
+      {queued.length ? (
+        <>
+          {filtering ? <p className="legend mb-3">Na fila</p> : null}
+          <PosterGrid
+            films={queued.map(w => ({ id: Number(w.id), title: w.title, poster: w.poster }))}
+            onPick={onPick}
+          />
+        </>
+      ) : null}
+
+      {/* O resto do cinema. Só com busca — sem ela não há o que mostrar, e uma
+          seção vazia esperando conteúdo é uma promessa. */}
+      {filtering && elsewhere.length ? (
+        <>
+          <p className={cn('legend mb-3', queued.length && 'mt-8')}>No TMDB</p>
+          <PosterGrid
+            films={elsewhere.map(m => ({ id: m.id, title: m.title, poster: m.poster ?? null }))}
+            onPick={onPick}
+          />
+        </>
+      ) : null}
+
+      {/* Os vazios, e são três coisas diferentes: nunca houve nada, a busca não
+          achou nada, e a busca ainda está indo. */}
+      {!filtering && !watchlist.length ? (
+        <Blank title="A fila está vazia">
+          Marque alguma coisa em <span className="q">Quero ver</span>, ou procure um filme aqui em
+          cima — a sessão abre com qualquer um.
+        </Blank>
+      ) : null}
+      {filtering && !searching && !queued.length && !elsewhere.length ? (
+        <Blank title="Nenhum filme com esse nome">
+          A busca cobre a fila do clube e o TMDB inteiro. Tente o título original, se souber.
+        </Blank>
+      ) : null}
+      {filtering && searching && !queued.length && !elsewhere.length ? (
+        <p className="legend animate-flicker py-8">Procurando</p>
+      ) : null}
+    </div>
+  );
+}
+
+/* A grade de pôsteres, uma vez. As duas listas do picker desenham a mesma
+   coisa, e a diferença entre elas — de onde o filme veio — já está dita na
+   legenda acima de cada uma. */
+function PosterGrid({
+  films,
+  onPick,
+}: {
+  films: { id: number; title: string; poster: string | null }[];
+  onPick: (id: number) => void;
+}) {
+  return (
+    /* Nenhum parágrafo explicando o que apertar um pôster faz. Ele abre a
+       sessão, que é a única coisa para que esta tela serve. */
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-3">
+      {films.map(f => (
+        <button
+          key={f.id}
+          type="button"
+          onClick={() => onPick(f.id)}
+          className="group text-left"
+          title={`Abrir sessão de ${f.title}`}
+        >
+          <Poster
+            src={f.poster}
+            alt={f.title}
+            className="aspect-[2/3] w-full transition-[box-shadow] duration-150 group-hover:ring-beam/70"
+          />
+          <span className="mt-2 block text-[12.5px] leading-tight text-ink-dim transition-colors group-hover:text-beam">
+            {f.title}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
