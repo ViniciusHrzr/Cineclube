@@ -135,6 +135,11 @@ type Club = {
   /** E qual comentário dentro dela, quando o aviso aponta para um texto. */
   focusComment: string | null;
   clearFocusComment: () => void;
+  /* O mesmo alvo, sem a viagem. `goReview` é "vá até lá"; isto é "é este", para
+     quem já vai abrir a conversa onde está — o feed abre a ficha na própria
+     linha agora, e mandar a pessoa para o acervo só para acender um comentário
+     seria a viagem que a abertura no lugar existe para evitar. */
+  aimComment: (commentId: string) => void;
   openSheet: (id: number) => void;
   rateMovie: (id: number) => void;
   fault: (msg: string) => void;
@@ -354,6 +359,10 @@ export default function App() {
   /* Limpado pela conversa, e não pela tela: só ela sabe quando já abriu o
      suficiente e rolou até o texto. */
   const clearFocusComment = useCallback(() => setFocusComment(null), []);
+  /* Sem tocar na aba nem no endereço: quem chama isto já está com a conversa
+     abrindo debaixo do dedo. O endereço continua sendo escrito por `goReview`,
+     que é o que o sino usa e o que "copiar link" produz. */
+  const aimComment = useCallback((commentId: string) => setFocusComment(commentId), []);
 
   const fault = useCallback((msg: string) => {
     // A 24h session ends quietly mid-use; drop to the sign-in screen instead of
@@ -601,6 +610,7 @@ export default function App() {
             clearFocusReview,
             focusComment,
             clearFocusComment,
+            aimComment,
             openSheet: setSheetId,
             rateMovie,
             fault,
@@ -637,6 +647,7 @@ export default function App() {
       clearFocusReview,
       focusComment,
       clearFocusComment,
+      aimComment,
       rateMovie,
       fault,
     ]
