@@ -151,12 +151,25 @@ scoped.get('/', clubs.requireVisible, wrap(async (req, res) => {
     ? await db.prepare('SELECT 1 AS x FROM club_join_requests WHERE club_id = ? AND reviewer_id = ?')
         .get(req.club.id, req.session.reviewer_id)
     : null;
+
+  /* Quantas pessoas estão esperando na porta. Só para quem pode abri-la, e vai
+     junto do clube em vez de numa busca própria porque a marquise precisa dele
+     em toda tela — é o que faz um pedido se anunciar em vez de esperar alguém
+     ir procurá-lo atrás de perfil → engrenagem → Ajustes. */
+  const pending =
+    req.club.isClubAdmin || req.session?.is_admin
+      ? (await db
+          .prepare('SELECT COUNT(*) AS n FROM club_join_requests WHERE club_id = ?')
+          .get(req.club.id)).n
+      : 0;
+
   res.json({
     club: toDTO(row, {
       members: n,
       role: req.club.role,
       isMember: req.club.isMember,
       requested: !!asked,
+      pending: Number(pending) || 0,
     }),
   });
 }));

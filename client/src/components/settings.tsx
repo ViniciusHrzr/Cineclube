@@ -570,6 +570,10 @@ function ClubRoom() {
     try {
       await clubsApi.answer(club.club.slug, id, approve);
       setRequests(list => (list ?? []).filter(r => r.id !== id));
+      /* O clube sempre, o elenco só quando alguém entrou: é o clube que carrega
+         a conta de quem está esperando, e é ela que acende o distintivo na
+         marquise. Sem isto o número continuaria lá depois de a fila esvaziar. */
+      await club.refreshClub();
       if (approve) await club.refreshReviewers();
     } catch (e) {
       setNote((e as Error).message);

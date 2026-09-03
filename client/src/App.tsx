@@ -27,8 +27,9 @@ import {
 } from '@/lib/api';
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
+import { UserPlus } from 'lucide-react';
 import { Key, Reel } from '@/components/bits';
-import { AccountSheet } from '@/components/settings';
+import { AccountSheet, SettingsSheet } from '@/components/settings';
 import { Lobby } from '@/screens/Lobby';
 import { ClaimAccount, SetPassword, SignIn } from '@/screens/SignIn';
 
@@ -101,6 +102,12 @@ type Club = {
   refreshClub: () => Promise<void>;
   /** Sair da sala. As suas fichas aqui continuam onde estão. */
   leaveClub: () => Promise<void>;
+  /* Abre a folha de ajustes — conta, senha e, para o ADM, a sala e os pedidos.
+     Mora no contexto porque três lugares a abrem: a engrenagem do próprio
+     perfil, o distintivo de pedidos na marquise e um aviso do sino. Enquanto ela
+     era estado local do perfil, um pedido de entrada não tinha como se anunciar:
+     ficava numa lista atrás de dois cliques que ninguém sabia dar. */
+  openClubSettings: () => void;
   signOut: () => void;
   refreshReviewers: () => Promise<void>;
   /** Re-reads the session after the person edits their own name or portrait. */
@@ -467,6 +474,8 @@ function ClubApp({
   /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
      sessão porque a coisa toda é justamente para quem NÃO está nela. */
   const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+  /** A folha de ajustes, aberta por três lugares. Ver `openClubSettings`. */
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const refreshClub = useCallback(async () => {
     const got = await clubsApi.get(slug);
@@ -916,6 +925,7 @@ function ClubApp({
             isClubAdmin: club.role === 'admin',
             refreshClub,
             leaveClub,
+            openClubSettings: () => setSheetOpen(true),
             signOut: onSignOut,
             refreshReviewers,
             refreshMe,
@@ -1043,6 +1053,7 @@ function ClubApp({
           club={ctx.club}
           room={pulse}
           onLobby={onLeaveClub}
+          onOpenRequests={() => setSheetOpen(true)}
         />
 
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
@@ -1088,6 +1099,10 @@ function ClubApp({
           )}
         </main>
       </div>
+
+      {/* A folha de ajustes vive aqui e não na tela de perfil: ela é aberta por
+          três lugares, e o pedido de entrada precisava de um deles. */}
+      <SettingsSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
 
       <ProjectionSheet
         movieId={sheetId}
@@ -1159,6 +1174,7 @@ function Marquee({
   club,
   room,
   onLobby,
+  onOpenRequests,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -1173,6 +1189,8 @@ function Marquee({
   room: ScreeningPulse;
   /** A porta de volta ao saguão. Era "Sair"; sair da conta ficou nos ajustes. */
   onLobby: () => void;
+  /** Abre os ajustes do clube, onde os pedidos de entrada são respondidos. */
+  onOpenRequests: () => void;
 }) {
   /* ── o que a lâmpada diz quando alguém pergunta ─────────────────────────
      Um ponto vermelho na marquise sozinho diz "alguma coisa"; o clube quer
@@ -1276,7 +1294,28 @@ function Marquee({
         </nav>
 
         <div className="flex items-center gap-2">
-          <Notices onOpenReview={onOpenReview} />
+          {/* ── quem está batendo na porta ─────────────────────────────────
+              Só para quem pode abrir, e só quando há alguém. Um pedido de
+              entrada vivia numa lista atrás de perfil → engrenagem → Ajustes, e
+              nada em lugar nenhum dizia que ele estava lá: alguém pedia e
+              esperava indefinidamente.
+
+              Latão e não vermelho, pela mesma regra do distintivo do sino: ter
+              pedido pendente é um estado, e o vermelho desta sala é da gravação
+              e da lâmpada da sessão. */}
+          {club.role === 'admin' && (club.pending ?? 0) > 0 ? (
+            <button
+              type="button"
+              onClick={onOpenRequests}
+              title={plural(club.pending ?? 0, 'pessoa pedindo para entrar', 'pessoas pedindo para entrar')}
+              aria-label={plural(club.pending ?? 0, 'pessoa pedindo para entrar', 'pessoas pedindo para entrar')}
+              className="relative flex h-[30px] items-center gap-1.5 rounded-cell px-2 text-dye-brass transition-colors hover:text-beam"
+            >
+              <UserPlus className="h-[17px] w-[17px]" strokeWidth={1.8} />
+              <span className="q text-[12px] font-semibold leading-none">{club.pending}</span>
+            </button>
+          ) : null}
+          <Notices onOpenReview={onOpenReview} onOpenRequests={onOpenRequests} />
           {/* O seu rosto é a porta do seu perfil — e é o mesmo gesto que abre o
               de qualquer outra pessoa em qualquer lugar do app. Levava à sala
               de formulários chamada Avaliadores; agora leva à sua página. */}

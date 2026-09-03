@@ -184,29 +184,68 @@ function say(kind, item) {
   if (kind === 'reply') return `respondeu você em ${item.movie_title}`;
   if (kind === 'mention') return `mencionou você em ${item.movie_title}`;
   if (kind === 'like') return 'curtiu seu comentário';
+  if (kind === 'join') return 'pediu para entrar no clube';
   return item.value === 1
     ? `concordou com sua avaliação de ${item.movie_title}`
     : `discordou da sua avaliação de ${item.movie_title}`;
 }
+
+/* ── quem está batendo na porta ───────────────────────────────────────────
+   O único aviso deste arquivo que não é sobre uma ficha, e o único que é só
+   para o ADM. Ele existe porque o resto do produto não tinha como contar: um
+   pedido ficava numa lista atrás de perfil → engrenagem → Ajustes, e nada em
+   lugar nenhum dizia que ele estava lá. Alguém pedia para entrar e esperava.
+
+   Derivado, como todo o resto daqui: a linha em `club_join_requests` já tem
+   autor e hora, então um pedido aprovado ou recusado some do sino sozinho — não
+   há segunda cópia para envelhecer. */
+const knocking = db.prepare(`
+  SELECT q.created_at, r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot
+  FROM club_join_requests q
+  JOIN reviewers r ON r.id = q.reviewer_id
+  WHERE q.club_id = ?
+  ORDER BY q.created_at DESC
+  LIMIT ${LIMIT}
+`);
 
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
 
 router.get('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const me = req.session.reviewer_id;
   const club = req.club.id;
-  const [comments, replies, votes, likes, writing, notes, roster, marks] = await Promise.all([
-    commentsOnMine.all(club, me, me),
-    repliesToMine.all(club, me, me),
-    votesOnMine.all(club, me, me),
-    likesOnMine.all(club, me, me),
-    recentWriting.all(club),
-    recentTakeNotes.all(club),
-    rosterStmt.all(club),
-    marksStmt.get(club, me)
-  ]);
+  /* Os pedidos de entrada só são buscados para quem pode respondê-los. Para
+     todo mundo mais eles não são um aviso — são a lista de quem quer entrar num
+     clube, que não é assunto de quem não decide isso. */
+  const manda = req.club.isClubAdmin || req.session.is_admin;
+
+  const [comments, replies, votes, likes, writing, notes, roster, marks, pedidos] =
+    await Promise.all([
+      commentsOnMine.all(club, me, me),
+      repliesToMine.all(club, me, me),
+      votesOnMine.all(club, me, me),
+      likesOnMine.all(club, me, me),
+      recentWriting.all(club),
+      recentTakeNotes.all(club),
+      rosterStmt.all(club),
+      marksStmt.get(club, me),
+      manda ? knocking.all(club) : [],
+    ]);
 
   const handles = handlesFor(roster);
   const items = [];
+
+  /* Sem `movieId` e sem `reviewId`: este aviso não aponta para uma ficha, aponta
+     para a porta do clube. A tela sabe o que fazer com ele pelo `kind`. */
+  for (const row of pedidos) {
+    if (row.actor_id === me) continue;
+    items.push({
+      id: `j:${row.actor_id}`,
+      kind: 'join',
+      at: row.created_at,
+      actor: actorOf(row),
+      text: say('join', row),
+    });
+  }
 
   /* `commentId` é o que faz o aviso levar ao texto e não só à ficha. Sem ele o
      link abria a avaliação certa e deixava a pessoa procurando qual das

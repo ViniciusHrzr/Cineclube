@@ -58,6 +58,8 @@ export type Club = {
   members?: number;
   /** Você já pediu para entrar e está esperando resposta. */
   requested?: boolean;
+  /** Quantas pessoas estão esperando na porta. Só chega para quem pode abrir. */
+  pending?: number;
 };
 
 export type ClubMember = {
@@ -223,12 +225,15 @@ export type CommentLike = { commentId: string; reviewerId: string };
    produto é conteúdo autoral e não um switch nesta tela. */
 export type Notice = {
   id: string;
-  kind: 'comment' | 'vote' | 'like';
+  /* `join` é o único que não fala de uma ficha: é alguém batendo na porta do
+     clube, e só o ADM o recebe. Por isso `movieId` e `reviewId` são opcionais —
+     um pedido de entrada não aponta para avaliação nenhuma. */
+  kind: 'comment' | 'reply' | 'mention' | 'vote' | 'like' | 'join';
   /** ISO em UTC, sem fuso no texto — ver `whenOf`. */
   at: string;
   actor: { id: string; name: string; dot: string };
-  movieId: number;
-  reviewId: string;
+  movieId?: number;
+  reviewId?: string;
   /* O texto exato de que o aviso fala, quando há um. É o que faz o link levar
      ao comentário em vez de à ficha inteira — sem ele a pessoa chega na
      avaliação certa e procura qual das respostas era. */

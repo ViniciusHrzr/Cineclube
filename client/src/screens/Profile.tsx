@@ -16,7 +16,6 @@ import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
    que o acervo mostra. */
 import { Breakdown } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
-import { SettingsSheet } from '@/components/settings';
 import {
   fmt,
   initialsOf,
@@ -88,7 +87,6 @@ import { useClub } from '@/App';
 
 export function ProfileScreen() {
   const club = useClub();
-  const [settings, setSettings] = useState(false);
 
   /* ── qual ficha está aberta ─────────────────────────────────────────────
      Mora aqui e não dentro da lista porque quatro lugares desta página apontam
@@ -163,7 +161,9 @@ export function ProfileScreen() {
 
   return (
     <section>
-      <Header person={person} mine={mine} onSettings={() => setSettings(true)} />
+      {/* A folha mora no App agora: três lugares a abrem, e um deles é um aviso
+          do sino sobre alguém batendo na porta do clube. */}
+      <Header person={person} mine={mine} onSettings={club.openClubSettings} />
 
       {/* ── a ordem ──────────────────────────────────────────────────────
           Primeiro o que a pessoa achou dos filmes: os extremos, o quanto ela se
@@ -191,7 +191,6 @@ export function ProfileScreen() {
         <Genres person={person} />
       </div>
 
-      {mine ? <SettingsSheet open={settings} onClose={() => setSettings(false)} /> : null}
     </section>
   );
 }

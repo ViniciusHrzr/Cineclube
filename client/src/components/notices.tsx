@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bell, MessageSquare, ThumbsDown, ThumbsUp, UserPlus } from 'lucide-react';
 import { PersonReel } from '@/components/person';
 import { notifications, type Notice } from '@/lib/api';
 import { useLive } from '@/lib/live';
@@ -42,15 +42,19 @@ const POLL_MS = 90_000;
 const POP_MS = 700;
 
 function iconOf(kind: Notice['kind'], value?: number) {
-  if (kind === 'comment') return MessageSquare;
+  if (kind === 'join') return UserPlus;
+  if (kind === 'comment' || kind === 'reply' || kind === 'mention') return MessageSquare;
   if (kind === 'like') return ThumbsUp;
   return value === -1 ? ThumbsDown : ThumbsUp;
 }
 
 export function Notices({
   onOpenReview,
+  onOpenRequests,
 }: {
   onOpenReview: (reviewId: string, commentId?: string | null) => void;
+  /** Onde um pedido de entrada leva: a porta do clube, nos ajustes dele. */
+  onOpenRequests: () => void;
 }) {
   /* O retrato vem do clube, que já carrega a lista de avaliadores, e não do
      aviso: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
@@ -104,7 +108,10 @@ export function Notices({
   const openRef = useRef(open);
   openRef.current = open;
   useLive(kinds => {
-    if (!kinds.has('social') && !kinds.has('reviews')) return;
+    /* `club` entrou aqui junto com o aviso de pedido de entrada: sem ele, quem
+       bate na porta só aparecia no sino na volta da pergunta periódica, até um
+       minuto e meio depois. */
+    if (!kinds.has('social') && !kinds.has('reviews') && !kinds.has('club')) return;
     void (async () => {
       await load();
       if (!openRef.current) return;
@@ -274,7 +281,8 @@ export function Notices({
           ) : !items.length ? (
             <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
               Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua ficha, concordar
-              com uma nota sua ou curtir um comentário seu, aparece aqui.
+              com uma nota sua, curtir um comentário seu — ou pedir para entrar no clube — aparece
+              aqui.
             </p>
           ) : (
             <ul className="flex flex-col">
@@ -308,6 +316,12 @@ export function Notices({
                          com o leitor não terminou de avisar. */
                       onClick={() => {
                         setOpen(false);
+                        /* Um pedido de entrada não aponta para ficha nenhuma:
+                           ele leva à porta, que é onde se aceita ou recusa. */
+                        if (n.kind === 'join' || !n.reviewId) {
+                          onOpenRequests();
+                          return;
+                        }
                         onOpenReview(n.reviewId, n.commentId);
                       }}
                       className="flex min-w-0 flex-1 gap-2.5 text-left"

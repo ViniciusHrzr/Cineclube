@@ -277,6 +277,70 @@ test('pedir, aparecer para o ADM, e ser aceito', async () => {
   );
 });
 
+/* ── um pedido tem que se anunciar ───────────────────────────────────────
+   Estes nasceram de um defeito de produto, não de código: a fila de pedidos
+   existia e funcionava, mas morava atrás de perfil → engrenagem → Ajustes, e
+   nada em lugar nenhum dizia que ela estava lá. Alguém pedia para entrar e
+   esperava indefinidamente porque o ADM não tinha como saber. */
+
+test('um pedido acende o sino do ADM', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn('Quer Entrar');
+  const sala = await kit.makeClub({ name: `Sino ${++seq}`, owner: dono.id });
+
+  const antes = await req('GET', at(sala, '/notifications'), null, dono.cookie);
+  assert.equal(antes.body.items.length, 0);
+
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+
+  const depois = await req('GET', at(sala, '/notifications'), null, dono.cookie);
+  const aviso = depois.body.items.find(i => i.kind === 'join');
+  assert.ok(aviso, 'o ADM precisa ficar sabendo sem ir procurar');
+  assert.equal(aviso.actor.id, quer.id);
+  assert.equal(depois.body.unread, 1);
+});
+
+test('quem não administra não recebe o aviso — nem a lista de quem quer entrar', async () => {
+  const dono = await kit.signIn();
+  const gente = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Só ADM ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, gente.id);
+
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+
+  const sino = await req('GET', at(sala, '/notifications'), null, gente.cookie);
+  assert.ok(!sino.body.items.some(i => i.kind === 'join'), 'quem não decide não precisa saber quem pediu');
+});
+
+test('o clube diz quantos estão esperando, e só para quem pode abrir', async () => {
+  const dono = await kit.signIn();
+  const gente = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Contagem ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, gente.id);
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+
+  const paraOAdm = await req('GET', at(sala, ''), null, dono.cookie);
+  assert.equal(paraOAdm.body.club.pending, 1, 'é este número que acende o distintivo na marquise');
+
+  const paraOMembro = await req('GET', at(sala, ''), null, gente.cookie);
+  assert.equal(paraOMembro.body.club.pending, 0);
+});
+
+test('aceitar zera a contagem', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Zera ${++seq}`, owner: dono.id });
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+  await req('POST', at(sala, `/requests/${quer.id}`), { approve: true }, dono.cookie);
+
+  const depois = await req('GET', at(sala, ''), null, dono.cookie);
+  assert.equal(depois.body.club.pending, 0);
+  const sino = await req('GET', at(sala, '/notifications'), null, dono.cookie);
+  assert.ok(!sino.body.items.some(i => i.kind === 'join'), 'o aviso some com o pedido, sem cópia para envelhecer');
+});
+
 test('recusar apaga o pedido e não põe ninguém dentro', async () => {
   const dono = await kit.signIn();
   const quer = await kit.signIn();
