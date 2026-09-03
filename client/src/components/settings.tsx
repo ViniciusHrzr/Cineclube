@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
-import { IconKey, Key, Reel } from '@/components/bits';
+import { Fault, IconKey, Key, Reel } from '@/components/bits';
 import { PortraitGate } from '@/components/portrait';
 import {
   auth,
@@ -11,7 +11,7 @@ import {
   type JoinRequest,
   type SessionUser,
 } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -573,16 +573,21 @@ function NotTheAdmin() {
             'Aprovar quem entra, mudar a foto e o nome do clube são coisas de ADM.'
           : 'Este clube está sem ADM. Fale com o administrador da instalação.'}
       </p>
-      <Key
-        tone="danger"
-        className="mt-4"
-        onClick={() => {
-          if (!confirm(`Sair de ${club.club.name}? Suas avaliações neste clube continuam lá.`)) return;
-          void club.leaveClub();
-        }}
-      >
-        Sair deste clube
-      </Key>
+      {/* Quem fundou não sai: sair é deixar de administrar, e a regra é que quem
+          fundou administra enquanto o clube existir. A saída dessa pessoa é
+          outra, e ela está na região de baixo. */}
+      {!club.club.isCreator ? (
+        <Key
+          tone="danger"
+          className="mt-4"
+          onClick={() => {
+            if (!confirm(`Sair de ${club.club.name}? Suas avaliações neste clube continuam lá.`)) return;
+            void club.leaveClub();
+          }}
+        >
+          Sair deste clube
+        </Key>
+      ) : null}
     </Region>
   );
 }
@@ -688,6 +693,11 @@ function ClubRoom() {
           {club.reviewers.map(p => {
             const isSelf = p.id === club.me.id;
             const isAdmin = p.role === 'admin';
+            /* Quem fundou administra enquanto o clube existir, então os dois
+               controles somem para essa pessoa. O servidor recusa de qualquer
+               jeito; um botão que existe para dar erro é a interface prometendo
+               o que ela sabe que não pode cumprir. */
+            const fundador = club.club.isCreator && isSelf;
             return (
               <div
                 key={p.id}
@@ -699,20 +709,26 @@ function ClubRoom() {
                 <span className="mr-auto text-[14px] text-ink">
                   {p.name}
                   {isAdmin ? <span className="ml-2 text-[10px] text-dye-brass">ADM</span> : null}
-                  {isSelf ? <span className="ml-2 text-[11px] text-ink-faint">você</span> : null}
+                  {fundador ? (
+                    <span className="ml-2 text-[11px] text-ink-faint">fundou o clube</span>
+                  ) : isSelf ? (
+                    <span className="ml-2 text-[11px] text-ink-faint">você</span>
+                  ) : null}
                 </span>
 
-                <Key
-                  tone="ghost"
-                  onClick={() => {
-                    void clubsApi
-                      .setRole(club.club.slug, p.id, isAdmin ? 'member' : 'admin')
-                      .then(() => club.refreshReviewers())
-                      .catch(e => setNote((e as Error).message));
-                  }}
-                >
-                  {isAdmin ? 'Tirar ADM' : 'Tornar ADM'}
-                </Key>
+                {!fundador ? (
+                  <Key
+                    tone="ghost"
+                    onClick={() => {
+                      void clubsApi
+                        .setRole(club.club.slug, p.id, isAdmin ? 'member' : 'admin')
+                        .then(() => club.refreshReviewers())
+                        .catch(e => setNote((e as Error).message));
+                    }}
+                  >
+                    {isAdmin ? 'Tirar ADM' : 'Tornar ADM'}
+                  </Key>
+                ) : null}
 
                 {/* Tirar alguém não apaga a conta dela nem as fichas: ela sai da
                     sala, e o que ela escreveu aqui continua onde está. É a
@@ -883,6 +899,8 @@ function ClubRoom() {
         {note ? <p className="mt-4 text-[13px] text-dye-red-lit">{note}</p> : null}
       </Region>
 
+      {club.club.isCreator ? <EndClub /> : null}
+
       {pending ? (
         <PortraitGate
           file={pending}
@@ -894,5 +912,105 @@ function ClubRoom() {
         />
       ) : null}
     </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Encerrar o clube.
+
+   A única coisa verdadeiramente destrutiva deste produto, e a única reservada a
+   quem fundou — não ao ADM: ADMs podem ser vários e são promovidos por outro
+   ADM, e "quem administra hoje" é um cargo, não um dono.
+
+   ── por que escrever o nome ───────────────────────────────────────────────
+   Porque isto apaga o que OUTRAS pessoas escreveram. Um `confirm()` é o preço
+   de um clique distraído, e o que está do outro lado dele são as fichas, a
+   conversa e os votos de um clube inteiro. Escrever o nome não é burocracia: é o
+   único jeito de a mão parar tempo suficiente para a cabeça alcançar.
+
+   A conta do que se perde vem primeiro, e é a de verdade — as listas já estão
+   carregadas no cliente desde o boot, então não é uma estimativa nem um número
+   redondo. "12 fichas e 5 pessoas" é uma frase que se pesa; "esta ação não pode
+   ser desfeita" é uma que se lê sem ver.
+   ══════════════════════════════════════════════════════════════════════════ */
+function EndClub() {
+  const club = useClub();
+  const [armado, setArmado] = useState(false);
+  const [escrito, setEscrito] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const confere = escrito.trim().toLowerCase() === club.club.name.trim().toLowerCase();
+
+  async function encerrar() {
+    if (!confere || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await clubsApi.remove(club.club.slug);
+      club.goLobby();
+    } catch (e) {
+      setErro((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Region title="Encerrar o clube">
+      <p className="max-w-[54ch] text-[13px] leading-relaxed text-ink-dim">
+        Você fundou {club.club.name}, então é a única pessoa que pode encerrá-lo —
+        e é também por isso que você não deixa de administrá-lo enquanto ele
+        existir.
+      </p>
+
+      {!armado ? (
+        <Key tone="danger" className="mt-4" onClick={() => setArmado(true)}>
+          Encerrar o clube
+        </Key>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3">
+          <p className="max-w-[54ch] text-[13px] leading-relaxed text-ink">
+            Some para todo mundo, e não tem volta:{' '}
+            <span className="text-dye-red-lit">
+              {plural(club.reviews.length, 'ficha', 'fichas')}
+            </span>
+            , a conversa em cima delas, os votos,{' '}
+            <span className="text-dye-red-lit">
+              {plural(club.watchlist.length, 'filme na fila', 'filmes na fila')}
+            </span>{' '}
+            e a lista de {plural(club.reviewers.length, 'pessoa', 'pessoas')}.
+          </p>
+
+          <label className="block max-w-[320px]">
+            <span className="legend mb-1.5 block">Escreva {club.club.name} para confirmar</span>
+            <input
+              value={escrito}
+              autoFocus
+              autoComplete="off"
+              onChange={e => setEscrito(e.target.value)}
+              className={FIELD}
+            />
+          </label>
+
+          {erro ? <Fault>{erro}</Fault> : null}
+
+          <div className="flex items-center gap-2">
+            <Key tone="commit" disabled={!confere || busy} onClick={() => void encerrar()}>
+              {busy ? 'Encerrando…' : 'Encerrar para sempre'}
+            </Key>
+            <Key
+              tone="ghost"
+              onClick={() => {
+                setArmado(false);
+                setEscrito('');
+                setErro(null);
+              }}
+            >
+              Cancelar
+            </Key>
+          </div>
+        </div>
+      )}
+    </Region>
   );
 }

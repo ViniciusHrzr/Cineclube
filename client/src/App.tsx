@@ -102,6 +102,8 @@ type Club = {
   refreshClub: () => Promise<void>;
   /** Sair da sala. As suas fichas aqui continuam onde estão. */
   leaveClub: () => Promise<void>;
+  /** Voltar ao saguão sem sair de nada — depois de encerrar o clube, por exemplo. */
+  goLobby: () => void;
   /* Abre a folha de ajustes — conta, senha e, para o ADM, a sala e os pedidos.
      Mora no contexto porque três lugares a abrem: a engrenagem do próprio
      perfil, o distintivo de pedidos na marquise e um aviso do sino. Enquanto ela
@@ -925,6 +927,7 @@ function ClubApp({
             isClubAdmin: club.role === 'admin',
             refreshClub,
             leaveClub,
+            goLobby: onLeaveClub,
             openClubSettings: () => setSheetOpen(true),
             signOut: onSignOut,
             refreshReviewers,

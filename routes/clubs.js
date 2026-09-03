@@ -173,6 +173,9 @@ scoped.get('/', clubs.requireVisible, wrap(async (req, res) => {
       members: n,
       role: req.club.role,
       isMember: req.club.isMember,
+      /* Quem fundou. É a única pessoa que pode encerrar o clube, e a única que
+         não pode deixar de administrá-lo — ver as regras lá embaixo. */
+      isCreator: !!req.session && row.created_by === req.session.reviewer_id,
       requested: !!asked,
       pending: Number(pending) || 0,
     }),
@@ -267,7 +270,45 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
 
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
   live.emit('club', req.session.reviewer_id, req.club.id);
-  res.json({ club: toDTO(row, { role: req.club.role, isMember: true }) });
+  res.json({
+    club: toDTO(row, {
+      role: req.club.role,
+      isMember: true,
+      isCreator: row.created_by === req.session.reviewer_id,
+    }),
+  });
+}));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ENCERRAR O CLUBE
+
+   A única coisa verdadeiramente destrutiva deste produto, e a única reservada a
+   uma pessoa: quem fundou. Não o ADM — ADMs podem ser vários e são promovidos
+   por outro ADM, e "quem administra hoje" é um cargo, não um dono.
+
+   O que sai junto, em cascata: as fichas de todo mundo, a conversa em cima
+   delas, os votos, as curtidas, a fila e a lista de quem estava dentro. É por
+   isso que a tela exige escrever o nome do clube antes: um clique só é barato
+   demais para uma ação que apaga o que outras pessoas escreveram.
+
+   ── o clube fundador não tem quem o encerre, e isso é bom ─────────────────
+   `Cineclube` foi criado pela migração, sem `created_by`. Ninguém casa com a
+   condição abaixo, então ele não pode ser apagado por rota nenhuma — o que é a
+   propriedade certa para a sala que guarda o histórico de antes da rede.
+   ══════════════════════════════════════════════════════════════════════════ */
+scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
+  const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
+  if (!row.created_by || row.created_by !== req.session.reviewer_id) {
+    return res.status(403).json({ error: 'Só quem fundou o clube pode encerrá-lo.' });
+  }
+
+  /* Antes de apagar: os quadros ainda alcançam quem está com a aba aberta, e a
+     tela deles descobre que a sala acabou em vez de esbarrar num 404 no próximo
+     clique. Depois do DELETE não há mais conexão para avisar. */
+  live.emit('club', req.session.reviewer_id, req.club.id);
+
+  await db.prepare('DELETE FROM clubs WHERE id = ?').run(req.club.id);
+  res.status(204).end();
 }));
 
 /* ── quem está aqui ───────────────────────────────────────────────────────
@@ -305,6 +346,21 @@ scoped.delete('/members/:id', auth.requireSession, wrap(async (req, res) => {
     return res.status(403).json({ error: 'Só quem administra o clube pode tirar alguém.' });
   }
 
+  /* ── quem fundou não sai ───────────────────────────────────────────────
+     Nem sozinho, nem tirado por outro ADM. Sair é deixar de administrar, e a
+     regra é que quem fundou administra enquanto o clube existir.
+
+     Não é o cargo sendo protegido, é a sala: um clube cujo dono some continua
+     existindo com o acervo de todo mundo dentro e sem ninguém que possa
+     encerrá-lo. A saída existe e é outra — encerrar o clube. */
+  if (req.club.createdBy && target === req.club.createdBy) {
+    return res.status(409).json({
+      error: isSelf
+        ? 'Você fundou este clube, então administra ele enquanto ele existir. Para sair de vez, encerre o clube.'
+        : 'Quem fundou o clube não pode ser tirado dele.',
+    });
+  }
+
   const held = await clubs.membership.get(req.club.id, target);
   if (!held) return res.status(404).json({ error: 'Essa pessoa não está no clube.' });
 
@@ -333,6 +389,11 @@ scoped.patch('/members/:id', clubs.requireClubAdmin, wrap(async (req, res) => {
   const target = req.params.id;
   const held = await clubs.membership.get(req.club.id, target);
   if (!held) return res.status(404).json({ error: 'Essa pessoa não está no clube.' });
+
+  // Quem fundou administra enquanto o clube existir. Ver a saída, logo abaixo.
+  if (req.club.createdBy && target === req.club.createdBy && role !== 'admin') {
+    return res.status(409).json({ error: 'Quem fundou o clube não deixa de administrá-lo.' });
+  }
 
   if (held.role === 'admin' && role === 'member') {
     const { n } = await db

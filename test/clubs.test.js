@@ -13,6 +13,7 @@ const db = require('../db');
 const live = require('../live');
 const screening = require('../screening');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
@@ -530,16 +531,21 @@ test('só o ADM muda o que a sala é', async () => {
 });
 
 test('o último ADM não sai e deixa a sala trancada', async () => {
-  const dono = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Único ${++seq}`, owner: dono.id });
+  /* Sem `owner`: uma sala sem fundador, como o clube que a migração criou. É o
+     único caso em que esta regra ainda aparece sozinha — num clube fundado por
+     alguém, quem barra a saída do último ADM é a regra de quem fundou, que é
+     mais forte e vem antes. */
+  const sala = await kit.makeClub({ name: `Único ${++seq}` });
+  const um = await kit.signIn();
+  const dois = await kit.signIn();
+  await kit.join(sala.id, um.id, 'admin');
 
-  const saida = await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie);
-  assert.equal(saida.status, 409, 'sem ADM ninguém aprova entrada nem muda nada, e as fichas ficam trancadas lá dentro');
+  const sozinho = await req('DELETE', at(sala, `/members/${um.id}`), null, um.cookie);
+  assert.equal(sozinho.status, 409, 'sem ADM ninguém aprova entrada nem muda nada, e as fichas ficam trancadas lá dentro');
 
   // Com um segundo ADM, sai.
-  const outro = await kit.signIn();
-  await kit.join(sala.id, outro.id, 'admin');
-  assert.equal((await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie)).status, 204);
+  await kit.join(sala.id, dois.id, 'admin');
+  assert.equal((await req('DELETE', at(sala, `/members/${um.id}`), null, um.cookie)).status, 204);
 });
 
 test('um membro sai sozinho, e as fichas dele ficam', async () => {
@@ -565,6 +571,97 @@ test('ninguém tira outra pessoa sem ser ADM', async () => {
 
   assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, a.cookie)).status, 403);
   assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, dono.cookie)).status, 204);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Quem fundou, e o que só ela pode.
+
+   Duas regras que andam juntas: quem fundou é a única que encerra o clube, e a
+   única que não pode deixar de administrá-lo. A segunda existe por causa da
+   primeira — um clube cujo dono saiu continua existindo com o acervo de todo
+   mundo dentro e sem ninguém que possa encerrá-lo.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+test('só quem fundou encerra o clube', async () => {
+  const dono = await kit.signIn();
+  const outroAdm = await kit.signIn();
+  const membro = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Encerra ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, outroAdm.id, 'admin');
+  await kit.join(sala.id, membro.id);
+
+  assert.equal((await req('DELETE', at(sala, ''), null, membro.cookie)).status, 403);
+  assert.equal(
+    (await req('DELETE', at(sala, ''), null, outroAdm.cookie)).status, 403,
+    'ADM é um cargo, não a propriedade da sala'
+  );
+  assert.equal((await req('DELETE', at(sala, ''), null, dono.cookie)).status, 204);
+
+  // E some de verdade: nem a fachada sobra.
+  assert.equal((await req('GET', at(sala, ''), null, dono.cookie)).status, 404);
+});
+
+test('encerrar leva tudo o que estava dentro', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Leva tudo ${++seq}`, owner: dono.id });
+  const ficha = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, dono.cookie
+  );
+  await req('POST', at(sala, `/social/reviews/${ficha.body.id}/comments`), { body: 'oi' }, dono.cookie);
+  await req('POST', at(sala, '/watchlist'), { movie: movie() }, dono.cookie);
+
+  await req('DELETE', at(sala, ''), null, dono.cookie);
+
+  for (const [tabela, coluna] of [['reviews', 'club_id'], ['watchlist', 'club_id'], ['club_members', 'club_id']]) {
+    const { n } = await db.prepare(`SELECT COUNT(*) AS n FROM ${tabela} WHERE ${coluna} = ?`).get(sala.id);
+    assert.equal(n, 0, `${tabela} deveria ter ido junto em cascata`);
+  }
+  const { n: conversas } = await db
+    .prepare('SELECT COUNT(*) AS n FROM review_comments WHERE review_id = ?').get(ficha.body.id);
+  assert.equal(conversas, 0, 'a conversa pendura na ficha, e a ficha foi embora');
+
+  // A conta de quem fundou continua existindo: o clube acabou, a pessoa não.
+  assert.ok(await db.prepare('SELECT id FROM reviewers WHERE id = ?').get(dono.id));
+});
+
+test('quem fundou não deixa de ser ADM, nem por outro ADM nem sozinho', async () => {
+  const dono = await kit.signIn();
+  const outroAdm = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Cargo ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, outroAdm.id, 'admin');
+
+  const rebaixa = await req('PATCH', at(sala, `/members/${dono.id}`), { role: 'member' }, outroAdm.cookie);
+  assert.equal(rebaixa.status, 409);
+  const sozinho = await req('PATCH', at(sala, `/members/${dono.id}`), { role: 'member' }, dono.cookie);
+  assert.equal(sozinho.status, 409);
+
+  const papel = await clubs.membership.get(sala.id, dono.id);
+  assert.equal(papel.role, 'admin');
+});
+
+test('quem fundou não sai do clube — a saída dela é encerrar', async () => {
+  const dono = await kit.signIn();
+  const outroAdm = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Não sai ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, outroAdm.id, 'admin');
+
+  /* Com um segundo ADM na sala, a regra do "último ADM não sai" já não vale —
+     então o que barra aqui é a regra de quem fundou, e não a outra. */
+  const sozinho = await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie);
+  assert.equal(sozinho.status, 409);
+  const tirado = await req('DELETE', at(sala, `/members/${dono.id}`), null, outroAdm.cookie);
+  assert.equal(tirado.status, 409, 'nem outro ADM tira quem fundou');
+});
+
+test('o clube fundador não tem quem o encerre', async () => {
+  /* Cineclube foi criado pela migração, sem `created_by`. Ninguém casa com a
+     condição, e é a propriedade certa para a sala que guarda o histórico de
+     antes da rede. */
+  const home = await db.prepare('SELECT id, slug FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
+  const dono = await kit.signInAdmin();
+  await kit.join(home.id, dono.id, 'admin');
+  const res = await req('DELETE', `/api/c/${home.slug}`, null, dono.cookie);
+  assert.equal(res.status, 403);
 });
 
 /* ── a parede do cano ao vivo ───────────────────────────────────────────── */

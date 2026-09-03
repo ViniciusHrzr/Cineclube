@@ -60,6 +60,9 @@ export type Club = {
   /** Só quando você é de lá: 'admin' ou 'member'. */
   role?: 'admin' | 'member' | null;
   isMember?: boolean;
+  /* Você fundou este clube. É a única pessoa que pode encerrá-lo, e a única que
+     não pode deixar de administrá-lo. */
+  isCreator?: boolean;
   members?: number;
   /** Você já pediu para entrar e está esperando resposta. */
   requested?: boolean;
@@ -140,6 +143,9 @@ export const clubs = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     }),
+  /* Encerrar. Leva junto as fichas de todo mundo, a conversa, os votos, a fila e
+     a lista de quem estava dentro — tudo em cascata. Só quem fundou alcança. */
+  remove: (slug: string) => del(`/api/c/${encodeURIComponent(slug)}`),
   members: (slug: string) => api<{ members: ClubMember[] }>(`/api/c/${encodeURIComponent(slug)}/members`),
   leave: (slug: string, reviewerId: string) =>
     del(`/api/c/${encodeURIComponent(slug)}/members/${reviewerId}`),
