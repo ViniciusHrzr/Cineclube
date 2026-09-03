@@ -6,13 +6,19 @@ export type Reviewer = {
   id: string;
   name: string;
   dot: string;
-  /* O apelido de menção, `@beren`. Calculado pelo servidor sobre o clube
-     inteiro, porque a unicidade depende de quem mais existe — ver handles.js.
+  /* O apelido de menção, `@beren`. Calculado pelo servidor sobre os membros do
+     clube, porque a unicidade é fato sobre a sala e não sobre a rede: dois
+     Brunos em clubes diferentes nunca se cruzam. Ver handles.js.
      Null só em resposta antiga de um servidor que ainda não mandava. */
   handle?: string | null;
+  /** Administrador da instalação — diferente de ser ADM desta sala (`role`). */
   isAdmin?: boolean;
-  /** false means the account exists but nobody has set a PIN for it yet. */
-  hasPin?: boolean;
+  /** O papel dentro do clube que foi pedido. */
+  role?: 'admin' | 'member' | null;
+  /** A conta já cadastrou senha, ou só entra pelo Google. */
+  hasPassword?: boolean;
+  /** Desde quando está neste clube. */
+  joinedAt?: string | null;
   /* A única coisa que uma pessoa afirma sobre si mesma neste produto. Todo o
      resto que o perfil mostra é derivado do que ela avaliou — ver lib/taste.ts.
      Null é o estado normal, não a falta de algo. */
@@ -29,19 +35,100 @@ export type SessionUser = {
   name: string;
   dot: string;
   isAdmin: boolean;
+  email?: string | null;
   avatar?: string | null;
   bio?: string | null;
 };
 
+/* ── um clube ─────────────────────────────────────────────────────────────
+   O `slug` é o que anda na URL e o que a pessoa cola no Discord; o `id` é o que
+   o cliente já tem na mão logo depois de criar um, antes de qualquer recarga.
+   As duas rotas aceitam os dois. */
+export type Club = {
+  id: string;
+  name: string;
+  slug: string;
+  tagline: string | null;
+  visibility: 'public' | 'private';
+  photo: string | null;
+  createdAt?: string | null;
+  /** Só quando você é de lá: 'admin' ou 'member'. */
+  role?: 'admin' | 'member' | null;
+  isMember?: boolean;
+  members?: number;
+  /** Você já pediu para entrar e está esperando resposta. */
+  requested?: boolean;
+};
+
+export type ClubMember = {
+  id: string;
+  name: string;
+  dot: string;
+  role: 'admin' | 'member';
+  avatar: string | null;
+  joinedAt?: string;
+};
+
+export type JoinRequest = {
+  id: string;
+  name: string;
+  dot: string;
+  avatar: string | null;
+  createdAt: string;
+};
+
 export const auth = {
-  me: () => api<{ reviewer: SessionUser | null }>('/api/auth/me'),
-  login: (reviewerId: string, pin: string) =>
-    post<{ reviewer: SessionUser }>('/api/auth/login', { reviewerId, pin }),
+  me: () =>
+    api<{
+      reviewer: SessionUser | null;
+      /* A conta entrou pelo Google e ainda não cadastrou senha. É estado da
+         conta e não passo de assistente: quem pular hoje volta a ver o convite,
+         porque o motivo de ela existir — não depender de uma porta só — não
+         expira. */
+      needsPassword?: boolean;
+      /** Se esta instalação tem a porta do Google configurada. */
+      google?: boolean;
+    }>('/api/auth/me'),
+  /** Não é fetch: é uma navegação de verdade, porque quem responde é o Google. */
+  googleUrl: '/api/auth/google',
+  login: (email: string, password: string) =>
+    post<{ reviewer: SessionUser }>('/api/auth/login', { email, password }),
   logout: () => post<null>('/api/auth/logout', {}),
-  changePin: (currentPin: string, newPin: string) =>
-    post<{ ok: true }>('/api/auth/pin', { currentPin, newPin }),
-  resetPin: (reviewerId: string, newPin: string) =>
-    post<{ ok: true }>('/api/auth/pin/reset', { reviewerId, newPin }),
+  setPassword: (password: string, current?: string) =>
+    post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
+};
+
+/* ── as salas ─────────────────────────────────────────────────────────────
+   Fora do escopo de clube, porque é a lista deles: exigir estar dentro de um
+   para descobrir quais existem seria uma porta trancada por dentro. */
+export const clubs = {
+  all: () => api<{ mine: Club[]; open: Club[] }>('/api/clubs'),
+  create: (body: { name: string; tagline?: string; visibility: 'public' | 'private'; photo?: string | null }) =>
+    post<{ club: Club }>('/api/clubs', body),
+  get: (slug: string) => api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`),
+  update: (slug: string, patch: Partial<Pick<Club, 'name' | 'tagline' | 'visibility'>> & { photo?: string | null }) =>
+    api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+  members: (slug: string) => api<{ members: ClubMember[] }>(`/api/c/${encodeURIComponent(slug)}/members`),
+  leave: (slug: string, reviewerId: string) =>
+    del(`/api/c/${encodeURIComponent(slug)}/members/${reviewerId}`),
+  setRole: (slug: string, reviewerId: string, role: 'admin' | 'member') =>
+    api<{ ok: true }>(`/api/c/${encodeURIComponent(slug)}/members/${reviewerId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    }),
+  join: (slug: string) => post<{ requested: true }>(`/api/c/${encodeURIComponent(slug)}/join`, {}),
+  unjoin: (slug: string) => del(`/api/c/${encodeURIComponent(slug)}/join`),
+  requests: (slug: string) => api<{ requests: JoinRequest[] }>(`/api/c/${encodeURIComponent(slug)}/requests`),
+  answer: (slug: string, reviewerId: string, approve: boolean) =>
+    post<{ ok: true; approved: boolean }>(
+      `/api/c/${encodeURIComponent(slug)}/requests/${reviewerId}`,
+      { approve }
+    ),
 };
 
 /* Your own name, your own portrait and your own bio. The route takes no id — it
@@ -172,34 +259,34 @@ export type FeedEvent = {
   excerpt?: string | null;
 };
 
+/* O sino é de uma sala: a pessoa em três clubes tem três sinos, e cada um conta
+   o que aconteceu na sua. Ver routes/notifications.js. */
 export const notifications = {
   all: () =>
-    api<{ items: Notice[]; unread: number; seenAt: string | null; clearedAt: string | null }>(
-      '/api/notifications'
+    capi<{ items: Notice[]; unread: number; seenAt: string | null; clearedAt: string | null }>(
+      '/notifications'
     ),
-  seen: () => post<{ seenAt: string | null }>('/api/notifications/seen', {}),
+  seen: () => cpost<{ seenAt: string | null }>('/notifications/seen', {}),
   /* Esvazia a sua lista movendo uma data. Não apaga comentário, voto nem
      curtida: um aviso é a projeção de uma linha que é de outra pessoa. */
-  clear: () => post<{ clearedAt: string | null }>('/api/notifications/clear', {}),
+  clear: () => cpost<{ clearedAt: string | null }>('/notifications/clear', {}),
 };
 
 export const social = {
   all: () =>
-    api<{ comments: ReviewComment[]; votes: ReviewVote[]; commentLikes: CommentLike[] }>(
-      '/api/social'
-    ),
+    capi<{ comments: ReviewComment[]; votes: ReviewVote[]; commentLikes: CommentLike[] }>('/social'),
   comment: (reviewId: string, body: string, parentId?: string | null) =>
-    post<ReviewComment>(`/api/social/reviews/${reviewId}/comments`, { body, parentId: parentId ?? null }),
-  uncomment: (id: string) => del(`/api/social/comments/${id}`),
+    cpost<ReviewComment>(`/social/reviews/${reviewId}/comments`, { body, parentId: parentId ?? null }),
+  uncomment: (id: string) => cdel(`/social/comments/${id}`),
   likeComment: (id: string, liked: boolean) =>
-    api<{ liked: boolean }>(`/api/social/comments/${id}/like`, {
+    capi<{ liked: boolean }>(`/social/comments/${id}/like`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ liked }),
     }),
   /** 0 tira o voto. Devolve o voto gravado, ou null quando foi retirado. */
   vote: (reviewId: string, value: 1 | -1 | 0) =>
-    api<{ vote: ReviewVote | null }>(`/api/social/reviews/${reviewId}/vote`, {
+    capi<{ vote: ReviewVote | null }>(`/social/reviews/${reviewId}/vote`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),
@@ -305,6 +392,44 @@ export type WatchItem = {
      saiu do clube depois. */
   addedBy?: string | null;
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   De qual clube fala esta chamada.
+
+   O servidor põe o clube na URL (`/api/c/<slug>/...`) e o porquê está em
+   clubs.js: link colado no Discord tem de significar a mesma coisa para quem
+   clicar, e `EventSource` não sabe mandar cabeçalho.
+
+   Do lado de cá isso vira uma pergunta chata: quinze componentes chamam a API, e
+   passar o slug por props do App até o botão de curtir seria uma prop nova em
+   cada um deles para dizer uma coisa que a barra de endereço já diz.
+
+   Então mora aqui, num módulo, e é escrito por quem lê a rota — o App, antes de
+   montar qualquer tela. Estado mutável de módulo é feio e é o mesmo desenho que
+   `live.ts` já usa pelo mesmo motivo. O que o torna seguro é a ordem: nenhuma
+   busca acontece antes de a rota ser resolvida, porque a tela que buscaria só
+   existe depois de o clube existir.
+
+   `capi` grita em vez de mandar uma URL torta quando esquecem de escrever: um
+   404 de `/api/c/undefined/reviews` seria um bug procurado no servidor.
+   ══════════════════════════════════════════════════════════════════════════ */
+let currentClub: string | null = null;
+
+export function setClub(slug: string | null) {
+  currentClub = slug;
+}
+
+export function clubPath(path: string) {
+  if (!currentClub) throw new Error('Nenhum clube aberto — clubPath foi chamado cedo demais.');
+  return `/api/c/${encodeURIComponent(currentClub)}${path}`;
+}
+
+/** `api`, dentro do clube aberto. Todo o resto do produto usa esta. */
+export const capi = <T>(path: string, opts?: RequestInit) => api<T>(clubPath(path), opts);
+
+export const cpost = <T>(path: string, body: unknown) => post<T>(clubPath(path), body);
+
+export const cdel = (path: string) => del(clubPath(path));
 
 export async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(path, opts);

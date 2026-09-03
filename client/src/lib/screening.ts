@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, post } from '@/lib/api';
+import { capi, cpost, clubPath } from '@/lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The client half of the screening room.
@@ -106,7 +106,7 @@ export type ScreeningPulse = {
 export const DARK: ScreeningPulse = { open: false, status: 'paused', title: null, viewers: 0 };
 
 export async function readPulse(): Promise<ScreeningPulse> {
-  const s = await api<ScreeningState>('/api/screening');
+  const s = await capi<ScreeningState>('/screening');
   return {
     open: !!s.open,
     status: s.status === 'playing' ? 'playing' : 'paused',
@@ -140,7 +140,7 @@ async function measureOffset(samples = 5): Promise<number> {
   for (let i = 0; i < samples; i++) {
     try {
       const t0 = Date.now();
-      const res = await fetch('/api/screening/time');
+      const res = await fetch(clubPath('/screening/time'));
       if (!res.ok) continue;
       const { t } = (await res.json()) as { t: number };
       const t2 = Date.now();
@@ -187,7 +187,7 @@ export function useScreening(onError?: (msg: string) => void) {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource('/api/screening/stream');
+    const source = new EventSource(clubPath('/screening/stream'));
     /* EventSource retries on its own, forever, with no way to ask it to stop
        politely. That is right for a dropped connection and wrong for a refusal
        — too many tabs open, or a signed-out session — where retrying is a loop
@@ -243,7 +243,7 @@ export function useScreening(onError?: (msg: string) => void) {
         /* The reply carries the new snapshot and is deliberately thrown away:
            the stream is the one place state arrives from, so there is exactly
            one order of events and no way for the two paths to disagree. */
-        await post('/api/screening/command', { type, position });
+        await cpost('/screening/command', { type, position });
       } catch (e) {
         onError?.((e as Error).message);
       }
@@ -254,7 +254,7 @@ export function useScreening(onError?: (msg: string) => void) {
   const openFilm = useCallback(
     async (movieId: number) => {
       try {
-        await post('/api/screening/open', { movieId });
+        await cpost('/screening/open', { movieId });
       } catch (e) {
         onError?.('Não foi possível abrir a sessão: ' + (e as Error).message);
       }
@@ -264,7 +264,7 @@ export function useScreening(onError?: (msg: string) => void) {
 
   const closeFilm = useCallback(async () => {
     try {
-      await post('/api/screening/close', {});
+      await cpost('/screening/close', {});
     } catch (e) {
       onError?.('Não foi possível encerrar a sessão: ' + (e as Error).message);
     }
@@ -275,7 +275,7 @@ export function useScreening(onError?: (msg: string) => void) {
      choose a source publishes again. */
   const publishLink = useCallback(async (link: string | null) => {
     try {
-      await post('/api/screening/link', { link });
+      await cpost('/screening/link', { link });
     } catch {
       /* the room keeps whatever it had */
     }
@@ -289,7 +289,7 @@ export function useScreening(onError?: (msg: string) => void) {
   const publishSubtitle = useCallback(
     async (subtitle: { name: string; vtt: string } | null) => {
       try {
-        const snap = await post<ScreeningState>('/api/screening/subtitle', { subtitle });
+        const snap = await cpost<ScreeningState>('/screening/subtitle', { subtitle });
         return snap.subtitle?.id ?? null;
       } catch (e) {
         onError?.('Não foi possível enviar a legenda: ' + (e as Error).message);
@@ -300,7 +300,7 @@ export function useScreening(onError?: (msg: string) => void) {
   );
 
   /** The text the room announced. Throws, so the caller can leave it alone. */
-  const fetchSubtitle = useCallback(() => api<SubtitleFile>('/api/screening/subtitle'), []);
+  const fetchSubtitle = useCallback(() => capi<SubtitleFile>('/screening/subtitle'), []);
 
   /* Reporting readiness is chatter, not an action: it fires on every stall and
      every recovery, and a failed one is corrected by the next. Errors are
@@ -308,7 +308,7 @@ export function useScreening(onError?: (msg: string) => void) {
      something the club can neither see nor act on. */
   const setReady = useCallback(async (ready: boolean, sourceTag?: string | null) => {
     try {
-      await post('/api/screening/ready', { ready, sourceTag });
+      await cpost('/screening/ready', { ready, sourceTag });
     } catch {
       /* the next report corrects it */
     }

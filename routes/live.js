@@ -1,8 +1,9 @@
 const express = require('express');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const live = require('../live');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 /* ── o cano ───────────────────────────────────────────────────────────────
    Os cabeçalhos são todos funcionais, e são os mesmos da sala de projeção pelo
@@ -12,10 +13,13 @@ const router = express.Router();
    problema que ele veio resolver. `flushHeaders` manda tudo antes de existir o
    primeiro quadro, que é o que faz o navegador considerar a conexão aberta.
 
-   Precisa de sessão. Não porque o que trafega seja secreto — não trafega nada
-   além de uma palavra — mas porque uma conexão aberta é um recurso, e as
-   abertas devem ser todas de gente do clube. */
-router.get('/stream', auth.requireSession, (req, res) => {
+   Precisa de sessão E de ser membro, e a segunda parte é nova. Antes bastava
+   estar no clube porque só havia um; agora a conexão pertence a uma sala, e o
+   que trafega nela deixou de ser inócuo: um aviso de `social` diz "alguém
+   escreveu alguma coisa agora", e num clube privado saber que há gente ativa lá
+   dentro já é mais do que quem está de fora tem direito de saber. O pareamento
+   acontece em live.js, no `emit`; isto aqui é a metade que carimba a conexão. */
+router.get('/stream', auth.requireSession, clubs.requireMember, (req, res) => {
   if (!live.canSubscribe(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Conexões demais. Feche outras abas do Cineclube.' });
   }
@@ -33,7 +37,7 @@ router.get('/stream', auth.requireSession, (req, res) => {
   req.socket.setNoDelay?.(true);
 
   live.startTimers();
-  const entry = live.subscribe(res, req.session.reviewer_id);
+  const entry = live.subscribe(res, req.session.reviewer_id, req.club.id);
 
   let gone = false;
   const leave = () => {

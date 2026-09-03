@@ -1,0 +1,423 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const dbPath = path.join(os.tmpdir(), `cineclube-clubs-${crypto.randomUUID()}.db`);
+process.env.CINECLUBE_DB = dbPath;
+
+const app = require('../server');
+const db = require('../db');
+const live = require('../live');
+const screening = require('../screening');
+const kit = require('../testkit');
+const { critsFor } = require('../criteria');
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Os clubes, e a parede entre eles.
+
+   Este arquivo existe por um motivo diferente do resto da suíte. Os outros
+   protegem o que o produto FAZ; este protege o que ele NÃO PODE fazer, e a
+   diferença importa porque um vazamento não se parece com um defeito: nada
+   quebra, nada dá erro, nenhuma tela fica estranha. Alguém simplesmente vê uma
+   coisa que não é dele.
+
+   São quatro paredes, e cada uma pode cair sozinha:
+
+   1. a leitura — o acervo, o mural e a conversa de um clube privado;
+   2. a escrita — quem não é da sala não escreve nela, nem sendo membro de outra;
+   3. o cano ao vivo — que antes era um broadcast para todo mundo conectado;
+   4. a sala de projeção — que era uma sala em memória para o produto inteiro.
+
+   A terceira é a mais fácil de esquecer e a mais silenciosa: um aviso de
+   `social` não carrega conteúdo nenhum, só a palavra. Mas ele diz "alguma coisa
+   aconteceu agora", e num clube privado isso já é mais do que quem está de fora
+   tem direito de saber.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+let baseUrl;
+let server;
+
+test.before(async () => {
+  await app.ready;
+  server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  baseUrl = `http://127.0.0.1:${server.address().port}`;
+});
+
+test.after(async () => {
+  live.stopTimers();
+  screening.stopTimers();
+  const closed = new Promise(resolve => server.close(resolve));
+  server.closeAllConnections?.();
+  await closed;
+  db.close();
+  for (const suffix of ['', '-shm', '-wal']) {
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+  }
+});
+
+async function req(method, pathname, body, cookie) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (cookie) headers.Cookie = cookie;
+  const res = await fetch(baseUrl + pathname, {
+    method,
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+  return { status: res.status, body: parsed, setCookie: res.headers.get('set-cookie') };
+}
+
+let seq = 0;
+const at = (club, p) => `/api/c/${club.slug}${p}`;
+const movie = () => ({ id: 600000 + ++seq, title: `Filme ${seq}`, year: 2024, genre: 'Terror', poster: null });
+
+function scoresFor(genre, value) {
+  const o = {};
+  critsFor(genre).forEach(c => { o[c.key] = value; });
+  return o;
+}
+
+/* ── fundar ─────────────────────────────────────────────────────────────── */
+
+test('quem funda um clube é ADM dele', async () => {
+  const quem = await kit.signIn();
+  const res = await req('POST', '/api/clubs', { name: `Clube ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
+  assert.equal(res.status, 201);
+  assert.equal(res.body.club.role, 'admin');
+  assert.equal(res.body.club.visibility, 'private', 'um clube nasce fechado');
+});
+
+test('nome de clube é único, e a caixa não faz diferença', async () => {
+  const quem = await kit.signIn();
+  const nome = `Sala ${crypto.randomUUID().slice(0, 6)}`;
+  assert.equal((await req('POST', '/api/clubs', { name: nome }, quem.cookie)).status, 201);
+  const outro = await req('POST', '/api/clubs', { name: nome.toUpperCase() }, quem.cookie);
+  assert.equal(outro.status, 409, 'duas salas com o mesmo nome no saguão são uma sala que ninguém sabe escolher');
+});
+
+test('fundar exige estar logado', async () => {
+  assert.equal((await req('POST', '/api/clubs', { name: 'Anônimo' })).status, 401);
+});
+
+/* ── a parede da leitura ────────────────────────────────────────────────── */
+
+test('um clube privado não existe para quem não é dele', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Privado ${++seq}`, owner: dono.id });
+
+  for (const rota of ['', '/reviews', '/feed', '/social', '/watchlist', '/reviewers']) {
+    const res = await req('GET', at(sala, rota || ''), null, fora.cookie);
+    assert.equal(
+      res.status, 404,
+      `${rota || '/'} deveria responder 404 — um 403 confirma que o clube existe, ` +
+      'e a existência de um clube privado é justamente o que ele não quer contar'
+    );
+  }
+});
+
+test('um clube privado não aparece na vitrine', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const nome = `Escondido ${++seq}`;
+  await kit.makeClub({ name: nome, owner: dono.id });
+
+  const lista = await req('GET', '/api/clubs', null, fora.cookie);
+  assert.ok(!lista.body.open.some(c => c.name === nome));
+  assert.ok(!lista.body.mine.some(c => c.name === nome));
+});
+
+test('um clube público é lido por qualquer um, até deslogado', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Aberto ${++seq}`, owner: dono.id, visibility: 'public' });
+  await req('POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, dono.cookie);
+
+  const semSessao = await req('GET', at(sala, '/reviews'));
+  assert.equal(semSessao.status, 200);
+  assert.equal(semSessao.body.reviews.length, 1);
+});
+
+/* ── a parede da escrita ────────────────────────────────────────────────── */
+
+test('ler um clube aberto não dá direito de escrever nele', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Aberto ${++seq}`, owner: dono.id, visibility: 'public' });
+
+  const escrita = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 7) }, fora.cookie
+  );
+  assert.equal(escrita.status, 403);
+  assert.equal((await req('POST', at(sala, '/watchlist'), { movie: movie() }, fora.cookie)).status, 403);
+});
+
+test('ser de um clube não dá direito nenhum sobre outro', async () => {
+  const a = await kit.signIn();
+  const b = await kit.signIn();
+  const salaA = await kit.makeClub({ name: `Um ${++seq}`, owner: a.id, visibility: 'public' });
+  const salaB = await kit.makeClub({ name: `Dois ${++seq}`, owner: b.id, visibility: 'public' });
+
+  const ficha = await req('POST', at(salaB, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 9) }, b.cookie);
+  assert.equal(ficha.status, 201);
+
+  /* O id de uma ficha da sala B, usado numa rota da sala A. É o ataque mais
+     natural que existe aqui — um id é público — e o que o barra é `club_id` na
+     CONDIÇÃO das consultas de escrita, não no que elas leem. */
+  const comentario = await req(
+    'POST', at(salaA, `/social/reviews/${ficha.body.id}/comments`), { body: 'oi' }, a.cookie
+  );
+  assert.equal(comentario.status, 404);
+
+  const voto = await req(
+    'PUT', at(salaA, `/social/reviews/${ficha.body.id}/vote`), { value: 1 }, a.cookie
+  );
+  assert.equal(voto.status, 404);
+
+  const apagar = await req('DELETE', at(salaA, `/reviews/${ficha.body.id}`), null, a.cookie);
+  assert.equal(apagar.status, 404);
+
+  // E a ficha continua lá, inteira.
+  const depois = await req('GET', at(salaB, '/reviews'), null, b.cookie);
+  assert.equal(depois.body.reviews.length, 1);
+});
+
+/* ── a mesma pessoa, o mesmo filme, duas salas ──────────────────────────── */
+
+test('a ficha é do clube: a mesma pessoa avalia o mesmo filme duas vezes', async () => {
+  const quem = await kit.signIn();
+  const um = await kit.makeClub({ name: `Terror ${++seq}`, owner: quem.id });
+  const dois = await kit.makeClub({ name: `Drama ${++seq}`, owner: quem.id });
+  const filme = movie();
+
+  const a = await req('POST', at(um, '/reviews'), { movie: filme, scores: scoresFor('Terror', 9) }, quem.cookie);
+  const b = await req('POST', at(dois, '/reviews'), { movie: filme, scores: scoresFor('Terror', 4) }, quem.cookie);
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  assert.notEqual(a.body.final, b.body.final, 'as duas notas são independentes');
+
+  const listaUm = await req('GET', at(um, '/reviews'), null, quem.cookie);
+  assert.equal(listaUm.body.reviews.length, 1, 'cada acervo só tem o que é dele');
+});
+
+test('a fila também é por clube', async () => {
+  const quem = await kit.signIn();
+  const um = await kit.makeClub({ name: `Fila A ${++seq}`, owner: quem.id });
+  const dois = await kit.makeClub({ name: `Fila B ${++seq}`, owner: quem.id });
+  const filme = movie();
+
+  assert.equal((await req('POST', at(um, '/watchlist'), { movie: filme }, quem.cookie)).status, 201);
+  assert.equal((await req('POST', at(dois, '/watchlist'), { movie: filme }, quem.cookie)).status, 201);
+
+  const a = await req('GET', at(um, '/watchlist'), null, quem.cookie);
+  const b = await req('GET', at(dois, '/watchlist'), null, quem.cookie);
+  assert.equal(a.body.watchlist.length, 1);
+  assert.equal(b.body.watchlist.length, 1);
+});
+
+/* ── pedir para entrar ──────────────────────────────────────────────────── */
+
+test('pedir, aparecer para o ADM, e ser aceito', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Porta ${++seq}`, owner: dono.id, visibility: 'public' });
+
+  assert.equal((await req('POST', at(sala, '/join'), {}, quer.cookie)).status, 201);
+
+  const fila = await req('GET', at(sala, '/requests'), null, dono.cookie);
+  assert.equal(fila.body.requests.length, 1);
+  assert.equal(fila.body.requests[0].id, quer.id);
+
+  assert.equal(
+    (await req('GET', at(sala, '/requests'), null, quer.cookie)).status, 403,
+    'a fila de pedidos é de quem administra'
+  );
+
+  assert.equal((await req('POST', at(sala, `/requests/${quer.id}`), { approve: true }, dono.cookie)).status, 200);
+  assert.equal(
+    (await req('POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 6) }, quer.cookie)).status,
+    201,
+    'aceito, ele escreve'
+  );
+});
+
+test('recusar apaga o pedido e não põe ninguém dentro', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Recusa ${++seq}`, owner: dono.id, visibility: 'public' });
+
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+  await req('POST', at(sala, `/requests/${quer.id}`), { approve: false }, dono.cookie);
+
+  assert.equal((await req('GET', at(sala, '/requests'), null, dono.cookie)).body.requests.length, 0);
+  const escrita = await req('POST', at(sala, '/watchlist'), { movie: movie() }, quer.cookie);
+  assert.equal(escrita.status, 403);
+});
+
+test('não dá para pedir entrada num clube privado — nem descobrir que ele existe', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Fechado ${++seq}`, owner: dono.id });
+  assert.equal((await req('POST', at(sala, '/join'), {}, quer.cookie)).status, 404);
+});
+
+test('fechar o clube joga fora os pedidos pendentes', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Fechando ${++seq}`, owner: dono.id, visibility: 'public' });
+
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+  await req('PATCH', at(sala, ''), { visibility: 'private' }, dono.cookie);
+
+  const fila = await req('GET', at(sala, '/requests'), null, dono.cookie);
+  assert.equal(fila.body.requests.length, 0, 'um pedido que ninguém mais poderia ter feito não é uma fila');
+});
+
+/* ── quem manda ─────────────────────────────────────────────────────────── */
+
+test('só o ADM muda o que a sala é', async () => {
+  const dono = await kit.signIn();
+  const gente = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Mando ${++seq}`, owner: dono.id, visibility: 'public' });
+  await kit.join(sala.id, gente.id);
+
+  assert.equal((await req('PATCH', at(sala, ''), { tagline: 'nova' }, gente.cookie)).status, 403);
+  assert.equal((await req('PATCH', at(sala, ''), { tagline: 'nova' }, dono.cookie)).status, 200);
+});
+
+test('o último ADM não sai e deixa a sala trancada', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Único ${++seq}`, owner: dono.id });
+
+  const saida = await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie);
+  assert.equal(saida.status, 409, 'sem ADM ninguém aprova entrada nem muda nada, e as fichas ficam trancadas lá dentro');
+
+  // Com um segundo ADM, sai.
+  const outro = await kit.signIn();
+  await kit.join(sala.id, outro.id, 'admin');
+  assert.equal((await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie)).status, 204);
+});
+
+test('um membro sai sozinho, e as fichas dele ficam', async () => {
+  const dono = await kit.signIn();
+  const gente = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Saída ${++seq}`, owner: dono.id, visibility: 'public' });
+  await kit.join(sala.id, gente.id);
+
+  await req('POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 5) }, gente.cookie);
+  assert.equal((await req('DELETE', at(sala, `/members/${gente.id}`), null, gente.cookie)).status, 204);
+
+  const acervo = await req('GET', at(sala, '/reviews'), null, dono.cookie);
+  assert.equal(acervo.body.reviews.length, 1, 'sair de uma sala não desdiz o que se falou nela');
+});
+
+test('ninguém tira outra pessoa sem ser ADM', async () => {
+  const dono = await kit.signIn();
+  const a = await kit.signIn();
+  const b = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Tesoura ${++seq}`, owner: dono.id });
+  await kit.join(sala.id, a.id);
+  await kit.join(sala.id, b.id);
+
+  assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, a.cookie)).status, 403);
+  assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, dono.cookie)).status, 204);
+});
+
+/* ── a parede do cano ao vivo ───────────────────────────────────────────── */
+
+test('um aviso de outra sala não chega neste cano', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Cano A ${++seq}`, owner: dono.id });
+  const outra = await kit.makeClub({ name: `Cano B ${++seq}`, owner: dono.id });
+
+  const control = new AbortController();
+  const res = await fetch(baseUrl + at(sala, '/live/stream'), {
+    headers: { Cookie: dono.cookie, Accept: 'text/event-stream' },
+    signal: control.signal,
+  });
+  assert.equal(res.status, 200);
+
+  const kinds = [];
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  (async () => {
+    let buf = '';
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          if (chunk.startsWith('data: ')) kinds.push(JSON.parse(chunk.slice(6)).kind);
+        }
+      }
+    } catch { /* abortado no fim */ }
+  })();
+
+  const settle = () => new Promise(r => setTimeout(r, 250));
+  await settle();
+  kinds.length = 0; // descarta o `hello`
+
+  try {
+    // Uma escrita na OUTRA sala.
+    await req('POST', at(outra, '/watchlist'), { movie: movie() }, dono.cookie);
+    await settle();
+    assert.deepEqual(kinds, [], 'nada da outra sala pode chegar aqui');
+
+    // E uma na própria, que tem de chegar.
+    await req('POST', at(sala, '/watchlist'), { movie: movie() }, dono.cookie);
+    await settle();
+    assert.ok(kinds.includes('watchlist'), 'o que é desta sala tem de chegar');
+  } finally {
+    control.abort();
+  }
+});
+
+test('quem não é do clube não abre o cano dele', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Cano fechado ${++seq}`, owner: dono.id });
+
+  const res = await fetch(baseUrl + at(sala, '/live/stream'), { headers: { Cookie: fora.cookie } });
+  await res.text();
+  assert.equal(res.status, 404);
+});
+
+/* ── a parede da sala de projeção ───────────────────────────────────────── */
+
+test('duas salas, duas sessões independentes', async () => {
+  const dono = await kit.signIn();
+  const um = await kit.makeClub({ name: `Projeção A ${++seq}`, owner: dono.id });
+  const dois = await kit.makeClub({ name: `Projeção B ${++seq}`, owner: dono.id });
+
+  const filme = movie();
+  await req('POST', at(um, '/watchlist'), { movie: filme }, dono.cookie);
+
+  assert.equal((await req('POST', at(um, '/screening/open'), { movieId: filme.id }, dono.cookie)).status, 201);
+
+  const salaUm = await req('GET', at(um, '/screening'), null, dono.cookie);
+  const salaDois = await req('GET', at(dois, '/screening'), null, dono.cookie);
+  assert.equal(salaUm.body.open, true);
+  assert.equal(salaDois.body.open, false, 'a sessão de um clube não acende a do outro');
+});
+
+test('a sala de projeção é de dentro: nem ler, sem ser membro', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  /* Pública de propósito: mesmo aberta para leitura, a sala de projeção não é.
+     Assistir junto é uma coisa que se faz de dentro, e o painel diz quem está
+     nela agora — que é informação sobre pessoas, não sobre filmes. */
+  const sala = await kit.makeClub({ name: `Projeção aberta ${++seq}`, owner: dono.id, visibility: 'public' });
+
+  assert.equal((await req('GET', at(sala, '/screening'), null, fora.cookie)).status, 403);
+  assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 200, 'mas o acervo continua aberto');
+});

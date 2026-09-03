@@ -26,6 +26,17 @@ process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
 const db = require('../db');
+const kit = require('../testkit');
+
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo.
+
+   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
+   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
+   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
 
 let baseUrl;
 let server;
@@ -35,6 +46,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube da Sessão', visibility: 'public' });
 });
 
 test.after(async () => {
@@ -64,13 +76,18 @@ async function req(method, pathname, body, cookie) {
 
 let seq = 0;
 
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newMember(name) {
-  const pin = '4321';
-  const created = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin });
-  assert.equal(created.status, 201);
-  const login = await req('POST', '/api/auth/login', { reviewerId: created.body.id, pin });
-  assert.equal(login.status, 200);
-  return { ...created.body, cookie: login.setCookie.split(';')[0] };
+  const who = await kit.signIn(name || `Sócio ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
+}
+
+/* E alguém que NÃO é da sala. A sala de projeção é a única coisa deste produto
+   que exige ser membro até para olhar: assistir é uma coisa que se faz de
+   dentro, e o painel diz quem está na sala agora. */
+async function newOutsider(name) {
+  return kit.signIn(name || `De Fora ${++seq}`);
 }
 
 /** A film in the club's queue, which is where `POST /open` looks it up. */
@@ -84,7 +101,7 @@ async function queuedFilm(overrides) {
     poster: 'https://image.tmdb.org/t/p/w342/real.jpg',
     ...overrides,
   };
-  assert.equal((await req('POST', '/api/watchlist', { movie: film }, member.cookie)).status, 201);
+  assert.equal((await req('POST', at('/watchlist'), { movie: film }, member.cookie)).status, 201);
   return film;
 }
 
@@ -94,7 +111,7 @@ async function queuedFilm(overrides) {
    Everything a browser's EventSource does that matters here, and nothing else. */
 async function listen(cookie) {
   const control = new AbortController();
-  const res = await fetch(`${baseUrl}/api/screening/stream`, {
+  const res = await fetch(baseUrl + at('/screening/stream'), {
     headers: { Cookie: cookie },
     signal: control.signal,
   });
@@ -153,14 +170,14 @@ async function listen(cookie) {
 
 test('the room is the club\'s, not the internet\'s', async () => {
   for (const [method, route, body] of [
-    ['GET', '/api/screening'],
-    ['GET', '/api/screening/stream'],
-    ['POST', '/api/screening/open', { movieId: 1 }],
-    ['POST', '/api/screening/close', {}],
-    ['POST', '/api/screening/command', { type: 'play' }],
-    ['POST', '/api/screening/ready', { ready: true }],
-    ['GET', '/api/screening/subtitle'],
-    ['POST', '/api/screening/subtitle', { subtitle: null }],
+    ['GET', at('/screening')],
+    ['GET', at('/screening/stream')],
+    ['POST', at('/screening/open'), { movieId: 1 }],
+    ['POST', at('/screening/close'), {}],
+    ['POST', at('/screening/command'), { type: 'play' }],
+    ['POST', at('/screening/ready'), { ready: true }],
+    ['GET', at('/screening/subtitle')],
+    ['POST', at('/screening/subtitle'), { subtitle: null }],
   ]) {
     const { status } = await req(method, route, body);
     assert.equal(status, 401, `${method} ${route} deveria exigir sessão`);
@@ -175,7 +192,7 @@ test('the film is read out of the club\'s records, never out of the request', as
 
   const opened = await req(
     'POST',
-    '/api/screening/open',
+    at('/screening/open'),
     // Everything but the id is noise, and the poster is the reason it matters:
     // accepted, it would be an arbitrary outbound request in every browser.
     { movieId: film.id, movie: { title: 'Outro Filme', poster: 'javascript:alert(1)' } },
@@ -187,35 +204,35 @@ test('the film is read out of the club\'s records, never out of the request', as
   assert.equal(opened.body.movie.title, 'A Cópia Verdadeira');
   assert.equal(opened.body.movie.poster, film.poster);
 
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
 test('a film the club does not have is not a session', async () => {
   const member = await newMember();
-  assert.equal((await req('POST', '/api/screening/open', { movieId: 999999999 }, member.cookie)).status, 404);
-  assert.equal((await req('POST', '/api/screening/open', { movieId: 'nove' }, member.cookie)).status, 400);
+  assert.equal((await req('POST', at('/screening/open'), { movieId: 999999999 }, member.cookie)).status, 404);
+  assert.equal((await req('POST', at('/screening/open'), { movieId: 'nove' }, member.cookie)).status, 400);
 });
 
 /* ── commands ─────────────────────────────────────────────────────────────── */
 
 test('a command needs an open session and a real name', async () => {
   const member = await newMember();
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 
-  assert.equal((await req('POST', '/api/screening/command', { type: 'play' }, member.cookie)).status, 409);
-  assert.equal((await req('POST', '/api/screening/command', { type: 'rewind' }, member.cookie)).status, 400);
+  assert.equal((await req('POST', at('/screening/command'), { type: 'play' }, member.cookie)).status, 409);
+  assert.equal((await req('POST', at('/screening/command'), { type: 'rewind' }, member.cookie)).status, 400);
 
   const film = await queuedFilm();
-  await req('POST', '/api/screening/open', { movieId: film.id }, member.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, member.cookie);
   const nonsense = await req(
     'POST',
-    '/api/screening/command',
+    at('/screening/command'),
     { type: 'seek', position: 'meia hora' },
     member.cookie
   );
   assert.equal(nonsense.status, 400, 'um NaN gravado no estado trava a sessão do clube inteiro');
 
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
 /* ── the stream, which is the whole point ─────────────────────────────────── */
@@ -231,19 +248,19 @@ test('one member presses play and the other member\'s stream says so', async () 
   assert.equal(hello.status, 'paused');
   assert.ok(hello.viewers.some(v => v.name === 'Bruno da Sessão'), 'quem conecta entra na sala');
 
-  await req('POST', '/api/screening/open', { movieId: film.id }, ana.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie);
   const opened = await ear.next(f => f.type === 'state' && f.open);
   assert.equal(opened.movie.title, 'Sessão Sincronizada');
 
-  await req('POST', '/api/screening/command', { type: 'play', position: 0 }, ana.cookie);
+  await req('POST', at('/screening/command'), { type: 'play', position: 0 }, ana.cookie);
   const playing = await ear.next(f => f.status === 'playing');
   assert.ok(playing.revision > opened.revision, 'toda mudança avança a revisão');
 
-  await req('POST', '/api/screening/command', { type: 'seek', position: 1200 }, ana.cookie);
+  await req('POST', at('/screening/command'), { type: 'seek', position: 1200 }, ana.cookie);
   const sought = await ear.next(f => f.position >= 1200);
   assert.equal(sought.status, 'playing', 'arrastar a barra não pausa o filme');
 
-  await req('POST', '/api/screening/close', {}, ana.cookie);
+  await req('POST', at('/screening/close'), {}, ana.cookie);
   await ear.close();
 });
 
@@ -261,11 +278,11 @@ test('uma travada chega ao painel do clube sem parar o filme', async () => {
   // one every later assertion in this test reads from.
   await ear.next(f => f.type === 'state' && f.viewers.some(v => v.name === 'Bruno do Buffer'));
 
-  await req('POST', '/api/screening/open', { movieId: film.id }, ana.cookie);
-  await req('POST', '/api/screening/command', { type: 'play', position: 0 }, ana.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie);
+  await req('POST', at('/screening/command'), { type: 'play', position: 0 }, ana.cookie);
   const playing = await ear.next(f => f.status === 'playing');
 
-  await req('POST', '/api/screening/ready', { ready: false, sourceTag: 'abc123' }, bruno.cookie);
+  await req('POST', at('/screening/ready'), { ready: false, sourceTag: 'abc123' }, bruno.cookie);
   const stalled = await ear.next(
     f => f.type === 'state' && f.viewers.some(v => v.name === 'Bruno do Buffer' && !v.ready)
   );
@@ -278,12 +295,12 @@ test('uma travada chega ao painel do clube sem parar o filme', async () => {
      revisão — e sem revisão não há como dizer, olhando os quadros, que um
      "Bruno pronto" é o de agora e não o de antes de o filme começar. O
      instantâneo é a sala neste instante, sem ordem para desempatar. */
-  await req('POST', '/api/screening/ready', { ready: true }, bruno.cookie);
-  const now = (await req('GET', '/api/screening', null, ana.cookie)).body;
+  await req('POST', at('/screening/ready'), { ready: true }, bruno.cookie);
+  const now = (await req('GET', at('/screening'), null, ana.cookie)).body;
   assert.equal(now.status, 'playing');
   assert.equal(now.viewers.find(v => v.name === 'Bruno do Buffer').ready, true);
 
-  await req('POST', '/api/screening/close', {}, ana.cookie);
+  await req('POST', at('/screening/close'), {}, ana.cookie);
   await ear.close();
   await brunoEar.close();
 });
@@ -296,8 +313,8 @@ test('the link the club is on reaches a member who arrives later', async () => {
   const film = await queuedFilm();
   const magnet = 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Filme';
 
-  await req('POST', '/api/screening/open', { movieId: film.id }, first.cookie);
-  const published = await req('POST', '/api/screening/link', { link: magnet }, first.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, first.cookie);
+  const published = await req('POST', at('/screening/link'), { link: magnet }, first.cookie);
   assert.equal(published.status, 200);
 
   /* The whole point: the newcomer's very first frame already names the source,
@@ -307,32 +324,32 @@ test('the link the club is on reaches a member who arrives later', async () => {
   assert.equal(hello.link, magnet);
 
   await ear.close();
-  await req('POST', '/api/screening/close', {}, first.cookie);
+  await req('POST', at('/screening/close'), {}, first.cookie);
 });
 
 test('the link is refused unless it is one a browser can be handed', async () => {
   const member = await newMember();
   const film = await queuedFilm();
-  await req('POST', '/api/screening/open', { movieId: film.id }, member.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, member.cookie);
 
   for (const bad of ['javascript:alert(1)', 'data:text/html,<script>1</script>', 'blob:http://x/1', 'nada']) {
-    const { status } = await req('POST', '/api/screening/link', { link: bad }, member.cookie);
+    const { status } = await req('POST', at('/screening/link'), { link: bad }, member.cookie);
     assert.equal(status, 400, `${bad} deveria ser recusado`);
   }
 
-  const { body } = await req('GET', '/api/screening', null, member.cookie);
+  const { body } = await req('GET', at('/screening'), null, member.cookie);
   assert.equal(body.link, null);
 
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
 test('there is nothing to point at without a session', async () => {
   const member = await newMember();
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 
   const { status } = await req(
     'POST',
-    '/api/screening/link',
+    at('/screening/link'),
     { link: 'https://arquivo.exemplo/filme.mp4' },
     member.cookie
   );
@@ -367,7 +384,7 @@ test('leaving the stream takes the viewer out of the room', async () => {
 
   // The close travels back through the socket, so it is not instant.
   for (let i = 0; i < 40; i++) {
-    const { body } = await req('GET', '/api/screening', null, member.cookie);
+    const { body } = await req('GET', at('/screening'), null, member.cookie);
     if (!body.viewers.some(v => v.name === 'Quem Sai')) return;
     await new Promise(resolve => setTimeout(resolve, 25));
   }
@@ -380,14 +397,14 @@ test('a subtitle posted by one member is announced to another, and collected', a
   const film = await queuedFilm({ title: 'A Sessão Legendada' });
   const ana = await newMember('Ana da Legenda');
   const bruno = await newMember('Bruno da Legenda');
-  assert.equal((await req('POST', '/api/screening/open', { movieId: film.id }, ana.cookie)).status, 201);
+  assert.equal((await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie)).status, 201);
 
   const ear = await listen(bruno.cookie);
   const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nboa noite';
 
   const sent = await req(
     'POST',
-    '/api/screening/subtitle',
+    at('/screening/subtitle'),
     { subtitle: { name: 'filme.srt', vtt } },
     ana.cookie
   );
@@ -397,52 +414,52 @@ test('a subtitle posted by one member is announced to another, and collected', a
   // Announced only: the text must never ride on a frame the room re-emits.
   assert.equal(frame.subtitle.vtt, undefined);
 
-  const got = await req('GET', '/api/screening/subtitle', null, bruno.cookie);
+  const got = await req('GET', at('/screening/subtitle'), null, bruno.cookie);
   assert.equal(got.status, 200);
   assert.equal(got.body.vtt, vtt);
   assert.equal(got.body.id, frame.subtitle.id, 'o id busca exatamente o que foi anunciado');
 
   // And removing it is the room's doing, not one screen's.
   assert.equal(
-    (await req('POST', '/api/screening/subtitle', { subtitle: null }, bruno.cookie)).status,
+    (await req('POST', at('/screening/subtitle'), { subtitle: null }, bruno.cookie)).status,
     200
   );
   await ear.next(f => f.type === 'state' && f.subtitle === null);
-  assert.equal((await req('GET', '/api/screening/subtitle', null, ana.cookie)).status, 404);
+  assert.equal((await req('GET', at('/screening/subtitle'), null, ana.cookie)).status, 404);
 
   await ear.close();
-  await req('POST', '/api/screening/close', {}, ana.cookie);
+  await req('POST', at('/screening/close'), {}, ana.cookie);
 });
 
 test('a subtitle needs an open session, and has to look like one', async () => {
   const member = await newMember();
   const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\noi';
 
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
   const shut = await req(
     'POST',
-    '/api/screening/subtitle',
+    at('/screening/subtitle'),
     { subtitle: { name: 'a.srt', vtt } },
     member.cookie
   );
   assert.equal(shut.status, 409);
 
   const film = await queuedFilm();
-  assert.equal((await req('POST', '/api/screening/open', { movieId: film.id }, member.cookie)).status, 201);
+  assert.equal((await req('POST', at('/screening/open'), { movieId: film.id }, member.cookie)).status, 201);
 
   for (const subtitle of [{ name: 'a.srt' }, { name: '  ', vtt }, { vtt }, 'WEBVTT']) {
-    const { status } = await req('POST', '/api/screening/subtitle', { subtitle }, member.cookie);
+    const { status } = await req('POST', at('/screening/subtitle'), { subtitle }, member.cookie);
     assert.equal(status, 400, JSON.stringify(subtitle));
   }
-  assert.equal((await req('GET', '/api/screening/subtitle', null, member.cookie)).status, 404);
+  assert.equal((await req('GET', at('/screening/subtitle'), null, member.cookie)).status, 404);
 
-  await req('POST', '/api/screening/close', {}, member.cookie);
+  await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
 test('the clock endpoint answers with the server\'s instant', async () => {
   const member = await newMember();
   const before = Date.now();
-  const { status, body } = await req('GET', '/api/screening/time', null, member.cookie);
+  const { status, body } = await req('GET', at('/screening/time'), null, member.cookie);
   const after = Date.now();
 
   assert.equal(status, 200);

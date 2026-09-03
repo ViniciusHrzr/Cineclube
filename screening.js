@@ -6,11 +6,17 @@
    chat — which holds until the first pause. This module is the thing that
    replaces that count.
 
-   One room, because the club is one club. It lives in memory and not in the
-   database: a screening is the two hours it is happening, and a restart of the
-   server ends it. That is honest rather than lossy — on the free instance a
-   cold start would end it anyway, and a table would only record that a
-   screening which no longer has any viewers once existed.
+   Uma sala por clube. Era uma sala só, porque o produto era um clube só, e a
+   diferença entre as duas frases é o mapa lá embaixo: cada clube tem o seu
+   quarto, com o seu filme, a sua posição e as suas pessoas dentro, e nada de um
+   atravessa para o outro.
+
+   Vive em memória e não no banco: uma sessão são as duas horas em que ela está
+   acontecendo, e reiniciar o servidor acaba com ela. Isso é honesto em vez de
+   perda — na instância grátis um cold start acabaria com ela de qualquer jeito,
+   e uma tabela só registraria que uma sessão sem nenhum espectador existiu um
+   dia. A consequência boa de ser memória é que uma sala vazia simplesmente
+   deixa de existir, e um produto com mil clubes não carrega mil quartos.
 
    ── the one idea in here ──────────────────────────────────────────────────
    The position is never stored ticking. What is stored is a position and the
@@ -74,46 +80,74 @@ const MAX_LINK = 4096;
    matters is this one. */
 const MAX_SUBTITLE = 512 * 1024;
 
-const room = {
-  open: false,
-  movie: null,
-  status: 'paused',
-  /** Seconds. True as of `updatedAt`, not as of now — see the header. */
-  position: 0,
-  updatedAt: Date.now(),
-  /** Bumped by every mutation, so a client can drop a frame that overtook it. */
-  revision: 0,
-  /* What the club is watching from, when that is a thing that can be handed
-     over: a magnet or a URL. Null while nobody has one, and null forever for a
-     file on somebody's disk — those bytes cannot be shared by naming them. */
-  link: null,
-  /* The club's subtitle: `{ id, name, vtt }`, or null while there is none.
-     Unlike the link this is the content and not a pointer to it, because there
-     is nowhere else for it to live — the file came off somebody's disk. What
-     the snapshot carries is still only a pointer; see `snapshot`. */
-  subtitle: null,
-  viewers: new Map(),
-};
+function blankRoom(clubId) {
+  return {
+    clubId,
+    open: false,
+    movie: null,
+    status: 'paused',
+    /** Seconds. True as of `updatedAt`, not as of now — see the header. */
+    position: 0,
+    updatedAt: Date.now(),
+    /** Bumped by every mutation, so a client can drop a frame that overtook it. */
+    revision: 0,
+    /* What the club is watching from, when that is a thing that can be handed
+       over: a magnet or a URL. Null while nobody has one, and null forever for a
+       file on somebody's disk — those bytes cannot be shared by naming them. */
+    link: null,
+    /* The club's subtitle: `{ id, name, vtt }`, or null while there is none.
+       Unlike the link this is the content and not a pointer to it, because there
+       is nowhere else for it to live — the file came off somebody's disk. What
+       the snapshot carries is still only a pointer; see `snapshot`. */
+    subtitle: null,
+    viewers: new Map(),
+    /* As conexões desta sala. Ficavam num Set do módulo, e ali um broadcast era
+       para todo mundo que estivesse ouvindo qualquer coisa. */
+    streams: new Set(),
+  };
+}
+
+const rooms = new Map();
+
+/* A sala de um clube, criada na primeira vez que alguém pergunta por ela. Um
+   quarto vazio é barato; o que custa é ele ficar existindo depois que a última
+   pessoa saiu, e disso cuida `sweep`. */
+function roomFor(clubId) {
+  let held = rooms.get(clubId);
+  if (!held) {
+    held = blankRoom(clubId);
+    rooms.set(clubId, held);
+  }
+  return held;
+}
+
+/* Uma sala fechada, sem ninguém dentro e sem conexão nenhuma não é uma sala, é
+   memória. Chamado quando alguém sai — que é o único momento em que uma sala
+   pode ter acabado de ficar vazia. */
+function sweep(room) {
+  if (room.open || room.streams.size || room.viewers.size) return;
+  rooms.delete(room.clubId);
+}
 
 /* ── derivation ───────────────────────────────────────────────────────────── */
 
-function durationSeconds() {
+function durationSeconds(room) {
   const minutes = room.movie?.runtime;
   return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : null;
 }
 
 /** Where the film is, right now. The whole point of the module. */
-function positionAt(now = Date.now()) {
+function positionAt(room, now = Date.now()) {
   if (room.status !== 'playing') return room.position;
   const elapsed = (now - room.updatedAt) / 1000;
-  return clampPosition(room.position + elapsed);
+  return clampPosition(room, room.position + elapsed);
 }
 
 /** Refuses NaN and Infinity, and keeps the number inside the film. */
-function clampPosition(seconds) {
+function clampPosition(room, seconds) {
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 0) return 0;
-  const duration = durationSeconds();
+  const duration = durationSeconds(room);
   const ceiling = duration == null ? Number.MAX_SAFE_INTEGER : duration + RUNTIME_SLACK_SECONDS;
   return Math.min(n, ceiling);
 }
@@ -156,12 +190,12 @@ function isShareableLink(value) {
    which is what makes "pause" mean "pause here" rather than "pause at whatever
    the last command said". */
 
-function stamp(now) {
+function stamp(room, now) {
   room.updatedAt = now;
   room.revision += 1;
 }
 
-function open(movie, now = Date.now()) {
+function open(room, movie, now = Date.now()) {
   room.open = true;
   room.movie = movie;
   room.status = 'paused';
@@ -170,8 +204,8 @@ function open(movie, now = Date.now()) {
   // does a subtitle, and rather more obviously.
   room.link = null;
   room.subtitle = null;
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
 }
 
 /* ── the source, once it can be handed over ───────────────────────────────
@@ -184,11 +218,11 @@ function open(movie, now = Date.now()) {
    Passing `null` clears it, which is what happens when the source turns out to
    be a file on one person's disk: there is nothing to hand over, and a stale
    pointer is worse than none. */
-function setLink(link, now = Date.now()) {
+function setLink(room, link, now = Date.now()) {
   if (link !== null && !isShareableLink(link)) return false;
   room.link = link === null ? null : link.trim();
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
   return true;
 }
 
@@ -208,28 +242,28 @@ function setLink(link, now = Date.now()) {
    Passing `null` clears it for everyone, which is what "Remover" now means —
    the subtitle belongs to the room, so leaving one member's screen is not a
    thing it can do. */
-function setSubtitle(subtitle, now = Date.now()) {
+function setSubtitle(room, subtitle, now = Date.now()) {
   if (subtitle === null) {
     room.subtitle = null;
-    stamp(now);
-    broadcastState();
+    stamp(room, now);
+    broadcastState(room);
     return true;
   }
   const name = text(subtitle?.name);
   const vtt = typeof subtitle?.vtt === 'string' ? subtitle.vtt : null;
   if (!name || !vtt || !vtt.trim() || vtt.length > MAX_SUBTITLE) return false;
 
-  stamp(now);
+  stamp(room, now);
   /* Identified by the revision it arrived on, which is already monotonic. A
      client compares it against the one it holds and fetches only on a
      difference — including the difference between "no subtitle" and "one it
      has never seen", which is how somebody arriving mid-film gets it. */
   room.subtitle = { id: room.revision, name, vtt };
-  broadcastState();
+  broadcastState(room);
   return true;
 }
 
-function close(now = Date.now()) {
+function close(room, now = Date.now()) {
   room.open = false;
   room.movie = null;
   room.status = 'paused';
@@ -242,39 +276,39 @@ function close(now = Date.now()) {
     viewer.ready = true;
     viewer.sourceTag = null;
   }
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
 }
 
-function play(at, now = Date.now()) {
-  room.position = at == null ? positionAt(now) : clampPosition(at);
+function play(room, at, now = Date.now()) {
+  room.position = at == null ? positionAt(room, now) : clampPosition(room, at);
   room.status = 'playing';
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
 }
 
-function pause(at, now = Date.now()) {
-  room.position = at == null ? positionAt(now) : clampPosition(at);
+function pause(room, at, now = Date.now()) {
+  room.position = at == null ? positionAt(room, now) : clampPosition(room, at);
   room.status = 'paused';
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
 }
 
-function seek(to, now = Date.now()) {
-  room.position = clampPosition(to);
+function seek(room, to, now = Date.now()) {
+  room.position = clampPosition(room, to);
   // Status is deliberately untouched: dragging the bar while the film runs
   // should land you somewhere else in a film that is still running.
-  stamp(now);
-  broadcastState();
+  stamp(room, now);
+  broadcastState(room);
 }
 
 /** Applies a command a member sent. Returns false if it was not a real one. */
-function command(type, position, now = Date.now()) {
+function command(room, type, position, now = Date.now()) {
   if (!COMMANDS.has(type)) return false;
   if (!room.open) return false;
-  if (type === 'play') play(position, now);
-  else if (type === 'pause') pause(position, now);
-  else seek(position, now);
+  if (type === 'play') play(room, position, now);
+  else if (type === 'pause') pause(room, position, now);
+  else seek(room, position, now);
   return true;
 }
 
@@ -299,7 +333,7 @@ function command(type, position, now = Date.now()) {
 
    Quem travou não fica para trás sozinho: o corretor de deriva do player dele
    o traz de volta para a posição da sala assim que ele conseguir tocar. */
-function setReady(reviewerId, ready, sourceTag) {
+function setReady(room, reviewerId, ready, sourceTag) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
 
@@ -308,7 +342,7 @@ function setReady(reviewerId, ready, sourceTag) {
     viewer.sourceTag = isAllowedSource(sourceTag) ? text(sourceTag) : null;
   }
 
-  broadcastState();
+  broadcastState(room);
 }
 
 /* ── who is in the room ───────────────────────────────────────────────────
@@ -316,7 +350,7 @@ function setReady(reviewerId, ready, sourceTag) {
    open in two tabs is one member: removing them when the first tab closes
    would empty the room out from under somebody who is still watching. */
 
-function attach(session) {
+function attach(room, session) {
   const existing = room.viewers.get(session.reviewer_id);
   if (existing) {
     // A second tab is not a second person, and nothing about the room changed.
@@ -341,31 +375,33 @@ function attach(session) {
      stretch stayed invisible until somebody pressed something — and the sync
      frames carry no viewers, so the wait could be the whole film. Leaving
      already announces itself in `detach`; arriving has to as well. */
-  broadcastState();
+  broadcastState(room);
   return viewer;
 }
 
 /* Sair não mexe no filme. Havia aqui uma retomada — se a sala estava presa na
    roda de quem saiu, a roda ia embora com ele —, e ela existia porque a sala
    se prendia. Não se prende mais: o que sai daqui é uma pessoa do painel. */
-function detach(reviewerId) {
+function detach(room, reviewerId) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
   viewer.streams -= 1;
   if (viewer.streams > 0) return;
   room.viewers.delete(reviewerId);
-  broadcastState();
+  broadcastState(room);
+  // A última pessoa saiu de uma sala fechada: o quarto some com ela.
+  sweep(room);
 }
 
 /* ── what a client is told ────────────────────────────────────────────────── */
 
-function snapshot(now = Date.now()) {
+function snapshot(room, now = Date.now()) {
   return {
     type: 'state',
     open: room.open,
     movie: room.movie,
     status: room.status,
-    position: positionAt(now),
+    position: positionAt(room, now),
     revision: room.revision,
     link: room.link,
     /* The announcement, not the file. This snapshot is re-emitted on every
@@ -399,8 +435,6 @@ function snapshot(now = Date.now()) {
    A pleasant side effect: an open stream is an open request, so the free
    instance does not idle out in the middle of a film. */
 
-const streams = new Set();
-
 function write(res, payload) {
   try {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -410,26 +444,37 @@ function write(res, payload) {
   }
 }
 
-function broadcastState() {
-  if (!streams.size) return;
-  const frame = snapshot();
-  for (const res of streams) write(res, frame);
+function broadcastState(room) {
+  if (!room.streams.size) return;
+  const frame = snapshot(room);
+  for (const res of room.streams) write(res, frame);
 }
 
-/** True when there is room for one more connection. */
-function canSubscribe(reviewerId) {
-  if (streams.size >= MAX_STREAMS_TOTAL) return false;
+/** Quantas conexões existem em todas as salas somadas. */
+function totalStreams() {
+  let n = 0;
+  for (const r of rooms.values()) n += r.streams.size;
+  return n;
+}
+
+/* True quando cabe mais uma conexão. Dois tetos e eles medem coisas diferentes:
+   o por pessoa é sobre abas esquecidas de um membro, e continua sendo por sala;
+   o total é sobre a memória da instância, e por isso é somado sobre TODAS as
+   salas — vinte por clube seria vinte vezes o número de clubes, que é o mesmo
+   que não ter teto nenhum. */
+function canSubscribe(room, reviewerId) {
+  if (totalStreams() >= MAX_STREAMS_TOTAL) return false;
   const viewer = room.viewers.get(reviewerId);
   return !viewer || viewer.streams < MAX_STREAMS_PER_VIEWER;
 }
 
-function subscribe(res) {
-  streams.add(res);
-  write(res, snapshot());
+function subscribe(room, res) {
+  room.streams.add(res);
+  write(res, snapshot(room));
 }
 
-function unsubscribe(res) {
-  streams.delete(res);
+function unsubscribe(room, res) {
+  room.streams.delete(res);
 }
 
 /* Two heartbeats with two different jobs. The comment ping is for the proxy in
@@ -441,23 +486,31 @@ let timers = null;
 
 function startTimers() {
   if (timers) return;
+  /* Um par de temporizadores para todas as salas, e não um par por sala. O
+     trabalho é proporcional a quantas conexões existem, que é o que ele sempre
+     foi; criar e destruir intervalos junto com cada quarto seria pagar
+     agendamento por clube para fazer exatamente a mesma varredura. */
   timers = [
     setInterval(() => {
-      for (const res of streams) {
-        try { res.write(': ping\n\n'); } catch { /* collected on close */ }
+      for (const room of rooms.values()) {
+        for (const res of room.streams) {
+          try { res.write(': ping\n\n'); } catch { /* collected on close */ }
+        }
       }
     }, PING_MS),
     setInterval(() => {
-      if (!streams.size || !room.open) return;
       const now = Date.now();
-      const frame = {
-        type: 'sync',
-        status: room.status,
-        position: positionAt(now),
-        revision: room.revision,
-        serverTime: now,
-      };
-      for (const res of streams) write(res, frame);
+      for (const room of rooms.values()) {
+        if (!room.streams.size || !room.open) continue;
+        const frame = {
+          type: 'sync',
+          status: room.status,
+          position: positionAt(room, now),
+          revision: room.revision,
+          serverTime: now,
+        };
+        for (const res of room.streams) write(res, frame);
+      }
     }, SYNC_MS),
   ];
   // Timers must not be the reason the process refuses to exit — the tests
@@ -487,18 +540,9 @@ function withinRate(reviewerId, now = Date.now()) {
   return bucket.count <= RATE_MAX;
 }
 
-/** Tests only: puts the room back to how it boots. */
+/** Tests only: esvazia o prédio inteiro. */
 function reset() {
-  room.open = false;
-  room.movie = null;
-  room.status = 'paused';
-  room.position = 0;
-  room.updatedAt = Date.now();
-  room.revision = 0;
-  room.link = null;
-  room.subtitle = null;
-  room.viewers.clear();
-  streams.clear();
+  rooms.clear();
   buckets.clear();
 }
 
@@ -509,7 +553,10 @@ module.exports = {
   MAX_STREAMS_PER_VIEWER,
   MAX_STREAMS_TOTAL,
   COMMANDS,
-  room,
+  rooms,
+  roomFor,
+  blankRoom,
+  totalStreams,
   positionAt,
   clampPosition,
   text,

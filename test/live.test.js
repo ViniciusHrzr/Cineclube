@@ -12,6 +12,13 @@ const app = require('../server');
 const db = require('../db');
 const live = require('../live');
 const { critsFor } = require('../criteria');
+const kit = require('../testkit');
+
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo, e `at('/reviews')` é como se escreve isso. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
 
 /* ══════════════════════════════════════════════════════════════════════════
    O clube ao vivo.
@@ -38,6 +45,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube do Cano' });
 });
 
 test.after(async () => {
@@ -62,15 +70,13 @@ async function req(method, pathname, body, cookie) {
   return { status: res.status, body: text ? JSON.parse(text) : null, setCookie: res.headers.get('set-cookie') };
 }
 
-const cookieOf = s => (s ? s.split(';')[0] : null);
 let seq = 0;
-const PIN = '4321';
 
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
-  const res = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin: PIN });
-  assert.equal(res.status, 201);
-  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin: PIN });
-  return { ...res.body, cookie: cookieOf(login.setCookie) };
+  const who = await kit.signIn(name || `Sócio ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
 }
 
 const movie = () => ({ id: 810000 + ++seq, title: 'Filme de Teste', year: 2024, genre: 'Terror' });
@@ -83,7 +89,7 @@ function scoresFor(genre, value) {
 
 async function newTake(who) {
   const m = movie();
-  const res = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, who.cookie);
+  const res = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, who.cookie);
   assert.equal(res.status, 201);
   return { ...res.body, movie: m };
 }
@@ -95,7 +101,7 @@ async function newTake(who) {
    outro lado de um socket. */
 async function listen(cookie) {
   const control = new AbortController();
-  const res = await fetch(baseUrl + '/api/live/stream', {
+  const res = await fetch(baseUrl + at('/live/stream'), {
     headers: { Cookie: cookie, Accept: 'text/event-stream' },
     signal: control.signal
   });
@@ -157,7 +163,7 @@ test('a conexão abre com um quadro que não é aviso de nada', async () => {
 });
 
 test('sem sessão não há conexão', async () => {
-  const res = await fetch(baseUrl + '/api/live/stream');
+  const res = await fetch(baseUrl + at('/live/stream'));
   assert.equal(res.status, 401);
   await res.text();
 });
@@ -173,7 +179,7 @@ test('um comentário avisa o clube, e o comentário já está lá quando o aviso
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'teu 7 em roteiro é generoso' }, reader.cookie);
+    await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'teu 7 em roteiro é generoso' }, reader.cookie);
 
     const frame = await ear.next();
     assert.equal(frame.kind, 'social');
@@ -182,7 +188,10 @@ test('um comentário avisa o clube, e o comentário já está lá quando o aviso
     /* O ponto do teste: buscar AGORA, no instante do aviso, tem de trazer o
        comentário. Se a emissão acontecesse antes da escrita, isto viria vazio —
        e seria exatamente o que o clube veria na tela. */
-    const all = await req('GET', '/api/social');
+    /* Com cookie: a sala deste arquivo é privada, e ler um clube privado é de
+       quem é dele. A leitura aberta continua existindo — em clube público — e
+       tem os próprios testes. */
+    const all = await req('GET', at('/social'), null, author.cookie);
     assert.ok(all.body.comments.some(c => c.reviewId === take.id));
   } finally {
     ear.close();
@@ -194,20 +203,20 @@ test('curtir, votar e apagar também avisam', async () => {
   const reader = await newReviewer();
   const take = await newTake(author);
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`, { body: 'discordo' }, reader.cookie
+    'POST', at(`/social/reviews/${take.id}/comments`), { body: 'discordo' }, reader.cookie
   );
 
   const ear = await listen(author.cookie);
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    await req('PUT', `/api/social/comments/${posted.body.id}/like`, { liked: true }, author.cookie);
+    await req('PUT', at(`/social/comments/${posted.body.id}/like`), { liked: true }, author.cookie);
     assert.equal((await ear.next()).kind, 'social');
 
-    await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: -1 }, reader.cookie);
+    await req('PUT', at(`/social/reviews/${take.id}/vote`), { value: -1 }, reader.cookie);
     assert.equal((await ear.next()).kind, 'social');
 
-    await req('DELETE', `/api/social/comments/${posted.body.id}`, null, reader.cookie);
+    await req('DELETE', at(`/social/comments/${posted.body.id}`), null, reader.cookie);
     assert.equal((await ear.next()).kind, 'social');
   } finally {
     ear.close();
@@ -217,20 +226,20 @@ test('curtir, votar e apagar também avisam', async () => {
 test('gravar uma nota avisa o acervo E a fila, porque mexe nas duas', async () => {
   const who = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, who.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, who.cookie);
 
   const ear = await listen(who.cookie);
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 8) }, who.cookie);
+    await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 8) }, who.cookie);
 
     const kinds = new Set([(await ear.next()).kind, (await ear.next()).kind]);
     assert.ok(kinds.has('reviews'));
     assert.ok(kinds.has('watchlist'), 'a fila perdeu o filme e ninguém foi avisado');
 
     // E a fila realmente perdeu o filme: o aviso não estava mentindo.
-    const queue = await req('GET', '/api/watchlist');
+    const queue = await req('GET', at('/watchlist'), null, who.cookie);
     assert.ok(!queue.body.watchlist.some(w => Number(w.id) === m.id));
   } finally {
     ear.close();
@@ -245,10 +254,10 @@ test('pôr e tirar da fila avisa', async () => {
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    await req('POST', '/api/watchlist', { movie: m }, who.cookie);
+    await req('POST', at('/watchlist'), { movie: m }, who.cookie);
     assert.equal((await ear.next()).kind, 'watchlist');
 
-    await req('DELETE', `/api/watchlist/${m.id}`, null, who.cookie);
+    await req('DELETE', at(`/watchlist/${m.id}`), null, who.cookie);
     assert.equal((await ear.next()).kind, 'watchlist');
   } finally {
     ear.close();
@@ -278,40 +287,40 @@ test('trocar o próprio nome avisa, porque ele aparece ao lado de tudo', async (
 test('abrir e fechar a sessão avisa o clube que não está na sala', async () => {
   const who = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, who.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, who.cookie);
 
   const ear = await listen(who.cookie);
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    const opened = await req('POST', '/api/screening/open', { movieId: m.id }, who.cookie);
+    const opened = await req('POST', at('/screening/open'), { movieId: m.id }, who.cookie);
     assert.equal(opened.status, 201);
     assert.equal((await ear.next()).kind, 'screening');
 
     /* O aviso não chega antes da sala: quando ele chega, a rota já responde que
        há sessão aberta. Mesma regra do resto do arquivo, mesmo motivo. */
-    const now = await req('GET', '/api/screening', null, who.cookie);
+    const now = await req('GET', at('/screening'), null, who.cookie);
     assert.equal(now.body.open, true);
 
-    await req('POST', '/api/screening/close', null, who.cookie);
+    await req('POST', at('/screening/close'), null, who.cookie);
     assert.equal((await ear.next()).kind, 'screening');
   } finally {
     ear.close();
-    await req('POST', '/api/screening/close', null, who.cookie);
+    await req('POST', at('/screening/close'), null, who.cookie);
   }
 });
 
 test('play e pause avisam, e arrastar a barra não', async () => {
   const who = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, who.cookie);
-  await req('POST', '/api/screening/open', { movieId: m.id }, who.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, who.cookie);
+  await req('POST', at('/screening/open'), { movieId: m.id }, who.cookie);
 
   const ear = await listen(who.cookie);
   try {
     assert.equal((await ear.next()).kind, 'hello');
 
-    await req('POST', '/api/screening/command', { type: 'play', position: 0 }, who.cookie);
+    await req('POST', at('/screening/command'), { type: 'play', position: 0 }, who.cookie);
     assert.equal((await ear.next()).kind, 'screening');
 
     /* ── o silêncio que é o ponto deste teste ─────────────────────────────
@@ -320,19 +329,19 @@ test('play e pause avisam, e arrastar a barra não', async () => {
        arrastando a barra mandaria toda aba aberta do clube buscar a sala
        dezenas de vezes para receber a mesma resposta — e a lâmpada não teria
        mudado em nenhuma delas. O filtro é a virada do status, não o comando. */
-    await req('POST', '/api/screening/command', { type: 'seek', position: 90 }, who.cookie);
-    await req('POST', '/api/screening/command', { type: 'seek', position: 120 }, who.cookie);
+    await req('POST', at('/screening/command'), { type: 'seek', position: 90 }, who.cookie);
+    await req('POST', at('/screening/command'), { type: 'seek', position: 120 }, who.cookie);
     await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
 
-    await req('POST', '/api/screening/command', { type: 'pause', position: 120 }, who.cookie);
+    await req('POST', at('/screening/command'), { type: 'pause', position: 120 }, who.cookie);
     assert.equal((await ear.next()).kind, 'screening');
 
     // Pausar o que já está pausado não é uma virada, e portanto não é notícia.
-    await req('POST', '/api/screening/command', { type: 'pause', position: 120 }, who.cookie);
+    await req('POST', at('/screening/command'), { type: 'pause', position: 120 }, who.cookie);
     await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
   } finally {
     ear.close();
-    await req('POST', '/api/screening/close', null, who.cookie);
+    await req('POST', at('/screening/close'), null, who.cookie);
   }
 });
 
@@ -340,15 +349,47 @@ test('play e pause avisam, e arrastar a barra não', async () => {
 
 test('uma palavra que não está na lista não vira quadro', () => {
   const seen = [];
-  const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste');
+  const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-teste');
   try {
-    live.emit('qualquer-coisa', 'p-teste');
-    live.emit('social', 'p-teste');
+    live.emit('qualquer-coisa', 'p-teste', 'c-teste');
+    live.emit('social', 'p-teste', 'c-teste');
     /* Um quadro de abertura mais UM aviso. Sem a lista, qualquer string que
        chegasse a `emit` viraria uma palavra que nenhuma tela sabe atender — e
        o defeito apareceria como uma tela que não atualiza, longe daqui. */
     assert.equal(seen.length, 2);
     assert.match(seen[1], /"kind":"social"/);
+  } finally {
+    live.unsubscribe(entry);
+  }
+});
+
+/* ── e um aviso sem sala não sai ──────────────────────────────────────────
+   O modo de falhar de um `emit` que esqueceu de dizer de qual clube fala tem de
+   ser o silêncio. Um broadcast por omissão seria clube privado vazando no cano
+   de estranhos, que é um defeito que ninguém vê; uma tela que não atualiza é um
+   defeito visível. Ver live.js. */
+test('um aviso sem clube não vira quadro nenhum', () => {
+  const seen = [];
+  const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-teste');
+  try {
+    live.emit('social', 'p-teste');
+    live.emit('social', 'p-teste', null);
+    assert.equal(seen.length, 1, 'só o quadro de abertura deveria ter saído');
+  } finally {
+    live.unsubscribe(entry);
+  }
+});
+
+/* E um aviso de OUTRA sala também não chega — a prova de que a comparação em
+   `emit` é o que separa os clubes, e não um filtro do lado do cliente. */
+test('um aviso de outro clube não chega nesta conexão', () => {
+  const seen = [];
+  const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-um');
+  try {
+    live.emit('social', 'p-teste', 'c-outro');
+    assert.equal(seen.length, 1, 'só o quadro de abertura deveria ter saído');
+    live.emit('social', 'p-teste', 'c-um');
+    assert.equal(seen.length, 2, 'o da própria sala tem de chegar');
   } finally {
     live.unsubscribe(entry);
   }

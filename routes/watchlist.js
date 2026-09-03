@@ -1,12 +1,13 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const wrap = require('../wrap');
 const { fillEnglishTitle } = require('../english');
 const { GENRES } = require('../criteria');
 const live = require('../live');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 /* position is the club's arrangement; added_at only breaks ties for rows that
    predate the column.
@@ -20,28 +21,29 @@ const listStmt = db.prepare(`
   SELECT w.*, mc.original_title, mc.english_title
   FROM watchlist w
   LEFT JOIN movies_cache mc ON mc.tmdb_id = w.movie_id
+  WHERE w.club_id = ?
   ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
 `);
 /* `added_by` é a sessão, como toda escrita neste app. Nasceu para o mural ter o
    que contar e hoje é também quem pode tirar — ver o DELETE lá embaixo. */
 const insertStmt = db.prepare(`
-  INSERT INTO watchlist (movie_id, movie_title, movie_year, movie_genre, movie_poster, position, added_by)
-  VALUES (@movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
-          (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist), @addedBy)
-  ON CONFLICT(movie_id) DO NOTHING
+  INSERT INTO watchlist (club_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, position, added_by)
+  VALUES (@clubId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
+          (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist WHERE club_id = @clubId), @addedBy)
+  ON CONFLICT(club_id, movie_id) DO NOTHING
 `);
-const idsStmt = db.prepare('SELECT movie_id FROM watchlist');
-const deleteStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
+const idsStmt = db.prepare('SELECT movie_id FROM watchlist WHERE club_id = ?');
+const deleteStmt = db.prepare('DELETE FROM watchlist WHERE club_id = ? AND movie_id = ?');
 /* Quem pôs, com o nome junto: a recusa precisa dizer de quem é a escolha que
    está sendo protegida, ou vira "não pode" sem sujeito. */
 const ownerStmt = db.prepare(`
   SELECT w.movie_id, w.movie_title, w.added_by, r.name AS added_by_name
   FROM watchlist w
   LEFT JOIN reviewers r ON r.id = w.added_by
-  WHERE w.movie_id = ?
+  WHERE w.club_id = ? AND w.movie_id = ?
 `);
 
-const SET_POSITION = 'UPDATE watchlist SET position = ? WHERE movie_id = ?';
+const SET_POSITION = 'UPDATE watchlist SET position = ? WHERE club_id = ? AND movie_id = ?';
 
 function toDTO(row) {
   return {
@@ -66,19 +68,20 @@ function toDTO(row) {
   };
 }
 
-router.get('/', wrap(async (req, res) => {
-  const rows = await listStmt.all();
+router.get('/', clubs.requireReadable, wrap(async (req, res) => {
+  const rows = await listStmt.all(req.club.id);
   res.json({ watchlist: rows.map(toDTO) });
 }));
 
 // The queue is shared, so changing it is a club action and needs a member.
-router.post('/', auth.requireSession, wrap(async (req, res) => {
+router.post('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const { movie } = req.body || {};
   if (!movie || !movie.id || !movie.title) {
     return res.status(400).json({ error: 'Filme inválido.' });
   }
   const genre = GENRES.includes(movie.genre) ? movie.genre : 'Drama';
   await insertStmt.run({
+    clubId: req.club.id,
     movieId: movie.id, movieTitle: movie.title, movieYear: movie.year ?? null,
     movieGenre: genre, moviePoster: movie.poster ?? null,
     addedBy: req.session.reviewer_id
@@ -90,7 +93,7 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
      uma na outra: sem isto, dois membros escolhendo o filme da semana ao mesmo
      tempo põem o mesmo título duas vezes porque nenhum dos dois viu o do
      outro. */
-  live.emit('watchlist', req.session.reviewer_id);
+  live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.status(201).json({ ok: true });
 }));
 
@@ -98,11 +101,11 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
    simpler to reason about than a from/to pair and cannot leave a gap: anything
    the client omits keeps its relative place at the end, so a stale tab cannot
    drop a film somebody else just added. */
-router.put('/order', auth.requireSession, wrap(async (req, res) => {
+router.put('/order', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const ids = req.body?.ids;
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'Ordem inválida.' });
 
-  const rows = await idsStmt.all();
+  const rows = await idsStmt.all(req.club.id);
   const known = new Set(rows.map(r => Number(r.movie_id)));
   const wanted = ids.map(Number).filter(id => known.has(id));
   const rest = [...known].filter(id => !wanted.includes(id));
@@ -111,11 +114,11 @@ router.put('/order', auth.requireSession, wrap(async (req, res) => {
   // nothing does.
   const ordered = [...wanted, ...rest];
   if (ordered.length) {
-    await db.batch(ordered.map((id, i) => ({ sql: SET_POSITION, args: [i, id] })));
+    await db.batch(ordered.map((id, i) => ({ sql: SET_POSITION, args: [i, req.club.id, id] })));
   }
 
-  const listed = await listStmt.all();
-  live.emit('watchlist', req.session.reviewer_id);
+  const listed = await listStmt.all(req.club.id);
+  live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.json({ watchlist: listed.map(toDTO) });
 }));
 
@@ -139,12 +142,16 @@ router.put('/order', auth.requireSession, wrap(async (req, res) => {
    pessoas tirando o mesmo filme ao mesmo tempo — o que agora acontece de
    verdade, com a fila ao vivo — não é erro de ninguém: o pedido queria que o
    filme não estivesse lá, e ele não está. */
-router.delete('/:movieId', auth.requireSession, wrap(async (req, res) => {
-  const row = await ownerStmt.get(Number(req.params.movieId));
+router.delete('/:movieId', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const row = await ownerStmt.get(req.club.id, Number(req.params.movieId));
   if (!row) return res.status(204).end();
 
+  /* O zelador agora é o ADM do CLUBE, e não o da instalação: a fila é daquela
+     sala, e quem cuida das linhas presas nela é quem cuida da sala. O admin da
+     instalação continua valendo porque `requireClubAdmin` o inclui, mas aqui a
+     conta é feita direto contra o papel. */
   const mine = !!row.added_by && row.added_by === req.session.reviewer_id;
-  if (!mine && !req.session.is_admin) {
+  if (!mine && !req.club.isClubAdmin && !req.session.is_admin) {
     return res.status(403).json({
       error: row.added_by_name
         ? `Só quem pôs o filme na fila pode tirar, e ${row.movie_title} foi escolha de ${row.added_by_name}.`
@@ -152,8 +159,8 @@ router.delete('/:movieId', auth.requireSession, wrap(async (req, res) => {
     });
   }
 
-  await deleteStmt.run(row.movie_id);
-  live.emit('watchlist', req.session.reviewer_id);
+  await deleteStmt.run(req.club.id, row.movie_id);
+  live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));
 

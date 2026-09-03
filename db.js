@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { createClient } = require('@libsql/client');
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -70,6 +71,53 @@ function batch(statements) {
 async function columnsOf(table) {
   const { rows } = await client.execute(`PRAGMA table_info(${table})`);
   return rows.map(c => c.name);
+}
+
+/* ── o endereço de um clube ───────────────────────────────────────────────
+   O nome é o que a pessoa escreve e vê; o slug é o que cabe numa URL e o que
+   ela cola no Discord. Sem acento, sem maiúscula, sem pontuação — `Clube do
+   Terror` vira `clube-do-terror`.
+
+   Os dois são únicos, e por motivos diferentes: o nome porque duas salas com o
+   mesmo nome no saguão são uma sala que ninguém sabe escolher, o slug porque
+   ele é um endereço. Um nome que reduz a nada (só emoji, só pontuação) recebe
+   um slug sorteado em vez de uma string vazia — o clube ainda tem nome, só não
+   tem nome escrevível em URL. */
+const HOME_CLUB = 'Cineclube';
+
+function slugify(name) {
+  const base = String(name || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return base || 'clube-' + crypto.randomUUID().slice(0, 8);
+}
+
+/** Um slug livre, acrescentando -2, -3… quando o desejado já é de outro clube. */
+async function freeSlug(name, exceptId = null) {
+  const wanted = slugify(name);
+  for (let n = 1; ; n++) {
+    const slug = n === 1 ? wanted : `${wanted}-${n}`;
+    const taken = await prepare('SELECT id FROM clubs WHERE slug = ?').get(slug);
+    if (!taken || taken.id === exceptId) return slug;
+  }
+}
+
+/* O clube fundador. Existe porque este produto teve um clube antes de ter o
+   conceito de clube, e tudo que foi gravado até aqui é dele. Idempotente: é
+   chamado pela migração e outra vez pelo boot, depois das contas de exemplo
+   serem criadas — num banco vazio a migração roda antes de existir alguém. */
+async function ensureHomeClub() {
+  const found = await prepare('SELECT id FROM clubs WHERE name = ? COLLATE NOCASE').get(HOME_CLUB);
+  if (found) return found.id;
+  const id = 'c' + crypto.randomUUID();
+  await prepare(
+    `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'public')`
+  ).run(id, HOME_CLUB, slugify(HOME_CLUB));
+  return id;
 }
 
 async function migrate() {
@@ -219,8 +267,13 @@ async function migrate() {
     await exec('ALTER TABLE reviews ADD COLUMN comment TEXT');
   }
 
-  // PIN sign-in. Only the hash and the salt are stored — the PIN itself never
-  // touches the database, the logs, or any response body.
+  /* A credencial. Só o hash e o salt são guardados — nem o PIN de antes nem a
+     senha de agora tocam o banco, o log ou um corpo de resposta.
+
+     `pin_hash` e `pin_salt` continuam aqui, mortas, e é de propósito: tirar uma
+     coluna no SQLite é reconstruir a tabela, e reconstruir `reviewers` custaria
+     mexer nas sete chaves estrangeiras que apontam para ela. Duas colunas nulas
+     são mais baratas do que isso e não são lidas em lugar nenhum. */
   const reviewerCols = await columnsOf('reviewers');
   const addReviewerCol = async (name, ddl) => {
     if (!reviewerCols.includes(name)) await exec(`ALTER TABLE reviewers ADD COLUMN ${ddl}`);
@@ -230,9 +283,15 @@ async function migrate() {
   // Admin is a column, not a name match: renaming the account would otherwise
   // hand the power away, and a second person called Vinicius would inherit it.
   await addReviewerCol('is_admin', 'is_admin INTEGER NOT NULL DEFAULT 0');
-  // Four digits is ten thousand guesses, which a script exhausts in seconds, so
-  // failures are counted and the account is put on ice for a while.
-  await addReviewerCol('pin_attempts', 'pin_attempts INTEGER NOT NULL DEFAULT 0');
+  /* Entradas erradas seguidas põem a conta no gelo por um tempo crescente. A
+     coluna se chamava `pin_attempts` enquanto a credencial era um PIN; a regra
+     não mudou com a senha, só o nome do que se erra. Renomear e não criar uma
+     segunda: duas colunas contando a mesma coisa é a que ninguém zera. */
+  if (reviewerCols.includes('pin_attempts') && !reviewerCols.includes('auth_attempts')) {
+    await exec('ALTER TABLE reviewers RENAME COLUMN pin_attempts TO auth_attempts');
+  } else if (!reviewerCols.includes('auth_attempts')) {
+    await exec('ALTER TABLE reviewers ADD COLUMN auth_attempts INTEGER NOT NULL DEFAULT 0');
+  }
   await addReviewerCol('locked_until', 'locked_until TEXT');
 
   /* ── the portrait ───────────────────────────────────────────────────────
@@ -468,6 +527,291 @@ async function migrate() {
     }
   }
 
+  /* ══════════════════════════════════════════════════════════════════════════
+     Os clubes.
+
+     Até aqui este banco descrevia UM clube e nunca disse isso em lugar nenhum.
+     A fila era `movie_id PRIMARY KEY` — uma fila no mundo. Uma nota era única
+     por (pessoa, filme). E "o clube" era simplesmente todo mundo na tabela de
+     avaliadores. Nada disso era falso enquanto existia uma sala; tudo isso fica
+     falso no instante em que existem duas.
+
+     ── o que ganha club_id e o que não ganha ────────────────────────────────
+     Duas tabelas, e só: `reviews` e `watchlist`. Comentário, voto de ficha,
+     voto de critério e curtida penduram numa ficha, e a ficha já sabe de que
+     clube é — dar a eles uma coluna própria seria uma segunda resposta para a
+     mesma pergunta, livre para divergir da primeira no primeiro UPDATE mal
+     escrito. É esta escolha que faz o recorte caber em duas reconstruções em
+     vez de seis.
+
+     `movies_cache` fica de fora de propósito: é o TMDB em cache, e o pôster de
+     Stalker é o mesmo pôster em todo clube. Por clube seria pagar a mesma
+     requisição N vezes para gravar N cópias do mesmo byte.
+
+     `reviewers` também fica: uma pessoa é uma pessoa, e é por ela ser uma só
+     que isto vira uma rede em vez de N instalações do mesmo app. Em quais
+     clubes ela está mora em `club_members`, junto com o papel dela em cada um —
+     ser ADM é um fato sobre a relação, nunca sobre a pessoa.
+     ══════════════════════════════════════════════════════════════════════════ */
+
+  await exec(`
+    CREATE TABLE IF NOT EXISTS clubs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      /* Uma linha sobre o clube, do tamanho da bio de uma pessoa e pelo mesmo
+         motivo: é tom de voz na vitrine, não manifesto. */
+      tagline TEXT,
+      photo TEXT,
+      photo_mime TEXT,
+      photo_rev TEXT,
+      /* 'public' ou 'private'. Público é lido por qualquer um e a entrada
+         depende do ADM aprovar; privado não aparece para quem não é membro.
+         Privado é o padrão porque o erro caro tem um lado só: um clube que
+         nasce fechado e devia estar aberto é um menu; o contrário é o acervo
+         de um grupo de amigos exposto sem ninguém ter pedido. */
+      visibility TEXT NOT NULL DEFAULT 'private',
+      /* SET NULL e não CASCADE: quem fundou o clube pode sair dele um dia, e o
+         clube não vai junto. Quem manda é o papel em club_members. */
+      created_by TEXT REFERENCES reviewers(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS clubs_name ON clubs(name COLLATE NOCASE);
+    CREATE UNIQUE INDEX IF NOT EXISTS clubs_slug ON clubs(slug);
+
+    CREATE TABLE IF NOT EXISTS club_members (
+      club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      /* 'admin' ou 'member'. Quem cria nasce admin. */
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+      /* ── as duas marcas d'água do sino ────────────────────────────────
+         Moravam na tabela de avaliadores, uma por pessoa, e ali estavam certas
+         enquanto existia um clube. Agora um aviso é sobre uma ficha, e uma
+         ficha é de uma sala: com a marca na pessoa, abrir o sino no clube de
+         terror marcaria como visto o que aconteceu no Cineclube — avisos que a
+         pessoa nem teve chance de ler, porque a tela em que eles aparecem era
+         outra.
+
+         Então elas descem para a relação, que é onde a pergunta "até onde esta
+         pessoa leu ESTE clube" tem resposta. Ver notifications.js. */
+      notifications_seen_at TEXT,
+      notifications_cleared_at TEXT,
+      PRIMARY KEY (club_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS club_members_reviewer ON club_members(reviewer_id);
+
+    /* Um pedido de entrada, que só clube público aceita. Sem coluna de estado:
+       aprovar move a linha para club_members e apaga esta, recusar apaga esta.
+       Um estado gravado seria uma terceira verdade sobre a mesma pergunta — se
+       a pessoa está dentro — e a resposta a essa pergunta é club_members. */
+    CREATE TABLE IF NOT EXISTS club_join_requests (
+      club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (club_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS club_join_requests_club ON club_join_requests(club_id);
+  `);
+
+  // Para um banco que já criou estas tabelas antes destas colunas existirem.
+  if (!(await columnsOf('clubs')).includes('tagline')) {
+    await exec('ALTER TABLE clubs ADD COLUMN tagline TEXT');
+  }
+  const memberCols = await columnsOf('club_members');
+  if (!memberCols.includes('notifications_seen_at')) {
+    await exec('ALTER TABLE club_members ADD COLUMN notifications_seen_at TEXT');
+    await exec('ALTER TABLE club_members ADD COLUMN notifications_cleared_at TEXT');
+    /* As marcas que a pessoa já tinha viajam para o clube fundador, que é o
+       único em que ela pode ter lido alguma coisa antes desta migração. Sem
+       isto, todo aviso de sempre voltaria a aparecer como novo no primeiro boot
+       depois dos clubes. */
+    await exec(`
+      UPDATE club_members SET
+        notifications_seen_at = (SELECT notifications_seen_at FROM reviewers r WHERE r.id = club_members.reviewer_id),
+        notifications_cleared_at = (SELECT notifications_cleared_at FROM reviewers r WHERE r.id = club_members.reviewer_id)
+    `);
+  }
+
+  /* ── a conta ──────────────────────────────────────────────────────────────
+     O PIN de quatro dígitos serviu enquanto entrar era escolher o próprio rosto
+     numa lista de quatro pessoas. Numa rede essa lista é todo mundo, então a
+     identidade passa a ser o e-mail, e a credencial é uma senha.
+
+     `google_sub` é o identificador estável que o Google devolve. Guardado além
+     do e-mail porque e-mail é o que a pessoa digita e `sub` é o que o Google
+     garante: um endereço pode mudar de dono, o `sub` não muda nunca.
+
+     Os dois índices são parciais porque as duas colunas nascem nulas em todas
+     as contas que já existem — sem o WHERE, um índice único trataria vários
+     nulos como colisão em alguns motores e nenhum em outros, e essa é uma
+     diferença que não se quer descobrir em produção. */
+  await addReviewerCol('email', 'email TEXT');
+  await addReviewerCol('google_sub', 'google_sub TEXT');
+  await addReviewerCol('password_hash', 'password_hash TEXT');
+  await addReviewerCol('password_salt', 'password_salt TEXT');
+  await exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS reviewers_email
+      ON reviewers(email COLLATE NOCASE) WHERE email IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS reviewers_google
+      ON reviewers(google_sub) WHERE google_sub IS NOT NULL;
+  `);
+
+  /* ── e a reconstrução ─────────────────────────────────────────────────────
+     A única parte destrutiva deste arquivo, e ela é obrigatória: `UNIQUE(pessoa,
+     filme)` e `PRIMARY KEY(filme)` foram declaradas dentro do CREATE TABLE, e
+     o SQLite não deixa remover nenhuma das duas — o índice que as sustenta é
+     `sqlite_autoindex_*`, e DROP INDEX o recusa. Tabela nova, cópia, troca.
+
+     O perigo real não é a cópia, é o DROP. Comentário, voto e curtida apontam
+     para `reviews` com ON DELETE CASCADE, e um DROP com chave estrangeira
+     ligada leva os três junto. Se esse enforcement está ligado depende do
+     motor — local é um PRAGMA, no Turso é decisão do servidor — e isso não é
+     uma coisa que se descobre em produção com os dados dentro.
+
+     Então as quatro tabelas filhas são lidas para a memória ANTES e reescritas
+     DEPOIS com INSERT OR IGNORE. Se o cascade levou, elas voltam; se não levou,
+     o IGNORE não faz nada. Correto nos dois mundos sem precisar saber em qual
+     se está. Cabe na memória porque cabe: é um clube de amigos, e a coisa toda
+     são dezenas de linhas. */
+  if (!reviewCols.includes('club_id')) {
+    const home = await ensureHomeClub();
+
+    /* Todo mundo que existe hoje é do clube fundador, e quem já era admin da
+       instalação vira ADM dele. Roda uma vez só, junto da reconstrução, e por
+       isso não existe o risco de alguém que saiu de todos os clubes ser
+       readmitido sozinho no próximo boot. */
+    const everyone = await prepare('SELECT id, is_admin FROM reviewers').all();
+    if (everyone.length) {
+      await batch(everyone.map(p => ({
+        sql: `INSERT INTO club_members (club_id, reviewer_id, role)
+              VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+        args: [home, p.id, p.is_admin ? 'admin' : 'member'],
+      })));
+    }
+
+    const takes = await prepare('SELECT * FROM reviews').all();
+    const comments = await prepare('SELECT * FROM review_comments').all();
+    const rvotes = await prepare('SELECT * FROM review_votes').all();
+    const cvotes = await prepare('SELECT * FROM criterion_votes').all();
+    const likes = await prepare('SELECT * FROM comment_likes').all();
+
+    await exec(`
+      DROP TABLE IF EXISTS reviews_rebuild;
+      CREATE TABLE reviews_rebuild (
+        id TEXT PRIMARY KEY,
+        club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+        reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+        movie_id INTEGER NOT NULL,
+        movie_title TEXT NOT NULL,
+        movie_year INTEGER,
+        movie_genre TEXT NOT NULL,
+        movie_poster TEXT,
+        movie_director TEXT,
+        movie_runtime INTEGER,
+        scores TEXT NOT NULL,
+        final REAL NOT NULL,
+        date TEXT NOT NULL,
+        recorded_at TEXT,
+        comment TEXT,
+        UNIQUE(club_id, reviewer_id, movie_id)
+      );
+    `);
+
+    if (takes.length) {
+      await batch(takes.map(t => ({
+        sql: `INSERT INTO reviews_rebuild
+                (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre,
+                 movie_poster, movie_director, movie_runtime, scores, final, date,
+                 recorded_at, comment)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        args: [
+          t.id, home, t.reviewer_id, t.movie_id, t.movie_title, t.movie_year ?? null,
+          t.movie_genre, t.movie_poster ?? null, t.movie_director ?? null,
+          t.movie_runtime ?? null, t.scores, t.final, t.date,
+          t.recorded_at ?? t.date, t.comment ?? null,
+        ],
+      })));
+    }
+
+    await exec(`
+      DROP TABLE reviews;
+      ALTER TABLE reviews_rebuild RENAME TO reviews;
+      CREATE INDEX IF NOT EXISTS reviews_club ON reviews(club_id);
+    `);
+
+    // O que o cascade pode ter levado junto. Ver o comentário acima.
+    const restore = [
+      ...comments.map(c => ({
+        sql: `INSERT OR IGNORE INTO review_comments
+                (id, review_id, reviewer_id, body, parent_id, created_at)
+              VALUES (?,?,?,?,?,?)`,
+        args: [c.id, c.review_id, c.reviewer_id, c.body, c.parent_id ?? null, c.created_at],
+      })),
+      ...rvotes.map(v => ({
+        sql: `INSERT OR IGNORE INTO review_votes (review_id, reviewer_id, value, created_at)
+              VALUES (?,?,?,?)`,
+        args: [v.review_id, v.reviewer_id, v.value, v.created_at],
+      })),
+      ...cvotes.map(v => ({
+        sql: `INSERT OR IGNORE INTO criterion_votes
+                (review_id, criterion_key, reviewer_id, value, created_at)
+              VALUES (?,?,?,?,?)`,
+        args: [v.review_id, v.criterion_key, v.reviewer_id, v.value, v.created_at],
+      })),
+      ...likes.map(l => ({
+        sql: `INSERT OR IGNORE INTO comment_likes (comment_id, reviewer_id, created_at)
+              VALUES (?,?,?)`,
+        args: [l.comment_id, l.reviewer_id, l.created_at],
+      })),
+    ];
+    if (restore.length) await batch(restore);
+
+    console.log(
+      `[db] clubes: ${takes.length} ficha(s) e ${everyone.length} pessoa(s) movidas para ${HOME_CLUB}`
+    );
+  }
+
+  if (!(await columnsOf('watchlist')).includes('club_id')) {
+    const home = await ensureHomeClub();
+    const queue = await prepare('SELECT * FROM watchlist').all();
+
+    await exec(`
+      DROP TABLE IF EXISTS watchlist_rebuild;
+      CREATE TABLE watchlist_rebuild (
+        club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+        movie_id INTEGER NOT NULL,
+        movie_title TEXT NOT NULL,
+        movie_year INTEGER,
+        movie_genre TEXT NOT NULL,
+        movie_poster TEXT,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        added_by TEXT,
+        position INTEGER,
+        PRIMARY KEY (club_id, movie_id)
+      );
+    `);
+
+    if (queue.length) {
+      await batch(queue.map(w => ({
+        sql: `INSERT INTO watchlist_rebuild
+                (club_id, movie_id, movie_title, movie_year, movie_genre, movie_poster,
+                 added_at, added_by, position)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: [
+          home, w.movie_id, w.movie_title, w.movie_year ?? null, w.movie_genre,
+          w.movie_poster ?? null, w.added_at, w.added_by ?? null, w.position ?? null,
+        ],
+      })));
+    }
+
+    await exec(`
+      DROP TABLE watchlist;
+      ALTER TABLE watchlist_rebuild RENAME TO watchlist;
+    `);
+    console.log(`[db] clubes: ${queue.length} filme(s) da fila movidos para ${HOME_CLUB}`);
+  }
+
   // Expired sessions are dead weight and a liability; clear them at boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }
@@ -481,5 +825,9 @@ module.exports = {
   exec,
   batch,
   ready,
+  HOME_CLUB,
+  slugify,
+  freeSlug,
+  ensureHomeClub,
   close: () => client.close(),
 };

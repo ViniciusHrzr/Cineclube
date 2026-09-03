@@ -58,7 +58,7 @@ const PING_MS = 20_000;
    clube, uma palavra aqui: "a sala mudou". A marquise ouve, busca `/api/
    screening` uma vez e acende a lâmpada. É a mesma regra de sempre — o aviso
    diz qual coleção mudou, e a rota continua sendo a única verdade. */
-const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers', 'screening']);
+const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers', 'screening', 'club']);
 
 const streams = new Set();
 
@@ -82,8 +82,19 @@ function canSubscribe(reviewerId) {
   return streams.size < MAX_STREAMS_TOTAL && countFor(reviewerId) < MAX_STREAMS_PER_VIEWER;
 }
 
-function subscribe(res, reviewerId) {
-  const entry = { res, reviewerId };
+/* ── uma conexão pertence a um clube ──────────────────────────────────────
+   Antes dos clubes este cano fazia broadcast para todo mundo que estivesse
+   ouvindo, o que estava certo enquanto "todo mundo" era um clube só. Com duas
+   salas isso vira um vazamento e não uma ineficiência: um aviso de `social`
+   dizia "alguém escreveu alguma coisa em algum lugar", e quem recebesse ia
+   buscar a coleção — recebia 403 e ficava sabendo mesmo assim que aquele clube
+   está com gente ativa agora. Num clube privado, isso é informação que não é
+   de quem recebeu.
+
+   Então o clube entra na conexão, e `emit` compara. A comparação é a proteção;
+   ela não pode virar um filtro do lado do cliente. */
+function subscribe(res, reviewerId, clubId) {
+  const entry = { res, reviewerId, clubId };
   streams.add(entry);
   /* Um primeiro quadro imediato, antes de qualquer coisa acontecer no clube. É
      ele que faz o navegador considerar a conexão aberta de verdade, e é o que a
@@ -108,10 +119,17 @@ function unsubscribe(entry) {
 
    `by` viaja para a tela poder decidir o que fazer com o próprio eco. Não é
    filtro de privacidade: não vai nada aqui que já não seja legível. */
-function emit(kind, by = null) {
+function emit(kind, by = null, clubId = null) {
   if (!KINDS.has(kind) || !streams.size) return;
+  /* Sem clube, nada sai. Um `emit` que esqueceu de dizer de qual sala fala não
+     pode virar um broadcast por omissão: o modo de falhar de um caminho que
+     ninguém está olhando tem de ser o silêncio, nunca o vazamento. Uma rota que
+     esqueça o argumento produz uma tela que não atualiza, que é um defeito
+     visível — e não um clube privado aparecendo no cano de estranhos, que é um
+     defeito que ninguém vê. */
+  if (!clubId) return;
   const frame = { kind, by: by || null, at: Date.now() };
-  for (const entry of streams) write(entry, frame);
+  for (const entry of streams) if (entry.clubId === clubId) write(entry, frame);
 }
 
 /* Uma batida só, e ela é para o proxy. Ao contrário da sala de projeção, aqui

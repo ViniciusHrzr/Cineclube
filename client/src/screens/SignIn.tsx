@@ -1,33 +1,70 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Plus } from 'lucide-react';
-import { Fault, Key, Reel } from '@/components/bits';
+import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { api, auth, initialsOf, post, reelColor, type Reviewer, type SessionUser } from '@/lib/api';
+import { auth, type SessionUser } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Quem está entrando.
 
-   O clube assiste junto pelo Discord, cada um no seu navegador, então a sessão
-   começa escolhendo quem você é e digitando quatro dígitos. É a mesma ideia da
-   tela de perfis que a Netflix abre — só que aqui os perfis são fotogramas na
-   parede iluminada, e não avatares num fundo cinza.
+   Isto era um mural de rostos: o clube inteiro na parede iluminada, você clicava
+   no seu e digitava quatro dígitos. Era a coisa certa enquanto o produto era uma
+   sala, porque a lista de rostos ERA o clube — e é a coisa errada no instante em
+   que existem muitas salas, porque a mesma tela passaria a ser a lista de todo
+   mundo que existe na rede.
+
+   Então a porta muda de natureza. Antes de saber em que sala você entra, o
+   produto precisa saber quem você é, e isso agora é um e-mail.
+
+   ── duas portas para a mesma conta ─────────────────────────────────────────
+   O Google é a normal: um clique, nenhuma senha nova para inventar, e quem cuida
+   de segundo fator e de conta invadida é quem já cuida disso na vida da pessoa.
+
+   A senha existe para a porta não ser única. É pedida uma vez, logo depois da
+   primeira entrada pelo Google, e é o que garante que ninguém perca o clube por
+   um motivo que não tem nada a ver com o clube.
+
+   ── a sala continua sendo a sala ───────────────────────────────────────────
+   Nada aqui virou formulário de serviço. A parede continua atrás, o nome
+   continua em Bebas na altura de uma marquise, e as duas portas são duas chaves
+   do mesmo tamanho — não um botão grande de marca e um formulário pequeno de
+   consolação.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/** O erro que a volta do Google escreve no endereço, se houver. */
+function errorFromHash() {
+  const raw = (location.hash || '').replace(/^#/, '');
+  const q = raw.indexOf('?');
+  if (q < 0) return null;
+  const got = new URLSearchParams(raw.slice(q + 1)).get('erro');
+  return got || null;
+}
+
 export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
-  const [reviewers, setReviewers] = useState<Reviewer[] | null>(null);
-  const [picked, setPicked] = useState<Reviewer | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [google, setGoogle] = useState(true);
+  /* O erro só é escrito no primeiro render, pela volta do Google. Nada nesta
+     tela produz um segundo — o formulário de senha tem o seu próprio. */
+  const [error] = useState<string | null>(() => errorFromHash());
+  /* A porta da senha começa fechada. Não é a porta principal, e desenhar os dois
+     campos abertos ao lado do botão do Google seria a tela dizendo que espera
+     que você digite — quando o que ela espera é um clique. */
+  const [byPassword, setByPassword] = useState(false);
 
-  const load = () =>
-    api<{ reviewers: Reviewer[] }>('/api/reviewers')
-      .then(r => setReviewers(r.reviewers))
-      .catch(e => setError((e as Error).message));
-
+  /* Se esta instalação sequer tem a porta do Google configurada. Sem as
+     variáveis no servidor o botão não aparece: um botão que leva a um 503 é pior
+     do que um botão que não está lá. */
   useEffect(() => {
-    void load();
+    void auth
+      .me()
+      .then(r => setGoogle(r.google !== false))
+      .catch(() => setGoogle(true));
+  }, []);
+
+  /* O erro veio no endereço e já foi lido. Limpar evita que ele reapareça a cada
+     recarga de uma aba que ficou aberta com o endereço sujo. */
+  useEffect(() => {
+    if (errorFromHash()) history.replaceState(null, '', location.pathname + '#entrar');
   }, []);
 
   return (
@@ -40,281 +77,306 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
             CINECLUBE
           </h1>
           <p className="mt-3 text-[13.5px] text-ink-dim">
-            {picked ? 'Digite seu PIN de 4 dígitos.' : creating ? 'Crie seu avaliador.' : 'Quem está avaliando?'}
+            Onde um grupo de amigos avalia filme por filme.
           </p>
         </header>
 
         {error ? (
           <div className="mx-auto mb-6 w-full max-w-[420px]">
-            <Fault detail={error}>Não foi possível carregar os avaliadores.</Fault>
+            <Fault>{error}</Fault>
           </div>
         ) : null}
 
-        <AnimatePresence mode="wait">
-          {creating ? (
-            <motion.div
-              key="new"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="mx-auto w-full max-w-[380px]"
+        <div className="mx-auto w-full max-w-[380px]">
+          {google ? (
+            <a
+              href={auth.googleUrl}
+              className={cn(
+                'flex w-full items-center justify-center gap-3 rounded-cell px-4 py-3 no-underline',
+                'bg-house-seat/70 ring-1 ring-house-rail',
+                'font-display text-[13px] uppercase leading-none tracking-[0.14em] text-ink',
+                'transition-colors duration-150 hover:text-beam hover:ring-beam/70'
+              )}
             >
-              <NewReviewer
-                onCancel={() => setCreating(false)}
-                onCreated={async u => {
-                  await load();
-                  onSignedIn(u);
-                }}
-              />
-            </motion.div>
-          ) : picked ? (
-            <motion.div
-              key="pin"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="mx-auto w-full max-w-[380px]"
-            >
-              <PinEntry reviewer={picked} onBack={() => setPicked(null)} onSignedIn={onSignedIn} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="pick"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-wrap items-start justify-center gap-6"
-            >
-              {reviewers?.map((r, i) => (
-                <motion.button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setPicked(r)}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(i, 8) * 0.045 }}
-                  className="group flex w-[120px] flex-col items-center gap-3 sm:w-[136px]"
-                >
-                  {/* The face where the initials were. The tile keeps its own
-                      shape, its ring and the lift it takes under the cursor —
-                      the picture fills it rather than replacing it, so a club
-                      where only some people have a portrait still reads as one
-                      row of the same thing. */}
-                  <span
-                    className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-plate font-display text-[38px] tracking-[0.06em] text-house-deep ring-1 ring-white/10 transition-transform duration-200 ease-beam group-hover:scale-[1.05] group-focus-visible:scale-[1.05]"
-                    style={{ background: reelColor(r.dot, r.id) }}
-                  >
-                    {r.avatar ? (
-                      <img src={r.avatar} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      initialsOf(r.name)
-                    )}
-                  </span>
-                  <span className="text-center text-[14px] text-ink-dim transition-colors group-hover:text-beam">
-                    {r.name}
-                    {r.isAdmin ? <span className="ml-1 text-[10px] text-dye-brass">ADM</span> : null}
-                    {!r.hasPin ? (
-                      <span className="mt-0.5 block font-display text-[10px] uppercase tracking-[0.12em] text-dye-red-lit">
-                        PIN pendente
-                      </span>
-                    ) : null}
-                  </span>
-                </motion.button>
-              ))}
+              <GoogleMark />
+              Entrar com o Google
+            </a>
+          ) : null}
 
-              {reviewers ? (
+          <AnimatePresence initial={false} mode="wait">
+            {byPassword ? (
+              <motion.div
+                key="senha"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <PasswordEntry
+                  onSignedIn={onSignedIn}
+                  onBack={google ? () => setByPassword(false) : undefined}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="escolha"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {google ? (
+                  <div className="mt-5 flex items-center gap-3">
+                    <span className="h-px flex-1 bg-white/[0.07]" />
+                    <span className="legend text-[10px]">ou</span>
+                    <span className="h-px flex-1 bg-white/[0.07]" />
+                  </div>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => setCreating(true)}
-                  className="group flex w-[120px] flex-col items-center gap-3 sm:w-[136px]"
+                  onClick={() => setByPassword(true)}
+                  className="mt-5 w-full text-center font-display text-[12px] uppercase leading-none tracking-[0.14em] text-ink-dim transition-colors hover:text-beam"
                 >
-                  <span className="flex aspect-square w-full items-center justify-center rounded-plate text-ink-dim ring-1 ring-dashed ring-house-rail transition-colors group-hover:text-beam group-hover:ring-beam/40">
-                    <Plus className="h-8 w-8" strokeWidth={1.4} />
-                  </span>
-                  <span className="text-[14px] text-ink-dim transition-colors group-hover:text-beam">Novo</span>
+                  Entrar com e-mail e senha
                 </button>
-              ) : null}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* A conta nasce da primeira entrada pelo Google, e não de um cadastro.
+            Dizer isso aqui evita a pergunta que a ausência de um "criar conta"
+            provoca — e ela é a primeira que alguém faz nesta tela. */}
+        <p className="mx-auto mt-10 max-w-[38ch] text-center text-[12.5px] leading-relaxed text-ink-faint">
+          Não existe cadastro: entrar pelo Google pela primeira vez já cria a sua
+          conta. O clube vem depois.
+        </p>
       </div>
     </div>
   );
 }
 
-/* ── the PIN pad ─────────────────────────────────────────────────────────
-   Four cells that fill as you type. It is one real <input> underneath, so the
-   keyboard, paste and a phone's numeric pad all work; the cells are only how
-   it looks. */
-function PinEntry({
-  reviewer,
-  onBack,
+/* ── e-mail e senha ───────────────────────────────────────────────────────
+   Uma frase só de erro para senha errada e para e-mail que não existe, porque o
+   servidor também responde uma só: um formulário que distingue os dois casos é
+   um jeito de descobrir quem tem conta aqui. */
+function PasswordEntry({
   onSignedIn,
+  onBack,
 }: {
-  reviewer: Reviewer;
-  onBack: () => void;
   onSignedIn: (u: SessionUser) => void;
+  onBack?: () => void;
 }) {
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const first = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    first.current?.focus();
   }, []);
 
-  async function submit(value: string) {
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await auth.login(reviewer.id, value);
-      onSignedIn(res.reviewer);
-    } catch (e) {
-      setError((e as Error).message);
-      setPin('');
-      inputRef.current?.focus();
-    } finally {
+      const { reviewer } = await auth.login(email.trim(), password);
+      onSignedIn(reviewer);
+    } catch (err) {
+      setError((err as Error).message);
       setBusy(false);
     }
   }
 
   return (
-    <div className="plate p-6 text-center">
-      <div className="mb-5 flex items-center justify-center gap-3">
-        <Reel color={reelColor(reviewer.dot, reviewer.id)} src={reviewer.avatar}>
-          {initialsOf(reviewer.name)}
-        </Reel>
-        <span className="font-display text-[20px] uppercase tracking-[0.1em] text-beam">{reviewer.name}</span>
-      </div>
+    <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
+      <Field
+        ref={first}
+        label="E-mail"
+        type="email"
+        autoComplete="username"
+        value={email}
+        onChange={setEmail}
+      />
+      <Field
+        label="Senha"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={setPassword}
+      />
 
-      {!reviewer.hasPin ? (
-        <p className="mb-5 text-[13px] leading-relaxed text-ink-dim">
-          Este avaliador ainda não tem PIN. Peça ao administrador do clube para definir um.
-        </p>
-      ) : null}
+      {error ? <Fault>{error}</Fault> : null}
 
-      <label className="relative block">
-        <span className="sr-only">PIN de 4 dígitos de {reviewer.name}</span>
-        <input
-          ref={inputRef}
-          value={pin}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={4}
-          disabled={busy || !reviewer.hasPin}
-          onChange={e => {
-            const v = e.target.value.replace(/\D/g, '').slice(0, 4);
-            setPin(v);
-            setError(null);
-            if (v.length === 4) void submit(v);
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && pin.length === 4) void submit(pin);
-          }}
-          // The real field sits invisibly over the cells so every native
-          // behaviour survives; the cells below are the drawing of it.
-          className="absolute inset-0 z-10 h-full w-full cursor-default bg-transparent text-transparent caret-transparent outline-none"
-        />
-        <span className="flex justify-center gap-3" aria-hidden="true">
-          {[0, 1, 2, 3].map(i => (
-            <span
-              key={i}
-              className={cn(
-                'flex h-14 w-12 items-center justify-center rounded-cell bg-house-deep font-display text-[26px] text-beam ring-1 transition-colors duration-150',
-                error ? 'ring-dye-red-lit/70' : pin.length === i ? 'ring-dye-brass' : 'ring-house-rail'
-              )}
-            >
-              {pin[i] ? '•' : ''}
-            </span>
-          ))}
-        </span>
-      </label>
-
-      {error ? <p className="mt-4 text-[13px] text-dye-red-lit">{error}</p> : null}
-
-      <div className="mt-6 flex justify-center gap-2">
-        <Key tone="ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
-          Trocar de avaliador
+      <div className="mt-1 flex items-center gap-2">
+        <Key tone="commit" type="submit" disabled={busy || !email.trim() || !password}>
+          {busy ? 'Entrando' : 'Entrar'}
         </Key>
+        {onBack ? (
+          <Key tone="ghost" onClick={onBack}>
+            Voltar
+          </Key>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A senha, na primeira entrada.
+
+   Aparece depois do Google e antes do saguão, e é a única coisa entre a pessoa e
+   o produto — então ela diz por que existe. Um formulário que pede uma senha sem
+   explicar por que, logo depois de a pessoa ter acabado de provar quem é, parece
+   trabalho repetido; com a frase, é a pessoa guardando uma segunda chave.
+
+   Dá para pular. Não é uma exigência do produto, é um seguro — e um seguro
+   obrigatório na porta de entrada é um pedágio. Quem pular volta a ver o convite,
+   porque o motivo dele não expira.
+   ══════════════════════════════════════════════════════════════════════════ */
+export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
+  const [password, setPassword] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const first = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
+
+  const short = password.length > 0 && password.length < 8;
+  const mismatch = again.length > 0 && again !== password;
+  const ready = password.length >= 8 && again === password && !busy;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.setPassword(password);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
+      <HolographicWall asBackdrop />
+      <div className="relative mx-auto flex w-full max-w-[900px] flex-1 flex-col justify-center px-5 py-14">
+        <header className="mb-8 text-center">
+          <h1 className="font-display text-[34px] leading-none tracking-[0.06em] text-beam">
+            Guarde uma segunda chave
+          </h1>
+          <p className="mx-auto mt-4 max-w-[46ch] text-[13.5px] leading-relaxed text-ink-dim">
+            Você entrou pelo Google, e isso basta para hoje. Uma senha é o
+            caminho de volta no dia em que aquela conta não estiver mais à mão —
+            e o clube não é uma coisa que se possa perder por causa dela.
+          </p>
+        </header>
+
+        <form onSubmit={submit} className="mx-auto flex w-full max-w-[380px] flex-col gap-3">
+          <Field
+            ref={first}
+            label="Nova senha"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={setPassword}
+            hint={short ? 'Pelo menos 8 caracteres.' : 'Pelo menos 8 caracteres.'}
+            bad={short}
+          />
+          <Field
+            label="De novo"
+            type="password"
+            autoComplete="new-password"
+            value={again}
+            onChange={setAgain}
+            hint={mismatch ? 'As duas não batem.' : undefined}
+            bad={mismatch}
+          />
+
+          {error ? <Fault>{error}</Fault> : null}
+
+          <div className="mt-1 flex items-center gap-2">
+            <Key tone="commit" type="submit" disabled={!ready}>
+              {busy ? 'Gravando' : 'Gravar senha'}
+            </Key>
+            <Key tone="ghost" onClick={onSkip}>
+              Agora não
+            </Key>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-function NewReviewer({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: SessionUser) => void }) {
-  const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+/* ── um campo ─────────────────────────────────────────────────────────────
+   Recuado na sala, como todo campo deste produto: fundo `house-deep`, anel
+   `house-rail`, cantos de 2px e o cursor vermelho — a única aparição de vermelho
+   em repouso no sistema, porque um cursor é uma cabeça de gravação. */
+type FieldProps = {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+  bad?: boolean;
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>;
 
-  async function create() {
-    setError(null);
-    if (!name.trim()) return setError('Digite um nome.');
-    if (!/^\d{4}$/.test(pin)) return setError('O PIN precisa ter exatamente 4 dígitos.');
-    if (pin !== confirmPin) return setError('Os dois PINs não são iguais.');
-    setBusy(true);
-    try {
-      const rec = await post<Reviewer>('/api/reviewers', { name: name.trim(), pin });
-      const res = await auth.login(rec.id, pin);
-      onCreated(res.reviewer);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const field =
-    'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[15px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass';
-
+const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
+  { label, value, onChange, hint, bad, ...rest },
+  ref
+) {
   return (
-    <div className="plate space-y-4 p-6">
-      <label className="block">
-        <span className="legend mb-2 block">Nome</span>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="ex: Marina" className={field} />
-      </label>
-      <label className="block">
-        <span className="legend mb-2 block">PIN de 4 dígitos</span>
-        <input
-          value={pin}
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          placeholder="••••"
-          className={cn(field, 'q tracking-[0.5em]')}
-        />
-      </label>
-      <label className="block">
-        <span className="legend mb-2 block">Repita o PIN</span>
-        <input
-          value={confirmPin}
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          onKeyDown={e => {
-            if (e.key === 'Enter') void create();
-          }}
-          placeholder="••••"
-          className={cn(field, 'q tracking-[0.5em]')}
-        />
-      </label>
+    <label className="flex flex-col gap-1.5">
+      <span className="legend text-[10px]">{label}</span>
+      <input
+        ref={ref}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={cn(
+          'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red',
+          'ring-1 transition-shadow placeholder:text-ink-dim',
+          'focus-visible:outline-none focus-visible:ring-dye-brass',
+          bad ? 'ring-dye-red-lit/60' : 'ring-house-rail'
+        )}
+        {...rest}
+      />
+      {hint ? (
+        <span className={cn('text-[12px]', bad ? 'text-dye-red-lit' : 'text-ink-faint')}>{hint}</span>
+      ) : null}
+    </label>
+  );
+});
 
-      {error ? <Fault>{error}</Fault> : null}
-
-      <div className="flex gap-2 pt-1">
-        <Key tone="commit" className="flex-1" disabled={busy} onClick={() => void create()}>
-          {busy ? 'Criando…' : 'Entrar no clube'}
-        </Key>
-        <Key tone="ghost" onClick={onCancel}>
-          Voltar
-        </Key>
-      </div>
-    </div>
+/* A marca do Google, desenhada e não uma fonte de ícone: é a única coisa neste
+   produto que pertence a outra pessoa, e ela tem uma forma exata. */
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden className="h-[18px] w-[18px] flex-none">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59A14.5 14.5 0 0 1 9.77 24c0-1.6.28-3.14.76-4.59l-7.98-6.19A23.94 23.94 0 0 0 0 24c0 3.88.93 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
   );
 }

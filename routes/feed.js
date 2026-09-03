@@ -2,9 +2,9 @@ const express = require('express');
 const db = require('../db');
 const wrap = require('../wrap');
 const { critsFor, GENRES } = require('../criteria');
+const clubs = require('../clubs');
 
-
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 /* ══════════════════════════════════════════════════════════════════════════
    O mural: o que aconteceu no clube, em ordem de tempo.
@@ -60,6 +60,7 @@ const recentReviews = db.prepare(`
          r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
+  WHERE rv.club_id = ?
   ORDER BY rv.recorded_at DESC
   LIMIT ${LIMIT}
 `);
@@ -73,6 +74,7 @@ const recentComments = db.prepare(`
   JOIN reviews rv ON rv.id = c.review_id
   JOIN reviewers a ON a.id = c.reviewer_id
   JOIN reviewers o ON o.id = rv.reviewer_id
+  WHERE rv.club_id = ?
   ORDER BY c.created_at DESC
   LIMIT ${LIMIT}
 `);
@@ -116,8 +118,11 @@ function endsOf(genre, raw) {
   return { high, low };
 }
 
-router.get('/', wrap(async (req, res) => {
-  const [reviews, comments] = await Promise.all([recentReviews.all(), recentComments.all()]);
+router.get('/', clubs.requireReadable, wrap(async (req, res) => {
+  const [reviews, comments] = await Promise.all([
+    recentReviews.all(req.club.id),
+    recentComments.all(req.club.id),
+  ]);
 
   const items = [];
 

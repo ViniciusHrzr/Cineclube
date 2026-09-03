@@ -2,12 +2,22 @@ const express = require('express');
 const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const wrap = require('../wrap');
 const { answeredIn, critsFor, finalOf, GENRES } = require('../criteria');
 const { fillEnglishTitle } = require('../english');
 const live = require('../live');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
+
+/* ── o acervo é de uma sala ───────────────────────────────────────────────
+   Todo SELECT aqui carrega `club_id`, e não é uma otimização: sem ele o acervo
+   de todo mundo seria o mesmo acervo, que é literalmente o que este produto era
+   antes de ter clubes. A média do clube, o ranking, a régua de divergência —
+   tudo isso só significa alguma coisa dentro de um grupo que assistiu junto.
+
+   Ler é de quem pode ler o clube, o que num clube público inclui quem está de
+   fora: é isso que alimenta a vitrine. Escrever é sempre de membro. */
 
 /* The runtime is read through the cache when the take does not carry one: every
    film in the archive was opened before it was rated, so the cache almost always
@@ -20,13 +30,13 @@ const listStmt = db.prepare(`
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
+  WHERE rv.club_id = ?
   ORDER BY rv.date DESC
 `);
-const reviewerExistsStmt = db.prepare('SELECT id FROM reviewers WHERE id = ?');
 const upsertStmt = db.prepare(`
-  INSERT INTO reviews (id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
-  VALUES (@id, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
-  ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
+  INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
+  VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
+  ON CONFLICT(club_id, reviewer_id, movie_id) DO UPDATE SET
     -- Regravar é um acontecimento: o mural mostra a ficha de novo, na hora em
     -- que ela mudou, em vez de escondê-la no dia em que foi criada.
     recorded_at = datetime('now'),
@@ -38,6 +48,7 @@ const upsertStmt = db.prepare(`
 const averagesStmt = db.prepare(`
   SELECT movie_id, AVG(final) AS avg, COUNT(*) AS count
   FROM reviews
+  WHERE club_id = ?
   GROUP BY movie_id
 `);
 const savedStmt = db.prepare(`
@@ -47,11 +58,13 @@ const savedStmt = db.prepare(`
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
-  WHERE rv.reviewer_id = ? AND rv.movie_id = ?
+  WHERE rv.club_id = ? AND rv.reviewer_id = ? AND rv.movie_id = ?
 `);
-const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
+/* `club_id` na condição e não só na leitura: sem ele, o id de uma ficha de
+   outro clube apagaria aquela ficha por uma rota deste. */
+const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ? AND club_id = ?');
 const deleteStmt = db.prepare('DELETE FROM reviews WHERE id = ?');
-const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE movie_id = ?');
+const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE club_id = ? AND movie_id = ?');
 
 function toReviewDTO(row) {
   const genre = GENRES.includes(row.movie_genre) ? row.movie_genre : 'Drama';
@@ -95,27 +108,27 @@ function toReviewDTO(row) {
   };
 }
 
-router.get('/', wrap(async (req, res) => {
-  const rows = await listStmt.all();
+router.get('/', clubs.requireReadable, wrap(async (req, res) => {
+  const rows = await listStmt.all(req.club.id);
   res.json({ reviews: rows.map(toReviewDTO) });
 }));
 
-router.get('/averages', wrap(async (req, res) => {
+router.get('/averages', clubs.requireReadable, wrap(async (req, res) => {
   const out = {};
-  for (const row of await averagesStmt.all()) out[row.movie_id] = { avg: row.avg, count: row.count };
+  for (const row of await averagesStmt.all(req.club.id)) {
+    out[row.movie_id] = { avg: row.avg, count: row.count };
+  }
   res.json({ averages: out });
 }));
 
 /* A take is signed by whoever is signed in. The body may still name a reviewer
    — the client sends it — but the session is the authority, so nobody can post
    a rating under someone else's name by editing a request. */
-router.post('/', auth.requireSession, wrap(async (req, res) => {
+router.post('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const { movie, scores, comment } = req.body || {};
   const reviewerId = req.session.reviewer_id;
-  const exists = await reviewerExistsStmt.get(reviewerId);
-  if (!exists) {
-    return res.status(400).json({ error: 'Avaliador inválido.' });
-  }
+  // Quem assina é a sessão, e ser membro já foi conferido pelo middleware — a
+  // checagem de "avaliador existe" que morava aqui era a versão sem clubes disso.
   if (!movie || !movie.id || !movie.title) {
     return res.status(400).json({ error: 'Filme inválido.' });
   }
@@ -150,7 +163,7 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
      honesta é a conversa que já mora embaixo da ficha, não um DELETE
      silencioso. */
   await upsertStmt.run({
-    id, reviewerId, movieId: movie.id,
+    id, clubId: req.club.id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
     moviePoster: movie.poster ?? null, movieDirector: movie.director ?? null,
     movieRuntime: Number.isFinite(Number(movie.runtime)) && Number(movie.runtime) > 0
@@ -158,7 +171,7 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
       : null,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
-  await deleteWatchlistStmt.run(movie.id);
+  await deleteWatchlistStmt.run(req.club.id, movie.id);
   /* O acervo é a outra tela que filtra o banco, e um filme avaliado fica nele
      para sempre — então é aqui que ele precisa aprender os nomes por que vai
      ser procurado. Antes de reler a linha, para a resposta já sair com eles. */
@@ -169,10 +182,10 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
      deixaria a fila de todo mundo com um filme que já foi visto e avaliado — e
      seria a tela ao vivo divergindo da tela recarregada, que é o defeito exato
      que este mecanismo não pode ter. */
-  live.emit('reviews', reviewerId);
-  live.emit('watchlist', reviewerId);
+  live.emit('reviews', reviewerId, req.club.id);
+  live.emit('watchlist', reviewerId, req.club.id);
 
-  const saved = await savedStmt.get(reviewerId, movie.id);
+  const saved = await savedStmt.get(req.club.id, reviewerId, movie.id);
   res.status(201).json(toReviewDTO(saved));
 }));
 
@@ -183,8 +196,8 @@ router.post('/', auth.requireSession, wrap(async (req, res) => {
    the take, so there is no request anyone can send that edits somebody else's.
    Without this check any signed-in member could quietly erase another's
    rating. */
-router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
-  const row = await ownerStmt.get(req.params.id);
+router.delete('/:id', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const row = await ownerStmt.get(req.params.id, req.club.id);
   if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });
   if (row.reviewer_id !== req.session.reviewer_id) {
     return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });
@@ -192,8 +205,8 @@ router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
   await deleteStmt.run(row.id);
   /* A ficha leva a conversa dela junto, em cascata — então a conversa também
      mudou para quem está com a tela aberta. */
-  live.emit('reviews', req.session.reviewer_id);
-  live.emit('social', req.session.reviewer_id);
+  live.emit('reviews', req.session.reviewer_id, req.club.id);
+  live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));
 

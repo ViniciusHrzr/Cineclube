@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { clubPath } from '@/lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A metade do navegador do clube ao vivo.
@@ -27,9 +28,17 @@ import { useEffect, useRef } from 'react';
    é a diferença entre uma tela atrasada e uma tela quebrada.
    ══════════════════════════════════════════════════════════════════════════ */
 
-export type LiveKind = 'social' | 'reviews' | 'watchlist' | 'reviewers' | 'screening';
+export type LiveKind = 'social' | 'reviews' | 'watchlist' | 'reviewers' | 'screening' | 'club';
 
-const KINDS: readonly string[] = ['social', 'reviews', 'watchlist', 'reviewers', 'screening'];
+const KINDS: readonly string[] = [
+  'social',
+  'reviews',
+  'watchlist',
+  'reviewers',
+  'screening',
+  /* A sala em si: alguém entrou, saiu, virou ADM, ou o ADM trocou a foto. */
+  'club',
+];
 
 type Frame = { kind: LiveKind | 'hello'; by: string | null; at: number };
 
@@ -48,7 +57,10 @@ let failures = 0;
 
 function open() {
   if (source) return;
-  const es = new EventSource('/api/live/stream');
+  /* `clubPath` e não uma URL fixa: o cano é de uma sala, e o servidor só entrega
+     nele o que é daquela sala. Ver live.js — sem isso, um aviso de clube privado
+     chegaria a quem não é dele. */
+  const es = new EventSource(clubPath('/live/stream'));
   source = es;
   failures = 0;
 
@@ -79,6 +91,16 @@ function open() {
 function close() {
   source?.close();
   source = null;
+}
+
+/* Trocar de clube. A conexão é de uma sala e não pode sobreviver à saída dela:
+   quem sai do Cineclube e entra no clube de terror com o cano velho aberto
+   continuaria recebendo — e buscando — o que acontece numa sala que já não está
+   na tela. Fechar aqui é o suficiente; o próximo ouvinte reabre no endereço
+   novo, porque `open` lê `clubPath` na hora. */
+export function resetLive() {
+  close();
+  failures = 0;
 }
 
 /* Voltar para a aba é a hora certa de tentar de novo: a instância é gratuita e

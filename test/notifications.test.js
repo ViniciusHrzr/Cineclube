@@ -10,6 +10,7 @@ process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
 const db = require('../db');
+const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -24,6 +25,16 @@ const { critsFor } = require('../criteria');
      novos que ela — e ver o sino zera a conta sem apagar nada.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo.
+
+   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
+   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
+   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
+
 let baseUrl;
 let server;
 
@@ -32,6 +43,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube do Sino', visibility: 'public' });
 });
 
 test.after(async () => {
@@ -59,10 +71,11 @@ const cookieOf = s => (s ? s.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
-  const res = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin: PIN });
-  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin: PIN });
-  return { ...res.body, cookie: cookieOf(login.setCookie) };
+  const who = await kit.signIn(name || `Sócio ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
 }
 
 const movie = () => ({ id: 800000 + ++seq, title: `Filme ${seq}`, year: 2024, genre: 'Terror' });
@@ -75,20 +88,20 @@ function scoresFor(genre, value) {
 
 async function newTake(who) {
   const m = movie();
-  const res = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, who.cookie);
+  const res = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, who.cookie);
   assert.equal(res.status, 201);
   return { ...res.body, movie: m };
 }
 
-const feed = who => req('GET', '/api/notifications', null, who.cookie);
-const seen = who => req('POST', '/api/notifications/seen', {}, who.cookie);
+const feed = who => req('GET', at('/notifications'), null, who.cookie);
+const seen = who => req('POST', at('/notifications/seen'), {}, who.cookie);
 
 const comment = (take, body, who) =>
-  req('POST', `/api/social/reviews/${take.id}/comments`, { body }, who.cookie);
+  req('POST', at(`/social/reviews/${take.id}/comments`), { body }, who.cookie);
 const vote = (take, value, who) =>
-  req('PUT', `/api/social/reviews/${take.id}/vote`, { value }, who.cookie);
+  req('PUT', at(`/social/reviews/${take.id}/vote`), { value }, who.cookie);
 const like = (c, liked, who) =>
-  req('PUT', `/api/social/comments/${c.id}/like`, { liked }, who.cookie);
+  req('PUT', at(`/social/comments/${c.id}/like`), { liked }, who.cookie);
 
 /* ── as três coisas que acendem o sino ───────────────────────────────── */
 
@@ -170,7 +183,7 @@ test('responder meu comentário me avisa, mesmo na ficha de outra pessoa', async
   const answerer = await newReviewer();
   const take = await newTake(host);
   const parent = (await comment(take, 'o roteiro cai', writer)).body;
-  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+  await req('POST', at(`/social/reviews/${take.id}/comments`), {
     body: 'discordo', parentId: parent.id
   }, answerer.cookie);
 
@@ -190,7 +203,7 @@ test('o dono da ficha não recebe dois avisos pelo mesmo texto', async () => {
   const b = await newReviewer();
   const take = await newTake(host);
   const parent = (await comment(take, 'primeiro', a)).body;
-  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+  await req('POST', at(`/social/reviews/${take.id}/comments`), {
     body: 'respondendo', parentId: parent.id
   }, b.cookie);
 
@@ -217,7 +230,7 @@ test('ser mencionado no comentário de uma avaliação também acende', async ()
   // O outro lugar do produto onde se escreve.
   const chamado = await newReviewer('Cauro Neves');
   const quemAvalia = await newReviewer();
-  await req('POST', '/api/reviews', {
+  await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 7), comment: 'discordo do @cauro nessa'
   }, quemAvalia.cookie);
 
@@ -240,7 +253,7 @@ test('responder e mencionar na mesma frase é um aviso, não dois', async () => 
   const answerer = await newReviewer();
   const take = await newTake(host);
   const parent = (await comment(take, 'primeiro', writer)).body;
-  await req('POST', `/api/social/reviews/${take.id}/comments`, {
+  await req('POST', at(`/social/reviews/${take.id}/comments`), {
     body: '@leonardo discordo', parentId: parent.id
   }, answerer.cookie);
 
@@ -300,7 +313,7 @@ test('apagar o comentário apaga o aviso sobre ele', async () => {
   const c = (await comment(take, 'some comigo', reader)).body;
   assert.equal((await feed(author)).body.items.length, 1);
 
-  await req('DELETE', `/api/social/comments/${c.id}`, null, reader.cookie);
+  await req('DELETE', at(`/social/comments/${c.id}`), null, reader.cookie);
   assert.equal((await feed(author)).body.items.length, 0);
 });
 
@@ -369,7 +382,7 @@ test('a marca de uma pessoa não mexe na de outra', async () => {
 
 /* ── limpar ──────────────────────────────────────────────────────────── */
 
-const clear = who => req('POST', '/api/notifications/clear', {}, who.cookie);
+const clear = who => req('POST', at('/notifications/clear'), {}, who.cookie);
 
 test('limpar esvazia a lista e zera a conta', async () => {
   const author = await newReviewer();
@@ -397,7 +410,7 @@ test('limpar não apaga o comentário nem o voto — só a projeção deles', as
 
   // O sino do autor esvaziou, mas o que as outras pessoas escreveram continua
   // lá para o clube inteiro ver.
-  const social = (await req('GET', '/api/social')).body;
+  const social = (await req('GET', at('/social'))).body;
   assert.ok(social.comments.some(x => x.id === c.id), 'o comentário foi apagado');
   assert.equal(social.votes.filter(v => v.reviewId === take.id).length, 1, 'o voto foi apagado');
 });
@@ -436,14 +449,14 @@ test('limpar o próprio sino não mexe no de ninguém', async () => {
 });
 
 test('limpar exige sessão', async () => {
-  assert.equal((await req('POST', '/api/notifications/clear', {})).status, 401);
+  assert.equal((await req('POST', at('/notifications/clear'), {})).status, 401);
 });
 
 /* ── quem pode ler ───────────────────────────────────────────────────── */
 
 test('o sino exige sessão — nas duas rotas', async () => {
-  assert.equal((await req('GET', '/api/notifications')).status, 401);
-  assert.equal((await req('POST', '/api/notifications/seen', {})).status, 401);
+  assert.equal((await req('GET', at('/notifications'))).status, 401);
+  assert.equal((await req('POST', at('/notifications/seen'), {})).status, 401);
 });
 
 test('o feed é o de quem está logado, e não aceita um id no caminho', async () => {

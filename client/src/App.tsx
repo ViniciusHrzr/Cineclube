@@ -6,11 +6,15 @@ import { Fault } from '@/components/bits';
 import {
   api,
   auth,
-  del,
+  capi,
+  cdel,
+  clubs as clubsApi,
+  cpost,
   initialsOf,
-  post,
   reelColor,
+  setClub,
   social,
+  type Club as ClubRow,
   type CommentLike,
   type Criterion,
   type ReviewVote,
@@ -21,10 +25,12 @@ import {
   type SessionUser,
   type WatchItem,
 } from '@/lib/api';
-import { useLive, type LiveKind } from '@/lib/live';
+import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
-import { Reel } from '@/components/bits';
-import { SignIn } from '@/screens/SignIn';
+import { Key, Reel } from '@/components/bits';
+import { AccountSheet } from '@/components/settings';
+import { Lobby } from '@/screens/Lobby';
+import { SetPassword, SignIn } from '@/screens/SignIn';
 import { cn, plural } from '@/lib/utils';
 import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
@@ -84,6 +90,14 @@ export type TabId = (typeof TABS)[number]['id'];
 type Club = {
   /** Who is signed in. The session is the authority on this, not the client. */
   me: SessionUser;
+  /** Qual sala é esta: nome, foto, visibilidade e o seu papel nela. */
+  club: ClubRow;
+  /** Se você administra ESTA sala — diferente de `me.isAdmin`, que é a instalação. */
+  isClubAdmin: boolean;
+  /** Relê o clube depois de o ADM mexer no nome, na foto ou na visibilidade. */
+  refreshClub: () => Promise<void>;
+  /** Sair da sala. As suas fichas aqui continuam onde estão. */
+  leaveClub: () => Promise<void>;
   signOut: () => void;
   refreshReviewers: () => Promise<void>;
   /** Re-reads the session after the person edits their own name or portrait. */
@@ -165,71 +179,81 @@ export function useClub() {
    Uma seção desconhecida cai no catálogo, como sempre caiu; um id que não
    existe mais abre a aba e não foca nada, que é o que sobra de honesto quando
    a coisa apontada foi apagada. */
-function routeFromHash(): {
+/* ── e agora o clube vem antes ────────────────────────────────────────────
+   `#c/<slug>/reviews/<id>` em vez de `#reviews/<id>`. O clube na frente, e não
+   guardado na sessão, porque este endereço é feito para ser colado no Discord:
+   guardado na sessão, ele significaria coisas diferentes conforme a sala em que
+   o leitor estivesse por acaso. O outro motivo é mecânico e está em clubs.js —
+   `EventSource` não manda cabeçalho, então a sala ao vivo precisa do clube na
+   URL de qualquer jeito.
+
+   Sem `c/` na frente, não há clube: é o saguão. Um endereço antigo do tempo de
+   um clube só (`#reviews/...`) cai lá também, que é o mais honesto — a ficha que
+   ele aponta existe, mas quem lê o endereço não tem como saber de qual sala. */
+type Route = {
+  club: string | null;
   tab: TabId | null;
   review: string | null;
   comment: string | null;
   person: string | null;
-} {
+};
+
+function routeFromHash(): Route {
   const raw = (location.hash || '').replace(/^#/, '');
-  const [head, tail, deeper] = raw.split('/');
+  // O que vier depois de `?` é recado da volta do Google, não caminho.
+  const clean = raw.split('?')[0];
+  const parts = clean.split('/').filter(Boolean);
+
+  if (parts[0] !== 'c' || !parts[1]) {
+    return { club: null, tab: null, review: null, comment: null, person: null };
+  }
+  const club = decodeURIComponent(parts[1]);
+  const [head, tail, deeper] = parts.slice(2);
+
   const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
   const review = tab === 'reviews' && tail ? decodeURIComponent(tail) : null;
-  /* Um terceiro segmento endereça o comentário dentro da ficha, e é o que faz
+  /* Um quarto segmento endereça o comentário dentro da ficha, e é o que faz
      um aviso levar ao texto em vez de à carta inteira. Sem ele o sino abria a
      avaliação certa e deixava a pessoa procurando qual das respostas era a que
      ele anunciou. */
   const comment = review && deeper ? decodeURIComponent(deeper) : null;
-  /* De quem é o perfil. `#perfil` sem id, e o endereço antigo `#people`, são o
+  /* De quem é o perfil. `perfil` sem id, e o endereço antigo `people`, são o
      seu — quem escreveu qualquer um dos dois estava pedindo a própria página. */
   const person = tab === 'perfil' && tail ? decodeURIComponent(tail) : null;
-  return { tab, review, comment, person };
+  return { club, tab, review, comment, person };
 }
 
-function tabFromHash(): TabId | null {
-  return routeFromHash().tab;
-}
+/** O endereço de uma seção dentro de um clube. Um lugar só que monta isto. */
+const clubHash = (slug: string, rest = '') =>
+  `c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
 
+/* ══════════════════════════════════════════════════════════════════════════
+   O app, antes de haver uma sala.
+
+   Três perguntas em ordem, e cada uma só faz sentido depois da anterior: quem é
+   você, você já guardou uma segunda chave, e em que sala você está. Só depois
+   das três existe um clube para o resto do produto falar sobre — e é por isso
+   que este componente existe separado do de baixo: `ClubApp` pode assumir que
+   tem clube, sessão e dados, e não precisa desenhar nenhum dos estados de
+   "ainda não".
+   ══════════════════════════════════════════════════════════════════════════ */
 export default function App() {
-  /* O feed é onde a sala abre. Era o catálogo, e o catálogo continua sendo a
-     resposta para "o que a gente vê agora" — mas essa pergunta é feita uma vez
-     por semana, e "o que aconteceu por aqui" é feita toda vez que alguém entra.
-     Um link com uma seção dentro continua ganhando do padrão. */
-  const [tab, setTab] = useState<TabId>(() => tabFromHash() ?? 'feed');
-  /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
-  const [focusReview, setFocusReview] = useState<string | null>(() => routeFromHash().review);
-  /** E o comentário dentro dela, quando o endereço vai tão fundo. */
-  const [focusComment, setFocusComment] = useState<string | null>(() => routeFromHash().comment);
-  /* De quem é o perfil aberto. Null significa "o meu" — e não "nenhum": a tela
-     resolve isso contra a sessão, que é a única que sabe quem é você. Guardar o
-     seu id aqui seria gravar a resposta antes de a sessão existir. */
-  const [personId, setPersonId] = useState<string | null>(() => routeFromHash().person);
-  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
-  const [criteria, setCriteria] = useState<Record<string, Criterion[]>>({});
-  const [genres, setGenres] = useState<string[]>([]);
-  const [comments, setComments] = useState<ReviewComment[]>([]);
-  const [votes, setVotes] = useState<ReviewVote[]>([]);
-  const [commentLikes, setCommentLikes] = useState<CommentLike[]>([]);
-  const [booted, setBooted] = useState(false);
-  const [bootError, setBootError] = useState<string | null>(null);
   const [me, setMe] = useState<SessionUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [sheetId, setSheetId] = useState<number | null>(null);
-  const [pendingRate, setPendingRate] = useState<number | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
-     sessão porque a coisa toda é justamente para quem NÃO está nela. */
-  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [skippedPassword, setSkippedPassword] = useState(false);
+  const [route, setRoute] = useState<Route>(() => routeFromHash());
+  /** A folha da própria conta, aberta pelo rosto na barra do saguão. */
+  const [self, setSelf] = useState(false);
 
-  /* The session decides whether the app renders at all, so it is asked first
-     and separately: a signed-out visitor should reach the sign-in screen
-     without waiting on the catalog. */
+  /* A sessão decide se o app renderiza, então ela é perguntada primeiro e
+     sozinha: quem está deslogado tem de chegar na tela de entrada sem esperar
+     por catálogo nenhum. */
   const checkAuth = useCallback(async () => {
     try {
       const res = await auth.me();
       setMe(res.reviewer);
+      setNeedsPassword(!!res.needsPassword);
     } catch {
       setMe(null);
     } finally {
@@ -241,14 +265,185 @@ export default function App() {
     void checkAuth();
   }, [checkAuth]);
 
+  useEffect(() => {
+    const onHash = () => setRoute(routeFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  /* ── quem a API está falando ──────────────────────────────────────────
+     Escrito ANTES de qualquer tela do clube montar, e é isso que torna seguro
+     o slug morar num módulo em vez de descer por props até o botão de curtir
+     (ver lib/api.ts). O cano ao vivo é fechado junto: ele é de uma sala, e uma
+     conexão que sobrevive à troca continuaria trazendo — e buscando — o que
+     acontece numa sala que já saiu da tela. */
+  useEffect(() => {
+    setClub(route.club);
+    resetLive();
+  }, [route.club]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await auth.logout();
+    } catch {
+      /* o cookie some de qualquer jeito; seguir adiante desloga o navegador */
+    }
+    setMe(null);
+    setNeedsPassword(false);
+    location.hash = '';
+  }, []);
+
+  const enter = useCallback((slug: string) => {
+    location.hash = clubHash(slug, 'feed');
+  }, []);
+
+  if (!authChecked) {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
+          <span className="legend animate-flicker">Acendendo o projetor</span>
+        </div>
+      </>
+    );
+  }
+
+  if (!me) return <SignIn onSignedIn={u => { setMe(u); void checkAuth(); }} />;
+
+  /* A senha vem antes do saguão porque é sobre a conta, não sobre uma sala — e
+     porque logo depois da primeira entrada é o único momento em que a frase
+     "guarde uma segunda chave" tem contexto. Pular é permitido: um seguro
+     obrigatório na porta é um pedágio. */
+  if (needsPassword && !skippedPassword) {
+    return (
+      <SetPassword
+        onDone={() => {
+          setNeedsPassword(false);
+          void checkAuth();
+        }}
+        onSkip={() => setSkippedPassword(true)}
+      />
+    );
+  }
+
+  if (!route.club) {
+    return (
+      <>
+        <Lobby
+          me={me}
+          onEnter={enter}
+          onSignOut={() => void signOut()}
+          onOpenSelf={() => setSelf(true)}
+        />
+        {/* A folha da conta também no saguão: uma pessoa que ainda não está em
+            clube nenhum precisa poder trocar o próprio nome e cadastrar uma
+            senha, e o único lugar em que ela está é este. */}
+        <AccountSheet open={self} onClose={() => setSelf(false)} me={me} onChanged={checkAuth} />
+      </>
+    );
+  }
+
+  /* `key` no slug: trocar de clube desmonta o app inteiro em vez de reaproveitar
+     as telas. É deliberado e é o que mantém a promessa de isolamento também do
+     lado de cá — nenhum estado do clube anterior (fichas, fila, conversa, sala
+     de projeção) sobrevive à troca, porque o componente que os segurava deixou
+     de existir. */
+  return (
+    <ClubApp
+      key={route.club}
+      slug={route.club}
+      route={route}
+      me={me}
+      setMe={setMe}
+      onSignOut={() => void signOut()}
+      onLeaveClub={() => {
+        location.hash = '';
+      }}
+    />
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   O app dentro de uma sala.
+
+   Isto era o app inteiro. O que mudou é que ele deixou de ser o único: agora
+   recebe o clube já resolvido e pode assumir as três coisas que o componente
+   acima garantiu — há sessão, há senha resolvida, e há uma sala. Toda chamada
+   daqui para baixo passa por `capi`, que já sabe qual é (ver lib/api.ts).
+   ══════════════════════════════════════════════════════════════════════════ */
+function ClubApp({
+  slug,
+  route,
+  me,
+  setMe,
+  onSignOut,
+  onLeaveClub,
+}: {
+  slug: string;
+  route: Route;
+  me: SessionUser;
+  setMe: (u: SessionUser) => void;
+  onSignOut: () => void;
+  onLeaveClub: () => void;
+}) {
+  /* O feed é onde a sala abre. Era o catálogo, e o catálogo continua sendo a
+     resposta para "o que a gente vê agora" — mas essa pergunta é feita uma vez
+     por semana, e "o que aconteceu por aqui" é feita toda vez que alguém entra.
+     Um link com uma seção dentro continua ganhando do padrão. */
+  const [tab, setTab] = useState<TabId>(() => route.tab ?? 'feed');
+  /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
+  const [focusReview, setFocusReview] = useState<string | null>(() => route.review);
+  /** E o comentário dentro dela, quando o endereço vai tão fundo. */
+  const [focusComment, setFocusComment] = useState<string | null>(() => route.comment);
+  /* De quem é o perfil aberto. Null significa "o meu" — e não "nenhum": a tela
+     resolve isso contra a sessão, que é a única que sabe quem é você. Guardar o
+     seu id aqui seria gravar a resposta antes de a sessão existir. */
+  const [personId, setPersonId] = useState<string | null>(() => route.person);
+  /** Qual sala é esta, com a foto, a visibilidade e o seu papel nela. */
+  const [club, setClubRow] = useState<ClubRow | null>(null);
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
+  const [criteria, setCriteria] = useState<Record<string, Criterion[]>>({});
+  const [genres, setGenres] = useState<string[]>([]);
+  const [comments, setComments] = useState<ReviewComment[]>([]);
+  const [votes, setVotes] = useState<ReviewVote[]>([]);
+  const [commentLikes, setCommentLikes] = useState<CommentLike[]>([]);
+  const [booted, setBooted] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [sheetId, setSheetId] = useState<number | null>(null);
+  const [pendingRate, setPendingRate] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
+     sessão porque a coisa toda é justamente para quem NÃO está nela. */
+  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+
+  const refreshClub = useCallback(async () => {
+    const got = await clubsApi.get(slug);
+    setClubRow(got.club);
+    /* Renomear troca o endereço. Se o nome mudou nesta aba, o hash aqui aponta
+       para um slug que não existe mais — e a próxima navegação cairia num 404.
+       Reescrever agora é mais barato do que descobrir depois. */
+    if (got.club.slug !== slug) {
+      location.hash = clubHash(got.club.slug, tab);
+    }
+  }, [slug, tab]);
+
+  /* ── carregar a sala ──────────────────────────────────────────────────
+     O clube vem antes de tudo porque ele decide se há o que carregar: um slug
+     que não existe, ou um clube privado de que você não é, respondem 404 aqui
+     e a tela diz isso em vez de disparar cinco buscas que vão todas falhar. */
   const boot = useCallback(async () => {
     setBootError(null);
     try {
+      const room = await clubsApi.get(slug);
+      setClubRow(room.club);
+
       const [rv, rs, cr, wl, sc] = await Promise.all([
-        api<{ reviewers: Reviewer[] }>('/api/reviewers'),
-        api<{ reviews: Review[] }>('/api/reviews'),
+        capi<{ reviewers: Reviewer[] }>('/reviewers'),
+        capi<{ reviews: Review[] }>('/reviews'),
         api<{ genres: string[]; criteria: Record<string, Criterion[]> }>('/api/catalog/criteria-all'),
-        api<{ watchlist: WatchItem[] }>('/api/watchlist'),
+        capi<{ watchlist: WatchItem[] }>('/watchlist'),
         social.all(),
       ]);
       setReviewers(rv.reviewers);
@@ -263,26 +458,26 @@ export default function App() {
     } catch (e) {
       setBootError((e as Error).message);
     }
-  }, []);
+  }, [slug]);
 
   useEffect(() => {
-    if (me) void boot();
-  }, [me, boot]);
+    void boot();
+  }, [boot]);
 
-  const signOut = useCallback(async () => {
+  /* Sair da sala, não da conta: as suas fichas aqui continuam onde estão, e o
+     que você deixa é a lista de quem está dentro. */
+  const leaveClub = useCallback(async () => {
     try {
-      await auth.logout();
-    } catch {
-      /* the cookie is gone either way; falling through logs the browser out */
+      await clubsApi.leave(slug, me.id);
+      onLeaveClub();
+    } catch (e) {
+      setToast((e as Error).message);
+      window.setTimeout(() => setToast(null), 6000);
     }
-    setMe(null);
-    setBooted(false);
-    // A sala é do clube, e quem saiu não é mais o clube.
-    setPulse(DARK);
-  }, []);
+  }, [slug, me.id, onLeaveClub]);
 
   const refreshReviewers = useCallback(async () => {
-    const rv = await api<{ reviewers: Reviewer[] }>('/api/reviewers');
+    const rv = await capi<{ reviewers: Reviewer[] }>('/reviewers');
     setReviewers(rv.reviewers);
   }, []);
 
@@ -304,7 +499,9 @@ export default function App() {
 
   useEffect(() => {
     const onHash = () => {
-      const { tab: t, review, comment: within, person } = routeFromHash();
+      const { club: c, tab: t, review, comment: within, person } = routeFromHash();
+      // Outro clube (ou o saguão): quem remonta é o componente de cima.
+      if (c !== slug) return;
       if (t) setTab(t);
       /* Só quando há um id no endereço. Voltar para `#reviews` limpo não deve
          apagar o foco que a tela acabou de consumir, nem acender um antigo. */
@@ -318,12 +515,16 @@ export default function App() {
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+  }, [slug]);
 
-  const goTab = useCallback((t: TabId) => {
-    setTab(t);
-    if (tabFromHash() !== t) location.hash = t;
-  }, []);
+  const goTab = useCallback(
+    (t: TabId) => {
+      setTab(t);
+      const next = clubHash(slug, t);
+      if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+    },
+    [slug]
+  );
 
   /* ── ir ao perfil de alguém ─────────────────────────────────────────────
      A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
@@ -336,27 +537,35 @@ export default function App() {
      A rolagem volta ao topo porque isto é troca de página e não de aba: quem
      desce até a afinidade de alguém, clica num nome de lá e continua na mesma
      altura chega no meio de outra pessoa sem ver de quem. */
-  const goPerson = useCallback((reviewerId?: string | null) => {
-    const id = reviewerId ?? null;
-    setTab('perfil');
-    setPersonId(id);
-    const next = 'perfil' + (id ? `/${encodeURIComponent(id)}` : '');
-    if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  }, []);
+  const goPerson = useCallback(
+    (reviewerId?: string | null) => {
+      const id = reviewerId ?? null;
+      setTab('perfil');
+      setPersonId(id);
+      const next = clubHash(slug, 'perfil' + (id ? `/${encodeURIComponent(id)}` : ''));
+      if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    },
+    [slug]
+  );
 
   /* Ir para uma ficha específica: a aba, o endereço e o alvo, de uma vez. O
      endereço é escrito mesmo quando já se está na aba, porque é ele que a
      pessoa copia — e porque recarregar tem de voltar para o mesmo lugar. */
-  const goReview = useCallback((reviewId: string, commentId?: string | null) => {
-    setTab('reviews');
-    setFocusReview(reviewId);
-    setFocusComment(commentId ?? null);
-    const next =
-      `reviews/${encodeURIComponent(reviewId)}` +
-      (commentId ? `/${encodeURIComponent(commentId)}` : '');
-    if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
-  }, []);
+  const goReview = useCallback(
+    (reviewId: string, commentId?: string | null) => {
+      setTab('reviews');
+      setFocusReview(reviewId);
+      setFocusComment(commentId ?? null);
+      const next = clubHash(
+        slug,
+        `reviews/${encodeURIComponent(reviewId)}` +
+          (commentId ? `/${encodeURIComponent(commentId)}` : '')
+      );
+      if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+    },
+    [slug]
+  );
 
   /* Consumido pela tela assim que ela abre a ficha e rola até ela. Sem isto o
      mesmo alvo voltaria a se abrir a cada redesenho, e fechar a gaveta à mão
@@ -370,21 +579,25 @@ export default function App() {
      que é o que o sino usa e o que "copiar link" produz. */
   const aimComment = useCallback((commentId: string) => setFocusComment(commentId), []);
 
-  const fault = useCallback((msg: string) => {
-    // A 24h session ends quietly mid-use; drop to the sign-in screen instead of
-    // showing an error the visitor cannot act on.
-    if (/Entre com seu PIN/i.test(msg)) {
-      setMe(null);
-      setBooted(false);
-      return;
-    }
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 6000);
-  }, []);
+  const fault = useCallback(
+    (msg: string) => {
+      /* Uma sessão que venceu no meio do uso cai na tela de entrada em vez de
+         mostrar um erro sobre o qual não há o que fazer. Trinta dias deslizantes
+         tornam isto raro, mas raro não é nunca — e a frase é a que o servidor
+         responde em `requireSession`. */
+      if (/Entre para continuar/i.test(msg)) {
+        onSignOut();
+        return;
+      }
+      setToast(msg);
+      window.setTimeout(() => setToast(null), 6000);
+    },
+    [onSignOut]
+  );
 
   /* A string, não o objeto: quem está logado é redolhado a cada refreshMe, e um
      callback que depende do objeto inteiro se recria à toa. */
-  const meId = me?.id ?? null;
+  const meId = me.id;
 
   const averages = useMemo(() => {
     const acc: Record<number, number[]> = {};
@@ -415,6 +628,9 @@ export default function App() {
   rosterRef.current = reviewers;
   const meRef = useRef(me);
   meRef.current = me;
+  /** Se você administra ESTA sala. Mesmo motivo de ref das duas acima. */
+  const adminRef = useRef(false);
+  adminRef.current = club?.role === 'admin';
 
   const toggleWatch = useCallback(
     async (m: Movie | WatchItem) => {
@@ -433,21 +649,22 @@ export default function App() {
       if (held && meRef.current) {
         const me = meRef.current;
         const owner = rosterRef.current.find(p => p.id === held.addedBy) ?? null;
-        if (owner?.id !== me.id && !me.isAdmin) {
+        // O zelador agora é o ADM DESTA sala, e não o da instalação.
+        if (owner?.id !== me.id && !adminRef.current && !me.isAdmin) {
           fault(
             owner
               ? `Só quem pôs o filme na fila pode tirar, e ${held.title} foi escolha de ${owner.name}.`
-              : 'Este filme entrou na fila antes de ela registrar quem põe. Só o administrador do clube pode tirar.'
+              : 'Este filme entrou na fila antes de ela registrar quem põe. Só quem administra o clube pode tirar.'
           );
           return;
         }
       }
       try {
         if (has) {
-          await del(`/api/watchlist/${m.id}`);
+          await cdel(`/watchlist/${m.id}`);
           setWatchlist(list => list.filter(w => String(w.id) !== String(m.id)));
         } else {
-          await post('/api/watchlist', {
+          await cpost('/watchlist', {
             movie: { id: m.id, title: m.title, year: m.year, genre: m.genre, poster: m.poster },
           });
           setWatchlist(list => [
@@ -540,7 +757,7 @@ export default function App() {
      lâmpada é verdade mesmo quando o cano cai. Um minuto e meio, o mesmo do
      sino, e parada enquanto a aba está escondida. */
   useEffect(() => {
-    if (!me || !booted) return;
+    if (!booted) return;
     void readRoom();
     const tick = () => {
       if (document.visibilityState === 'visible') void readRoom();
@@ -551,7 +768,7 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', tick);
     };
-  }, [me, booted, readRoom]);
+  }, [booted, readRoom]);
 
   /* ── o clube ao vivo ────────────────────────────────────────────────────
      Tudo aqui em cima era uma fotografia tirada no boot. O clube conversa em
@@ -585,17 +802,17 @@ export default function App() {
         .catch(quiet);
     }
     if (kinds.has('reviews')) {
-      void api<{ reviews: Review[] }>('/api/reviews')
+      void capi<{ reviews: Review[] }>('/reviews')
         .then(r => setReviews(r.reviews))
         .catch(quiet);
     }
     if (kinds.has('watchlist')) {
-      void api<{ watchlist: WatchItem[] }>('/api/watchlist')
+      void capi<{ watchlist: WatchItem[] }>('/watchlist')
         .then(w => setWatchlist(w.watchlist))
         .catch(quiet);
     }
     if (kinds.has('reviewers')) {
-      void api<{ reviewers: Reviewer[] }>('/api/reviewers')
+      void capi<{ reviewers: Reviewer[] }>('/reviewers')
         .then(r => setReviewers(r.reviewers))
         .catch(quiet);
     }
@@ -603,11 +820,18 @@ export default function App() {
        daqui que não é uma coleção — é um cômodo — e por isso não busca uma
        lista, busca o pulso. Ver `readRoom` acima. */
     if (kinds.has('screening')) void readRoom();
-  }, [readRoom]);
+    /* E o clube em si: alguém entrou, saiu, virou ADM, ou o ADM trocou a foto.
+       Duas coisas mudaram — quem está dentro e o que a sala é —, então as duas
+       são relidas. */
+    if (kinds.has('club')) {
+      void refreshClub().catch(quiet);
+      void refreshReviewers().catch(quiet);
+    }
+  }, [readRoom, refreshClub, refreshReviewers]);
 
-  /* Só depois de entrar: sem sessão a rota responde 401, e insistir gastaria as
-     tentativas do fluxo antes de alguém sequer ter digitado o PIN. */
-  useLive(applyLive, !!me && booted);
+  /* Só depois de a sala ter carregado: antes disso não há clube na URL da API
+     para o cano assinar, e insistir gastaria as tentativas do fluxo à toa. */
+  useLive(applyLive, booted);
 
   const reload = useCallback((patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => {
     if (patch.reviewers) setReviewers(patch.reviewers);
@@ -633,12 +857,16 @@ export default function App() {
      changed. It used to be a fresh object on every render of this component,
      which meant opening a film's sheet, or a toast appearing for six seconds,
      re-rendered every screen and every card that reads from it. */
-  const club = useMemo<Club | null>(
+  const ctx = useMemo<Club | null>(
     () =>
-      me
+      club
         ? {
             me,
-            signOut: () => void signOut(),
+            club,
+            isClubAdmin: club.role === 'admin',
+            refreshClub,
+            leaveClub,
+            signOut: onSignOut,
             refreshReviewers,
             refreshMe,
             avatarOf,
@@ -675,7 +903,10 @@ export default function App() {
         : null,
     [
       me,
-      signOut,
+      club,
+      refreshClub,
+      leaveClub,
+      onSignOut,
       refreshReviewers,
       refreshMe,
       avatarOf,
@@ -710,7 +941,32 @@ export default function App() {
     ]
   );
 
-  if (!authChecked) {
+  /* ── a sala não abriu ─────────────────────────────────────────────────
+     Um endereço que aponta para um clube que não existe, ou para um privado de
+     que você não é, chega aqui. A saída é o saguão e não a tela de entrada: o
+     problema não é quem você é, é onde você tentou entrar. */
+  if (bootError && !club) {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
+          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
+            Esta sala não abre
+          </h1>
+          <div className="mt-5">
+            <Fault detail={bootError}>
+              O clube não existe, ou é privado e você não está nele.
+            </Fault>
+          </div>
+          <div className="mt-5">
+            <Key onClick={onLeaveClub}>Voltar ao saguão</Key>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!ctx) {
     return (
       <>
         <HolographicWall asBackdrop />
@@ -721,10 +977,8 @@ export default function App() {
     );
   }
 
-  if (!me || !club) return <SignIn onSignedIn={setMe} />;
-
   return (
-    <ClubContext.Provider value={club}>
+    <ClubContext.Provider value={ctx}>
       {/* The wall behind everything. It is the room, not decoration: it is what
           tells you the lights are down before you read a single word. */}
       <HolographicWall asBackdrop />
@@ -736,8 +990,9 @@ export default function App() {
           onOpenReview={goReview}
           onOpenSelf={() => goPerson()}
           me={me}
+          club={ctx.club}
           room={pulse}
-          onSignOut={() => void signOut()}
+          onLobby={onLeaveClub}
         />
 
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
@@ -851,8 +1106,9 @@ function Marquee({
   onOpenReview,
   onOpenSelf,
   me,
+  club,
   room,
-  onSignOut,
+  onLobby,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -861,9 +1117,12 @@ function Marquee({
   /** O seu próprio rosto, que é a porta do seu perfil. */
   onOpenSelf: () => void;
   me: SessionUser;
+  /** Em que sala você está. O nome dela substituiu o do produto na marquise. */
+  club: ClubRow;
   /** O que a sala está fazendo agora. É isto que acende a lâmpada da Sessão. */
   room: ScreeningPulse;
-  onSignOut: () => void;
+  /** A porta de volta ao saguão. Era "Sair"; sair da conta ficou nos ajustes. */
+  onLobby: () => void;
 }) {
   /* ── o que a lâmpada diz quando alguém pergunta ─────────────────────────
      Um ponto vermelho na marquise sozinho diz "alguma coisa"; o clube quer
@@ -887,10 +1146,35 @@ function Marquee({
        A more opaque bar reads almost the same and costs nothing. */
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        {/* The marquee is the way home, and home is the catalogue. */}
-        <a href="#feed" className="mr-auto flex items-baseline no-underline">
-          <span className="font-display text-[26px] leading-none tracking-[0.14em] text-beam">CINECLUBE</span>
-        </a>
+        {/* ── a marquise agora diz o nome DA SALA ───────────────────────────
+            E não o do produto. Uma pessoa em três clubes precisa saber em qual
+            está antes de ler qualquer outra coisa da tela, e o lugar onde ela já
+            olha é este. O produto se chama Cineclube em todo lugar que importa —
+            o saguão, a aba do navegador, a tela de entrada.
+
+            A foto vem junto quando existe, pequena: é o que torna a troca de
+            sala reconhecível de relance, sem ler. E o conjunto é a porta de
+            volta ao saguão, que é para onde um nome de lugar deve levar. */}
+        <button
+          type="button"
+          onClick={onLobby}
+          title="Voltar ao saguão"
+          className="group mr-auto flex items-center gap-2.5 rounded-cell py-1 pr-2 text-left"
+        >
+          {club.photo ? (
+            <img
+              src={club.photo}
+              alt=""
+              className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
+            />
+          ) : null}
+          <span className="font-display text-[22px] leading-none tracking-[0.1em] text-beam transition-colors group-hover:text-beam-hot">
+            {club.name}
+          </span>
+          {club.visibility === 'private' ? (
+            <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
+          ) : null}
+        </button>
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
             const on = tab === t.id;
@@ -958,12 +1242,15 @@ function Marquee({
             </Reel>
             <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
           </button>
+          {/* Era "Sair" e deslogava. Agora sair da conta é uma coisa rara que
+              mora nos ajustes, e o que uma pessoa faz o tempo todo é trocar de
+              sala — então é essa a porta que fica na barra. */}
           <button
             type="button"
-            onClick={onSignOut}
-            className="rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
+            onClick={onLobby}
+            className="rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
           >
-            Sair
+            Saguão
           </button>
         </div>
       </div>

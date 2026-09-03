@@ -25,7 +25,7 @@ import { Conversation, TakeVotes } from '@/components/social';
    página agora, em vez de mandar quem está explorando alguém para cá. */
 import { Breakdown } from '@/components/take';
 import { PersonReel } from '@/components/person';
-import { del, fmt, runtimeOf, type Review } from '@/lib/api';
+import { cdel, fmt, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -142,7 +142,7 @@ export function ReviewsScreen() {
   async function remove(r: Review) {
     if (!confirm(`Excluir a avaliação de "${r.movieTitle}"? Essa ação não pode ser desfeita.`)) return;
     try {
-      await del(`/api/reviews/${r.id}`);
+      await cdel(`/reviews/${r.id}`);
       club.reload({ reviews: club.reviews.filter(x => x.id !== r.id) });
     } catch (e) {
       club.fault('Não foi possível excluir: ' + (e as Error).message);

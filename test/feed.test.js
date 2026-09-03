@@ -10,6 +10,7 @@ process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
 const db = require('../db');
+const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -27,6 +28,16 @@ const { critsFor } = require('../criteria');
    opinião que ninguém teve.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo.
+
+   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
+   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
+   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
+
 let baseUrl;
 let server;
 
@@ -35,6 +46,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube do Mural', visibility: 'public' });
 });
 
 test.after(async () => {
@@ -62,10 +74,11 @@ const cookieOf = s => (s ? s.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
-  const res = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin: PIN });
-  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin: PIN });
-  return { ...res.body, cookie: cookieOf(login.setCookie) };
+  const who = await kit.signIn(name || `Sócio ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
 }
 
 const movie = () => ({ id: 900000 + ++seq, title: `Filme ${seq}`, year: 2024, genre: 'Terror' });
@@ -78,14 +91,14 @@ function scoresFor(genre, value) {
 
 async function newTake(who, scores, m) {
   const film = m || movie();
-  const res = await req('POST', '/api/reviews', {
+  const res = await req('POST', at('/reviews'), {
     movie: film, scores: scores || scoresFor('Terror', 7)
   }, who.cookie);
   assert.equal(res.status, 201);
   return { ...res.body, movie: film };
 }
 
-const feed = () => req('GET', '/api/feed');
+const feed = () => req('GET', at('/feed'));
 const kindsOf = items => items.map(i => i.kind);
 
 /* ── as quatro coisas que viram linha ────────────────────────────────── */
@@ -107,7 +120,7 @@ test('um comentário vira linha, e diz de quem é a ficha', async () => {
   const author = await newReviewer('Dono');
   const reader = await newReviewer('Leitor');
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'discordo' }, reader.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'discordo' }, reader.cookie);
 
   const { body } = await feed();
   const line = body.items.find(i => i.kind === 'comment' && i.reviewId === take.id);
@@ -131,7 +144,7 @@ test('voto não vira linha do mural — é reação, e ela aparece na ficha', as
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 }, reader.cookie);
+  await req('PUT', at(`/social/reviews/${take.id}/vote`), { value: 1 }, reader.cookie);
 
   const { body } = await feed();
   assert.ok(!kindsOf(body.items).includes('vote'), 'o voto virou linha');
@@ -140,7 +153,7 @@ test('voto não vira linha do mural — é reação, e ela aparece na ficha', as
 test('filme posto na fila não vira linha — é intenção, e tem uma aba própria', async () => {
   const who = await newReviewer('Gipico');
   const m = movie();
-  assert.equal((await req('POST', '/api/watchlist', { movie: m }, who.cookie)).status, 201);
+  assert.equal((await req('POST', at('/watchlist'), { movie: m }, who.cookie)).status, 201);
 
   const { body } = await feed();
   assert.ok(!kindsOf(body.items).includes('queued'), 'a fila virou linha');
@@ -151,8 +164,8 @@ test('curtida em comentário não entra — é reação a uma reação', async (
   const writer = await newReviewer();
   const liker = await newReviewer();
   const take = await newTake(author);
-  const c = (await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'x' }, writer.cookie)).body;
-  await req('PUT', `/api/social/comments/${c.id}/like`, { liked: true }, liker.cookie);
+  const c = (await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'x' }, writer.cookie)).body;
+  await req('PUT', at(`/social/comments/${c.id}/like`), { liked: true }, liker.cookie);
 
   const { body } = await feed();
   assert.ok(!kindsOf(body.items).includes('like'), 'a curtida virou linha');
@@ -162,9 +175,9 @@ test('o mural carrega exatamente dois tipos de linha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, reader.cookie);
-  await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 }, reader.cookie);
-  await req('POST', '/api/watchlist', { movie: movie() }, reader.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'oi' }, reader.cookie);
+  await req('PUT', at(`/social/reviews/${take.id}/vote`), { value: 1 }, reader.cookie);
+  await req('POST', at('/watchlist'), { movie: movie() }, reader.cookie);
 
   const { body } = await feed();
   assert.deepEqual([...new Set(kindsOf(body.items))].sort(), ['comment', 'review']);
@@ -225,7 +238,7 @@ test('regravar traz a ficha de volta para o topo', async () => {
   await newTake(b);
 
   await new Promise(r => setTimeout(r, 1100));
-  await req('POST', '/api/reviews', {
+  await req('POST', at('/reviews'), {
     movie: take.movie, scores: { ...scoresFor('Terror', 7), direcao: 2 }
   }, a.cookie);
 
@@ -237,10 +250,10 @@ test('um comentário apagado some do mural', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  const c = (await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'some' }, reader.cookie)).body;
+  const c = (await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'some' }, reader.cookie)).body;
   assert.ok((await feed()).body.items.some(i => i.id === `c:${c.id}`));
 
-  await req('DELETE', `/api/social/comments/${c.id}`, null, reader.cookie);
+  await req('DELETE', at(`/social/comments/${c.id}`), null, reader.cookie);
   assert.ok(!(await feed()).body.items.some(i => i.id === `c:${c.id}`), 'a linha sobreviveu ao comentário');
 });
 
@@ -248,9 +261,9 @@ test('uma avaliação apagada leva as linhas dela junto', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, reader.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'oi' }, reader.cookie);
 
-  await req('DELETE', `/api/reviews/${take.id}`, null, author.cookie);
+  await req('DELETE', at(`/reviews/${take.id}`), null, author.cookie);
   const { body } = await feed();
   assert.equal(body.items.filter(i => i.reviewId === take.id).length, 0);
 });

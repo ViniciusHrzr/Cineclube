@@ -12,6 +12,7 @@ process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
 const db = require('../db');
+const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -30,6 +31,16 @@ const { critsFor } = require('../criteria');
    concordância com um número que não está mais na tela.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo.
+
+   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
+   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
+   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
+
 let baseUrl;
 let server;
 
@@ -38,6 +49,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube da Conversa', visibility: 'public' });
 });
 
 test.after(async () => {
@@ -66,18 +78,21 @@ const cookieOf = setCookie => (setCookie ? setCookie.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
-  const res = await req('POST', '/api/reviewers', { name: name || `Sócio ${++seq}`, pin: PIN });
-  assert.equal(res.status, 201);
-  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin: PIN });
-  return { ...res.body, cookie: cookieOf(login.setCookie) };
+  const who = await kit.signIn(name || `Sócio ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
 }
 
+/* O ADM DA SALA, que é quem modera o que se escreve nela. O administrador da
+   instalação continua valendo por cima — as duas coisas passam pela mesma
+   checagem em routes/social.js —, mas quem modera uma conversa é quem cuida da
+   sala em que ela aconteceu. */
 async function newAdmin() {
-  const admin = await newReviewer(`Chefe ${++seq}`);
-  await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(admin.id);
-  const login = await req('POST', '/api/auth/login', { reviewerId: admin.id, pin: PIN });
-  return { ...admin, cookie: cookieOf(login.setCookie) };
+  const admin = await kit.signIn(`Chefe ${++seq}`);
+  await kit.join(CLUB.id, admin.id, 'admin');
+  return admin;
 }
 
 const movie = () => ({ id: 700000 + ++seq, title: 'Filme de Teste', year: 2024, genre: 'Terror' });
@@ -91,14 +106,14 @@ function scoresFor(genre, value) {
 /** A recorded take by `who`, to hang a conversation off. */
 async function newTake(who, overrides) {
   const m = movie();
-  const res = await req('POST', '/api/reviews', {
+  const res = await req('POST', at('/reviews'), {
     movie: m, scores: { ...scoresFor('Terror', 7), ...(overrides || {}) }
   }, who.cookie);
   assert.equal(res.status, 201);
   return { ...res.body, movie: m };
 }
 
-const social = () => req('GET', '/api/social');
+const social = () => req('GET', at('/social'));
 
 /* ── comentários ─────────────────────────────────────────────────────── */
 
@@ -108,7 +123,7 @@ test('um comentário fica pendurado na avaliação e volta assinado', async () =
   const take = await newTake(author);
 
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`, { body: 'discordo do teu 7 em roteiro' }, reader.cookie
+    'POST', at(`/social/reviews/${take.id}/comments`), { body: 'discordo do teu 7 em roteiro' }, reader.cookie
   );
   assert.equal(posted.status, 201);
   assert.equal(posted.body.reviewId, take.id);
@@ -126,7 +141,7 @@ test('o comentário é assinado pela sessão, não pelo corpo da requisição', 
   const take = await newTake(author);
 
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`,
+    'POST', at(`/social/reviews/${take.id}/comments`),
     { body: 'não fui eu', reviewerId: author.id }, impostor.cookie
   );
   assert.equal(posted.body.reviewerId, impostor.id);
@@ -136,7 +151,7 @@ test('comentar na própria avaliação é permitido — é metade de uma convers
   const author = await newReviewer();
   const take = await newTake(author);
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`, { body: 'respondendo a quem me respondeu' }, author.cookie
+    'POST', at(`/social/reviews/${take.id}/comments`), { body: 'respondendo a quem me respondeu' }, author.cookie
   );
   assert.equal(posted.status, 201);
 });
@@ -145,7 +160,7 @@ test('um comentário vazio ou só de espaços é recusado', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
   for (const body of ['', '   ', '\n\t ']) {
-    const posted = await req('POST', `/api/social/reviews/${take.id}/comments`, { body }, author.cookie);
+    const posted = await req('POST', at(`/social/reviews/${take.id}/comments`), { body }, author.cookie);
     assert.equal(posted.status, 400, `"${body}" deveria ser recusado`);
   }
 });
@@ -154,7 +169,7 @@ test('um comentário longo demais é recusado inteiro, não cortado', async () =
   const author = await newReviewer();
   const take = await newTake(author);
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`, { body: 'a'.repeat(1001) }, author.cookie
+    'POST', at(`/social/reviews/${take.id}/comments`), { body: 'a'.repeat(1001) }, author.cookie
   );
   assert.equal(posted.status, 400);
   assert.equal((await social()).body.comments.filter(c => c.reviewId === take.id).length, 0);
@@ -163,20 +178,20 @@ test('um comentário longo demais é recusado inteiro, não cortado', async () =
 test('visitante deslogado lê a conversa mas não escreve nela', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'oi' }, author.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'oi' }, author.cookie);
 
   assert.equal((await social()).status, 200);
-  assert.equal((await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'sou ninguém' })).status, 401);
+  assert.equal((await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'sou ninguém' })).status, 401);
 });
 
 test('você apaga o seu comentário e não o dos outros', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  const mine = await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'meu' }, reader.cookie);
+  const mine = await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'meu' }, reader.cookie);
 
-  assert.equal((await req('DELETE', `/api/social/comments/${mine.body.id}`, null, author.cookie)).status, 403);
-  assert.equal((await req('DELETE', `/api/social/comments/${mine.body.id}`, null, reader.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/social/comments/${mine.body.id}`), null, author.cookie)).status, 403);
+  assert.equal((await req('DELETE', at(`/social/comments/${mine.body.id}`), null, reader.cookie)).status, 204);
   assert.ok(!(await social()).body.comments.some(c => c.id === mine.body.id));
 });
 
@@ -184,27 +199,27 @@ test('o admin apaga o comentário de qualquer um — apagar é moderar', async (
   const admin = await newAdmin();
   const member = await newReviewer();
   const take = await newTake(member);
-  const theirs = await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'algo' }, member.cookie);
+  const theirs = await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'algo' }, member.cookie);
 
-  assert.equal((await req('DELETE', `/api/social/comments/${theirs.body.id}`, null, admin.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/social/comments/${theirs.body.id}`), null, admin.cookie)).status, 204);
 });
 
 test('apagar a avaliação leva a conversa sobre ela junto', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'some comigo' }, reader.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'some comigo' }, reader.cookie);
 
-  assert.equal((await req('DELETE', `/api/reviews/${take.id}`, null, author.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/reviews/${take.id}`), null, author.cookie)).status, 204);
   assert.equal((await social()).body.comments.filter(c => c.reviewId === take.id).length, 0);
 });
 
 /* ── responder um comentário ─────────────────────────────────────────── */
 
 const comment = (take, body, who) =>
-  req('POST', `/api/social/reviews/${take.id}/comments`, { body }, who.cookie);
+  req('POST', at(`/social/reviews/${take.id}/comments`), { body }, who.cookie);
 const reply = (take, parentId, body, who) =>
-  req('POST', `/api/social/reviews/${take.id}/comments`, { body, parentId }, who.cookie);
+  req('POST', at(`/social/reviews/${take.id}/comments`), { body, parentId }, who.cookie);
 
 test('uma resposta se pendura no comentário e sabe de quem', async () => {
   const author = await newReviewer();
@@ -261,7 +276,7 @@ test('apagar o comentário leva as respostas dele junto', async () => {
   await reply(take, parent.id, 'filha', b);
   await reply(take, parent.id, 'outra filha', author);
 
-  assert.equal((await req('DELETE', `/api/social/comments/${parent.id}`, null, a.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/social/comments/${parent.id}`), null, a.cookie)).status, 204);
   const left = (await social()).body.comments.filter(c => c.reviewId === take.id);
   assert.equal(left.length, 0, 'sobrou resposta sem o que ela responde');
 });
@@ -274,7 +289,7 @@ test('apagar uma resposta não mexe no comentário', async () => {
   const parent = (await comment(take, 'pai', a)).body;
   const child = (await reply(take, parent.id, 'filha', b)).body;
 
-  await req('DELETE', `/api/social/comments/${child.id}`, null, b.cookie);
+  await req('DELETE', at(`/social/comments/${child.id}`), null, b.cookie);
   const left = (await social()).body.comments.filter(c => c.reviewId === take.id);
   assert.deepEqual(left.map(c => c.id), [parent.id]);
 });
@@ -287,19 +302,19 @@ test('uma resposta é curtível como qualquer comentário', async () => {
   const parent = (await comment(take, 'pai', a)).body;
   const child = (await reply(take, parent.id, 'filha', b)).body;
 
-  assert.equal((await req('PUT', `/api/social/comments/${child.id}/like`, { liked: true }, a.cookie)).status, 200);
+  assert.equal((await req('PUT', at(`/social/comments/${child.id}/like`), { liked: true }, a.cookie)).status, 200);
 });
 
 /* ── curtidas em um comentário ───────────────────────────────────────── */
 
 const like = (comment, liked, who) =>
-  req('PUT', `/api/social/comments/${comment.id}/like`, { liked }, who.cookie);
+  req('PUT', at(`/social/comments/${comment.id}/like`), { liked }, who.cookie);
 
 /** Um comentário escrito por `who` na ficha de `author`. */
 async function newComment(author, who, body) {
   const take = await newTake(author);
   const posted = await req(
-    'POST', `/api/social/reviews/${take.id}/comments`, { body: body || 'algo a dizer' }, who.cookie
+    'POST', at(`/social/reviews/${take.id}/comments`), { body: body || 'algo a dizer' }, who.cookie
   );
   assert.equal(posted.status, 201);
   return posted.body;
@@ -371,7 +386,7 @@ test('visitante deslogado lê as curtidas mas não curte', async () => {
 
   assert.equal((await social()).status, 200);
   assert.equal(
-    (await req('PUT', `/api/social/comments/${comment.id}/like`, { liked: true })).status, 401
+    (await req('PUT', at(`/social/comments/${comment.id}/like`), { liked: true })).status, 401
   );
 });
 
@@ -382,14 +397,14 @@ test('apagar o comentário leva as curtidas dele junto', async () => {
   const comment = await newComment(author, writer);
   await like(comment, true, reader);
 
-  assert.equal((await req('DELETE', `/api/social/comments/${comment.id}`, null, writer.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/social/comments/${comment.id}`), null, writer.cookie)).status, 204);
   assert.equal((await social()).body.commentLikes.filter(l => l.commentId === comment.id).length, 0);
 });
 
 test('curtir um comentário que não existe responde 404', async () => {
   const reader = await newReviewer();
   assert.equal(
-    (await req('PUT', '/api/social/comments/cnaoexiste/like', { liked: true }, reader.cookie)).status, 404
+    (await req('PUT', at('/social/comments/cnaoexiste/like'), { liked: true }, reader.cookie)).status, 404
   );
 });
 
@@ -399,7 +414,7 @@ test('curtir um comentário que não existe responde 404', async () => {
    alto demais". Ver a nota em db.js. */
 
 const vote = (take, value, who) =>
-  req('PUT', `/api/social/reviews/${take.id}/vote`, { value }, who.cookie);
+  req('PUT', at(`/social/reviews/${take.id}/vote`), { value }, who.cookie);
 
 test('um voto vale por ficha, e trocar de ideia não vira uma segunda linha', async () => {
   const author = await newReviewer();
@@ -462,7 +477,7 @@ test('um voto que não é 1, -1 ou 0 é recusado', async () => {
 test('visitante deslogado não vota', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
-  const refused = await req('PUT', `/api/social/reviews/${take.id}/vote`, { value: 1 });
+  const refused = await req('PUT', at(`/social/reviews/${take.id}/vote`), { value: 1 });
   assert.equal(refused.status, 401);
 });
 
@@ -482,7 +497,7 @@ test('regravar uma nota não derruba a concordância com a ficha', async () => {
   await vote(take, 1, reader);
 
   // A mesma pessoa, o mesmo filme: um UPDATE, com 'direcao' mudando de 7 para 3.
-  const again = await req('POST', '/api/reviews', {
+  const again = await req('POST', at('/reviews'), {
     movie: take.movie, scores: { ...scoresFor('Terror', 7), direcao: 3 }
   }, author.cookie);
   assert.equal(again.status, 201);
@@ -497,9 +512,9 @@ test('a conversa sobrevive a uma regravação — foi para isso que a nota mudou
   const author = await newReviewer();
   const reader = await newReviewer();
   const take = await newTake(author);
-  await req('POST', `/api/social/reviews/${take.id}/comments`, { body: 'teu 7 em direção é generoso' }, reader.cookie);
+  await req('POST', at(`/social/reviews/${take.id}/comments`), { body: 'teu 7 em direção é generoso' }, reader.cookie);
 
-  await req('POST', '/api/reviews', {
+  await req('POST', at('/reviews'), {
     movie: take.movie, scores: { ...scoresFor('Terror', 7), direcao: 3 }
   }, author.cookie);
 
@@ -509,9 +524,9 @@ test('a conversa sobrevive a uma regravação — foi para isso que a nota mudou
 test('comentar ou votar numa avaliação que não existe responde 404', async () => {
   const reader = await newReviewer();
   assert.equal(
-    (await req('POST', '/api/social/reviews/rnaoexiste/comments', { body: 'oi' }, reader.cookie)).status, 404
+    (await req('POST', at('/social/reviews/rnaoexiste/comments'), { body: 'oi' }, reader.cookie)).status, 404
   );
   assert.equal(
-    (await req('PUT', '/api/social/reviews/rnaoexiste/vote', { value: 1 }, reader.cookie)).status, 404
+    (await req('PUT', at('/social/reviews/rnaoexiste/vote'), { value: 1 }, reader.cookie)).status, 404
   );
 });

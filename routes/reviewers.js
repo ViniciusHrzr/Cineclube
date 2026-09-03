@@ -4,31 +4,42 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const { handlesFor } = require('../handles');
+const clubs = require('../clubs');
 const live = require('../live');
+const { readDataUrl } = require('../image');
 
+/* Dois roteadores, e a divisão é a mesma pergunta em todo lugar deste recorte:
+   isto é sobre uma PESSOA ou sobre uma SALA?
+
+   `index` é a pessoa: o próprio perfil, o próprio retrato, apagar a conta. Nada
+   disso pertence a clube nenhum, e o retrato de alguém tem de carregar em toda
+   sala em que ela apareça. `scoped` é a sala: quem está nela. */
 const router = express.Router();
+const scoped = express.Router({ mergeParams: true });
 
-const DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#b2b6ca', '#d2cefd', '#9397ab'];
+/* ── o elenco de UMA sala ─────────────────────────────────────────────────
+   Isto listava a plataforma inteira, porque a plataforma inteira era um clube e
+   a tela de entrada precisava dos rostos antes de alguém entrar. As duas coisas
+   deixaram de valer no mesmo dia: entrar agora é pelo Google, e listar todo
+   mundo que existe seria a rede entregando seus usuários a qualquer visitante.
 
-// The sign-in screen needs this list before anyone is signed in, so it stays
-// readable without a session — but it exposes only what a profile picker needs.
-// `pin_hash` and `pin_salt` are never selected here, on purpose.
-/* `created_at` e `bio` entram aqui para o perfil, e os dois pelo mesmo motivo:
-   um perfil é uma página sobre uma pessoa, e "no clube desde agosto" e a linha
-   que ela escreveu sobre si são as duas únicas coisas dela que não dá para
-   derivar das avaliações. A coluna já existia — o `ORDER BY` abaixo sempre a
-   usou —, ela só nunca tinha saído desta rota. */
+   Então é o elenco do clube pedido, e `review_count` conta as fichas DAQUELE
+   clube — a mesma pessoa tem contagens diferentes em salas diferentes, que é
+   exatamente o que a decisão de a ficha ser do clube significa.
+
+   `password_hash` e `password_salt` nunca são selecionados aqui, de propósito. */
 const listStmt = db.prepare(`
   SELECT r.id, r.name, r.dot, r.is_admin, r.avatar_rev, r.bio, r.created_at,
-         (r.pin_hash IS NOT NULL) AS has_pin,
+         m.role, m.joined_at,
+         (r.password_hash IS NOT NULL) AS has_password,
          COUNT(rv.id) AS review_count
-  FROM reviewers r
-  LEFT JOIN reviews rv ON rv.reviewer_id = r.id
+  FROM club_members m
+  JOIN reviewers r ON r.id = m.reviewer_id
+  LEFT JOIN reviews rv ON rv.reviewer_id = r.id AND rv.club_id = m.club_id
+  WHERE m.club_id = ?
   GROUP BY r.id
-  ORDER BY r.created_at ASC
+  ORDER BY m.joined_at ASC
 `);
-const countStmt = db.prepare('SELECT COUNT(*) AS n FROM reviewers');
-const insertStmt = db.prepare('INSERT INTO reviewers (id, name, dot) VALUES (?, ?, ?)');
 const deleteStmt = db.prepare('DELETE FROM reviewers WHERE id = ?');
 const getStmt = db.prepare('SELECT id, name, is_admin FROM reviewers WHERE id = ?');
 const renameStmt = db.prepare('UPDATE reviewers SET name = ? WHERE id = ?');
@@ -65,66 +76,43 @@ function toDTO(row, handles) {
     dot: row.dot,
     handle: handles?.[row.id] ?? null,
     isAdmin: !!row.is_admin,
-    hasPin: !!row.has_pin,
+    /** ADM desta sala, que é outra coisa de `isAdmin` (a instalação inteira). */
+    role: row.role ?? null,
+    hasPassword: !!row.has_password,
     avatar: avatarUrl(row),
     /* Vazio e ausente são a mesma coisa aqui, e viram `null`: uma bio apagada
        grava string vazia, e o perfil que recebesse `""` teria de decidir de
        novo, na tela, se aquilo é uma linha para desenhar. */
     bio: row.bio || null,
     createdAt: row.created_at ?? null,
+    /** Desde quando está NESTE clube, que é o que o perfil dentro dele mostra. */
+    joinedAt: row.joined_at ?? null,
     review_count: row.review_count ?? 0,
   };
 }
 
-/* ── what an uploaded picture may be ──────────────────────────────────────
-   Three formats, and a ceiling. The client already shrinks anything it is given
-   to a small square, so a payload near this limit means the client was not
-   involved — which is exactly the case this has to survive. */
-const AVATAR_TYPES = ['image/webp', 'image/jpeg', 'image/png'];
-const AVATAR_MAX_BYTES = 400 * 1024;
+/* O que uma imagem enviada pode ser mora em image.js agora, porque duas coisas
+   deste produto aceitam figura — o retrato de uma pessoa e a foto de um clube —
+   com exatamente as mesmas regras. */
 
-/** A data URL in, `{ data, mime }` or an error string out. Never throws. */
-function readDataUrl(value) {
-  const m = /^data:([a-z/+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''));
-  if (!m) return { error: 'Imagem inválida.' };
-  const [, mime, b64] = m;
-  if (!AVATAR_TYPES.includes(mime)) return { error: 'A imagem precisa ser WebP, JPEG ou PNG.' };
-  // Base64 is 4 characters per 3 bytes; measuring the string avoids decoding
-  // something oversized just to find out that it was oversized.
-  if (Math.floor((b64.length * 3) / 4) > AVATAR_MAX_BYTES) {
-    return { error: 'A imagem é grande demais.' };
-  }
-  const buf = Buffer.from(b64, 'base64');
-  if (!buf.length) return { error: 'Imagem inválida.' };
-  return { data: b64, mime };
-}
-
-router.get('/', wrap(async (req, res) => {
-  const rows = await listStmt.all();
+/* O elenco de um clube. Vai no roteador com escopo, sob `/api/c/<slug>/`.
+   Legível por quem pode ler o clube — num clube público, isso inclui quem está
+   de fora e está decidindo se pede para entrar. */
+scoped.get('/', clubs.requireReadable, wrap(async (req, res) => {
+  const rows = await listStmt.all(req.club.id);
   const handles = handlesFor(rows);
   res.json({ reviewers: rows.map(r => toDTO(r, handles)) });
 }));
 
-/* Joining the club. Open by design — this is a room of friends, not a service
-   with a signup funnel — but a profile without a PIN is a profile anyone can
-   wear, so the PIN is required at creation. */
-router.post('/', wrap(async (req, res) => {
-  const name = (req.body?.name || '').trim();
-  const pin = req.body?.pin;
-  if (!name) return res.status(400).json({ error: 'Nome é obrigatório.' });
-  if (!auth.isValidPin(pin)) {
-    return res.status(400).json({ error: 'O PIN precisa ter exatamente 4 dígitos.' });
-  }
+/* ── e não existe mais rota de cadastro ───────────────────────────────────
+   Havia aqui um POST que criava avaliador com nome e PIN, aberto a qualquer um.
+   Ele estava certo enquanto o produto era uma sala de amigos com um endereço
+   que só eles conheciam: cadastrar-se era entrar na sala.
 
-  const id = 'p' + crypto.randomUUID();
-  const { n } = await countStmt.get();
-  const dot = DOTS[n % DOTS.length];
-  await insertStmt.run(id, name, dot);
-  await auth.setPin(id, pin);
-
-  live.emit('reviewers', id);
-  res.status(201).json({ id, name, dot, isAdmin: false, hasPin: true, avatar: null, review_count: 0 });
-}));
+   Numa rede, um endpoint público que cria contas sem verificar e-mail nenhum é
+   um cadastro sem dono. Conta agora nasce de um lugar só — a volta do Google,
+   em accountForGoogle —, e entrar numa SALA é outra coisa completamente: é
+   pedir, e alguém aprovar. */
 
 /* ── your own profile, and nobody else's ──────────────────────────────────
    The name and the picture are how a person appears next to everything they
@@ -177,7 +165,10 @@ router.patch('/me', auth.requireSession, wrap(async (req, res) => {
   /* Um nome e um retrato aparecem ao lado de tudo o que a pessoa já disse aqui,
      então trocar qualquer um dos dois redesenha o produto inteiro para o resto
      do clube — não só a tela de avaliadores. */
-  live.emit('reviewers', id);
+  /* Um aviso por clube em que a pessoa está: o nome e o retrato dela aparecem
+     ao lado de tudo que ela já disse em cada uma dessas salas, e o cano só
+     entrega dentro da sala que ele nomeia. */
+  for (const c of await clubs.mineStmt.all(id)) live.emit('reviewers', id, c.id);
 
   const row = await db
     .prepare('SELECT id, name, dot, is_admin, avatar_rev, bio FROM reviewers WHERE id = ?')
@@ -220,25 +211,35 @@ router.get('/:id/avatar', wrap(async (req, res) => {
 
    Reviews go with the account (ON DELETE CASCADE), which is why the
    confirmation in the client spells out how many. */
-router.delete('/:id', auth.requireSession, wrap(async (req, res) => {
-  const target = await getStmt.get(req.params.id);
-  if (!target) return res.status(404).json({ error: 'Avaliador não encontrado.' });
+/* ── apagar uma CONTA ─────────────────────────────────────────────────────
+   Isto é a pessoa deixando a plataforma, e não deixando um clube: sair de uma
+   sala é `DELETE /api/c/<slug>/members/<id>`, e é lá que mora a regra do último
+   ADM. Aqui as fichas dela vão junto em cascata, em todos os clubes de uma vez,
+   e é por isso que só o administrador da instalação alcança esta rota.
 
-  if (!req.session.is_admin) {
-    return res.status(403).json({ error: 'Só o administrador do clube pode remover um avaliador.' });
-  }
+   O administrador não é removível, nem por ele mesmo: a cadeira é uma coluna
+   numa linha, e apagar a linha deixaria a instalação sem ninguém que possa
+   fazer isto — sem rota que devolva a coluna. */
+router.delete('/:id', auth.requireAdmin, wrap(async (req, res) => {
+  const target = await getStmt.get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Conta não encontrada.' });
   if (target.is_admin) {
-    return res.status(403).json({ error: 'O administrador do clube não pode ser removido.' });
+    return res.status(403).json({ error: 'O administrador não pode ser removido.' });
   }
+
+  // Em quais salas ela estava, antes de as linhas sumirem em cascata.
+  const was = await clubs.mineStmt.all(target.id);
 
   await auth.destroyAllSessions(target.id);
   await deleteStmt.run(target.id);
   /* As avaliações vão junto (ON DELETE CASCADE), e com elas as conversas
-     penduradas nelas. Três avisos porque três coleções mudaram de uma vez. */
-  live.emit('reviewers', req.session.reviewer_id);
-  live.emit('reviews', req.session.reviewer_id);
-  live.emit('social', req.session.reviewer_id);
+     penduradas nelas. Três coleções mudaram, em cada sala em que ela estava. */
+  for (const c of was) {
+    live.emit('reviewers', req.session.reviewer_id, c.id);
+    live.emit('reviews', req.session.reviewer_id, c.id);
+    live.emit('social', req.session.reviewer_id, c.id);
+  }
   res.status(204).end();
 }));
 
-module.exports = router;
+module.exports = { index: router, scoped };

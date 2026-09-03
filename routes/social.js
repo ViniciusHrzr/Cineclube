@@ -2,10 +2,22 @@ const express = require('express');
 const crypto = require('node:crypto');
 const db = require('../db');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const wrap = require('../wrap');
 const live = require('../live');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
+
+/* ── o clube entra por baixo ──────────────────────────────────────────────
+   Nada aqui tem coluna `club_id`, e é de propósito: um comentário pendura numa
+   ficha, e a ficha já sabe de que sala é. Dar a ele uma coluna própria seria
+   uma segunda resposta para a mesma pergunta, livre para divergir da primeira.
+
+   O preço é que TODA consulta deste arquivo precisa passar por `reviews` para
+   descobrir o clube. É um JOIN a mais e uma disciplina a mais: uma leitura que
+   esquecer o JOIN mostra a conversa de outro clube, e uma escrita que esquecer
+   deixa alguém comentar dentro de uma sala em que não está. Por isso `reviewStmt`
+   — o portão de toda escrita daqui — carrega `club_id` na condição. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    A conversa em cima do que o clube gravou.
@@ -39,12 +51,28 @@ const commentsStmt = db.prepare(`
          r.name AS reviewer_name, r.dot AS reviewer_dot
   FROM review_comments c
   JOIN reviewers r ON r.id = c.reviewer_id
+  JOIN reviews rv ON rv.id = c.review_id
+  WHERE rv.club_id = ?
   ORDER BY c.created_at ASC
 `);
-const votesStmt = db.prepare('SELECT review_id, reviewer_id, value FROM review_votes');
-const likesStmt = db.prepare('SELECT comment_id, reviewer_id FROM comment_likes');
+const votesStmt = db.prepare(`
+  SELECT v.review_id, v.reviewer_id, v.value
+  FROM review_votes v JOIN reviews rv ON rv.id = v.review_id
+  WHERE rv.club_id = ?
+`);
+const likesStmt = db.prepare(`
+  SELECT l.comment_id, l.reviewer_id
+  FROM comment_likes l
+  JOIN review_comments c ON c.id = l.comment_id
+  JOIN reviews rv ON rv.id = c.review_id
+  WHERE rv.club_id = ?
+`);
 
-const commentAuthorStmt = db.prepare('SELECT id, reviewer_id FROM review_comments WHERE id = ?');
+const commentAuthorStmt = db.prepare(`
+  SELECT c.id, c.reviewer_id
+  FROM review_comments c JOIN reviews rv ON rv.id = c.review_id
+  WHERE c.id = ? AND rv.club_id = ?
+`);
 const likeStmt = db.prepare(
   'INSERT INTO comment_likes (comment_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
 );
@@ -62,9 +90,11 @@ const oneCommentStmt = db.prepare(`
 const insertCommentStmt = db.prepare(
   'INSERT INTO review_comments (id, review_id, reviewer_id, body, parent_id) VALUES (?, ?, ?, ?, ?)'
 );
-const commentOwnerStmt = db.prepare(
-  'SELECT id, reviewer_id, review_id, parent_id FROM review_comments WHERE id = ?'
-);
+const commentOwnerStmt = db.prepare(`
+  SELECT c.id, c.reviewer_id, c.review_id, c.parent_id
+  FROM review_comments c JOIN reviews rv ON rv.id = c.review_id
+  WHERE c.id = ? AND rv.club_id = ?
+`);
 const deleteCommentStmt = db.prepare('DELETE FROM review_comments WHERE id = ?');
 /* Explícito, além do ON DELETE CASCADE da coluna. A cascata depende de as
    chaves estrangeiras estarem ligadas, o que é verdade aqui e é uma coisa a
@@ -72,7 +102,12 @@ const deleteCommentStmt = db.prepare('DELETE FROM review_comments WHERE id = ?')
    num pai que não existe mais — que é pior do que sumir. */
 const deleteRepliesStmt = db.prepare('DELETE FROM review_comments WHERE parent_id = ?');
 
-const reviewStmt = db.prepare('SELECT id, reviewer_id, scores FROM reviews WHERE id = ?');
+/* O portão. Toda escrita deste arquivo passa por aqui, e `club_id` na condição
+   é o que impede o id de uma ficha de outra sala de ser um jeito de escrever
+   dentro dela. */
+const reviewStmt = db.prepare(
+  'SELECT id, reviewer_id, scores FROM reviews WHERE id = ? AND club_id = ?'
+);
 const castVoteStmt = db.prepare(`
   INSERT INTO review_votes (review_id, reviewer_id, value)
   VALUES (?, ?, ?)
@@ -107,9 +142,9 @@ function toVoteDTO(row) {
 
 /* Aberto, como todo o resto da leitura neste app. O que o PIN protege é
    escrever: a ameaça aqui é um amigo votando no lugar do outro, não sigilo. */
-router.get('/', wrap(async (req, res) => {
+router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   const [comments, votes, likes] = await Promise.all([
-    commentsStmt.all(), votesStmt.all(), likesStmt.all()
+    commentsStmt.all(req.club.id), votesStmt.all(req.club.id), likesStmt.all(req.club.id)
   ]);
   res.json({
     comments: comments.map(toCommentDTO),
@@ -122,8 +157,8 @@ router.get('/', wrap(async (req, res) => {
    Quem assina é a sessão e nunca o corpo, igual à avaliação. Comentar a própria
    avaliação é permitido de propósito: responder a quem te respondeu é metade de
    uma conversa. */
-router.post('/reviews/:reviewId/comments', auth.requireSession, wrap(async (req, res) => {
-  const review = await reviewStmt.get(req.params.reviewId);
+router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
 
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
@@ -143,7 +178,7 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, wrap(async (req,
      aparece numa conversa cujo pai está em outra. */
   const parentId = req.body?.parentId ?? null;
   if (parentId != null) {
-    const parent = await commentOwnerStmt.get(String(parentId));
+    const parent = await commentOwnerStmt.get(String(parentId), req.club.id);
     if (!parent || parent.review_id !== review.id) {
       return res.status(400).json({ error: 'Não dá para responder a esse comentário.' });
     }
@@ -157,24 +192,30 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, wrap(async (req,
   /* Depois da escrita, sempre. Um aviso emitido antes do commit manda o clube
      inteiro buscar um estado que ainda não existe — e não há segundo aviso a
      caminho para consertar isso. Ver live.js. */
-  live.emit('social', req.session.reviewer_id);
+  live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(201).json(toCommentDTO(await oneCommentStmt.get(id)));
 }));
 
 /* O comentário é de quem escreveu — e do admin, que é quem varre o que não
    deveria estar aqui. Mesma regra da avaliação, uma linha acima na hierarquia:
    apagar o que você disse é desdizer, apagar o que outro disse é moderar. */
-router.delete('/comments/:id', auth.requireSession, wrap(async (req, res) => {
-  const row = await commentOwnerStmt.get(req.params.id);
+router.delete('/comments/:id', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const row = await commentOwnerStmt.get(req.params.id, req.club.id);
   if (!row) return res.status(404).json({ error: 'Comentário não encontrado.' });
-  if (row.reviewer_id !== req.session.reviewer_id && !req.session.is_admin) {
+  // Moderar é do ADM da sala em que o texto foi escrito — o da instalação segue
+  // valendo por cima, como em todo lugar.
+  if (
+    row.reviewer_id !== req.session.reviewer_id &&
+    !req.club.isClubAdmin &&
+    !req.session.is_admin
+  ) {
     return res.status(403).json({ error: 'Você só pode apagar os seus comentários.' });
   }
   // As respostas vão junto: uma resposta sem o que ela responde é metade de um
   // diálogo, e ninguém consegue ler a metade que sobrou.
   await deleteRepliesStmt.run(row.id);
   await deleteCommentStmt.run(row.id);
-  live.emit('social', req.session.reviewer_id);
+  live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));
 
@@ -187,8 +228,8 @@ router.delete('/comments/:id', auth.requireSession, wrap(async (req, res) => {
    própria ficha: um número que o autor pode somar em si mesmo deixa de contar
    quem concordou. Aqui é mais barato que lá — é vaidade, não distorção — mas a
    regra é a mesma e vale ser uma só. */
-router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
-  const comment = await commentAuthorStmt.get(req.params.id);
+router.put('/comments/:id/like', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const comment = await commentAuthorStmt.get(req.params.id, req.club.id);
   if (!comment) return res.status(404).json({ error: 'Comentário não encontrado.' });
   if (comment.reviewer_id === req.session.reviewer_id) {
     return res.status(403).json({ error: 'Não dá para curtir o seu próprio comentário.' });
@@ -200,7 +241,7 @@ router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
   const who = req.session.reviewer_id;
   if (liked) await likeStmt.run(comment.id, who);
   else await unlikeStmt.run(comment.id, who);
-  live.emit('social', who);
+  live.emit('social', who, req.club.id);
   res.json({ liked });
 }));
 
@@ -218,8 +259,8 @@ router.put('/comments/:id/like', auth.requireSession, wrap(async (req, res) => {
    Não se vota na própria ficha. Não é uma regra moral, é aritmética: um placar
    em que o autor pode se somar não mede mais concordância do clube, e o único
    uso de poder fazer isso seria esse. */
-router.put('/reviews/:reviewId/vote', auth.requireSession, wrap(async (req, res) => {
-  const review = await reviewStmt.get(req.params.reviewId);
+router.put('/reviews/:reviewId/vote', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
   if (review.reviewer_id === req.session.reviewer_id) {
     return res.status(403).json({ error: 'Não dá para votar na sua própria avaliação.' });
@@ -237,11 +278,11 @@ router.put('/reviews/:reviewId/vote', auth.requireSession, wrap(async (req, res)
   const voter = req.session.reviewer_id;
   if (value === 0) {
     await clearVoteStmt.run(review.id, voter);
-    live.emit('social', voter);
+    live.emit('social', voter, req.club.id);
     return res.json({ vote: null });
   }
   await castVoteStmt.run(review.id, voter, value);
-  live.emit('social', voter);
+  live.emit('social', voter, req.club.id);
   res.json({ vote: { reviewId: review.id, reviewerId: voter, value } });
 }));
 

@@ -1,16 +1,21 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
+const clubs = require('../clubs');
 const wrap = require('../wrap');
 const screening = require('../screening');
 const live = require('../live');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
-/* Every route here needs a member. The room is the club's, not the internet's,
-   and a screening is a thing you are in rather than a thing you watch from
-   outside. */
-router.use(auth.requireSession);
+/* A sala é do clube, e não da internet — e agora "do clube" é uma frase com
+   consequência mecânica: `req.club` já foi resolvido pelo middleware lá em
+   cima, e `roomFor` devolve o quarto daquele clube e de nenhum outro. Assistir
+   é uma coisa que se faz DE DENTRO, então tudo aqui exige ser membro. */
+router.use(auth.requireSession, clubs.requireMember);
+
+/** O quarto deste pedido. Uma linha em toda rota, e é o escopo inteiro. */
+const roomOf = req => screening.roomFor(req.club.id);
 
 /* The film comes from its id and is read back out of the server's own records.
    Accepting the object the client sent would let any member broadcast an
@@ -18,9 +23,11 @@ router.use(auth.requireSession);
    everybody else's browser. The cache is asked first because it is the only
    one of the two that knows the runtime, which is what bounds the seek bar. */
 const cachedStmt = db.prepare('SELECT tmdb_id, title, year, genre, poster, runtime FROM movies_cache WHERE tmdb_id = ?');
-const queuedStmt = db.prepare('SELECT movie_id, movie_title, movie_year, movie_genre, movie_poster FROM watchlist WHERE movie_id = ?');
+const queuedStmt = db.prepare(
+  'SELECT movie_id, movie_title, movie_year, movie_genre, movie_poster FROM watchlist WHERE club_id = ? AND movie_id = ?'
+);
 
-async function movieById(id) {
+async function movieById(clubId, id) {
   const cached = await cachedStmt.get(id);
   if (cached) {
     return {
@@ -32,7 +39,7 @@ async function movieById(id) {
       runtime: cached.runtime ?? null,
     };
   }
-  const queued = await queuedStmt.get(id);
+  const queued = await queuedStmt.get(clubId, id);
   if (queued) {
     return {
       id: Number(queued.movie_id),
@@ -46,8 +53,8 @@ async function movieById(id) {
   return null;
 }
 
-router.get('/', wrap(async (_req, res) => {
-  res.json(screening.snapshot());
+router.get('/', wrap(async (req, res) => {
+  res.json(screening.snapshot(roomOf(req)));
 }));
 
 /* The clock. A client samples this a few times and keeps the median offset, so
@@ -65,7 +72,8 @@ router.get('/time', (_req, res) => {
    `flushHeaders` sends them before the first frame exists, which is what makes
    the browser consider the connection open. */
 router.get('/stream', (req, res) => {
-  if (!screening.canSubscribe(req.session.reviewer_id)) {
+  const room = roomOf(req);
+  if (!screening.canSubscribe(room, req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Conexões demais. Feche outras abas do Cineclube.' });
   }
 
@@ -82,15 +90,15 @@ router.get('/stream', (req, res) => {
   req.socket.setNoDelay?.(true);
 
   screening.startTimers();
-  screening.attach(req.session);
-  screening.subscribe(res);
+  screening.attach(room, req.session);
+  screening.subscribe(room, res);
 
   let gone = false;
   const leave = () => {
     if (gone) return;
     gone = true;
-    screening.unsubscribe(res);
-    screening.detach(req.session.reviewer_id);
+    screening.unsubscribe(room, res);
+    screening.detach(room, req.session.reviewer_id);
   };
   // Both, because a dropped connection and a closed response do not always
   // arrive as the same event.
@@ -102,10 +110,10 @@ router.post('/open', wrap(async (req, res) => {
   const movieId = Number(req.body?.movieId);
   if (!Number.isInteger(movieId)) return res.status(400).json({ error: 'Filme inválido.' });
 
-  const movie = await movieById(movieId);
+  const movie = await movieById(req.club.id, movieId);
   if (!movie) return res.status(404).json({ error: 'Filme não encontrado no catálogo do clube.' });
 
-  screening.open(movie);
+  screening.open(roomOf(req), movie);
   /* ── e o resto do clube fica sabendo ──────────────────────────────────
      A sala já avisou quem está dentro dela pelo próprio stream. Isto avisa
      quem não está: a marquise de todo mundo acende a lâmpada da Sessão sem
@@ -114,14 +122,15 @@ router.post('/open', wrap(async (req, res) => {
      Depois de `open`, nunca antes, pela mesma razão de sempre — um aviso
      emitido antes da mudança manda o clube buscar um estado que ainda não
      existe. Ver live.js. */
-  live.emit('screening', req.session.reviewer_id);
-  res.status(201).json(screening.snapshot());
+  live.emit('screening', req.session.reviewer_id, req.club.id);
+  res.status(201).json(screening.snapshot(roomOf(req)));
 }));
 
 router.post('/close', wrap(async (req, res) => {
-  screening.close();
-  live.emit('screening', req.session.reviewer_id);
-  res.json(screening.snapshot());
+  const room = roomOf(req);
+  screening.close(room);
+  live.emit('screening', req.session.reviewer_id, req.club.id);
+  res.json(screening.snapshot(room));
 }));
 
 /* play, pause and seek. The position is taken from the sender because the
@@ -148,12 +157,13 @@ router.post('/command', wrap(async (req, res) => {
      um seria mandar toda aba aberta buscar a sala enquanto uma pessoa
      procura uma cena. Comparar o status antes e depois é o filtro exato —
      `seek` é o único que deixa ele em paz de propósito (ver screening.js). */
-  const was = screening.room.status;
-  if (!screening.command(type, position)) {
+  const room = roomOf(req);
+  const was = room.status;
+  if (!screening.command(room, type, position)) {
     return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
   }
-  if (screening.room.status !== was) live.emit('screening', req.session.reviewer_id);
-  res.json(screening.snapshot());
+  if (room.status !== was) live.emit('screening', req.session.reviewer_id, req.club.id);
+  res.json(screening.snapshot(room));
 }));
 
 /* The pointer to what the club is watching, so a member who arrives late loads
@@ -164,13 +174,14 @@ router.post('/link', wrap(async (req, res) => {
   if (!screening.withinRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
   }
-  if (!screening.room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
+  const room = roomOf(req);
+  if (!room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
 
   const { link } = req.body || {};
-  if (!screening.setLink(link === null || link === undefined ? null : link)) {
+  if (!screening.setLink(room, link === null || link === undefined ? null : link)) {
     return res.status(400).json({ error: 'Link inválido — só magnet ou URL http(s), até 4 KB.' });
   }
-  res.json(screening.snapshot());
+  res.json(screening.snapshot(room));
 }));
 
 /* ── the subtitle ─────────────────────────────────────────────────────────
@@ -182,8 +193,8 @@ router.post('/link', wrap(async (req, res) => {
    from SubRip already happens on the screen that read the file. Converting
    once, where the file is opened, beats converting in every browser that
    receives it — and means the room stores one format instead of two. */
-router.get('/subtitle', (_req, res) => {
-  const subtitle = screening.room.subtitle;
+router.get('/subtitle', (req, res) => {
+  const subtitle = roomOf(req).subtitle;
   if (!subtitle) return res.status(404).json({ error: 'A sessão não tem legenda.' });
   res.json(subtitle);
 });
@@ -192,13 +203,14 @@ router.post('/subtitle', wrap(async (req, res) => {
   if (!screening.withinRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
   }
-  if (!screening.room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
+  const room = roomOf(req);
+  if (!room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
 
   const { subtitle } = req.body || {};
-  if (!screening.setSubtitle(subtitle === null || subtitle === undefined ? null : subtitle)) {
+  if (!screening.setSubtitle(room, subtitle === null || subtitle === undefined ? null : subtitle)) {
     return res.status(400).json({ error: 'Legenda inválida — precisa de nome e texto, até 512 KB.' });
   }
-  res.json(screening.snapshot());
+  res.json(screening.snapshot(room));
 }));
 
 /* Whether this member can play right now, and what they are playing. The
@@ -206,8 +218,9 @@ router.post('/subtitle', wrap(async (req, res) => {
    the difference becomes an argument about who is at the wrong scene. */
 router.post('/ready', wrap(async (req, res) => {
   const { ready, sourceTag } = req.body || {};
-  screening.setReady(req.session.reviewer_id, ready !== false, sourceTag);
-  res.json(screening.snapshot());
+  const room = roomOf(req);
+  screening.setReady(room, req.session.reviewer_id, ready !== false, sourceTag);
+  res.json(screening.snapshot(room));
 }));
 
 module.exports = router;

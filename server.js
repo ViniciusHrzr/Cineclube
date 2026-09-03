@@ -16,16 +16,44 @@ app.use(express.json({ limit: '1mb' }));
 // Every request learns who is signed in; individual routes decide if they care.
 app.use(auth.attachSession);
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Duas famílias de rota, e a fronteira entre elas é uma pergunta só: isto
+   depende de QUAL CLUBE?
+
+   Fora do escopo ficam quatro coisas, cada uma por um motivo próprio. Quem é
+   você não depende de sala nenhuma. O catálogo do TMDB é o mesmo mundo para
+   todo mundo, e guardá-lo por clube seria pagar a mesma requisição N vezes. A
+   lista de clubes não pode exigir estar dentro de um. E o retrato de uma pessoa
+   é dela, não da sala — a mesma URL tem de carregar em toda sala em que ela
+   apareça.
+
+   Todo o resto vive sob `/api/c/<slug>/`, atrás de `clubs.resolve`. O clube na
+   URL e não na sessão: um link de ficha colado no Discord tem de significar a
+   mesma coisa para quem clicar, e o `EventSource` da sala ao vivo não sabe
+   mandar cabeçalho. O porquê inteiro está em clubs.js.
+   ══════════════════════════════════════════════════════════════════════════ */
+const clubs = require('./clubs');
+const clubRoutes = require('./routes/clubs');
+const reviewerRoutes = require('./routes/reviewers');
+
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
-app.use('/api/reviewers', require('./routes/reviewers'));
-app.use('/api/reviews', require('./routes/reviews'));
-app.use('/api/watchlist', require('./routes/watchlist'));
-app.use('/api/screening', require('./routes/screening'));
-app.use('/api/social', require('./routes/social'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/feed', require('./routes/feed'));
-app.use('/api/live', require('./routes/live'));
+app.use('/api/clubs', clubRoutes.index);
+app.use('/api/reviewers', reviewerRoutes.index);
+
+const scoped = express.Router({ mergeParams: true });
+scoped.use('/reviewers', reviewerRoutes.scoped);
+scoped.use('/reviews', require('./routes/reviews'));
+scoped.use('/watchlist', require('./routes/watchlist'));
+scoped.use('/screening', require('./routes/screening'));
+scoped.use('/social', require('./routes/social'));
+scoped.use('/notifications', require('./routes/notifications'));
+scoped.use('/feed', require('./routes/feed'));
+scoped.use('/live', require('./routes/live'));
+/* Por último, porque ele tem uma rota em `/` e casaria antes das de cima. */
+scoped.use('/', clubRoutes.scoped);
+
+app.use('/api/c/:club', clubs.resolve, scoped);
 
 /* The build stamps a content hash into every asset's name, so a file under
    /assets can never change without changing its URL — which is exactly the
@@ -68,27 +96,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erro interno.' });
 });
 
-// The club's administrator. Runs once: it only acts on an account that has no
-// PIN yet, so it can never overwrite a PIN the owner has since chosen, and it
-// never demotes or promotes anyone on later boots.
+/* O administrador da instalação. Roda uma vez: só age enquanto ninguém está na
+   cadeira, então nunca promove nem rebaixa alguém num boot posterior.
+
+   ── e o PIN inicial não existe mais ────────────────────────────────────────
+   Havia aqui um bloco que gravava um PIN de partida para esta conta, com um
+   fallback no código para a máquina local. Ele sumiu junto com o PIN: a
+   credencial agora chega pelo Google, e a ligação com a conta que já existia é
+   feita por CINECLUBE_ADMIN_EMAIL na primeira entrada (ver accountForGoogle).
+   Não há mais nenhum segredo neste arquivo, o que também tira do repositório a
+   única razão que ele tinha para precisar ser privado. */
 const CLUB_ADMIN = process.env.CINECLUBE_ADMIN || 'Vinicius';
-
-/* ── the first PIN is never written down ──────────────────────────────────
-   A PIN in the source is a PIN for everyone who can read the source, and this
-   source is public. It used to carry one as a fallback, which meant the
-   repository documented a way into the club for anyone who found the address.
-
-   The convenience it bought was real, though, and only local: a machine
-   running this against its own throwaway database wants to get in without
-   being configured first. So the fallback survives exactly there. Anywhere the
-   club could actually be reached — which is anywhere the session cookie is
-   marked Secure, so anywhere behind HTTPS — there is no fallback: the
-   environment supplies the PIN or no PIN is set at all, and an account with no
-   PIN is an account nobody can sign in to.
-
-   Deployment is unaffected: CINECLUBE_ADMIN_PIN is already required there. */
-const CLUB_ADMIN_PIN =
-  process.env.CINECLUBE_ADMIN_PIN || (process.env.CINECLUBE_HTTPS ? null : '1646');
 
 /* The database is remote now, so everything the app needs before its first
    request — the schema, the seeds, the admin — is a promise. Nothing listens
@@ -99,12 +117,23 @@ async function boot() {
   // Seed a few reviewers on first run so the app isn't empty. They come with no
   // PIN, which the sign-in screen shows as "PIN pendente" — a seeded account is
   // a placeholder, and handing it a known PIN would be a back door.
+  /* O clube fundador. A migração o cria e povoa quando existem dados de antes
+     dos clubes; num banco vazio ela roda antes de existir alguém, então é aqui
+     que ele passa a existir — e as contas de exemplo logo abaixo já nascem
+     dentro dele. Uma pessoa numa rede de clubes sem sala nenhuma para entrar
+     não tem tela em que aparecer. */
+  const home = await db.ensureHomeClub();
+
   const { n } = await db.prepare('SELECT COUNT(*) AS n FROM reviewers').get();
   if (n === 0) {
     const seed = db.prepare('INSERT INTO reviewers (id, name, dot) VALUES (?, ?, ?)');
     await seed.run('p1', 'Ana Reis', '#b5abfc');
     await seed.run('p2', 'Bruno Sá', '#cfd3e5');
     await seed.run('p3', 'Clara Lima', '#a7a1db');
+    const join = db.prepare(
+      'INSERT INTO club_members (club_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+    );
+    for (const id of ['p1', 'p2', 'p3']) await join.run(home, id);
     console.log('[server] avaliadores iniciais criados: Ana Reis, Bruno Sá, Clara Lima');
   }
 
@@ -120,16 +149,20 @@ async function boot() {
       await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(adminRow.id);
       console.log(`[server] ${adminRow.name} definido como administrador do clube`);
     }
-    if (!adminRow.pin_hash) {
-      if (CLUB_ADMIN_PIN) {
-        await auth.setPin(adminRow.id, CLUB_ADMIN_PIN);
-        console.log(`[server] PIN inicial definido para ${adminRow.name}. Troque-o pelo app.`);
-      } else {
-        console.warn(
-          `[server] ${adminRow.name} está sem PIN e CINECLUBE_ADMIN_PIN não foi definido. ` +
-            'Defina a variável e reinicie — nenhum PIN é inventado em produção.'
-        );
-      }
+
+    /* E ADM do clube fundador, que é outra coisa: `is_admin` é a instalação,
+       `role` é a sala. Só quando a sala não tem nenhum — pela mesma razão da
+       cadeira acima, um clube que já tem ADM nunca é reassentado por código, ou
+       sair do próprio clube seria desfeito no reinício seguinte. */
+    const { n: chaired } = await db
+      .prepare(`SELECT COUNT(*) AS n FROM club_members WHERE club_id = ? AND role = 'admin'`)
+      .get(home);
+    if (!chaired) {
+      await db.prepare(
+        `INSERT INTO club_members (club_id, reviewer_id, role) VALUES (?, ?, 'admin')
+         ON CONFLICT (club_id, reviewer_id) DO UPDATE SET role = 'admin'`
+      ).run(home, adminRow.id);
+      console.log(`[server] ${adminRow.name} é ADM do clube ${db.HOME_CLUB}`);
     }
   }
 }

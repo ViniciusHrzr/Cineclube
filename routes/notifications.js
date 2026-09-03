@@ -3,8 +3,19 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const { handlesFor, mentionedIn } = require('../handles');
+const clubs = require('../clubs');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
+
+/* ── o sino é de uma sala ─────────────────────────────────────────────────
+   Todo aviso daqui é sobre uma ficha, e uma ficha é de um clube, então toda
+   consulta abaixo passa por `reviews` e filtra por `club_id`. A pessoa que está
+   em três clubes tem três sinos, e cada um conta o que aconteceu na sua sala.
+
+   As duas marcas d'água desceram junto, de `reviewers` para `club_members`: com
+   uma marca por pessoa, abrir o sino aqui marcaria como visto o que aconteceu
+   noutro clube — avisos que ela nunca teve chance de ler, porque a tela em que
+   eles aparecem era outra. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Quem reagiu ao que é seu.
@@ -48,7 +59,7 @@ const commentsOnMine = db.prepare(`
   FROM review_comments c
   JOIN reviews rv ON rv.id = c.review_id
   JOIN reviewers a ON a.id = c.reviewer_id
-  WHERE rv.reviewer_id = ? AND c.reviewer_id <> ? AND c.parent_id IS NULL
+  WHERE rv.club_id = ? AND rv.reviewer_id = ? AND c.reviewer_id <> ? AND c.parent_id IS NULL
   ORDER BY c.created_at DESC
   LIMIT ${LIMIT}
 `);
@@ -63,7 +74,7 @@ const repliesToMine = db.prepare(`
   JOIN review_comments p ON p.id = c.parent_id
   JOIN reviews rv ON rv.id = c.review_id
   JOIN reviewers a ON a.id = c.reviewer_id
-  WHERE p.reviewer_id = ? AND c.reviewer_id <> ?
+  WHERE rv.club_id = ? AND p.reviewer_id = ? AND c.reviewer_id <> ?
   ORDER BY c.created_at DESC
   LIMIT ${LIMIT}
 `);
@@ -85,6 +96,7 @@ const recentWriting = db.prepare(`
   FROM review_comments c
   JOIN reviews rv ON rv.id = c.review_id
   JOIN reviewers a ON a.id = c.reviewer_id
+  WHERE rv.club_id = ?
   ORDER BY c.created_at DESC
   LIMIT ${LIMIT * 3}
 `);
@@ -95,12 +107,19 @@ const recentTakeNotes = db.prepare(`
          a.name AS actor_name, a.dot AS actor_dot
   FROM reviews rv
   JOIN reviewers a ON a.id = rv.reviewer_id
-  WHERE rv.comment IS NOT NULL AND rv.comment <> ''
+  WHERE rv.club_id = ? AND rv.comment IS NOT NULL AND rv.comment <> ''
   ORDER BY rv.recorded_at DESC
   LIMIT ${LIMIT * 3}
 `);
 
-const rosterStmt = db.prepare('SELECT id, name FROM reviewers');
+/* O apelido é fato sobre o CLUBE, não sobre a plataforma: `@bruno` serve
+   enquanto não houver dois Brunos na mesma sala, e dois Brunos em salas
+   diferentes nunca se cruzam. Calculado sobre a lista inteira da rede, um clube
+   de três pessoas herdaria `@brunosa` por causa de um Bruno que ele não conhece. */
+const rosterStmt = db.prepare(`
+  SELECT r.id, r.name FROM club_members m JOIN reviewers r ON r.id = m.reviewer_id
+  WHERE m.club_id = ?
+`);
 
 /* Votos nas minhas avaliações. A rota de voto já recusa votar na própria ficha,
    então o segundo termo é cinto e suspensório — e o cinto vale, porque linhas
@@ -112,7 +131,7 @@ const votesOnMine = db.prepare(`
   FROM review_votes v
   JOIN reviews rv ON rv.id = v.review_id
   JOIN reviewers a ON a.id = v.reviewer_id
-  WHERE rv.reviewer_id = ? AND v.reviewer_id <> ?
+  WHERE rv.club_id = ? AND rv.reviewer_id = ? AND v.reviewer_id <> ?
   ORDER BY v.created_at DESC
   LIMIT ${LIMIT}
 `);
@@ -127,23 +146,23 @@ const likesOnMine = db.prepare(`
   JOIN review_comments c ON c.id = l.comment_id
   JOIN reviews rv ON rv.id = c.review_id
   JOIN reviewers a ON a.id = l.reviewer_id
-  WHERE c.reviewer_id = ? AND l.reviewer_id <> ?
+  WHERE rv.club_id = ? AND c.reviewer_id = ? AND l.reviewer_id <> ?
   ORDER BY l.created_at DESC
   LIMIT ${LIMIT}
 `);
 
 const marksStmt = db.prepare(
-  'SELECT notifications_seen_at, notifications_cleared_at FROM reviewers WHERE id = ?'
+  'SELECT notifications_seen_at, notifications_cleared_at FROM club_members WHERE club_id = ? AND reviewer_id = ?'
 );
 const markSeenStmt = db.prepare(
-  "UPDATE reviewers SET notifications_seen_at = datetime('now') WHERE id = ?"
+  "UPDATE club_members SET notifications_seen_at = datetime('now') WHERE club_id = ? AND reviewer_id = ?"
 );
 /* Limpar é também ter visto: sem mover as duas juntas, a lista esvaziaria e o
    contador continuaria acusando avisos que ninguém consegue mais abrir. */
 const markClearedStmt = db.prepare(
-  `UPDATE reviewers
+  `UPDATE club_members
    SET notifications_cleared_at = datetime('now'), notifications_seen_at = datetime('now')
-   WHERE id = ?`
+   WHERE club_id = ? AND reviewer_id = ?`
 );
 
 /* Um pedaço do que foi escrito, para o aviso ter conteúdo em vez de só contar
@@ -172,17 +191,18 @@ function say(kind, item) {
 
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
 
-router.get('/', auth.requireSession, wrap(async (req, res) => {
+router.get('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const me = req.session.reviewer_id;
+  const club = req.club.id;
   const [comments, replies, votes, likes, writing, notes, roster, marks] = await Promise.all([
-    commentsOnMine.all(me, me),
-    repliesToMine.all(me, me),
-    votesOnMine.all(me, me),
-    likesOnMine.all(me, me),
-    recentWriting.all(),
-    recentTakeNotes.all(),
-    rosterStmt.all(),
-    marksStmt.get(me)
+    commentsOnMine.all(club, me, me),
+    repliesToMine.all(club, me, me),
+    votesOnMine.all(club, me, me),
+    likesOnMine.all(club, me, me),
+    recentWriting.all(club),
+    recentTakeNotes.all(club),
+    rosterStmt.all(club),
+    marksStmt.get(club, me)
   ]);
 
   const handles = handlesFor(roster);
@@ -319,9 +339,9 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
 
    O que chegar depois volta a aparecer, porque nada foi destruído — só deixou
    de estar depois da marca. */
-router.post('/clear', auth.requireSession, wrap(async (req, res) => {
-  await markClearedStmt.run(req.session.reviewer_id);
-  const row = await marksStmt.get(req.session.reviewer_id);
+router.post('/clear', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  await markClearedStmt.run(req.club.id, req.session.reviewer_id);
+  const row = await marksStmt.get(req.club.id, req.session.reviewer_id);
   res.json({
     seenAt: row?.notifications_seen_at || null,
     clearedAt: row?.notifications_cleared_at || null
@@ -330,9 +350,9 @@ router.post('/clear', auth.requireSession, wrap(async (req, res) => {
 
 /* Marca tudo como visto. Uma data, não uma lista: ver o sino aberto é ver o que
    está nele, e um item por item aqui seria estado que ninguém pediu. */
-router.post('/seen', auth.requireSession, wrap(async (req, res) => {
-  await markSeenStmt.run(req.session.reviewer_id);
-  const row = await marksStmt.get(req.session.reviewer_id);
+router.post('/seen', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+  await markSeenStmt.run(req.club.id, req.session.reviewer_id);
+  const row = await marksStmt.get(req.club.id, req.session.reviewer_id);
   res.json({ seenAt: row?.notifications_seen_at || null });
 }));
 

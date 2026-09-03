@@ -12,9 +12,9 @@ import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/compon
 import { MentionField } from '@/components/mention';
 import {
   api,
+  cpost,
   fmt,
   finalOf,
-  post,
   runtimeOf,
   totalWeight,
   verdictFor,
@@ -140,7 +140,7 @@ export function RateScreen({
       // The genre travels as the one that was chosen, not the one the film
       // opened on: it is what decides which two criteria these marks answer,
       // and the record has to keep the pair the person actually saw.
-      const rec = await post<Review>('/api/reviews', { movie: { ...movie, genre }, scores, comment });
+      const rec = await cpost<Review>('/reviews', { movie: { ...movie, genre }, scores, comment });
       club.reload({
         reviews: club.reviews
           .filter(r => !(r.reviewerId === rec.reviewerId && r.movieId === rec.movieId))

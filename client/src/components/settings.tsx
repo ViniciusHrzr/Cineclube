@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { KeyRound, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
-import { Fault, IconKey, Key, Reel } from '@/components/bits';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Trash2, X } from 'lucide-react';
+import { IconKey, Key, Reel } from '@/components/bits';
 import { PortraitGate } from '@/components/portrait';
-import { auth, del, initialsOf, post, profile, reelColor, type Reviewer } from '@/lib/api';
+import {
+  auth,
+  clubs as clubsApi,
+  initialsOf,
+  profile,
+  reelColor,
+  type JoinRequest,
+  type SessionUser,
+} from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -30,23 +38,78 @@ import { useClub } from '@/App';
    do diálogo — ou seja, fora da placa — fecha.
 
    ── duas regiões, e a segunda quase nunca existe ────────────────────────
-   **Conta** é sua: nome, retrato, bio, PIN. **O clube** é do administrador:
-   cadastrar quem entrou, devolver o PIN de quem esqueceu, remover quem saiu.
-   Para todo mundo que não é admin a segunda região não é desenhada desabilitada
-   — ela não existe. Um controle cinza é uma promessa que a interface não pode
-   cumprir, e o servidor recusa de qualquer jeito.
+   **Conta** é sua: nome, retrato, bio, senha. **A sala** é do ADM do clube:
+   quem está dentro, quem pediu para entrar, e o que o clube é.
+
+   Para quem não administra, a segunda região não é desenhada desabilitada — ela
+   não existe. Um controle cinza é uma promessa que a interface não pode cumprir,
+   e o servidor recusa de qualquer jeito.
+
+   ── e por que a Conta não conhece o clube ───────────────────────────────
+   Porque ela é usada em dois lugares agora: dentro de uma sala, e no saguão, que
+   é onde uma pessoa sem clube nenhum ainda precisa poder trocar o próprio nome e
+   cadastrar uma senha. Um componente que chamasse `useClub()` não existiria no
+   segundo. Então ele recebe o que precisa, e quem sabe de onde aquilo veio é
+   quem o monta.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const FIELD =
   'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass';
-const PIN_FIELD = cn(FIELD, 'q tracking-[0.5em]');
-const onlyDigits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
 
 /** O mesmo teto que routes/reviewers.js aplica. Espelhado, nunca decidido aqui. */
 const MAX_BIO = 140;
 
+/* A folha do saguão: só a conta, porque lá não há sala nenhuma sobre a qual
+   falar. Mesma casca, mesmas regiões, uma a menos. */
+export function AccountSheet({
+  open,
+  onClose,
+  me,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  me: SessionUser;
+  onChanged: () => void | Promise<void>;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} label="Minha conta">
+      <Account me={me} bio={me.bio ?? null} onSaved={onChanged} />
+      <Password />
+    </Sheet>
+  );
+}
+
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const club = useClub();
+  const mine = club.reviewers.find(p => p.id === club.me.id);
+  return (
+    <Sheet open={open} onClose={onClose} label="Ajustes">
+      <Account
+        me={club.me}
+        bio={mine?.bio ?? null}
+        onSaved={async () => {
+          await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+        }}
+      />
+      <Password />
+      {/* A região da sala não é desenhada para quem não a administra. */}
+      {club.isClubAdmin ? <ClubRoom /> : <NotTheAdmin />}
+    </Sheet>
+  );
+}
+
+function Sheet({
+  open,
+  onClose,
+  label,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -70,7 +133,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <dialog
       ref={ref}
-      aria-label="Ajustes"
+      aria-label={label}
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
@@ -84,12 +147,9 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>
 
-        <p className="legend mb-6 pr-12">Ajustes</p>
+        <p className="legend mb-6 pr-12">{label}</p>
 
-        <Account />
-        <Pin />
-        {/* A região do administrador não é desenhada para quem não é. */}
-        {club.me.isAdmin ? <ClubAdmin /> : <LockedOut />}
+        {children}
       </div>
     </dialog>
   );
@@ -136,14 +196,17 @@ function Note({ msg }: { msg: { ok: boolean; text: string } | null }) {
 
    O retrato é cortado em quadrado no navegador antes de subir. Uma foto de
    celular são quatro megabytes de uma coisa desenhada aqui com vinte pixels. */
-function Account() {
-  const club = useClub();
-  /* A bio mora no roster e não na sessão: a sessão carrega quem você é para a
-     marquise desenhar, e a lista do clube é a que o servidor mantém completa. */
-  const mine = club.reviewers.find(p => p.id === club.me.id);
-
-  const [name, setName] = useState(club.me.name);
-  const [bio, setBio] = useState(mine?.bio ?? '');
+function Account({
+  me,
+  bio: theirBio,
+  onSaved,
+}: {
+  me: SessionUser;
+  bio: string | null;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [name, setName] = useState(me.name);
+  const [bio, setBio] = useState(theirBio ?? '');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<'name' | 'photo' | 'bio' | null>(null);
   /** O arquivo esperando enquadramento. Nada sobe enquanto isto estiver posto. */
@@ -158,15 +221,15 @@ function Account() {
 
      Resemeado na renderização que percebeu, e não num efeito depois: um efeito
      deixaria um quadro pintar o nome errado dentro da caixa. */
-  const seeded = useRef(club.me.id);
-  if (seeded.current !== club.me.id) {
-    seeded.current = club.me.id;
-    setName(club.me.name);
-    setBio(mine?.bio ?? '');
+  const seeded = useRef(me.id);
+  if (seeded.current !== me.id) {
+    seeded.current = me.id;
+    setName(me.name);
+    setBio(theirBio ?? '');
   }
 
-  const nameDirty = name.trim() !== club.me.name && name.trim().length > 0;
-  const bioDirty = bio.trim() !== (mine?.bio ?? '');
+  const nameDirty = name.trim() !== me.name && name.trim().length > 0;
+  const bioDirty = bio.trim() !== (theirBio ?? '');
 
   async function save(patch: { name?: string; bio?: string | null }, which: 'name' | 'bio') {
     setMsg(null);
@@ -175,7 +238,7 @@ function Account() {
       await profile.update(patch);
       // O nome desenha em todo lugar; a bio, só no perfil. As duas listas são
       // relidas de qualquer forma: uma requisição a menos não vale a divergência.
-      await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+      await onSaved();
       setMsg({ ok: true, text: which === 'name' ? 'Nome atualizado.' : 'Bio atualizada.' });
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -210,7 +273,7 @@ function Account() {
     setBusy('photo');
     try {
       await profile.update({ avatar });
-      await Promise.all([club.refreshMe(), club.refreshReviewers()]);
+      await onSaved();
       setMsg({ ok: true, text: avatar ? 'Foto atualizada.' : 'Foto removida.' });
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -226,11 +289,11 @@ function Account() {
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex flex-col items-center gap-2">
           <Reel
-            color={reelColor(club.me.dot, club.me.id)}
-            src={club.me.avatar}
-            className={cn('h-[76px] w-[76px] text-[24px]', !club.me.avatar && 'min-w-0')}
+            color={reelColor(me.dot, me.id)}
+            src={me.avatar}
+            className={cn('h-[76px] w-[76px] text-[24px]', !me.avatar && 'min-w-0')}
           >
-            {initialsOf(club.me.name)}
+            {initialsOf(me.name)}
           </Reel>
           <input
             ref={file}
@@ -248,9 +311,9 @@ function Account() {
             disabled={busy === 'photo'}
             onClick={() => file.current?.click()}
           >
-            {busy === 'photo' ? 'Enviando…' : club.me.avatar ? 'Trocar' : 'Enviar foto'}
+            {busy === 'photo' ? 'Enviando…' : me.avatar ? 'Trocar' : 'Enviar foto'}
           </Key>
-          {club.me.avatar ? (
+          {me.avatar ? (
             <button
               type="button"
               disabled={busy === 'photo'}
@@ -284,7 +347,7 @@ function Account() {
               {busy === 'name' ? 'Salvando…' : 'Salvar nome'}
             </Key>
             {nameDirty ? (
-              <Key tone="ghost" onClick={() => setName(club.me.name)}>
+              <Key tone="ghost" onClick={() => setName(me.name)}>
                 Desfazer
               </Key>
             ) : null}
@@ -318,7 +381,7 @@ function Account() {
           {busy === 'bio' ? 'Salvando…' : 'Salvar bio'}
         </Key>
         {bioDirty ? (
-          <Key tone="ghost" onClick={() => setBio(mine?.bio ?? '')}>
+          <Key tone="ghost" onClick={() => setBio(theirBio ?? '')}>
             Desfazer
           </Key>
         ) : null}
@@ -342,27 +405,47 @@ function Account() {
   );
 }
 
-/* ── o meu PIN ────────────────────────────────────────────────────────────
-   O PIN atual é exigido, então quem encontra um navegador aberto ainda não
-   consegue trancar o dono fora da própria conta. */
-function Pin() {
-  const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
+/* ── a minha senha ────────────────────────────────────────────────────────
+   A atual é exigida quando já existe uma, então quem encontra um navegador
+   destrancado ainda não consegue trancar o dono fora da própria conta.
+
+   Quando não existe — conta que entrou pelo Google e pulou o cadastro —, o
+   campo "atual" não é desenhado desabilitado: ele simplesmente não está lá, e o
+   título diz "Cadastrar senha" em vez de "Trocar". Um campo cinza pedindo uma
+   coisa que não existe é a interface fazendo a pessoa duvidar da própria
+   memória. */
+function Password() {
+  const [has, setHas] = useState<boolean | null>(null);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    void auth
+      .me()
+      .then(r => setHas(!r.needsPassword))
+      .catch(() => setHas(true));
+  }, []);
+
   async function change() {
     setMsg(null);
-    if (!/^\d{4}$/.test(newPin)) return setMsg({ ok: false, text: 'O novo PIN precisa ter 4 dígitos.' });
-    if (newPin !== confirmPin) return setMsg({ ok: false, text: 'Os dois PINs novos não são iguais.' });
+    if (next.length < 8) return setMsg({ ok: false, text: 'A senha precisa ter pelo menos 8 caracteres.' });
+    if (next !== again) return setMsg({ ok: false, text: 'As duas senhas novas não são iguais.' });
     setBusy(true);
     try {
-      await auth.changePin(currentPin, newPin);
-      setMsg({ ok: true, text: 'PIN alterado. As outras abas foram desconectadas.' });
-      setCurrentPin('');
-      setNewPin('');
-      setConfirmPin('');
+      await auth.setPassword(next, has ? current : undefined);
+      setMsg({
+        ok: true,
+        text: has
+          ? 'Senha alterada. As outras abas foram desconectadas.'
+          : 'Senha cadastrada. Agora você entra pelo Google ou por ela.',
+      });
+      setHas(true);
+      setCurrent('');
+      setNext('');
+      setAgain('');
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     } finally {
@@ -371,253 +454,350 @@ function Pin() {
   }
 
   return (
-    <Region title="Meu PIN">
+    <Region title={has === false ? 'Cadastrar senha' : 'Minha senha'}>
+      {has === false ? (
+        <p className="mb-4 max-w-[52ch] text-[13px] leading-relaxed text-ink-dim">
+          Você entra pelo Google. Uma senha é o caminho de volta no dia em que
+          aquela conta não estiver mais à mão.
+        </p>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-3">
+        {has ? (
+          <label className="block">
+            <span className="legend mb-1.5 block">Senha atual</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={e => setCurrent(e.target.value)}
+              className={FIELD}
+            />
+          </label>
+        ) : null}
         <label className="block">
-          <span className="legend mb-1.5 block">PIN atual</span>
+          <span className="legend mb-1.5 block">Nova senha</span>
           <input
-            value={currentPin}
             type="password"
-            inputMode="numeric"
-            maxLength={4}
-            placeholder="••••"
-            autoComplete="current-password"
-            onChange={e => setCurrentPin(onlyDigits(e.target.value))}
-            className={PIN_FIELD}
+            autoComplete="new-password"
+            value={next}
+            onChange={e => setNext(e.target.value)}
+            className={FIELD}
           />
         </label>
         <label className="block">
-          <span className="legend mb-1.5 block">Novo</span>
+          <span className="legend mb-1.5 block">De novo</span>
           <input
-            value={newPin}
             type="password"
-            inputMode="numeric"
-            maxLength={4}
-            placeholder="••••"
             autoComplete="new-password"
-            onChange={e => setNewPin(onlyDigits(e.target.value))}
-            className={PIN_FIELD}
-          />
-        </label>
-        <label className="block">
-          <span className="legend mb-1.5 block">Repita</span>
-          <input
-            value={confirmPin}
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            placeholder="••••"
-            autoComplete="new-password"
-            onChange={e => setConfirmPin(onlyDigits(e.target.value))}
-            onKeyDown={e => {
-              if (e.key === 'Enter') void change();
-            }}
-            className={PIN_FIELD}
+            value={again}
+            onChange={e => setAgain(e.target.value)}
+            className={FIELD}
           />
         </label>
       </div>
+
+      <Key tone="flush" className="mt-4" disabled={busy} onClick={() => void change()}>
+        {busy ? 'Gravando…' : has === false ? 'Cadastrar senha' : 'Trocar minha senha'}
+      </Key>
+
       <Note msg={msg} />
-      <div className="mt-4">
-        <Key tone="flush" disabled={busy} onClick={() => void change()}>
-          {busy ? 'Trocando…' : 'Trocar meu PIN'}
-        </Key>
-      </div>
     </Region>
   );
 }
 
-/* Quem não é admin não vê a região do clube, e vê no lugar dela a única coisa
-   dali que lhe diz respeito: quem consegue devolver um PIN esquecido. Como o
-   PIN é guardado não é problema dessa pessoa. */
-function LockedOut() {
-  return (
-    <Region title="Esqueci meu PIN">
-      <p className="max-w-[54ch] text-[13px] leading-relaxed text-ink-dim">
-        Só o administrador do clube pode definir um novo — e nem ele consegue ler o seu.
-      </p>
-    </Region>
-  );
-}
-
-/* ── o clube, para quem administra ────────────────────────────────────────
-   Cadastrar quem entrou, devolver o PIN de quem esqueceu, remover quem saiu.
-   As três regras que o servidor aplica são repetidas aqui só para a interface
-   não oferecer o que vai ser negado — nunca como a defesa, que é de lá. */
-function ClubAdmin() {
+/* O que sobra para quem não administra a sala: a frase que diz a quem pedir.
+   Antes isto era "esqueci meu PIN" e a resposta era o admin da instalação; agora
+   quem manda numa sala é o ADM dela, e é o nome dele que a pessoa precisa. */
+function NotTheAdmin() {
   const club = useClub();
-  const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [resetting, setResetting] = useState<string | null>(null);
-  const [resetPin, setResetPin] = useState('');
+  const admins = club.reviewers.filter(p => p.role === 'admin').map(p => p.name);
+  return (
+    <Region title="Esta sala">
+      <p className="max-w-[52ch] text-[13px] leading-relaxed text-ink-dim">
+        {admins.length
+          ? `Quem administra ${club.club.name} ${admins.length > 1 ? 'são' : 'é'} ${admins.join(', ')}. ` +
+            'Aprovar quem entra, mudar a foto e o nome do clube são coisas de ADM.'
+          : 'Este clube está sem ADM. Fale com o administrador da instalação.'}
+      </p>
+      <Key
+        tone="danger"
+        className="mt-4"
+        onClick={() => {
+          if (!confirm(`Sair de ${club.club.name}? Suas avaliações neste clube continuam lá.`)) return;
+          void club.leaveClub();
+        }}
+      >
+        Sair deste clube
+      </Key>
+    </Region>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A sala, para quem a administra.
+
+   Três coisas, e elas são as três perguntas de um ADM: quem está pedindo para
+   entrar, quem já está dentro, e o que este clube é.
+
+   Os pedidos vêm primeiro de propósito. É a única das três que tem alguém
+   esperando do outro lado — as outras duas ninguém está esperando.
+   ══════════════════════════════════════════════════════════════════════════ */
+function ClubRoom() {
+  const club = useClub();
+  const [requests, setRequests] = useState<JoinRequest[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [name, setName] = useState(club.club.name);
+  const [tagline, setTagline] = useState(club.club.tagline ?? '');
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<File | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
 
-  async function add() {
-    setError(null);
-    if (!name.trim()) return setError('Digite um nome para cadastrar o avaliador.');
-    if (!/^\d{4}$/.test(pin)) return setError('O PIN precisa ter exatamente 4 dígitos.');
-    setBusy(true);
+  const loadRequests = useCallback(async () => {
     try {
-      await post<Reviewer>('/api/reviewers', { name: name.trim(), pin });
-      await club.refreshReviewers();
-      setName('');
-      setPin('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+      const got = await clubsApi.requests(club.club.slug);
+      setRequests(got.requests);
+    } catch {
+      setRequests([]);
     }
-  }
+  }, [club.club.slug]);
 
-  async function remove(p: Reviewer) {
-    const n = club.reviews.filter(r => r.reviewerId === p.id).length;
-    const warn = n
-      ? ` ${n === 1 ? 'A avaliação' : `As ${n} avaliações`} dessa pessoa também ${n === 1 ? 'será apagada' : 'serão apagadas'}.`
-      : '';
-    if (!confirm(`Remover ${p.name}?${warn}`)) return;
-    try {
-      await del(`/api/reviewers/${p.id}`);
-      club.reload({
-        reviewers: club.reviewers.filter(x => x.id !== p.id),
-        reviews: club.reviews.filter(r => r.reviewerId !== p.id),
-      });
-    } catch (e) {
-      club.fault('Não foi possível remover: ' + (e as Error).message);
-    }
-  }
+  useEffect(() => {
+    void loadRequests();
+  }, [loadRequests]);
 
-  async function doReset(p: Reviewer) {
-    setNote(null);
-    if (!/^\d{4}$/.test(resetPin)) return setNote('O PIN precisa ter 4 dígitos.');
+  async function answer(id: string, approve: boolean) {
     try {
-      await auth.resetPin(p.id, resetPin);
-      await club.refreshReviewers();
-      setNote(`PIN de ${p.name} redefinido. Avise essa pessoa — ninguém consegue ler o PIN depois.`);
-      setResetting(null);
-      setResetPin('');
+      await clubsApi.answer(club.club.slug, id, approve);
+      setRequests(list => (list ?? []).filter(r => r.id !== id));
+      if (approve) await club.refreshReviewers();
     } catch (e) {
       setNote((e as Error).message);
     }
   }
 
-  return (
-    <Region title="O clube">
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Nome de quem entrou"
-          autoComplete="off"
-          aria-label="Nome do novo avaliador"
-          className={cn(FIELD, 'min-w-[180px] flex-1')}
-        />
-        <input
-          value={pin}
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          placeholder="PIN"
-          aria-label="PIN do novo avaliador"
-          onChange={e => setPin(onlyDigits(e.target.value))}
-          onKeyDown={e => {
-            if (e.key === 'Enter') void add();
-          }}
-          className={cn(PIN_FIELD, 'w-[120px] flex-none')}
-        />
-        <Key tone="flush" disabled={busy} onClick={() => void add()}>
-          <Plus className="h-4 w-4" strokeWidth={2} />
-          Cadastrar
-        </Key>
-      </div>
-      {error ? (
-        <div className="mt-3">
-          <Fault>{error}</Fault>
-        </div>
-      ) : null}
+  async function saveClub(patch: Parameters<typeof clubsApi.update>[1]) {
+    setBusy(true);
+    setNote(null);
+    try {
+      await clubsApi.update(club.club.slug, patch);
+      await club.refreshClub();
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      <div className="mt-5 border-t border-white/[0.07]">
-        {club.reviewers.map(p => {
-          const n = club.reviews.filter(r => r.reviewerId === p.id).length;
-          const isSelf = p.id === club.me.id;
-          /* A cadeira de admin é uma coluna numa linha e nenhuma rota a devolve,
-             então remover quem a ocupa deixaria o clube sem ninguém capaz de
-             devolver um PIN ou remover alguém. */
-          const canRemove = !p.isAdmin;
-          return (
-            <div key={p.id} className="border-b border-white/[0.06] py-3">
-              <div className="flex items-center gap-3 px-1">
-                <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="lg">
+  const nameDirty = name.trim() !== club.club.name && !!name.trim();
+  const taglineDirty = tagline.trim() !== (club.club.tagline ?? '');
+
+  return (
+    <>
+      <Region title={`Pedidos para entrar${requests?.length ? ` (${requests.length})` : ''}`}>
+        {requests === null ? (
+          <p className="legend animate-flicker">Carregando</p>
+        ) : requests.length === 0 ? (
+          <p className="text-[13px] text-ink-dim">
+            {club.club.visibility === 'public'
+              ? 'Ninguém está esperando.'
+              : 'O clube é privado, então ninguém consegue pedir para entrar.'}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {requests.map(r => (
+              <div
+                key={r.id}
+                className="flex flex-wrap items-center gap-3 rounded-cell bg-house-deep px-3 py-2.5 ring-1 ring-house-rail"
+              >
+                <Reel color={reelColor(r.dot, r.id)} src={r.avatar}>
+                  {initialsOf(r.name)}
+                </Reel>
+                <span className="mr-auto text-[14px] text-ink">{r.name}</span>
+                <Key tone="commit" onClick={() => void answer(r.id, true)}>
+                  Aceitar
+                </Key>
+                <Key tone="ghost" onClick={() => void answer(r.id, false)}>
+                  Recusar
+                </Key>
+              </div>
+            ))}
+          </div>
+        )}
+      </Region>
+
+      <Region title="Quem está aqui">
+        <div className="flex flex-col gap-2">
+          {club.reviewers.map(p => {
+            const isSelf = p.id === club.me.id;
+            const isAdmin = p.role === 'admin';
+            return (
+              <div
+                key={p.id}
+                className="flex flex-wrap items-center gap-3 rounded-cell bg-house-deep px-3 py-2.5 ring-1 ring-house-rail"
+              >
+                <Reel color={reelColor(p.dot, p.id)} src={p.avatar}>
                   {initialsOf(p.name)}
                 </Reel>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-[15px] font-medium">
-                    <span className="truncate">{p.name}</span>
-                    {isSelf ? <span className="q text-[10px] text-ink-dim">você</span> : null}
-                    {p.isAdmin ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-dye-brass">
-                        <ShieldCheck className="h-3 w-3" strokeWidth={2} />
-                        ADM
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="q block text-[11px] text-ink-dim">
-                    {n ? `${n} ${n === 1 ? 'filme avaliado' : 'filmes avaliados'}` : 'ainda não avaliou'}
-                    {p.hasPin === false ? ' · PIN pendente' : ''}
-                  </span>
+                <span className="mr-auto text-[14px] text-ink">
+                  {p.name}
+                  {isAdmin ? <span className="ml-2 text-[10px] text-dye-brass">ADM</span> : null}
+                  {isSelf ? <span className="ml-2 text-[11px] text-ink-faint">você</span> : null}
                 </span>
 
+                <Key
+                  tone="ghost"
+                  onClick={() => {
+                    void clubsApi
+                      .setRole(club.club.slug, p.id, isAdmin ? 'member' : 'admin')
+                      .then(() => club.refreshReviewers())
+                      .catch(e => setNote((e as Error).message));
+                  }}
+                >
+                  {isAdmin ? 'Tirar ADM' : 'Tornar ADM'}
+                </Key>
+
+                {/* Tirar alguém não apaga a conta dela nem as fichas: ela sai da
+                    sala, e o que ela escreveu aqui continua onde está. É a
+                    diferença entre uma pessoa deixar de frequentar e a
+                    conversa dela nunca ter existido. */}
                 {!isSelf ? (
-                  <Key
-                    tone="ghost"
+                  <IconKey
+                    aria-label={`Tirar ${p.name} do clube`}
                     onClick={() => {
-                      setResetting(resetting === p.id ? null : p.id);
-                      setResetPin('');
-                      setNote(null);
+                      if (!confirm(`Tirar ${p.name} do clube? As avaliações dela aqui continuam.`)) return;
+                      void clubsApi
+                        .leave(club.club.slug, p.id)
+                        .then(() => club.refreshReviewers())
+                        .catch(e => setNote((e as Error).message));
                     }}
                   >
-                    <KeyRound className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    Resetar PIN
-                  </Key>
-                ) : null}
-
-                {canRemove ? (
-                  <IconKey aria-label={`Remover ${p.name}`} onClick={() => void remove(p)}>
-                    <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+                    <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                   </IconKey>
                 ) : null}
               </div>
+            );
+          })}
+        </div>
+      </Region>
 
-              {resetting === p.id ? (
-                <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
-                  <input
-                    autoFocus
-                    value={resetPin}
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    placeholder="Novo PIN"
-                    aria-label={`Novo PIN de ${p.name}`}
-                    onChange={e => setResetPin(onlyDigits(e.target.value))}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') void doReset(p);
-                    }}
-                    className={cn(PIN_FIELD, 'w-[140px] flex-none')}
-                  />
-                  <Key tone="commit" onClick={() => void doReset(p)}>
-                    Definir
-                  </Key>
-                  <Key tone="ghost" onClick={() => setResetting(null)}>
-                    Cancelar
-                  </Key>
-                </div>
-              ) : null}
+      <Region title="O que este clube é">
+        <div className="flex flex-wrap items-start gap-5">
+          <div className="flex flex-col items-center gap-2">
+            <span className="flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-plate bg-house-deep ring-1 ring-house-rail">
+              {club.club.photo ? (
+                <img src={club.club.photo} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-display text-[26px] text-ink-faint">
+                  {initialsOf(club.club.name)}
+                </span>
+              )}
+            </span>
+            <input
+              ref={photoInput}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) setPending(f);
+                e.target.value = '';
+              }}
+            />
+            <Key tone="ghost" className="px-2 py-1 text-[11px]" onClick={() => photoInput.current?.click()}>
+              {club.club.photo ? 'Trocar' : 'Enviar foto'}
+            </Key>
+            {club.club.photo ? (
+              <button
+                type="button"
+                onClick={() => void saveClub({ photo: null })}
+                className="text-[11px] text-ink-dim underline underline-offset-4 transition-colors hover:text-dye-red-lit"
+              >
+                remover
+              </button>
+            ) : null}
+          </div>
+
+          <div className="min-w-[220px] flex-1">
+            <label className="block">
+              <span className="legend mb-1.5 block">Nome do clube</span>
+              <input
+                value={name}
+                maxLength={40}
+                onChange={e => setName(e.target.value)}
+                className={FIELD}
+              />
+            </label>
+            {/* O endereço acompanha o nome, e o antigo deixa de funcionar. É o
+                preço de o endereço ser legível, e ele é dito aqui em vez de
+                descoberto por um link quebrado no Discord. */}
+            <p className="q mt-2 text-[11px] text-ink-dim">
+              Trocar o nome troca o endereço do clube. Links antigos param de valer.
+            </p>
+
+            <label className="mt-4 block">
+              <span className="legend mb-1.5 block">Uma linha sobre ele</span>
+              <input
+                value={tagline}
+                maxLength={140}
+                onChange={e => setTagline(e.target.value)}
+                className={FIELD}
+              />
+            </label>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Key
+                tone="flush"
+                disabled={busy || (!nameDirty && !taglineDirty)}
+                onClick={() =>
+                  void saveClub({
+                    ...(nameDirty ? { name: name.trim() } : {}),
+                    ...(taglineDirty ? { tagline: tagline.trim() } : {}),
+                  })
+                }
+              >
+                {busy ? 'Salvando…' : 'Salvar'}
+              </Key>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
 
-      {note ? <p className="mt-4 text-[13px] text-ink-dim">{note}</p> : null}
-    </Region>
+        <div className="mt-6">
+          <span className="legend mb-2 block">Quem pode ver</span>
+          <div className="flex flex-wrap gap-2">
+            <Key
+              tone={club.club.visibility === 'private' ? 'commit' : 'flush'}
+              onClick={() => void saveClub({ visibility: 'private' })}
+            >
+              Privado
+            </Key>
+            <Key
+              tone={club.club.visibility === 'public' ? 'commit' : 'flush'}
+              onClick={() => void saveClub({ visibility: 'public' })}
+            >
+              Público
+            </Key>
+          </div>
+          <p className="mt-2 max-w-[52ch] text-[12.5px] leading-relaxed text-ink-dim">
+            {club.club.visibility === 'public'
+              ? 'Qualquer pessoa lê o acervo deste clube e pode pedir para entrar. Escrever continua sendo só de quem é daqui.'
+              : 'Só quem é do clube vê qualquer coisa. Ele não aparece para mais ninguém, e ninguém consegue pedir para entrar.'}
+          </p>
+        </div>
+
+        {note ? <p className="mt-4 text-[13px] text-dye-red-lit">{note}</p> : null}
+      </Region>
+
+      {pending ? (
+        <PortraitGate
+          file={pending}
+          onCancel={() => setPending(null)}
+          onDone={photo => {
+            setPending(null);
+            void saveClub({ photo });
+          }}
+        />
+      ) : null}
+    </>
   );
 }

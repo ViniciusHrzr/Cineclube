@@ -12,6 +12,17 @@ process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
 const db = require('../db');
+const kit = require('../testkit');
+
+/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
+   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
+   falam de UM acervo.
+
+   Pública, e isso é assunto de alguns destes testes: ler um clube aberto não
+   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
+   produto sempre teve. O que o clube fechado faz está provado em clubs.test.js. */
+let CLUB;
+const at = p => `/api/c/${CLUB.slug}${p}`;
 
 let baseUrl;
 let server;
@@ -23,6 +34,7 @@ test.before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  CLUB = await kit.makeClub({ name: 'Clube de Teste', visibility: 'public' });
 });
 
 test.after(async () => {
@@ -60,23 +72,26 @@ function sessionCookie(setCookie) {
 }
 
 let seq = 0;
-const PIN = '4321';
 
-/** Creates a reviewer, signs them in, and returns the account plus its cookie. */
-async function newReviewer(name, pin = PIN) {
-  const res = await req('POST', '/api/reviewers', { name: name || `Avaliador ${++seq}`, pin });
-  assert.equal(res.status, 201);
-  const login = await req('POST', '/api/auth/login', { reviewerId: res.body.id, pin });
-  assert.equal(login.status, 200);
-  return { ...res.body, pin, cookie: sessionCookie(login.setCookie) };
+/** Uma conta com sessão, já dentro da sala deste arquivo. */
+async function newReviewer(name) {
+  const who = await kit.signIn(name || `Avaliador ${++seq}`);
+  await kit.join(CLUB.id, who.id);
+  return who;
 }
 
-/** An account with the admin flag set, which no API grants on purpose. */
+/** O ADM da sala — quem aprova entrada e quem varre o que não devia estar nela. */
 async function newAdmin(name) {
-  const admin = await newReviewer(name || `Chefe ${++seq}`);
-  await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(admin.id);
-  const login = await req('POST', '/api/auth/login', { reviewerId: admin.id, pin: admin.pin });
-  return { ...admin, cookie: sessionCookie(login.setCookie) };
+  const admin = await kit.signIn(name || `Chefe ${++seq}`);
+  await kit.join(CLUB.id, admin.id, 'admin');
+  return admin;
+}
+
+/** E o administrador da INSTALAÇÃO, que é outra coisa: ele cuida de contas. */
+async function newSiteAdmin(name) {
+  const admin = await kit.signInAdmin(name || `Dono ${++seq}`);
+  await kit.join(CLUB.id, admin.id, 'admin');
+  return admin;
 }
 
 function movie(overrides) {
@@ -92,98 +107,111 @@ function scoresFor(genre, value) {
 
 /* ── reviewers ───────────────────────────────────────────────────────── */
 
-test('seeds three reviewers on an empty database', async () => {
-  const { status, body } = await req('GET', '/api/reviewers');
+/* ── o elenco de UMA sala ────────────────────────────────────────────────
+   Isto listava a plataforma inteira, porque a plataforma inteira era um clube.
+   Agora lista quem está numa sala — e é essa a diferença que estes testes
+   protegem: uma rede que devolvesse todos os seus usuários a qualquer visitante
+   não seria uma lista, seria um vazamento com paginação. */
+
+test('as contas de exemplo nascem no clube fundador', async () => {
+  const home = await db.prepare('SELECT slug FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
+  const { status, body } = await req('GET', `/api/c/${home.slug}/reviewers`);
   assert.equal(status, 200);
   const names = body.reviewers.map(r => r.name);
-  assert.deepEqual(names.slice(0, 3), ['Ana Reis', 'Bruno Sá', 'Clara Lima']);
-});
-
-test('seeded reviewers start without a PIN', async () => {
-  const { body } = await req('GET', '/api/reviewers');
-  const ana = body.reviewers.find(r => r.name === 'Ana Reis');
-  assert.equal(ana.hasPin, false, 'um PIN conhecido num seed seria uma porta dos fundos');
-});
-
-test('creates a reviewer with a colour and a zeroed review count', async () => {
-  const reviewer = await newReviewer('Marina Duarte');
-  assert.equal(reviewer.name, 'Marina Duarte');
-  assert.match(reviewer.dot, /^#[0-9a-f]{6}$/i);
-  assert.equal(reviewer.review_count, 0);
-
-  const list = await req('GET', '/api/reviewers');
-  assert.ok(list.body.reviewers.some(r => r.id === reviewer.id));
-});
-
-test('rejects a reviewer with a blank name', async () => {
-  for (const name of ['', '   ', undefined]) {
-    const { status } = await req('POST', '/api/reviewers', { name, pin: PIN });
-    assert.equal(status, 400, `nome ${JSON.stringify(name)} deveria ser rejeitado`);
+  for (const quem of ['Ana Reis', 'Bruno Sá', 'Clara Lima']) {
+    assert.ok(names.includes(quem), `${quem} deveria estar no clube fundador`);
   }
 });
 
-test('rejects a reviewer whose PIN is not four digits', async () => {
-  for (const pin of [undefined, '', '123', '12345', 'abcd', '12a4', 1234]) {
-    const { status } = await req('POST', '/api/reviewers', { name: `PIN ${++seq}`, pin });
-    assert.equal(status, 400, `PIN ${JSON.stringify(pin)} deveria ser rejeitado`);
-  }
+test('o elenco de um clube é só de quem está nele', async () => {
+  const dentro = await newReviewer('Está Dentro');
+  const fora = await kit.signIn('Está Fora');
+
+  const list = await req('GET', at('/reviewers'));
+  const ids = list.body.reviewers.map(r => r.id);
+  assert.ok(ids.includes(dentro.id));
+  assert.ok(!ids.includes(fora.id), 'quem não é da sala não aparece no elenco dela');
 });
 
-test('never exposes the PIN hash or salt', async () => {
-  await newReviewer('Sigilo');
-  const { body } = await req('GET', '/api/reviewers');
-  const serialized = JSON.stringify(body);
-  assert.ok(!serialized.includes('pin_hash'), 'a listagem vazou pin_hash');
-  assert.ok(!serialized.includes('pin_salt'), 'a listagem vazou pin_salt');
-  assert.ok(!serialized.includes(PIN), 'a listagem vazou o PIN em texto puro');
+test('a lista nunca expõe o hash nem o salt da senha', async () => {
+  await newReviewer();
+  const list = await req('GET', at('/reviewers'));
+  const serialized = JSON.stringify(list.body);
+  assert.ok(!serialized.includes('password_hash'), 'a listagem vazou password_hash');
+  assert.ok(!serialized.includes('password_salt'), 'a listagem vazou password_salt');
+  assert.ok(!serialized.includes('google_sub'), 'a listagem vazou o identificador do Google');
 });
 
-test('trims whitespace around a reviewer name', async () => {
-  const reviewer = await newReviewer('  Joana  ');
-  assert.equal(reviewer.name, 'Joana');
+test('cada pessoa carrega o papel que tem NESTA sala', async () => {
+  const chefe = await newAdmin('Manda Aqui');
+  const gente = await newReviewer('Não Manda');
+  const list = await req('GET', at('/reviewers'));
+  assert.equal(list.body.reviewers.find(r => r.id === chefe.id).role, 'admin');
+  assert.equal(list.body.reviewers.find(r => r.id === gente.id).role, 'member');
 });
 
-test('deleting an unknown reviewer is a 404', async () => {
-  const admin = await newAdmin();
-  const { status } = await req('DELETE', '/api/reviewers/nao-existe', null, admin.cookie);
-  assert.equal(status, 404);
+/* ── e não existe mais rota de cadastro ──────────────────────────────────
+   Havia um POST aberto que criava avaliador com nome e PIN. Ele estava certo
+   enquanto o produto era uma sala de amigos com um endereço que só eles
+   conheciam. Numa rede, um endpoint público que cria contas sem verificar
+   e-mail nenhum é cadastro sem dono — conta agora nasce de um lugar só, a volta
+   do Google. */
+test('a rota pública de cadastro de avaliador não existe mais', async () => {
+  /* Sem passar por `req`: uma rota que não existe cai no 404 do Express, que é
+     HTML, e `req` só sabe ler JSON. O que importa aqui é o número. */
+  const res = await fetch(baseUrl + '/api/reviewers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Intruso', pin: '1234' }),
+  });
+  await res.text();
+  assert.equal(res.status, 404);
 });
 
-test('deleting a reviewer cascades to their reviews', async () => {
-  // Guards PRAGMA foreign_keys = ON, which SQLite applies per connection and
-  // silently ignores if it is ever dropped from db.js.
-  const admin = await newAdmin();
-  const reviewer = await newReviewer();
-  const m = movie();
-  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
+/* ── apagar uma CONTA ────────────────────────────────────────────────────
+   Que é a pessoa deixando a plataforma, e não deixando uma sala: sair de um
+   clube é `DELETE /api/c/<slug>/members/<id>`, e tem os próprios testes. Aqui as
+   fichas dela vão junto, em todos os clubes de uma vez — e é por isso que só o
+   administrador da instalação alcança esta rota. */
 
-  const del = await req('DELETE', `/api/reviewers/${reviewer.id}`, null, admin.cookie);
-  assert.equal(del.status, 204);
+test('apagar uma conta não é coisa de qualquer um', async () => {
+  const alvo = await newReviewer();
+  const outro = await newReviewer();
+  const adm = await newAdmin();
 
-  const reviews = await req('GET', '/api/reviews');
-  assert.equal(reviews.body.reviews.filter(r => r.reviewerId === reviewer.id).length, 0);
+  assert.equal((await req('DELETE', `/api/reviewers/${alvo.id}`, null, outro.cookie)).status, 403);
+  assert.equal(
+    (await req('DELETE', `/api/reviewers/${alvo.id}`, null, adm.cookie)).status,
+    403,
+    'nem o ADM de uma sala apaga a conta de alguém — a sala não é a plataforma'
+  );
+
+  const dono = await newSiteAdmin();
+  assert.equal((await req('DELETE', `/api/reviewers/${alvo.id}`, null, dono.cookie)).status, 204);
 });
 
-test('only the admin removes a reviewer, and never their own account', async () => {
-  const admin = await newAdmin();
-  const member = await newReviewer();
-  const other = await newReviewer();
+test('apagar uma conta desconhecida é 404', async () => {
+  const dono = await newSiteAdmin();
+  assert.equal((await req('DELETE', '/api/reviewers/nao-existe', null, dono.cookie)).status, 404);
+});
 
-  // Not the admin: no removing anyone, including yourself. Self-deletion was
-  // allowed once, which is how the club could end up with no administrator.
-  assert.equal((await req('DELETE', `/api/reviewers/${other.id}`, null, member.cookie)).status, 403);
-  assert.equal((await req('DELETE', `/api/reviewers/${member.id}`, null, member.cookie)).status, 403);
+test('o administrador da instalação não é removível, nem por ele mesmo', async () => {
+  const dono = await newSiteAdmin();
+  assert.equal((await req('DELETE', `/api/reviewers/${dono.id}`, null, dono.cookie)).status, 403);
+});
 
-  // The seat itself is not removable, by anyone.
-  assert.equal((await req('DELETE', `/api/reviewers/${admin.id}`, null, member.cookie)).status, 403);
-  assert.equal((await req('DELETE', `/api/reviewers/${admin.id}`, null, admin.cookie)).status, 403);
+test('apagar uma conta leva as avaliações dela junto', async () => {
+  const alvo = await newReviewer();
+  const dono = await newSiteAdmin();
+  await req('POST', at('/reviews'), { movie: movie(), scores: scoresFor('Terror', 7) }, alvo.cookie);
 
-  // Everyone survived every one of those.
-  const list = (await req('GET', '/api/reviewers')).body.reviewers.map(r => r.id);
-  assert.ok(list.includes(admin.id) && list.includes(member.id) && list.includes(other.id));
+  const antes = await req('GET', at('/reviews'));
+  assert.ok(antes.body.reviews.some(r => r.reviewerId === alvo.id));
 
-  // And the admin can still remove someone else.
-  assert.equal((await req('DELETE', `/api/reviewers/${member.id}`, null, admin.cookie)).status, 204);
+  assert.equal((await req('DELETE', `/api/reviewers/${alvo.id}`, null, dono.cookie)).status, 204);
+
+  const depois = await req('GET', at('/reviews'));
+  assert.ok(!depois.body.reviews.some(r => r.reviewerId === alvo.id));
 });
 
 test('removing a reviewer needs a session at all', async () => {
@@ -193,10 +221,10 @@ test('removing a reviewer needs a session at all', async () => {
 
 test('review_count reflects saved reviews', async () => {
   const reviewer = await newReviewer();
-  await req('POST', '/api/reviews', { movie: movie(), scores: scoresFor('Terror', 6) }, reviewer.cookie);
-  await req('POST', '/api/reviews', { movie: movie(), scores: scoresFor('Terror', 8) }, reviewer.cookie);
+  await req('POST', at('/reviews'), { movie: movie(), scores: scoresFor('Terror', 6) }, reviewer.cookie);
+  await req('POST', at('/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, reviewer.cookie);
 
-  const list = await req('GET', '/api/reviewers');
+  const list = await req('GET', at('/reviewers'));
   const found = list.body.reviewers.find(r => r.id === reviewer.id);
   assert.equal(found.review_count, 2);
 });
@@ -207,7 +235,7 @@ test('review_count reflects saved reviews', async () => {
    as mesmas do nome e do retrato: é dela, e a rota não recebe id nenhum. */
 
 async function rosterRow(id) {
-  const list = await req('GET', '/api/reviewers');
+  const list = await req('GET', at('/reviewers'));
   return list.body.reviewers.find(r => r.id === id);
 }
 
@@ -289,7 +317,16 @@ test('mexer na bio não mexe no nome nem no retrato', async () => {
 
 /* ── sign-in ─────────────────────────────────────────────────────────── */
 
-test('signs in with the right PIN and reports who you are', async () => {
+/* ── entrar ──────────────────────────────────────────────────────────────
+   O PIN de quatro dígitos era a credencial enquanto entrar significava escolher
+   o próprio rosto numa lista de quatro pessoas. Numa rede essa lista é todo
+   mundo, então a identidade passou a ser o e-mail e a credencial, uma senha.
+
+   O que estes testes protegem não mudou de natureza: que a credencial nunca sai
+   do servidor, que errar tem custo crescente, e que a rota de entrada não vira
+   um jeito de descobrir quem tem conta aqui. */
+
+test('a sessão diz quem eu sou', async () => {
   const reviewer = await newReviewer('Login OK');
   const me = await req('GET', '/api/auth/me', null, reviewer.cookie);
   assert.equal(me.status, 200);
@@ -303,90 +340,123 @@ test('a visitor with no session is nobody, not an error', async () => {
   assert.equal(me.body.reviewer, null);
 });
 
-test('rejects a wrong PIN, and an unknown reviewer looks the same', async () => {
-  const reviewer = await newReviewer('Login Ruim');
-  const wrong = await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: '0000' });
-  assert.equal(wrong.status, 401);
-
-  const ghost = await req('POST', '/api/auth/login', { reviewerId: 'nao-existe', pin: '0000' });
-  assert.equal(ghost.status, 401, 'a resposta não pode revelar quem existe');
-  assert.equal(ghost.body.error, wrong.body.error);
+test('uma conta que só entrou pelo Google ainda precisa cadastrar senha', async () => {
+  const reviewer = await newReviewer();
+  const me = await req('GET', '/api/auth/me', null, reviewer.cookie);
+  assert.equal(me.body.needsPassword, true);
 });
 
-test('locks an account after repeated wrong PINs', async () => {
-  const reviewer = await newReviewer('Forca Bruta');
+test('cadastra a senha, e aí não precisa mais', async () => {
+  const reviewer = await newReviewer();
+  const set = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+  assert.equal(set.status, 200);
+
+  /* Cadastrar senha derruba as outras sessões da conta — inclusive a que fez o
+     pedido, que recebe uma nova no mesmo response. */
+  const cookie = sessionCookie(set.setCookie);
+  const me = await req('GET', '/api/auth/me', null, cookie);
+  assert.equal(me.body.needsPassword, false);
+});
+
+test('a senha tem um piso, e ele é imposto no servidor', async () => {
+  const reviewer = await newReviewer();
+  assert.equal(
+    (await req('POST', '/api/auth/password', { password: 'curta' }, reviewer.cookie)).status,
+    400
+  );
+});
+
+test('entra com e-mail e senha, em qualquer caixa', async () => {
+  const reviewer = await newReviewer();
+  await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+
+  const login = await req('POST', '/api/auth/login', {
+    email: reviewer.email.toUpperCase(),
+    password: 'umasenhaboa',
+  });
+  assert.equal(login.status, 200);
+  assert.equal(login.body.reviewer.id, reviewer.id);
+});
+
+test('senha errada e e-mail inexistente respondem a MESMA coisa', async () => {
+  const reviewer = await newReviewer();
+  await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+
+  const ruim = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'errada!!!' });
+  const ninguem = await req('POST', '/api/auth/login', { email: 'nao-existe@x.com', password: 'errada!!!' });
+  assert.equal(ruim.status, 401);
+  assert.equal(ninguem.status, 401);
+  assert.equal(
+    ruim.body.error,
+    ninguem.body.error,
+    'duas frases diferentes fariam desta rota um jeito de descobrir quem tem conta'
+  );
+});
+
+test('a conta descansa depois de erros seguidos', async () => {
+  const reviewer = await newReviewer();
+  await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+
   let last;
-  for (let i = 0; i < 5; i++) {
-    last = await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: '0000' });
+  for (let i = 0; i < 6; i++) {
+    last = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'errada!!!' });
   }
-  assert.equal(last.status, 429, 'cinco erros deveriam trancar a conta');
-  // The right PIN is refused while the lock holds — that is the point.
-  const good = await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: reviewer.pin });
-  assert.equal(good.status, 429);
+  assert.equal(last.status, 429, 'seis tentativas erradas deveriam ter trancado a conta');
+
+  /* E a senha certa também é recusada enquanto a trava vale — senão a trava
+     seria só um aviso. */
+  const certa = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'umasenhaboa' });
+  assert.equal(certa.status, 429);
 });
 
 test('signing out invalidates the session', async () => {
-  const reviewer = await newReviewer('Sai Fora');
-  assert.equal((await req('POST', '/api/auth/logout', null, reviewer.cookie)).status, 204);
+  const reviewer = await newReviewer();
+  assert.equal((await req('POST', '/api/auth/logout', {}, reviewer.cookie)).status, 204);
   const me = await req('GET', '/api/auth/me', null, reviewer.cookie);
   assert.equal(me.body.reviewer, null);
 });
 
-test('changes your own PIN when the current one is right', async () => {
-  const reviewer = await newReviewer('Troca PIN');
-  const change = await req('POST', '/api/auth/pin', { currentPin: reviewer.pin, newPin: '9999' }, reviewer.cookie);
-  assert.equal(change.status, 200);
+test('trocar a senha exige a atual', async () => {
+  const reviewer = await newReviewer();
+  const first = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+  const cookie = sessionCookie(first.setCookie);
 
-  assert.equal((await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: reviewer.pin })).status, 401);
-  assert.equal((await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: '9999' })).status, 200);
+  const semAtual = await req('POST', '/api/auth/password', { password: 'outrasenha1' }, cookie);
+  assert.equal(semAtual.status, 401, 'quem acha um navegador destrancado não tranca o dono fora');
+
+  const comAtual = await req(
+    'POST', '/api/auth/password', { current: 'umasenhaboa', password: 'outrasenha1' }, cookie
+  );
+  assert.equal(comAtual.status, 200);
 });
 
-test('refuses a PIN change with the wrong current PIN', async () => {
-  const reviewer = await newReviewer('PIN Errado');
-  const change = await req('POST', '/api/auth/pin', { currentPin: '0000', newPin: '9999' }, reviewer.cookie);
-  assert.equal(change.status, 401);
-  assert.equal((await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: reviewer.pin })).status, 200);
+test('trocar a senha derruba as outras sessões da conta', async () => {
+  const reviewer = await newReviewer();
+  const first = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+  const antiga = sessionCookie(first.setCookie);
+
+  /* Uma segunda aba da mesma pessoa. */
+  const outra = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'umasenhaboa' });
+  const nova = sessionCookie(outra.setCookie);
+
+  await req('POST', '/api/auth/password', { current: 'umasenhaboa', password: 'outrasenha1' }, nova);
+
+  const velha = await req('GET', '/api/auth/me', null, antiga);
+  assert.equal(velha.body.reviewer, null, 'a aba antiga deveria ter sido deslogada');
 });
 
-test('refuses a new PIN that is not four digits', async () => {
-  const reviewer = await newReviewer('PIN Curto');
-  for (const newPin of ['12', 'abcd', '', undefined]) {
-    const { status } = await req('POST', '/api/auth/pin', { currentPin: reviewer.pin, newPin }, reviewer.cookie);
-    assert.equal(status, 400, `PIN ${JSON.stringify(newPin)} deveria ser rejeitado`);
-  }
+test('a senha nunca volta numa resposta', async () => {
+  const reviewer = await newReviewer();
+  const set = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
+  const me = await req('GET', '/api/auth/me', null, sessionCookie(set.setCookie));
+  const serialized = JSON.stringify(me.body) + JSON.stringify(set.body);
+  assert.ok(!serialized.includes('umasenhaboa'), 'a senha vazou numa resposta');
+  assert.ok(!/password_hash|password_salt/.test(serialized));
 });
 
-test('changing a PIN signs out the account everywhere else', async () => {
-  const reviewer = await newReviewer('Duas Abas');
-  const second = await req('POST', '/api/auth/login', { reviewerId: reviewer.id, pin: reviewer.pin });
-  const otherTab = sessionCookie(second.setCookie);
-
-  await req('POST', '/api/auth/pin', { currentPin: reviewer.pin, newPin: '8888' }, reviewer.cookie);
-
-  const me = await req('GET', '/api/auth/me', null, otherTab);
-  assert.equal(me.body.reviewer, null, 'a outra aba deveria ter caído');
-});
-
-test('the admin resets someone else PIN', async () => {
-  const admin = await newAdmin();
-  const member = await newReviewer('Esqueci');
-  const reset = await req('POST', '/api/auth/pin/reset', { reviewerId: member.id, newPin: '7777' }, admin.cookie);
-  assert.equal(reset.status, 200);
-  assert.equal((await req('POST', '/api/auth/login', { reviewerId: member.id, pin: '7777' })).status, 200);
-});
-
-test('a non-admin cannot reset another PIN', async () => {
-  const a = await newReviewer('Comum A');
-  const b = await newReviewer('Comum B');
-  const reset = await req('POST', '/api/auth/pin/reset', { reviewerId: b.id, newPin: '7777' }, a.cookie);
-  assert.equal(reset.status, 403);
-  assert.equal((await req('POST', '/api/auth/login', { reviewerId: b.id, pin: b.pin })).status, 200);
-});
-
-test('a signed-out visitor cannot reset a PIN', async () => {
-  const b = await newReviewer('Alvo');
-  const reset = await req('POST', '/api/auth/pin/reset', { reviewerId: b.id, newPin: '7777' });
-  assert.equal(reset.status, 401);
+test('a instalação diz se a porta do Google existe', async () => {
+  const me = await req('GET', '/api/auth/me');
+  assert.equal(typeof me.body.google, 'boolean');
 });
 
 /* ── reviews ─────────────────────────────────────────────────────────── */
@@ -394,7 +464,7 @@ test('a signed-out visitor cannot reset a PIN', async () => {
 test('saves a review and computes the final score server-side', async () => {
   const reviewer = await newReviewer();
   const m = movie();
-  const { status, body } = await req('POST', '/api/reviews', {
+  const { status, body } = await req('POST', at('/reviews'), {
     movie: m, scores: scoresFor('Terror', 10), comment: 'Excelente.'
   }, reviewer.cookie);
 
@@ -411,7 +481,7 @@ test('saves a review and computes the final score server-side', async () => {
 test('a review is signed by the session, not by the request body', async () => {
   const a = await newReviewer('Dono');
   const b = await newReviewer('Impostor');
-  const { body } = await req('POST', '/api/reviews', {
+  const { body } = await req('POST', at('/reviews'), {
     reviewerId: a.id, movie: movie(), scores: scoresFor('Terror', 5)
   }, b.cookie);
   assert.equal(body.reviewerId, b.id, 'o corpo da requisição não pode escolher quem assina');
@@ -419,7 +489,7 @@ test('a review is signed by the session, not by the request body', async () => {
 
 test('ignores a client-sent final score and recomputes from the criteria', async () => {
   const reviewer = await newReviewer();
-  const { body } = await req('POST', '/api/reviews', {
+  const { body } = await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 5), final: 10
   }, reviewer.cookie);
   assert.equal(body.final, 5);
@@ -428,7 +498,7 @@ test('ignores a client-sent final score and recomputes from the criteria', async
 test('clamps out-of-range and non-numeric scores', async () => {
   const reviewer = await newReviewer();
   const scores = { ...scoresFor('Terror', 5), direcao: 99, roteiro: -20, fotografia: 'dez' };
-  const { body } = await req('POST', '/api/reviews', { movie: movie(), scores }, reviewer.cookie);
+  const { body } = await req('POST', at('/reviews'), { movie: movie(), scores }, reviewer.cookie);
 
   assert.equal(body.scores.direcao, 10);
   assert.equal(body.scores.roteiro, 0);
@@ -439,7 +509,7 @@ test('clamps out-of-range and non-numeric scores', async () => {
 test('drops criteria that do not belong to the genre', async () => {
   const reviewer = await newReviewer();
   const scores = { ...scoresFor('Terror', 5), naoExiste: 10 };
-  const { body } = await req('POST', '/api/reviews', { movie: movie(), scores }, reviewer.cookie);
+  const { body } = await req('POST', at('/reviews'), { movie: movie(), scores }, reviewer.cookie);
 
   assert.equal(body.scores.naoExiste, undefined);
   assert.equal(body.final, 5);
@@ -447,7 +517,7 @@ test('drops criteria that do not belong to the genre', async () => {
 
 test('falls back to Drama for an unknown movie genre', async () => {
   const reviewer = await newReviewer();
-  const { body } = await req('POST', '/api/reviews', {
+  const { body } = await req('POST', at('/reviews'), {
     movie: movie({ genre: 'Faroeste' }), scores: scoresFor('Drama', 7)
   }, reviewer.cookie);
   assert.equal(body.movieGenre, 'Drama');
@@ -458,13 +528,13 @@ test('re-rating the same movie updates the review instead of duplicating it', as
   const reviewer = await newReviewer();
   const m = movie();
 
-  const first = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 4) }, reviewer.cookie);
-  const second = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 9) }, reviewer.cookie);
+  const first = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 4) }, reviewer.cookie);
+  const second = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 9) }, reviewer.cookie);
 
   assert.equal(first.body.id, second.body.id, 'o upsert deveria manter o mesmo id');
   assert.equal(second.body.final, 9);
 
-  const all = await req('GET', '/api/reviews');
+  const all = await req('GET', at('/reviews'));
   const mine = all.body.reviews.filter(r => r.reviewerId === reviewer.id && r.movieId === m.id);
   assert.equal(mine.length, 1);
   assert.equal(mine[0].final, 9);
@@ -474,17 +544,17 @@ test('a take keeps how long the film runs', async () => {
   const reviewer = await newReviewer();
   const m = movie({ runtime: 112 });
 
-  const { body } = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
+  const { body } = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
   assert.equal(body.movieRuntime, 112);
 
-  const all = await req('GET', '/api/reviews');
+  const all = await req('GET', at('/reviews'));
   const mine = all.body.reviews.find(r => r.reviewerId === reviewer.id && r.movieId === m.id);
   assert.equal(mine.movieRuntime, 112);
 });
 
 test('a film with no runtime on record is null, never zero', async () => {
   const reviewer = await newReviewer();
-  const { body } = await req('POST', '/api/reviews', { movie: movie({ runtime: 0 }), scores: scoresFor('Terror', 5) }, reviewer.cookie);
+  const { body } = await req('POST', at('/reviews'), { movie: movie({ runtime: 0 }), scores: scoresFor('Terror', 5) }, reviewer.cookie);
   assert.equal(body.movieRuntime, null);
 });
 
@@ -496,8 +566,8 @@ test('re-rating without a runtime does not erase the one already recorded', asyn
   const reviewer = await newReviewer();
   const m = movie({ runtime: 96 });
 
-  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 4) }, reviewer.cookie);
-  const again = await req('POST', '/api/reviews', {
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 4) }, reviewer.cookie);
+  const again = await req('POST', at('/reviews'), {
     movie: { ...m, runtime: undefined }, scores: scoresFor('Terror', 8)
   }, reviewer.cookie);
 
@@ -510,16 +580,16 @@ test('two reviewers can rate the same movie independently', async () => {
   const b = await newReviewer();
   const m = movie();
 
-  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 6) }, a.cookie);
-  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 8) }, b.cookie);
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 6) }, a.cookie);
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 8) }, b.cookie);
 
-  const averages = await req('GET', '/api/reviews/averages');
+  const averages = await req('GET', at('/reviews/averages'));
   assert.equal(averages.body.averages[m.id].count, 2);
   assert.equal(averages.body.averages[m.id].avg, 7);
 });
 
 test('rejects a review from a visitor with no session', async () => {
-  const { status } = await req('POST', '/api/reviews', {
+  const { status } = await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 5)
   });
   assert.equal(status, 401);
@@ -535,14 +605,14 @@ test('rejects a review with a malformed movie or missing scores', async () => {
     { movie: movie(), scores: 'dez' }
   ];
   for (const payload of cases) {
-    const { status } = await req('POST', '/api/reviews', payload, reviewer.cookie);
+    const { status } = await req('POST', at('/reviews'), payload, reviewer.cookie);
     assert.equal(status, 400, `payload aceito indevidamente: ${JSON.stringify(payload)}`);
   }
 });
 
 test('truncates an overlong comment instead of failing', async () => {
   const reviewer = await newReviewer();
-  const { status, body } = await req('POST', '/api/reviews', {
+  const { status, body } = await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 5), comment: 'a'.repeat(5000)
   }, reviewer.cookie);
   assert.equal(status, 201);
@@ -551,14 +621,14 @@ test('truncates an overlong comment instead of failing', async () => {
 
 test('deletes a review and reports 404 afterwards', async () => {
   const reviewer = await newReviewer();
-  const { body } = await req('POST', '/api/reviews', {
+  const { body } = await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 5)
   }, reviewer.cookie);
 
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, reviewer.cookie)).status, 204);
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, reviewer.cookie)).status, 404);
+  assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, reviewer.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, reviewer.cookie)).status, 404);
 
-  const all = await req('GET', '/api/reviews');
+  const all = await req('GET', at('/reviews'));
   assert.ok(!all.body.reviews.some(r => r.id === body.id));
 });
 
@@ -567,16 +637,16 @@ test('a take is only ever deleted by the person who gave it, admin included', as
   const other = await newReviewer('Xereta');
   const admin = await newAdmin();
 
-  const { body } = await req('POST', '/api/reviews', {
+  const { body } = await req('POST', at('/reviews'), {
     movie: movie(), scores: scoresFor('Terror', 5)
   }, owner.cookie);
 
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, other.cookie)).status, 403);
+  assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, other.cookie)).status, 403);
   // The admin removes accounts, not opinions.
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, admin.cookie)).status, 403);
-  assert.ok((await req('GET', '/api/reviews')).body.reviews.some(r => r.id === body.id));
+  assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, admin.cookie)).status, 403);
+  assert.ok((await req('GET', at('/reviews'))).body.reviews.some(r => r.id === body.id));
 
-  assert.equal((await req('DELETE', `/api/reviews/${body.id}`, null, owner.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, owner.cookie)).status, 204);
 });
 
 test('rating a film someone else rated adds a take, it does not touch theirs', async () => {
@@ -584,11 +654,11 @@ test('rating a film someone else rated adds a take, it does not touch theirs', a
   const other = await newReviewer('Segundo');
   const m = movie({ title: 'O Mesmo Filme' });
 
-  const first = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 4) }, owner.cookie);
-  const second = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 9) }, other.cookie);
+  const first = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 4) }, owner.cookie);
+  const second = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 9) }, other.cookie);
 
   assert.notEqual(first.body.id, second.body.id);
-  const mine = (await req('GET', '/api/reviews')).body.reviews.filter(r => r.movieId === m.id);
+  const mine = (await req('GET', at('/reviews'))).body.reviews.filter(r => r.movieId === m.id);
   assert.equal(mine.length, 2);
   assert.equal(mine.find(r => r.reviewerId === owner.id).final, first.body.final);
 });
@@ -598,9 +668,9 @@ test('rating a film someone else rated adds a take, it does not touch theirs', a
 test('adds a movie to the watchlist and lists it back', async () => {
   const member = await newReviewer();
   const m = movie({ title: 'Para Assistir' });
-  assert.equal((await req('POST', '/api/watchlist', { movie: m }, member.cookie)).status, 201);
+  assert.equal((await req('POST', at('/watchlist'), { movie: m }, member.cookie)).status, 201);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   const found = body.watchlist.find(w => w.id === m.id);
   assert.ok(found, 'filme não apareceu na watchlist');
   assert.equal(found.title, 'Para Assistir');
@@ -614,44 +684,44 @@ test('adds a movie to the watchlist and lists it back', async () => {
 test('a fila diz quem pôs cada filme', async () => {
   const member = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.equal(body.watchlist.find(w => w.id === m.id).addedBy, member.id);
 });
 
 test('adding the same movie twice keeps a single entry', async () => {
   const member = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
-  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, member.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.equal(body.watchlist.filter(w => w.id === m.id).length, 1);
 });
 
 test('rejects a malformed movie on the watchlist', async () => {
   const member = await newReviewer();
   for (const payload of [{}, { movie: null }, { movie: { title: 'Sem id' } }, { movie: { id: 5 } }]) {
-    const { status } = await req('POST', '/api/watchlist', payload, member.cookie);
+    const { status } = await req('POST', at('/watchlist'), payload, member.cookie);
     assert.equal(status, 400, `payload aceito indevidamente: ${JSON.stringify(payload)}`);
   }
 });
 
 test('a signed-out visitor cannot touch the watchlist', async () => {
   const m = movie();
-  assert.equal((await req('POST', '/api/watchlist', { movie: m })).status, 401);
-  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`)).status, 401);
+  assert.equal((await req('POST', at('/watchlist'), { movie: m })).status, 401);
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`))).status, 401);
 });
 
 test('rating a movie removes it from the watchlist', async () => {
   const reviewer = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, reviewer.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, reviewer.cookie);
 
-  await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, reviewer.cookie);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.ok(!body.watchlist.some(w => w.id === m.id), 'filme avaliado continuou na watchlist');
 });
 
@@ -660,16 +730,16 @@ test('keeps the watchlist in the order the club arranged', async () => {
   const a = movie({ title: 'Primeiro' });
   const b = movie({ title: 'Segundo' });
   const c = movie({ title: 'Terceiro' });
-  for (const m of [a, b, c]) await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  for (const m of [a, b, c]) await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
-  const before = await req('GET', '/api/watchlist');
+  const before = await req('GET', at('/watchlist'));
   const mine = before.body.watchlist.filter(w => [a.id, b.id, c.id].includes(w.id));
   assert.deepEqual(mine.map(w => w.id), [a.id, b.id, c.id], 'novos entram no fim da fila');
 
-  const reordered = await req('PUT', '/api/watchlist/order', { ids: [c.id, a.id, b.id] }, member.cookie);
+  const reordered = await req('PUT', at('/watchlist/order'), { ids: [c.id, a.id, b.id] }, member.cookie);
   assert.equal(reordered.status, 200);
 
-  const after = await req('GET', '/api/watchlist');
+  const after = await req('GET', at('/watchlist'));
   const now = after.body.watchlist.filter(w => [a.id, b.id, c.id].includes(w.id));
   assert.deepEqual(now.map(w => w.id), [c.id, a.id, b.id]);
 });
@@ -678,29 +748,29 @@ test('a reorder that omits an entry does not lose it', async () => {
   const member = await newReviewer();
   const a = movie({ title: 'Fica' });
   const b = movie({ title: 'Tambem fica' });
-  for (const m of [a, b]) await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  for (const m of [a, b]) await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
   // A stale tab reorders without knowing about `b`.
-  await req('PUT', '/api/watchlist/order', { ids: [a.id] }, member.cookie);
+  await req('PUT', at('/watchlist/order'), { ids: [a.id] }, member.cookie);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.ok(body.watchlist.some(w => w.id === b.id), 'a fila perdeu um filme que ninguém removeu');
 });
 
 test('rejects a reorder from a visitor with no session, or a malformed one', async () => {
   const member = await newReviewer();
-  assert.equal((await req('PUT', '/api/watchlist/order', { ids: [] })).status, 401);
-  assert.equal((await req('PUT', '/api/watchlist/order', { ids: 'nao' }, member.cookie)).status, 400);
+  assert.equal((await req('PUT', at('/watchlist/order'), { ids: [] })).status, 401);
+  assert.equal((await req('PUT', at('/watchlist/order'), { ids: 'nao' }, member.cookie)).status, 400);
 });
 
 test('removes a movie from the watchlist', async () => {
   const member = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
-  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`, null, member.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, member.cookie)).status, 204);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.ok(!body.watchlist.some(w => w.id === m.id));
 });
 
@@ -714,13 +784,13 @@ test('ninguém tira da fila o filme que outra pessoa pôs', async () => {
   const dono = await newReviewer('Quem Pos');
   const outro = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, dono.cookie);
 
-  const refused = await req('DELETE', `/api/watchlist/${m.id}`, null, outro.cookie);
+  const refused = await req('DELETE', at(`/watchlist/${m.id}`), null, outro.cookie);
   assert.equal(refused.status, 403);
   assert.match(refused.body.error, /Quem Pos/);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.ok(body.watchlist.some(w => w.id === m.id), 'a fila perdeu um filme que ninguém tinha direito de tirar');
 });
 
@@ -731,9 +801,9 @@ test('o administrador tira o que for', async () => {
   const dono = await newReviewer();
   const admin = await newAdmin();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, dono.cookie);
 
-  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`, null, admin.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, admin.cookie)).status, 204);
 });
 
 /* Sumir com uma linha que já não existe não é erro de ninguém: o pedido queria
@@ -742,10 +812,10 @@ test('o administrador tira o que for', async () => {
 test('tirar um filme que já saiu não é erro', async () => {
   const member = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, member.cookie);
-  await req('DELETE', `/api/watchlist/${m.id}`, null, member.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, member.cookie);
+  await req('DELETE', at(`/watchlist/${m.id}`), null, member.cookie);
 
-  assert.equal((await req('DELETE', `/api/watchlist/${m.id}`, null, member.cookie)).status, 204);
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, member.cookie)).status, 204);
 });
 
 /* Avaliar continua tirando o filme da fila seja de quem for a escolha: quem pôs
@@ -755,11 +825,11 @@ test('avaliar tira da fila mesmo o filme que outra pessoa pôs', async () => {
   const dono = await newReviewer();
   const outro = await newReviewer();
   const m = movie();
-  await req('POST', '/api/watchlist', { movie: m }, dono.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, dono.cookie);
 
-  const rated = await req('POST', '/api/reviews', { movie: m, scores: scoresFor('Terror', 7) }, outro.cookie);
+  const rated = await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, outro.cookie);
   assert.equal(rated.status, 201);
 
-  const { body } = await req('GET', '/api/watchlist');
+  const { body } = await req('GET', at('/watchlist'));
   assert.ok(!body.watchlist.some(w => w.id === m.id), 'o filme avaliado continuou na fila');
 });

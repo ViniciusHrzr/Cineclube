@@ -10,7 +10,7 @@ import { Conversation, TakeVotes } from '@/components/social';
    abertura em components/take.tsx. */
 import { Breakdown } from '@/components/take';
 import { PersonName, PersonReel } from '@/components/person';
-import { api, fmt, type FeedEvent, type Review } from '@/lib/api';
+import { capi, fmt, type FeedEvent, type Review } from '@/lib/api';
 import { useLive } from '@/lib/live';
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -131,7 +131,7 @@ export function FeedScreen() {
 
   const load = useCallback(async () => {
     try {
-      const got = await api<{ items: FeedEvent[] }>('/api/feed');
+      const got = await capi<{ items: FeedEvent[] }>('/feed');
       setItems(got.items);
       setError(null);
     } catch (e) {
