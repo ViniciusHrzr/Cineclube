@@ -349,18 +349,29 @@ export default function App() {
      lista só traz contas órfãs de um clube em que a pessoa já está (ver
      auth.js), então esta tela naturalmente aparece DEPOIS de o ADM ter aceitado
      a entrada dela — que é a ordem certa e é o que torna o PIN uma prova
-     suficiente. Some sozinha quando a última conta for reclamada. */
+     suficiente.
+
+     QUANDO oferecer é decidido inteiramente no servidor: quem já reivindicou e
+     quem já disse que não é nenhuma recebem uma lista vazia. Esta tela não tem
+     opinião sobre isso, e é de propósito — a versão em que ela tinha perguntava
+     a mesma coisa a todo mundo, toda vez, para sempre. */
   if (orphans && orphans.length > 0 && !skippedClaim) {
     return (
       <ClaimAccount
         accounts={orphans}
         onClaimed={() => {
-          setOrphans([]);
-          void checkAuth();
-          // A ficha, a fila e a conversa mudaram de dono: recarregar é o honesto.
+          /* A ficha, a fila e a conversa mudaram de dono, e a sessão aponta para
+             outra conta. Recarregar é mais honesto do que costurar isso a mão. */
           location.reload();
         }}
-        onSkip={() => setSkippedClaim(true)}
+        onSkip={() => {
+          setSkippedClaim(true);
+          // Some agora na tela; o servidor garante que não volte amanhã.
+          void auth.dismissClaim().catch(() => {
+            /* Falhou gravar: a tela some nesta sessão e a pergunta volta depois.
+               Insistir com um erro seria punir quem só disse "não sou daqui". */
+          });
+        }}
       />
     );
   }

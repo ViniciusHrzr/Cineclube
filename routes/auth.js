@@ -288,6 +288,14 @@ router.get('/claimable', auth.requireSession, wrap(async (req, res) => {
   });
 }));
 
+/* "Não é nenhuma dessas." Grava a resposta, e a tela não volta — em navegador
+   nenhum. Antes isto era um `useState` que sumia no primeiro F5, o que na
+   prática queria dizer que a pergunta não tinha resposta possível. */
+router.post('/claim/dismiss', auth.requireSession, wrap(async (req, res) => {
+  await auth.dismissClaim(req.session.reviewer_id);
+  res.json({ ok: true });
+}));
+
 router.post('/claim', auth.requireSession, wrap(async (req, res) => {
   const { reviewerId, pin } = req.body || {};
   const me = req.session.reviewer_id;

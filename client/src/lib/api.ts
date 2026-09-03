@@ -109,6 +109,9 @@ export const auth = {
     ),
   claim: (reviewerId: string, pin: string) =>
     post<{ reviewer: SessionUser }>('/api/auth/claim', { reviewerId, pin }),
+  /* "Não é nenhuma dessas." Gravado no servidor, e não aqui: a resposta tem de
+     valer no celular da pessoa também. */
+  dismissClaim: () => post<{ ok: true }>('/api/auth/claim/dismiss', {}),
 };
 
 /* ── as salas ─────────────────────────────────────────────────────────────

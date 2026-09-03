@@ -12,6 +12,7 @@ const app = require('../server');
 const db = require('../db');
 const live = require('../live');
 const screening = require('../screening');
+const auth = require('../auth');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
@@ -577,6 +578,71 @@ test('quem é do clube reivindica, e leva o histórico junto', async () => {
   const acervo = await req('GET', at(sala, '/reviews'), null, cookie);
   assert.ok(acervo.body.reviews.some(r => r.reviewerId === velha.id));
   assert.equal(await db.prepare('SELECT id FROM reviewers WHERE id = ?').get(nova.id), undefined);
+});
+
+/* ── a quem a tela é oferecida ───────────────────────────────────────────
+   Estes três nasceram de um defeito em produção: a tela reaparecia para todo
+   mundo, toda vez. A lista é "contas órfãs no seu clube", e ela continua cheia
+   depois de você reclamar a sua — sobram as das outras pessoas. */
+
+test('quem JÁ reivindicou não é perguntado de novo', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Dnv ${++seq}`, owner: dono.id });
+  const minha = await contaAntiga(`Minha ${++seq}`);
+  const alheia = await contaAntiga(`Alheia ${++seq}`);
+  await kit.join(sala.id, minha.id);
+  await kit.join(sala.id, alheia.id);
+
+  const quem = await kit.signIn();
+  await kit.join(sala.id, quem.id);
+
+  const antes = await req('GET', '/api/auth/claimable', null, quem.cookie);
+  assert.equal(antes.body.accounts.length, 2);
+
+  const feito = await req('POST', '/api/auth/claim', { reviewerId: minha.id, pin: minha.pin }, quem.cookie);
+  assert.equal(feito.status, 200);
+  const cookie = feito.setCookie.split(';')[0];
+
+  /* Sobra uma conta órfã na sala — a de outra pessoa — e é justamente por isso
+     que a tela voltava. Quem já é uma conta antiga não tem o que reivindicar. */
+  const depois = await req('GET', '/api/auth/claimable', null, cookie);
+  assert.deepEqual(depois.body.accounts, [], 'a tela não pode voltar para quem já se ligou');
+});
+
+test('quem diz que não é nenhuma nunca mais é perguntado', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Dispensa ${++seq}`, owner: dono.id });
+  const orfa = await contaAntiga(`Órfã ${++seq}`);
+  await kit.join(sala.id, orfa.id);
+
+  const novato = await kit.signIn();
+  await kit.join(sala.id, novato.id);
+  assert.equal((await req('GET', '/api/auth/claimable', null, novato.cookie)).body.accounts.length, 1);
+
+  assert.equal((await req('POST', '/api/auth/claim/dismiss', {}, novato.cookie)).status, 200);
+  const depois = await req('GET', '/api/auth/claimable', null, novato.cookie);
+  assert.deepEqual(depois.body.accounts, [], 'a resposta é gravada, não é estado de tela');
+
+  /* E vale noutro navegador: é uma coluna na conta, não `localStorage`. */
+  const outroNavegador = await auth.createSession(novato.id);
+  const deLa = await req('GET', '/api/auth/claimable', null, `cc_session=${outroNavegador}`);
+  assert.deepEqual(deLa.body.accounts, []);
+});
+
+test('dispensar não impede ninguém de reivindicar depois, se pedir', async () => {
+  /* Dispensar é sobre a PERGUNTA, não sobre o direito. Quem disse "não é
+     nenhuma" e depois lembrar que era, ainda consegue — a rota continua lá. */
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Mudou de ideia ${++seq}`, owner: dono.id });
+  const orfa = await contaAntiga(`Era Minha ${++seq}`);
+  await kit.join(sala.id, orfa.id);
+
+  const quem = await kit.signIn();
+  await kit.join(sala.id, quem.id);
+  await req('POST', '/api/auth/claim/dismiss', {}, quem.cookie);
+
+  const res = await req('POST', '/api/auth/claim', { reviewerId: orfa.id, pin: orfa.pin }, quem.cookie);
+  assert.equal(res.status, 200);
 });
 
 test('uma conta já reivindicada some da lista e não é reivindicável de novo', async () => {

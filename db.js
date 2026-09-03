@@ -464,6 +464,12 @@ async function migrate() {
      Por pessoa, então limpar o próprio sino não mexe no de ninguém. */
   await addReviewerCol('notifications_cleared_at', 'notifications_cleared_at TEXT');
 
+  /* "Não é nenhuma dessas." A tela de reivindicar conta antiga é oferecida a
+     quem tem contas órfãs no clube, e quem chegou agora e nunca teve conta aqui
+     precisa poder dispensá-la PARA SEMPRE — não até o próximo F5, e não só neste
+     navegador. Por isso é uma coluna e não `localStorage`. */
+  await addReviewerCol('claim_dismissed_at', 'claim_dismissed_at TEXT');
+
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');

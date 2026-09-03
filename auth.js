@@ -290,7 +290,38 @@ const CLAIMABLE = `
   ORDER BY r.name ASC
 `;
 
-const claimable = reviewerId => db.prepare(CLAIMABLE).all(reviewerId, reviewerId);
+/* ── e para QUEM a lista existe ────────────────────────────────────────────
+   Duas condições sobre quem pergunta, e as duas nasceram do mesmo defeito: a
+   tela reaparecia para todo mundo, toda vez, para sempre.
+
+   O motivo é que a lista é "contas órfãs no seu clube", e ela continua cheia
+   depois de você reclamar a sua — sobram as das outras nove pessoas. Quem já
+   reivindicou era perguntado de novo no login seguinte, e quem nunca teve conta
+   aqui era perguntado eternamente.
+
+   1. **Quem já é uma conta antiga não pergunta nada.** Reivindicar move as
+      credenciais para a linha velha, que carrega `pin_hash`; então ter
+      `pin_hash` é exatamente a marca de "esta conta já é a de antes". Serve para
+      quem reivindicou e para quem nunca deixou de ser.
+
+   2. **Quem dispensou, dispensou.** `claim_dismissed_at` é a resposta gravada
+      de "não é nenhuma dessas", e ela vale em qualquer navegador.
+
+   As duas moram aqui, num lugar só, e não na tela: uma regra de quando oferecer
+   que vive no cliente é uma regra que o próximo cliente esquece. */
+async function claimable(reviewerId) {
+  const quem = await db
+    .prepare('SELECT pin_hash, claim_dismissed_at FROM reviewers WHERE id = ?')
+    .get(reviewerId);
+  if (!quem || quem.pin_hash || quem.claim_dismissed_at) return [];
+  return db.prepare(CLAIMABLE).all(reviewerId, reviewerId);
+}
+
+/** "Não é nenhuma dessas." Grava, e a tela não volta. */
+const dismissClaim = reviewerId =>
+  db
+    .prepare("UPDATE reviewers SET claim_dismissed_at = datetime('now') WHERE id = ?")
+    .run(reviewerId);
 
 /* A mesma condição, para uma conta só. É ela que a rota de reivindicar cobra
    antes de conferir PIN nenhum — sem isto, a lista seria uma sugestão e o id
@@ -528,6 +559,7 @@ module.exports = {
   register,
   accountForGoogle,
   claimable,
+  dismissClaim,
   canClaim,
   checkClaimPin,
   claimAccount,
