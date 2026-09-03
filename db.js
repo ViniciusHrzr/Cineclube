@@ -580,6 +580,21 @@ async function migrate() {
          nasce fechado e devia estar aberto é um menu; o contrário é o acervo
          de um grupo de amigos exposto sem ninguém ter pedido. */
       visibility TEXT NOT NULL DEFAULT 'private',
+      /* ── a política de leitura de um clube fechado ────────────────────
+         Fechado deixou de ser uma coisa só. O ADM decide, em dois interruptores,
+         o que um estranho enxerga: as avaliações, os comentários, os dois ou
+         nenhum. Com os dois ligados o clube fica fechado apenas na porta — ler é
+         livre, entrar e avaliar não.
+
+         Zero por padrão, e isso é deliberado: nenhum clube que já existe pode
+         mudar de comportamento porque uma coluna nova apareceu. Abrir a leitura
+         é sempre um gesto de alguém.
+
+         Dormentes enquanto o clube é aberto — lá tudo é legível de qualquer
+         jeito. Voltam a valer se ele fechar de novo, o que é a coisa certa: a
+         política que o ADM escolheu não se perde por ele ter aberto um mês. */
+      show_reviews INTEGER NOT NULL DEFAULT 0,
+      show_comments INTEGER NOT NULL DEFAULT 0,
       /* SET NULL e não CASCADE: quem fundou o clube pode sair dele um dia, e o
          clube não vai junto. Quem manda é o papel em club_members. */
       created_by TEXT REFERENCES reviewers(id) ON DELETE SET NULL,
@@ -635,8 +650,13 @@ async function migrate() {
     prepare("INSERT OR IGNORE INTO meta (key, value) VALUES (?, datetime('now'))").run(key);
 
   // Para um banco que já criou estas tabelas antes destas colunas existirem.
-  if (!(await columnsOf('clubs')).includes('tagline')) {
+  const clubCols = await columnsOf('clubs');
+  if (!clubCols.includes('tagline')) {
     await exec('ALTER TABLE clubs ADD COLUMN tagline TEXT');
+  }
+  if (!clubCols.includes('show_reviews')) {
+    await exec('ALTER TABLE clubs ADD COLUMN show_reviews INTEGER NOT NULL DEFAULT 0');
+    await exec('ALTER TABLE clubs ADD COLUMN show_comments INTEGER NOT NULL DEFAULT 0');
   }
 
   /* ── o clube fundador nasceu aberto, e não devia ───────────────────────

@@ -405,6 +405,59 @@ function Account({
   );
 }
 
+/* ── um interruptor ───────────────────────────────────────────────────────
+   Uma linha inteira clicável, com a lâmpada à esquerda e o que ela faz escrito
+   ao lado. Não é um `checkbox` nem um seletor de arrastar: o produto já tem um
+   vocabulário para "isto está ligado", e é a lâmpada — o ponto de seis pixels
+   com o brilho, a única coisa redonda deste sistema (ver DESIGN.md).
+
+   Vermelho aceso e `ink-faint` apagado, como a lâmpada da legenda na sala de
+   projeção e a da Sessão na marquise. Um interruptor que acendesse latão diria
+   "selecionado", que é outra coisa: latão é escolha, vermelho é funcionamento. */
+function Switch({
+  on,
+  onToggle,
+  title,
+  line,
+}: {
+  on: boolean;
+  onToggle: () => void;
+  title: string;
+  line: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      className={cn(
+        'flex w-full items-start gap-3 rounded-cell px-3 py-2.5 text-left ring-1 transition-colors',
+        on ? 'bg-dye-red/[0.07] ring-dye-red-lit/40' : 'ring-house-rail hover:ring-white/20'
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'mt-[3px] h-1.5 w-1.5 flex-none rounded-full transition-colors',
+          on ? 'bg-dye-red-lit shadow-[0_0_7px_rgba(242,86,74,0.85)]' : 'bg-ink-faint'
+        )}
+      />
+      <span className="min-w-0">
+        <span
+          className={cn(
+            'block font-display text-[12px] uppercase leading-none tracking-[0.12em]',
+            on ? 'text-dye-red-lit' : 'text-ink'
+          )}
+        >
+          {title}
+        </span>
+        <span className="mt-1.5 block text-[12px] leading-snug text-ink-dim">{line}</span>
+      </span>
+    </button>
+  );
+}
+
 /* ── a minha senha ────────────────────────────────────────────────────────
    A atual é exigida quando já existe uma, então quem encontra um navegador
    destrancado ainda não consegue trancar o dono fora da própria conta.
@@ -785,9 +838,47 @@ function ClubRoom() {
           <p className="mt-2 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
             {club.club.visibility === 'public'
               ? 'Qualquer pessoa entra e já pode avaliar, e o acervo é lido por quem passar. Abrir agora admite quem estava esperando na fila de pedidos.'
-              : 'O clube aparece no saguão com nome e foto, mas o acervo é só de quem é daqui — e entrar depende de você aprovar.'}
+              : 'O clube aparece no saguão com nome e foto, mas entrar depende de você aprovar. O que um estranho enxerga daqui de dentro você decide abaixo.'}
           </p>
         </div>
+
+        {/* ── o que um estranho enxerga ───────────────────────────────────
+            Só faz sentido num clube fechado: num aberto tudo é legível de
+            qualquer jeito, e desenhar dois interruptores que não fazem nada
+            seria a tela oferecendo uma escolha que ela não vai honrar.
+
+            Os dois ligados deixam o clube fechado apenas na PORTA: ler é livre,
+            entrar e avaliar continuam dependendo de você. */}
+        {club.club.visibility === 'private' ? (
+          <div className="mt-6">
+            <span className="legend mb-2 block">O que quem não é do clube vê</span>
+            <div className="flex flex-col gap-2">
+              <Switch
+                on={!!club.club.showReviews}
+                onToggle={() => void saveClub({ showReviews: !club.club.showReviews })}
+                title="Mostrar avaliações"
+                line="As fichas do clube, com as notas e os onze critérios."
+              />
+              <Switch
+                on={!!club.club.showComments}
+                onToggle={() => void saveClub({ showComments: !club.club.showComments })}
+                title="Mostrar comentários"
+                line="A conversa em cima das fichas, e as concordâncias."
+              />
+            </div>
+            <p className="mt-3 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
+              {club.club.showReviews && club.club.showComments
+                ? 'Com as duas ligadas, o clube fica fechado só na porta: qualquer pessoa lê tudo, e entrar e avaliar continuam dependendo de você aprovar.'
+                : club.club.showReviews || club.club.showComments
+                  ? 'A fila e o elenco acompanham: quem pode ler o que o clube escreveu vê quem escreveu e o que ele pretende assistir.'
+                  : 'Nada é legível de fora. Quem não é do clube vê só o nome, a foto e quantas pessoas estão aqui.'}
+            </p>
+            <p className="mt-2 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-faint">
+              A sala de projeção nunca abre: assistir junto é de dentro, e o
+              painel dela diz quem está na sala agora.
+            </p>
+          </div>
+        ) : null}
 
         {note ? <p className="mt-4 text-[13px] text-dye-red-lit">{note}</p> : null}
       </Region>

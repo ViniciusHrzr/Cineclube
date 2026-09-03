@@ -50,6 +50,11 @@ export type Club = {
   slug: string;
   tagline: string | null;
   visibility: 'public' | 'private';
+  /* A política de leitura de um clube FECHADO: o que um estranho enxerga. Num
+     clube aberto ficam dormentes — lá tudo é legível de qualquer jeito — mas
+     continuam gravadas, para fechar a sala devolver o que o ADM tinha escolhido. */
+  showReviews?: boolean;
+  showComments?: boolean;
   photo: string | null;
   createdAt?: string | null;
   /** Só quando você é de lá: 'admin' ou 'member'. */
@@ -124,7 +129,12 @@ export const clubs = {
   create: (body: { name: string; tagline?: string; visibility: 'public' | 'private'; photo?: string | null }) =>
     post<{ club: Club }>('/api/clubs', body),
   get: (slug: string) => api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`),
-  update: (slug: string, patch: Partial<Pick<Club, 'name' | 'tagline' | 'visibility'>> & { photo?: string | null }) =>
+  update: (
+    slug: string,
+    patch: Partial<Pick<Club, 'name' | 'tagline' | 'visibility' | 'showReviews' | 'showComments'>> & {
+      photo?: string | null;
+    }
+  ) =>
     api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

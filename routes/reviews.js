@@ -108,12 +108,12 @@ function toReviewDTO(row) {
   };
 }
 
-router.get('/', clubs.requireReadable, wrap(async (req, res) => {
+router.get('/', clubs.canRead('reviews'), wrap(async (req, res) => {
   const rows = await listStmt.all(req.club.id);
   res.json({ reviews: rows.map(toReviewDTO) });
 }));
 
-router.get('/averages', clubs.requireReadable, wrap(async (req, res) => {
+router.get('/averages', clubs.canRead('reviews'), wrap(async (req, res) => {
   const out = {};
   for (const row of await averagesStmt.all(req.club.id)) {
     out[row.movie_id] = { avg: row.avg, count: row.count };

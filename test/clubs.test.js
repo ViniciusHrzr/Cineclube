@@ -140,6 +140,140 @@ test('mas o conteúdo de um clube fechado é só de quem é dele', async () => {
   assert.equal((await req('GET', at(sala, '/reviews'))).status, 403);
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A política de leitura de um clube fechado.
+
+   Fechado deixou de ser uma coisa só: o ADM decide, em dois interruptores, se um
+   estranho vê as avaliações, os comentários, os dois ou nenhum. Com os dois
+   ligados o clube fica fechado APENAS NA PORTA — ler é livre, entrar e avaliar
+   não.
+
+   Uma regra de leitura que erra não parece um defeito: ninguém vê um erro, uma
+   pessoa só vê o que não era dela. Por isso a matriz inteira está aqui, e não
+   uma amostra dela.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Uma sala fechada com conteúdo dentro, e um estranho olhando de fora. */
+async function salaComConteudo(nome, politica = {}) {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const sala = await kit.makeClub({ name: `${nome} ${++seq}`, owner: dono.id });
+
+  const ficha = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, dono.cookie
+  );
+  const outro = await kit.signIn();
+  await kit.join(sala.id, outro.id);
+  await req('POST', at(sala, `/social/reviews/${ficha.body.id}/comments`), { body: 'discordo' }, outro.cookie);
+  await req('POST', at(sala, '/watchlist'), { movie: movie() }, dono.cookie);
+
+  if (Object.keys(politica).length) {
+    await req('PATCH', at(sala, ''), politica, dono.cookie);
+  }
+  return { dono, fora, sala };
+}
+
+test('nenhum interruptor ligado: nada é legível de fora', async () => {
+  const { fora, sala } = await salaComConteudo('Trancado');
+  for (const rota of ['/reviews', '/social', '/feed', '/watchlist', '/reviewers']) {
+    assert.equal((await req('GET', at(sala, rota), null, fora.cookie)).status, 403, rota);
+  }
+});
+
+test('só avaliações: as fichas abrem, a conversa não', async () => {
+  const { fora, sala } = await salaComConteudo('Só fichas', { showReviews: true });
+
+  const fichas = await req('GET', at(sala, '/reviews'), null, fora.cookie);
+  assert.equal(fichas.status, 200);
+  assert.equal(fichas.body.reviews.length, 1);
+
+  assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 403);
+
+  /* A fila e o elenco acompanham o interruptor mais permissivo: quem lê o que o
+     clube escreveu vê quem escreveu e o que ele pretende assistir. */
+  assert.equal((await req('GET', at(sala, '/watchlist'), null, fora.cookie)).status, 200);
+  assert.equal((await req('GET', at(sala, '/reviewers'), null, fora.cookie)).status, 200);
+
+  // E o mural fica com metade das linhas.
+  const mural = await req('GET', at(sala, '/feed'), null, fora.cookie);
+  assert.equal(mural.status, 200);
+  assert.ok(mural.body.items.some(i => i.kind === 'review'));
+  assert.ok(!mural.body.items.some(i => i.kind === 'comment'), 'o mural não pode vazar pelo lado');
+});
+
+test('só comentários: a conversa abre, as fichas não', async () => {
+  const { fora, sala } = await salaComConteudo('Só conversa', { showComments: true });
+
+  assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 200);
+  assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 403);
+  assert.equal((await req('GET', at(sala, '/reviews/averages'), null, fora.cookie)).status, 403);
+
+  const mural = await req('GET', at(sala, '/feed'), null, fora.cookie);
+  assert.ok(mural.body.items.some(i => i.kind === 'comment'));
+  assert.ok(!mural.body.items.some(i => i.kind === 'review'));
+});
+
+test('as duas ligadas: fechado apenas na porta', async () => {
+  const { fora, sala } = await salaComConteudo('Aberto para ler', {
+    showReviews: true,
+    showComments: true,
+  });
+
+  for (const rota of ['/reviews', '/social', '/feed', '/watchlist', '/reviewers']) {
+    assert.equal((await req('GET', at(sala, rota), null, fora.cookie)).status, 200, rota);
+  }
+  // Até deslogado.
+  assert.equal((await req('GET', at(sala, '/reviews'))).status, 200);
+
+  /* O que continua trancado é o que o usuário pediu que continuasse: entrar e
+     avaliar. Ler tudo não vira direito de escrever nada. */
+  const escreve = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 5) }, fora.cookie
+  );
+  assert.equal(escreve.status, 403);
+  assert.equal((await req('POST', at(sala, '/watchlist'), { movie: movie() }, fora.cookie)).status, 403);
+
+  const entra = await req('POST', at(sala, '/join'), {}, fora.cookie);
+  assert.equal(entra.body.requested, true, 'entrar continua sendo um pedido');
+});
+
+test('a sala de projeção nunca abre, com interruptor nenhum', async () => {
+  const { fora, sala } = await salaComConteudo('Projeção', {
+    showReviews: true,
+    showComments: true,
+  });
+  assert.equal((await req('GET', at(sala, '/screening'), null, fora.cookie)).status, 403);
+  assert.equal((await req('GET', at(sala, '/notifications'), null, fora.cookie)).status, 403);
+});
+
+test('só o ADM mexe na política de leitura', async () => {
+  const { fora, sala } = await salaComConteudo('Quem manda');
+  const res = await req('PATCH', at(sala, ''), { showReviews: true }, fora.cookie);
+  assert.equal(res.status, 403);
+});
+
+test('a política sobrevive a um período de porta aberta', async () => {
+  const { dono, fora, sala } = await salaComConteudo('Vai e volta', { showReviews: true });
+
+  await req('PATCH', at(sala, ''), { visibility: 'public' }, dono.cookie);
+  assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 200, 'aberto, tudo abre');
+
+  await req('PATCH', at(sala, ''), { visibility: 'private' }, dono.cookie);
+  const volta = await req('GET', at(sala, ''), null, dono.cookie);
+  assert.equal(volta.body.club.showReviews, true, 'a escolha do ADM não se perde por ele ter aberto um mês');
+  assert.equal(volta.body.club.showComments, false);
+  assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 403);
+});
+
+test('um clube fechado nasce sem mostrar nada', async () => {
+  const quem = await kit.signIn();
+  const res = await req(
+    'POST', '/api/clubs', { name: `Novo Fechado ${++seq}`, visibility: 'private' }, quem.cookie
+  );
+  assert.equal(res.body.club.showReviews, false);
+  assert.equal(res.body.club.showComments, false, 'abrir a leitura é sempre um gesto de alguém');
+});
+
 test('um clube fechado aparece na vitrine — é assim que se pede para entrar', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();

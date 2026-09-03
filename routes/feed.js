@@ -168,11 +168,32 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     });
   }
 
+  /* ── o mural obedece à política de leitura ────────────────────────────
+     O mural é a única tela feita de dois tipos de linha, então ele é a única
+     que precisa filtrar em vez de simplesmente responder ou recusar: um clube
+     fechado que mostra as avaliações e esconde os comentários tem um mural com
+     metade das linhas.
+
+     A guarda desta rota é `any` — chegar até aqui já exige que pelo menos um dos
+     dois esteja ligado. O que sobra é decidir linha a linha, e é aqui, no
+     servidor: um filtro no cliente seria o dado saindo daqui e a tela prometendo
+     não desenhá-lo. */
+  const filtrado =
+    req.club.isMember || req.club.visibility === 'public'
+      ? items
+      : items.filter(i =>
+          i.kind === 'review'
+            ? req.club.showReviews
+            : i.kind === 'comment'
+              ? req.club.showComments
+              : req.club.showReviews && req.club.showComments
+        );
+
   /* Ordenado depois de juntar: as duas chegam ordenadas entre si e desordenadas
      uma com a outra. Comparação de string funciona porque datetime('now') grava
      YYYY-MM-DD HH:MM:SS, que ordena como texto. */
-  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  res.json({ items: items.slice(0, LIMIT) });
+  filtrado.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  res.json({ items: filtrado.slice(0, LIMIT) });
 }));
 
 module.exports = router;

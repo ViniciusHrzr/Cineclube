@@ -142,7 +142,7 @@ function toVoteDTO(row) {
 
 /* Aberto, como todo o resto da leitura neste app. O que o PIN protege é
    escrever: a ameaça aqui é um amigo votando no lugar do outro, não sigilo. */
-router.get('/', clubs.requireReadable, wrap(async (req, res) => {
+router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   const [comments, votes, likes] = await Promise.all([
     commentsStmt.all(req.club.id), votesStmt.all(req.club.id), likesStmt.all(req.club.id)
   ]);

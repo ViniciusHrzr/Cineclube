@@ -66,6 +66,10 @@ async function resolve(req, res, next) {
       role: mine?.role || null,
       isMember: !!mine,
       isClubAdmin: mine?.role === 'admin',
+      /* A política de leitura de um clube fechado. Num clube aberto elas ficam
+         dormentes — lá tudo é legível de qualquer jeito. */
+      showReviews: !!club.show_reviews,
+      showComments: !!club.show_comments,
     };
     next();
   } catch (e) {
@@ -100,13 +104,40 @@ function requireVisible(_req, _res, next) {
   next();
 }
 
-/** O conteúdo. De quem é da sala — ou de qualquer um, se ela for aberta. */
-function requireReadable(req, res, next) {
-  if (req.club.isMember || req.club.visibility === 'public') return next();
-  res.status(403).json({
-    error: 'Este clube é fechado. Peça para entrar para ver o que tem dentro.',
-  });
+/* ── o conteúdo, e ele não é uma coisa só ─────────────────────────────────
+   Um clube fechado tem uma política de leitura: o ADM decide, em dois
+   interruptores, se um estranho vê as avaliações, os comentários, os dois ou
+   nenhum. Com os dois ligados o clube fica fechado apenas na porta.
+
+   `o quê` é 'reviews', 'comments', ou 'any'. O último é para o que não é nem uma
+   coisa nem outra — a fila e o elenco — e ele segue o interruptor mais
+   permissivo: quem pode ler o que o clube escreveu pode saber quem escreveu e o
+   que ele pretende assistir. Esconder o elenco enquanto se mostram as
+   avaliações assinadas por ele seria uma regra que a própria tela desmente.
+
+   A sala de projeção não passa por aqui em caso nenhum: assistir junto é de
+   dentro, e o painel dela diz quem está na sala AGORA — informação sobre
+   pessoas, não sobre filmes. */
+function canRead(what) {
+  return function readable(req, res, next) {
+    if (req.club.isMember || req.club.visibility === 'public') return next();
+
+    const liberado =
+      what === 'reviews'
+        ? req.club.showReviews
+        : what === 'comments'
+          ? req.club.showComments
+          : req.club.showReviews || req.club.showComments;
+
+    if (liberado) return next();
+    res.status(403).json({
+      error: 'Este clube é fechado. Peça para entrar para ver o que tem dentro.',
+    });
+  };
 }
+
+/** O que não é avaliação nem comentário: a fila, o elenco, a fachada de dentro. */
+const requireReadable = canRead('any');
 
 /* Escrever é de quem é do clube, sempre — e a diferença entre aberto e fechado
    nunca é essa: é só como se entra. Num clube aberto, entrar é um clique; num
@@ -158,6 +189,7 @@ module.exports = {
   findClub,
   resolve,
   requireVisible,
+  canRead,
   requireReadable,
   requireMember,
   requireClubAdmin,

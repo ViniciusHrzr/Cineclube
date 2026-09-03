@@ -33,6 +33,11 @@ function toDTO(row, extra = {}) {
     slug: row.slug,
     tagline: row.tagline || null,
     visibility: row.visibility,
+    /* A política de leitura de um clube fechado. Vai sempre, inclusive num clube
+       aberto — lá ela está dormente, e a folha de ajustes precisa saber o que
+       mostrar marcado se o ADM fechar a sala de novo. */
+    showReviews: !!row.show_reviews,
+    showComments: !!row.show_comments,
     photo: photoUrl(row),
     createdAt: row.created_at ?? null,
     ...extra,
@@ -233,6 +238,18 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
         })));
         await db.prepare('DELETE FROM club_join_requests WHERE club_id = ?').run(req.club.id);
       }
+    }
+  }
+
+  /* ── o que um estranho enxerga de um clube fechado ─────────────────────
+     Dois interruptores, gravados sempre — mesmo com o clube aberto, onde não
+     fazem diferença nenhuma. Assim a política sobrevive a um período de porta
+     aberta: fechar de novo devolve exatamente o que o ADM tinha escolhido, em
+     vez de zerar em silêncio. */
+  for (const [campo, coluna] of [['showReviews', 'show_reviews'], ['showComments', 'show_comments']]) {
+    if (campo in patch) {
+      await db.prepare(`UPDATE clubs SET ${coluna} = ? WHERE id = ?`)
+        .run(patch[campo] ? 1 : 0, req.club.id);
     }
   }
 
