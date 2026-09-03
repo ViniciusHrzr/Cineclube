@@ -27,9 +27,9 @@ import { useEffect, useRef } from 'react';
    é a diferença entre uma tela atrasada e uma tela quebrada.
    ══════════════════════════════════════════════════════════════════════════ */
 
-export type LiveKind = 'social' | 'reviews' | 'watchlist' | 'reviewers';
+export type LiveKind = 'social' | 'reviews' | 'watchlist' | 'reviewers' | 'screening';
 
-const KINDS: readonly string[] = ['social', 'reviews', 'watchlist', 'reviewers'];
+const KINDS: readonly string[] = ['social', 'reviews', 'watchlist', 'reviewers', 'screening'];
 
 type Frame = { kind: LiveKind | 'hello'; by: string | null; at: number };
 

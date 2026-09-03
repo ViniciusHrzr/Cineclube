@@ -76,6 +76,53 @@ const IDLE: ScreeningState = {
   viewers: [],
 };
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A sala vista de fora.
+
+   Tudo acima desta linha é para quem está assistindo: o relógio, a deriva, o
+   stream. Isto é para quem NÃO está — a marquise, que só precisa saber que a
+   lâmpada acende e o que dizer quando alguém passa o mouse nela.
+
+   Uma rota, e não o stream da sala, e a razão é mecânica: assinar
+   `/api/screening/stream` chama `attach` no servidor, ou seja, entrar na sala
+   pelo simples fato de ter o app aberto. O clube inteiro apareceria na lista de
+   quem está dentro, e cada aba gastaria uma das três conexões que cada pessoa
+   tem. `GET /api/screening` é a mesma verdade sem nenhuma das duas coisas.
+
+   Quatro campos e não o snapshot inteiro, de propósito: `position` e
+   `serverTime` mudam sozinhos e não param nunca, e guardá-los na raiz do app
+   seria redesenhar o produto todo a cada quadro para acender um ponto de oito
+   pixels.
+   ══════════════════════════════════════════════════════════════════════════ */
+export type ScreeningPulse = {
+  /** Há sessão aberta. Pausada continua sendo sessão aberta. */
+  open: boolean;
+  status: 'playing' | 'paused';
+  title: string | null;
+  viewers: number;
+};
+
+/** A sala escura. O estado antes de perguntar, e o estado quando não há nada. */
+export const DARK: ScreeningPulse = { open: false, status: 'paused', title: null, viewers: 0 };
+
+export async function readPulse(): Promise<ScreeningPulse> {
+  const s = await api<ScreeningState>('/api/screening');
+  return {
+    open: !!s.open,
+    status: s.status === 'playing' ? 'playing' : 'paused',
+    title: s.movie?.title ?? null,
+    viewers: s.viewers?.length ?? 0,
+  };
+}
+
+/** Dois pulsos são o mesmo pulso. Ver o uso em App.tsx: é o que evita que uma
+ *  pergunta periódica redesenhe o app inteiro para dizer que nada mudou. */
+export function samePulse(a: ScreeningPulse, b: ScreeningPulse) {
+  return (
+    a.open === b.open && a.status === b.status && a.title === b.title && a.viewers === b.viewers
+  );
+}
+
 /** Where the film is now, according to a state and a server clock reading. */
 export function positionAt(state: ScreeningState, serverNow: number) {
   if (state.status !== 'playing') return state.position;

@@ -142,6 +142,22 @@ export default {
           '55%': { opacity: '1', transform: 'scale(1.25)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        /* ── a lâmpada de gravação ────────────────────────────────────────
+           Um filamento respirando, não um pisca-pisca. Esta lâmpada fica acesa
+           na beirada do olho de quatro pessoas por duas horas seguidas, e um
+           liga-desliga duro nesse tempo é a versão em interface de alguém
+           batendo no vidro. O brilho é que respira; o ponto nunca apaga.
+
+           Termina em 100% ACESO, e é isto que faz a preferência de menos
+           movimento funcionar de graça: index.css corta todo laço em uma volta,
+           e o que sobra aqui é uma lâmpada acesa e parada — que é exatamente a
+           coisa que se queria dizer. O brilho é declarado nas duas pontas e
+           também na classe do elemento, para o repouso depois dessa única volta
+           ser o mesmo brilho e não a ausência dele. */
+        lamp: {
+          '0%, 100%': { opacity: '1', boxShadow: '0 0 10px rgba(242,86,74,0.85)' },
+          '50%': { opacity: '0.66', boxShadow: '0 0 4px rgba(242,86,74,0.3)' },
+        },
         /* O badalo do sino. Amplitude pequena de propósito: a diferença entre
            um ícone que avisa e um ícone que implora são uns poucos graus. */
         nudge: {
@@ -157,6 +173,7 @@ export default {
         'beam-in': 'beam-in 260ms cubic-bezier(0.16,1,0.3,1)',
         flicker: 'flicker 4s ease-in-out infinite',
         pop: 'pop 420ms cubic-bezier(0.16,1,0.3,1)',
+        lamp: 'lamp 2.4s ease-in-out infinite',
         nudge: 'nudge 640ms ease-in-out',
       },
     },

@@ -3,6 +3,7 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const screening = require('../screening');
+const live = require('../live');
 
 const router = express.Router();
 
@@ -105,11 +106,21 @@ router.post('/open', wrap(async (req, res) => {
   if (!movie) return res.status(404).json({ error: 'Filme não encontrado no catálogo do clube.' });
 
   screening.open(movie);
+  /* ── e o resto do clube fica sabendo ──────────────────────────────────
+     A sala já avisou quem está dentro dela pelo próprio stream. Isto avisa
+     quem não está: a marquise de todo mundo acende a lâmpada da Sessão sem
+     que ninguém precise abrir a aba para descobrir que ela começou.
+
+     Depois de `open`, nunca antes, pela mesma razão de sempre — um aviso
+     emitido antes da mudança manda o clube buscar um estado que ainda não
+     existe. Ver live.js. */
+  live.emit('screening', req.session.reviewer_id);
   res.status(201).json(screening.snapshot());
 }));
 
-router.post('/close', wrap(async (_req, res) => {
+router.post('/close', wrap(async (req, res) => {
   screening.close();
+  live.emit('screening', req.session.reviewer_id);
   res.json(screening.snapshot());
 }));
 
@@ -130,9 +141,18 @@ router.post('/command', wrap(async (req, res) => {
     return res.status(400).json({ error: 'Posição inválida.' });
   }
 
+  /* ── só a virada, e nunca o arrasto ──────────────────────────────────
+     A lâmpada da marquise respira quando o filme está rolando e fica parada
+     quando alguém pausou, então play e pause interessam ao clube inteiro.
+     Seek não: puxar a barra dispara comandos aos punhados, e emitir em cada
+     um seria mandar toda aba aberta buscar a sala enquanto uma pessoa
+     procura uma cena. Comparar o status antes e depois é o filtro exato —
+     `seek` é o único que deixa ele em paz de propósito (ver screening.js). */
+  const was = screening.room.status;
   if (!screening.command(type, position)) {
     return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
   }
+  if (screening.room.status !== was) live.emit('screening', req.session.reviewer_id);
   res.json(screening.snapshot());
 }));
 

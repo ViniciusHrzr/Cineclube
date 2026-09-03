@@ -105,6 +105,16 @@ async function listen(cookie) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  /* ── a leitura que sobrevive ao relógio ─────────────────────────────────
+     A espera abaixo é uma corrida entre ler e desistir, e quando o relógio
+     ganha a leitura CONTINUA pendente — ela não é cancelável. Sem guardá-la
+     aqui, a chamada seguinte pediria uma segunda leitura ao mesmo reader, a
+     primeira comeria o próximo pedaço, e o quadro sumiria no meio de duas
+     asserções que parecem não ter relação nenhuma uma com a outra.
+
+     Sem consequência enquanto ninguém esperava um silêncio; virou um teste que
+     falhava sozinho no dia em que alguém quis provar que uma rota NÃO emite. */
+  let pending = null;
 
   /** O próximo quadro `data:`, ou uma falha se ele não vier a tempo. */
   async function next(ms = 4000) {
@@ -119,11 +129,13 @@ async function listen(cookie) {
         return JSON.parse(chunk.slice(6));
       }
       if (Date.now() > deadline) throw new Error('nenhum quadro chegou a tempo');
+      if (!pending) pending = reader.read();
       const read = await Promise.race([
-        reader.read(),
+        pending,
         new Promise(resolve => setTimeout(() => resolve({ timeout: true }), deadline - Date.now()))
       ]);
       if (read.timeout) throw new Error('nenhum quadro chegou a tempo');
+      pending = null;
       if (read.done) throw new Error('a conexão fechou');
       buffer += decoder.decode(read.value, { stream: true });
     }
@@ -252,6 +264,75 @@ test('trocar o próprio nome avisa, porque ele aparece ao lado de tudo', async (
     assert.equal((await ear.next()).kind, 'reviewers');
   } finally {
     ear.close();
+  }
+});
+
+/* ── a sala falando para fora ─────────────────────────────────────────────
+   A sala de projeção tem o próprio cano, e ele é caro: um quadro a cada cinco
+   segundos, e assinar ele te PÕE dentro da sala. Quem não está assistindo não
+   pode pagar nenhuma das duas coisas — mas precisa saber que a sessão começou,
+   senão a lâmpada da marquise nunca acende para quem ela existe.
+
+   Por isso a sala emite aqui também, e por isso emite pouco. */
+
+test('abrir e fechar a sessão avisa o clube que não está na sala', async () => {
+  const who = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, who.cookie);
+
+  const ear = await listen(who.cookie);
+  try {
+    assert.equal((await ear.next()).kind, 'hello');
+
+    const opened = await req('POST', '/api/screening/open', { movieId: m.id }, who.cookie);
+    assert.equal(opened.status, 201);
+    assert.equal((await ear.next()).kind, 'screening');
+
+    /* O aviso não chega antes da sala: quando ele chega, a rota já responde que
+       há sessão aberta. Mesma regra do resto do arquivo, mesmo motivo. */
+    const now = await req('GET', '/api/screening', null, who.cookie);
+    assert.equal(now.body.open, true);
+
+    await req('POST', '/api/screening/close', null, who.cookie);
+    assert.equal((await ear.next()).kind, 'screening');
+  } finally {
+    ear.close();
+    await req('POST', '/api/screening/close', null, who.cookie);
+  }
+});
+
+test('play e pause avisam, e arrastar a barra não', async () => {
+  const who = await newReviewer();
+  const m = movie();
+  await req('POST', '/api/watchlist', { movie: m }, who.cookie);
+  await req('POST', '/api/screening/open', { movieId: m.id }, who.cookie);
+
+  const ear = await listen(who.cookie);
+  try {
+    assert.equal((await ear.next()).kind, 'hello');
+
+    await req('POST', '/api/screening/command', { type: 'play', position: 0 }, who.cookie);
+    assert.equal((await ear.next()).kind, 'screening');
+
+    /* ── o silêncio que é o ponto deste teste ─────────────────────────────
+       Procurar uma cena dispara comandos aos punhados, e cada um deles é o
+       mesmo filme, rodando, na mesma sala. Se `seek` emitisse, uma pessoa
+       arrastando a barra mandaria toda aba aberta do clube buscar a sala
+       dezenas de vezes para receber a mesma resposta — e a lâmpada não teria
+       mudado em nenhuma delas. O filtro é a virada do status, não o comando. */
+    await req('POST', '/api/screening/command', { type: 'seek', position: 90 }, who.cookie);
+    await req('POST', '/api/screening/command', { type: 'seek', position: 120 }, who.cookie);
+    await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
+
+    await req('POST', '/api/screening/command', { type: 'pause', position: 120 }, who.cookie);
+    assert.equal((await ear.next()).kind, 'screening');
+
+    // Pausar o que já está pausado não é uma virada, e portanto não é notícia.
+    await req('POST', '/api/screening/command', { type: 'pause', position: 120 }, who.cookie);
+    await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
+  } finally {
+    ear.close();
+    await req('POST', '/api/screening/close', null, who.cookie);
   }
 });
 

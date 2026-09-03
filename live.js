@@ -45,8 +45,20 @@ const MAX_STREAMS_PER_VIEWER = 3;
 /** Impede o proxy da frente de fechar uma conexão que ele acha que morreu. */
 const PING_MS = 20_000;
 
-/** As coisas sobre as quais este cano fala. Nada fora daqui é emitido. */
-const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers']);
+/* ── as coisas sobre as quais este cano fala ──────────────────────────────
+   Nada fora daqui é emitido.
+
+   `screening` é a exceção que confirma o desenho. A sala de projeção tem o
+   próprio cano, mais rico e mais caro: um quadro a cada cinco segundos, um
+   relógio, quem está dentro — e entrar nele te PÕE dentro dela (ver o `attach`
+   em routes/screening.js). Quem não está assistindo não pode pagar isso, e
+   muito menos aparecer na lista de quem está.
+
+   Então a sala fala duas línguas. Para dentro, o cano dela. Para o resto do
+   clube, uma palavra aqui: "a sala mudou". A marquise ouve, busca `/api/
+   screening` uma vez e acende a lâmpada. É a mesma regra de sempre — o aviso
+   diz qual coleção mudou, e a rota continua sendo a única verdade. */
+const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers', 'screening']);
 
 const streams = new Set();
 

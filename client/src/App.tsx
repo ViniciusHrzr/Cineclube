@@ -22,9 +22,10 @@ import {
   type WatchItem,
 } from '@/lib/api';
 import { useLive, type LiveKind } from '@/lib/live';
+import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
 import { Reel } from '@/components/bits';
 import { SignIn } from '@/screens/SignIn';
-import { cn } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
@@ -218,6 +219,9 @@ export default function App() {
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [pendingRate, setPendingRate] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
+     sessão porque a coisa toda é justamente para quem NÃO está nela. */
+  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
 
   /* The session decides whether the app renders at all, so it is asked first
      and separately: a signed-out visitor should reach the sign-in screen
@@ -273,6 +277,8 @@ export default function App() {
     }
     setMe(null);
     setBooted(false);
+    // A sala é do clube, e quem saiu não é mais o clube.
+    setPulse(DARK);
   }, []);
 
   const refreshReviewers = useCallback(async () => {
@@ -500,6 +506,53 @@ export default function App() {
     [meId]
   );
 
+  /* ── a lâmpada da marquise ──────────────────────────────────────────────
+     Uma sessão começava e ninguém ficava sabendo. Quem estava no catálogo,
+     lendo o feed ou escrevendo uma nota não tinha como descobrir que o clube
+     tinha entrado na sala a não ser abrindo a aba Sessão para ver — e o custo
+     de "não estar sabendo" aqui é chegar dez minutos atrasado num filme que os
+     outros três já começaram.
+
+     Perguntar de fora, e nunca assinar o stream da sala: entrar nele é entrar
+     na sala. O porquê está inteiro em lib/screening.ts.
+
+     O erro morre em silêncio pelo mesmo motivo de `applyLive` logo abaixo:
+     ninguém pediu esta pergunta. Uma lâmpada apagada é uma falha honesta —
+     o pior que acontece é a pessoa abrir a aba para conferir, que é o que ela
+     fazia antes de a lâmpada existir. */
+  const readRoom = useCallback(async () => {
+    try {
+      const next = await readPulse();
+      /* Só quando mudou de verdade. Isto roda a cada minuto e meio numa aba
+         que fica aberta a noite inteira, e um objeto novo a cada volta
+         redesenharia o app inteiro — a marquise, a tela aberta e todo pôster
+         dentro dela — para concluir que a sala continua escura. */
+      setPulse(prev => (samePulse(prev, next) ? prev : next));
+    } catch {
+      /* engolido: ver acima */
+    }
+  }, []);
+
+  /* Ao vivo é o caminho rápido, não o único: o EventSource desiste depois de
+     algumas recusas seguidas (ver lib/live.ts), e uma marquise que ficasse
+     dizendo "ao vivo" duas horas depois de a sessão acabar seria uma mentira
+     acesa no alto de toda tela. A pergunta periódica é o que garante que a
+     lâmpada é verdade mesmo quando o cano cai. Um minuto e meio, o mesmo do
+     sino, e parada enquanto a aba está escondida. */
+  useEffect(() => {
+    if (!me || !booted) return;
+    void readRoom();
+    const tick = () => {
+      if (document.visibilityState === 'visible') void readRoom();
+    };
+    const id = window.setInterval(tick, 90_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [me, booted, readRoom]);
+
   /* ── o clube ao vivo ────────────────────────────────────────────────────
      Tudo aqui em cima era uma fotografia tirada no boot. O clube conversa em
      horas diferentes, com a página aberta ao lado do Discord por horas, e uma
@@ -546,7 +599,11 @@ export default function App() {
         .then(r => setReviewers(r.reviewers))
         .catch(quiet);
     }
-  }, []);
+    /* A sala abriu, fechou, ou alguém apertou play ou pause. É o único aviso
+       daqui que não é uma coleção — é um cômodo — e por isso não busca uma
+       lista, busca o pulso. Ver `readRoom` acima. */
+    if (kinds.has('screening')) void readRoom();
+  }, [readRoom]);
 
   /* Só depois de entrar: sem sessão a rota responde 401, e insistir gastaria as
      tentativas do fluxo antes de alguém sequer ter digitado o PIN. */
@@ -679,6 +736,7 @@ export default function App() {
           onOpenReview={goReview}
           onOpenSelf={() => goPerson()}
           me={me}
+          room={pulse}
           onSignOut={() => void signOut()}
         />
 
@@ -745,6 +803,45 @@ export default function App() {
   );
 }
 
+/* ── a lâmpada de gravação ────────────────────────────────────────────────
+   A marquise de um cinema diz duas coisas: o nome em luzes e o que está
+   passando. A segunda faltava. Agora tem uma lâmpada, e ela é literalmente a
+   mesma que o produto já usa para "isto está rodando" — o ponto de seis pixels
+   com o brilho vermelho, a única coisa redonda deste sistema.
+
+   ── por que ela nunca é uma superfície ─────────────────────────────────────
+   A tentação era um distintivo vermelho preenchido escrito REC. Vermelho cheio
+   nesta sala é a chave de gravar, uma por tela, e um retângulo vermelho no alto
+   de TODA tela competiria com ela em todas elas — o mesmo argumento que fez o
+   distintivo do sino ser de latão. O que passa é a luz: a lâmpada, e a palavra
+   Sessão em vermelho como texto. A superfície continua sendo do botão.
+
+   ── e por que ela não empurra nada ─────────────────────────────────────────
+   Uma lâmpada que aparece do nada alarga a aba e joga Avaliados, o sino e o
+   rosto de todo mundo para a direita de um quadro para o outro. Aqui ela está
+   sempre montada e ABRE: de zero à largura dela, na curva do produto, e a barra
+   se acomoda junto. O salto vira o gesto — a marquise acendendo porque a sala
+   acendeu.
+
+   Respira enquanto o filme roda e fica parada quando alguém pausou. Duas
+   informações pelo preço de nenhuma pergunta a mais, e a diferença é visível
+   pelo canto do olho, que é de onde esta lâmpada vai ser vista. */
+function Lamp({ on, playing }: { on: boolean; playing: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'block h-1.5 flex-none rounded-full bg-dye-red-lit transition-[width,margin,opacity] duration-[420ms] ease-beam',
+        on ? 'mr-2 w-1.5 opacity-100 shadow-[0_0_10px_rgba(242,86,74,0.85)]' : 'mr-0 w-0 opacity-0',
+        /* O brilho também está na classe acima, e não só no laço: sob
+           `prefers-reduced-motion` o index.css corta o laço em uma volta, e o
+           repouso depois dela tem de ser a lâmpada acesa — não a apagada. */
+        on && playing && 'animate-lamp'
+      )}
+    />
+  );
+}
+
 /* ── the marquee ──────────────────────────────────────────────────────────
    The header of a cinema is its marquee: the name in lights and what is
    playing. The current section is the lit one. */
@@ -754,6 +851,7 @@ function Marquee({
   onOpenReview,
   onOpenSelf,
   me,
+  room,
   onSignOut,
 }: {
   tab: TabId;
@@ -763,8 +861,25 @@ function Marquee({
   /** O seu próprio rosto, que é a porta do seu perfil. */
   onOpenSelf: () => void;
   me: SessionUser;
+  /** O que a sala está fazendo agora. É isto que acende a lâmpada da Sessão. */
+  room: ScreeningPulse;
   onSignOut: () => void;
 }) {
+  /* ── o que a lâmpada diz quando alguém pergunta ─────────────────────────
+     Um ponto vermelho na marquise sozinho diz "alguma coisa"; o clube quer
+     saber O QUÊ, e quer saber antes de trocar de aba. Vai no `title` para o
+     mouse e no `aria-label` para quem não vê o ponto — o `aria-label` é o que
+     substitui "Sessão" na leitura, então ele carrega a palavra também. */
+  const rec = room.open
+    ? [
+        room.status === 'playing' ? 'ao vivo' : 'em pausa',
+        room.title,
+        room.viewers ? plural(room.viewers, 'pessoa na sala', 'pessoas na sala') : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
+
   return (
     /* No backdrop blur. It sat over the wall, and the wall never stops moving —
        so the browser was re-blurring a full-width strip of a live background on
@@ -779,21 +894,45 @@ function Marquee({
         <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
             const on = tab === t.id;
+            /* A lâmpada é da Sessão e de mais nada. É a única aba que
+               corresponde a um cômodo em vez de a uma prateleira, e a única
+               em que "está acontecendo agora" é uma frase com sentido. */
+            const lit = t.id === 'screening' && room.open;
             return (
               <button
                 key={t.id}
                 type="button"
                 aria-current={on ? 'page' : undefined}
+                aria-label={rec && t.id === 'screening' ? `Sessão — ${rec}` : undefined}
+                title={rec && t.id === 'screening' ? rec[0].toUpperCase() + rec.slice(1) : undefined}
                 onClick={() => onTab(t.id)}
                 className={cn(
-                  'relative flex-none rounded-cell px-3 py-2 font-display text-[14px] uppercase leading-none tracking-[0.12em] transition-colors duration-150',
-                  on ? 'text-beam' : 'text-ink-dim hover:text-ink'
+                  'relative flex flex-none items-center rounded-cell px-3 py-2 font-display text-[14px] uppercase leading-none tracking-[0.12em] transition-colors duration-150',
+                  /* Acesa, a palavra vira vermelha — mas nunca por cima do
+                     creme da aba atual. Estar aberto e estar acontecendo são
+                     duas informações diferentes e a marquise mostra as duas:
+                     a atual continua sendo a de creme, e a lâmpada queima do
+                     mesmo jeito nela. Vermelho como TEXTO, e não como
+                     preenchimento: a regra da lâmpada guarda a superfície
+                     vermelha para a chave de gravar. */
+                  on
+                    ? 'text-beam'
+                    : lit
+                      ? 'text-dye-red-lit hover:text-dye-red-glow'
+                      : 'text-ink-dim hover:text-ink'
                 )}
               >
+                {t.id === 'screening' ? <Lamp on={lit} playing={room.status === 'playing'} /> : null}
                 {t.label}
+                {/* O traço da aba atual começa depois da lâmpada, e não debaixo
+                    dela: ele sublinha a palavra, e um sublinhado que atravessa
+                    o ponto vermelho é o traço reclamando a lâmpada para si. Vai
+                    junto com o abrir dela, na mesma curva, para a Sessão acesa e
+                    aberta ser um movimento só. */}
                 <span
                   className={cn(
-                    'absolute inset-x-2 -bottom-[1px] h-[2px] transition-opacity duration-150',
+                    'absolute -bottom-[1px] right-2 h-[2px] transition-[opacity,left] [transition-duration:150ms,420ms] ease-beam',
+                    lit ? 'left-[22px]' : 'left-2',
                     on ? 'bg-dye-red opacity-100' : 'opacity-0'
                   )}
                 />
