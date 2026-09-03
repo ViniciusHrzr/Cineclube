@@ -93,6 +93,10 @@ export const auth = {
   googleUrl: '/api/auth/google',
   login: (email: string, password: string) =>
     post<{ reviewer: SessionUser }>('/api/auth/login', { email, password }),
+  /* Criar conta sem passar pelo Google. Entra logado: pedir para a pessoa
+     digitar a senha que ela acabou de escolher é o formulário duvidando dela. */
+  register: (name: string, email: string, password: string) =>
+    post<{ reviewer: SessionUser }>('/api/auth/register', { name, email, password }),
   logout: () => post<null>('/api/auth/logout', {}),
   setPassword: (password: string, current?: string) =>
     post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
@@ -121,7 +125,11 @@ export const clubs = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role }),
     }),
-  join: (slug: string) => post<{ requested: true }>(`/api/c/${encodeURIComponent(slug)}/join`, {}),
+  /* Uma ação, dois desfechos: num clube aberto você entra (`joined`), num
+     fechado vira um pedido (`requested`). Quem diz qual foi é o servidor — a
+     visibilidade pode ter mudado entre a lista e o clique. */
+  join: (slug: string) =>
+    post<{ joined?: true; requested?: true }>(`/api/c/${encodeURIComponent(slug)}/join`, {}),
   unjoin: (slug: string) => del(`/api/c/${encodeURIComponent(slug)}/join`),
   requests: (slug: string) => api<{ requests: JoinRequest[] }>(`/api/c/${encodeURIComponent(slug)}/requests`),
   answer: (slug: string, reviewerId: string, approve: boolean) =>

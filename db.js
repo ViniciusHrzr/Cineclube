@@ -114,8 +114,11 @@ async function ensureHomeClub() {
   const found = await prepare('SELECT id FROM clubs WHERE name = ? COLLATE NOCASE').get(HOME_CLUB);
   if (found) return found.id;
   const id = 'c' + crypto.randomUUID();
+  /* Fechado. É o clube de um grupo de amigos que já existia antes de haver rede,
+     e o acervo deles não passa a ser público porque o produto cresceu. Aparece
+     na vitrine com nome e foto, como todo clube; entrar depende do ADM. */
   await prepare(
-    `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'public')`
+    `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'private')`
   ).run(id, HOME_CLUB, slugify(HOME_CLUB));
   return id;
 }
@@ -614,9 +617,39 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS club_join_requests_club ON club_join_requests(club_id);
   `);
 
+  /* ── um lugar para dizer o que já foi feito ────────────────────────────
+     Quase toda migração deste arquivo se guarda sozinha: uma coluna que já
+     existe não é adicionada duas vezes. Uma correção de VALOR não tem essa
+     sorte — corrigir um dado e rodar de novo desfaz a escolha que a pessoa fez
+     depois. Daí esta tabela: uma linha por correção, posta quando ela roda. */
+  await exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+
+  const done = async key => !!(await prepare('SELECT 1 AS x FROM meta WHERE key = ?').get(key));
+  const mark = key =>
+    prepare("INSERT OR IGNORE INTO meta (key, value) VALUES (?, datetime('now'))").run(key);
+
   // Para um banco que já criou estas tabelas antes destas colunas existirem.
   if (!(await columnsOf('clubs')).includes('tagline')) {
     await exec('ALTER TABLE clubs ADD COLUMN tagline TEXT');
+  }
+
+  /* ── o clube fundador nasceu aberto, e não devia ───────────────────────
+     A primeira versão dos clubes criou o Cineclube como `public`, e naquela
+     versão `public` queria dizer "qualquer um lê o acervo". O clube de um grupo
+     de amigos que já existia antes de haver rede não vira público porque o
+     produto cresceu — e o acervo deles esteve legível para quem tivesse a URL
+     entre um deploy e o outro.
+
+     Isto conserta os bancos que pegaram aquela versão. Uma vez só, marcada na
+     tabela acima: quem decidir abrir o clube depois não pode ter essa decisão
+     desfeita no próximo reinício. */
+  if (!(await done('home-club-private'))) {
+    const r = await prepare(
+      `UPDATE clubs SET visibility = 'private'
+       WHERE name = ? COLLATE NOCASE AND visibility = 'public' AND created_by IS NULL`
+    ).run(HOME_CLUB);
+    await mark('home-club-private');
+    if (r?.rowsAffected) console.log(`[db] ${HOME_CLUB} voltou a ser um clube fechado`);
   }
   const memberCols = await columnsOf('club_members');
   if (!memberCols.includes('notifications_seen_at')) {

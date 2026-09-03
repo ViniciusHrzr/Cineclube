@@ -763,25 +763,25 @@ function ClubRoom() {
         </div>
 
         <div className="mt-6">
-          <span className="legend mb-2 block">Quem pode ver</span>
+          <span className="legend mb-2 block">Como se entra</span>
           <div className="flex flex-wrap gap-2">
-            <Key
-              tone={club.club.visibility === 'private' ? 'commit' : 'flush'}
-              onClick={() => void saveClub({ visibility: 'private' })}
-            >
-              Privado
-            </Key>
             <Key
               tone={club.club.visibility === 'public' ? 'commit' : 'flush'}
               onClick={() => void saveClub({ visibility: 'public' })}
             >
-              Público
+              Aberto
+            </Key>
+            <Key
+              tone={club.club.visibility === 'private' ? 'commit' : 'flush'}
+              onClick={() => void saveClub({ visibility: 'private' })}
+            >
+              Fechado
             </Key>
           </div>
-          <p className="mt-2 max-w-[52ch] text-[12.5px] leading-relaxed text-ink-dim">
+          <p className="mt-2 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
             {club.club.visibility === 'public'
-              ? 'Qualquer pessoa lê o acervo deste clube e pode pedir para entrar. Escrever continua sendo só de quem é daqui.'
-              : 'Só quem é do clube vê qualquer coisa. Ele não aparece para mais ninguém, e ninguém consegue pedir para entrar.'}
+              ? 'Qualquer pessoa entra e já pode avaliar, e o acervo é lido por quem passar. Abrir agora admite quem estava esperando na fila de pedidos.'
+              : 'O clube aparece no saguão com nome e foto, mas o acervo é só de quem é daqui — e entrar depende de você aprovar.'}
           </p>
         </div>
 

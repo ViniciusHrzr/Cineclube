@@ -96,17 +96,32 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erro interno.' });
 });
 
-/* O administrador da instalação. Roda uma vez: só age enquanto ninguém está na
-   cadeira, então nunca promove nem rebaixa alguém num boot posterior.
+/* ══════════════════════════════════════════════════════════════════════════
+   O ADMINISTRADOR DA INSTALAÇÃO, e por que ele é UM só.
 
-   ── e o PIN inicial não existe mais ────────────────────────────────────────
-   Havia aqui um bloco que gravava um PIN de partida para esta conta, com um
-   fallback no código para a máquina local. Ele sumiu junto com o PIN: a
-   credencial agora chega pelo Google, e a ligação com a conta que já existia é
-   feita por CINECLUBE_ADMIN_EMAIL na primeira entrada (ver accountForGoogle).
-   Não há mais nenhum segredo neste arquivo, o que também tira do repositório a
-   única razão que ele tinha para precisar ser privado. */
-const CLUB_ADMIN = process.env.CINECLUBE_ADMIN || 'Vinicius';
+   São duas coisas diferentes com o mesmo nome em português, e confundir as duas
+   é como um produto assim vaza poder:
+
+   · **ADM de um clube** (`club_members.role`) manda na sala dele. Aprova quem
+     entra, muda a foto, modera a conversa. Qualquer pessoa que funde um clube
+     vira um, e não alcança absolutamente nada fora daquela sala.
+
+   · **ADM geral** (`reviewers.is_admin`) cuida de CONTAS — apagar uma pessoa da
+     plataforma inteira, com as fichas dela em todos os clubes. É um só, e é
+     quem hospeda isto.
+
+   ── a cadeira é do e-mail, e do e-mail verificado ─────────────────────────
+   Era do NOME: a conta chamada "Vinicius" ganhava a cadeira no boot. Isso estava
+   errado desde que existe cadastro aberto — qualquer pessoa criava uma conta com
+   esse nome e esperava um reinício.
+
+   Agora é `CINECLUBE_ADMIN_EMAIL`, e só vale para uma conta ligada ao Google. Um
+   cadastro por senha não verifica e-mail nenhum (não há como: este app não manda
+   e-mail), então aceitar a cadeira por e-mail auto-declarado seria a mesma porta
+   dos fundos com outra fechadura. Um `google_sub` é a prova de que o Google
+   confirmou aquele endereço, e é isso que a checagem exige.
+   ══════════════════════════════════════════════════════════════════════════ */
+const OWNER_EMAIL = (process.env.CINECLUBE_ADMIN_EMAIL || '').trim().toLowerCase();
 
 /* The database is remote now, so everything the app needs before its first
    request — the schema, the seeds, the admin — is a promise. Nothing listens
@@ -114,10 +129,10 @@ const CLUB_ADMIN = process.env.CINECLUBE_ADMIN || 'Vinicius';
 async function boot() {
   await db.ready;
 
-  // Seed a few reviewers on first run so the app isn't empty. They come with no
-  // PIN, which the sign-in screen shows as "PIN pendente" — a seeded account is
-  // a placeholder, and handing it a known PIN would be a back door.
-  /* O clube fundador. A migração o cria e povoa quando existem dados de antes
+  /* As contas de exemplo nascem sem credencial nenhuma: são lugares na lista,
+     não pessoas, e dar a elas uma senha conhecida seria porta dos fundos.
+
+     O clube fundador. A migração o cria e povoa quando existem dados de antes
      dos clubes; num banco vazio ela roda antes de existir alguém, então é aqui
      que ele passa a existir — e as contas de exemplo logo abaixo já nascem
      dentro dele. Uma pessoa numa rede de clubes sem sala nenhuma para entrar
@@ -137,17 +152,48 @@ async function boot() {
     console.log('[server] avaliadores iniciais criados: Ana Reis, Bruno Sá, Clara Lima');
   }
 
-  /* The seat is granted by name, once, and only while the club has nobody in
-     it. Members can rename themselves now, and without this the grant would be
-     a door left open: whoever took the old name would be handed the club at the
-     next restart. A club that already has an administrator is never re-seated
-     by this code — the flag is a column, and the only way to move it is here. */
-  const seated = await db.prepare('SELECT COUNT(*) AS n FROM reviewers WHERE is_admin = 1').get();
-  const adminRow = await db.prepare('SELECT * FROM reviewers WHERE name = ? COLLATE NOCASE').get(CLUB_ADMIN);
+  if (!OWNER_EMAIL) {
+    console.warn(
+      '[server] CINECLUBE_ADMIN_EMAIL não está definida. Ninguém administra a ' +
+        'instalação até ela existir — e é assim mesmo: uma cadeira que se ocupa por ' +
+        'omissão é uma cadeira que qualquer um ocupa.'
+    );
+  }
+
+  /* A cadeira é do e-mail configurado, e só de uma conta ligada ao Google —
+     porque só ela teve o e-mail verificado por alguém. Ver o bloco no topo.
+
+     Roda a cada boot, e é de propósito: se um dia o e-mail da variável mudar, a
+     cadeira acompanha, e ninguém fica com ela por ter chegado primeiro. Também
+     TIRA de quem não é mais — é a metade que faz disto uma regra e não uma
+     concessão inicial. */
+  const adminRow = OWNER_EMAIL
+    ? await db
+        .prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE AND google_sub IS NOT NULL')
+        .get(OWNER_EMAIL)
+    : null;
+
+  /* ── a exceção da conta adormecida ─────────────────────────────────────
+     A limpeza pula quem não tem NENHUMA credencial — nem Google, nem senha.
+     Essas contas são as de antes dos clubes, esperando ser reivindicadas, e é
+     justamente `is_admin` que `accountForGoogle` usa para achar qual delas é a
+     do dono na primeira entrada. Rebaixá-la aqui quebraria a migração: a conta
+     perderia a marca antes de existir alguém para herdá-la, e as fichas antigas
+     ficariam num avaliador que ninguém mais alcança.
+
+     Não é uma brecha: uma conta sem credencial nenhuma é uma conta em que
+     ninguém consegue entrar. Ela deixa de ser exceção no instante em que alguém
+     a reivindica, porque aí passa a ter `google_sub`. */
+  await db.prepare(
+    `UPDATE reviewers SET is_admin = 0
+     WHERE is_admin = 1 AND id <> ?
+       AND (google_sub IS NOT NULL OR password_hash IS NOT NULL)`
+  ).run(adminRow?.id ?? '');
+
   if (adminRow) {
-    if (!adminRow.is_admin && !seated.n) {
+    if (!adminRow.is_admin) {
       await db.prepare('UPDATE reviewers SET is_admin = 1 WHERE id = ?').run(adminRow.id);
-      console.log(`[server] ${adminRow.name} definido como administrador do clube`);
+      console.log(`[server] ${adminRow.name} <${OWNER_EMAIL}> é o administrador da instalação`);
     }
 
     /* E ADM do clube fundador, que é outra coisa: `is_admin` é a instalação,

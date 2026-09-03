@@ -91,7 +91,7 @@ test('quem funda um clube é ADM dele', async () => {
   const res = await req('POST', '/api/clubs', { name: `Clube ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
   assert.equal(res.status, 201);
   assert.equal(res.body.club.role, 'admin');
-  assert.equal(res.body.club.visibility, 'private', 'um clube nasce fechado');
+  assert.equal(res.body.club.visibility, 'public', 'sem dizer nada, um clube nasce aberto');
 });
 
 test('nome de clube é único, e a caixa não faz diferença', async () => {
@@ -108,30 +108,47 @@ test('fundar exige estar logado', async () => {
 
 /* ── a parede da leitura ────────────────────────────────────────────────── */
 
-test('um clube privado não existe para quem não é dele', async () => {
+/* ── a fachada e o conteúdo ──────────────────────────────────────────────
+   São duas camadas, e é a confusão entre elas que faz um produto assim ficar
+   errado. Um clube fechado QUER ser achado — é como alguém pede para entrar; o
+   que ele não quer é ser lido. */
+
+test('um clube fechado tem fachada: nome, foto e quantas pessoas', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Privado ${++seq}`, owner: dono.id });
+  const sala = await kit.makeClub({ name: `Fechado ${++seq}`, owner: dono.id });
 
-  for (const rota of ['', '/reviews', '/feed', '/social', '/watchlist', '/reviewers']) {
-    const res = await req('GET', at(sala, rota || ''), null, fora.cookie);
-    assert.equal(
-      res.status, 404,
-      `${rota || '/'} deveria responder 404 — um 403 confirma que o clube existe, ` +
-      'e a existência de um clube privado é justamente o que ele não quer contar'
-    );
-  }
+  const card = await req('GET', at(sala, ''), null, fora.cookie);
+  assert.equal(card.status, 200, 'a fachada é de todo mundo');
+  assert.equal(card.body.club.name, sala.name);
+  assert.equal(card.body.club.members, 1);
+  assert.equal(card.body.club.isMember, false);
 });
 
-test('um clube privado não aparece na vitrine', async () => {
+test('mas o conteúdo de um clube fechado é só de quem é dele', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
-  const nome = `Escondido ${++seq}`;
+  const sala = await kit.makeClub({ name: `Fechado ${++seq}`, owner: dono.id });
+  await req('POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, dono.cookie);
+
+  for (const rota of ['/reviews', '/feed', '/social', '/watchlist', '/reviewers', '/members']) {
+    const res = await req('GET', at(sala, rota), null, fora.cookie);
+    assert.equal(res.status, 403, `${rota} deveria estar atrás da porta`);
+  }
+  // E nem deslogado.
+  assert.equal((await req('GET', at(sala, '/reviews'))).status, 403);
+});
+
+test('um clube fechado aparece na vitrine — é assim que se pede para entrar', async () => {
+  const dono = await kit.signIn();
+  const fora = await kit.signIn();
+  const nome = `Achável ${++seq}`;
   await kit.makeClub({ name: nome, owner: dono.id });
 
   const lista = await req('GET', '/api/clubs', null, fora.cookie);
-  assert.ok(!lista.body.open.some(c => c.name === nome));
-  assert.ok(!lista.body.mine.some(c => c.name === nome));
+  const achado = lista.body.open.find(c => c.name === nome);
+  assert.ok(achado, 'uma sala que ninguém enxerga é uma sala em que ninguém consegue entrar');
+  assert.equal(achado.visibility, 'private');
 });
 
 test('um clube público é lido por qualquer um, até deslogado', async () => {
@@ -146,16 +163,26 @@ test('um clube público é lido por qualquer um, até deslogado', async () => {
 
 /* ── a parede da escrita ────────────────────────────────────────────────── */
 
-test('ler um clube aberto não dá direito de escrever nele', async () => {
+test('ler um clube aberto não dá direito de escrever nele — entrar dá', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
   const sala = await kit.makeClub({ name: `Aberto ${++seq}`, owner: dono.id, visibility: 'public' });
 
-  const escrita = await req(
+  /* Aberto não quer dizer sem porta: quer dizer que a porta não tem tranca.
+     Quem só passou lendo ainda não entrou, e escrever é de quem entrou. */
+  const antes = await req(
     'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 7) }, fora.cookie
   );
-  assert.equal(escrita.status, 403);
-  assert.equal((await req('POST', at(sala, '/watchlist'), { movie: movie() }, fora.cookie)).status, 403);
+  assert.equal(antes.status, 403);
+
+  const entrada = await req('POST', at(sala, '/join'), {}, fora.cookie);
+  assert.equal(entrada.status, 201);
+  assert.equal(entrada.body.joined, true, 'num clube aberto entrar é um clique, sem esperar ninguém');
+
+  const depois = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 7) }, fora.cookie
+  );
+  assert.equal(depois.status, 201);
 });
 
 test('ser de um clube não dá direito nenhum sobre outro', async () => {
@@ -226,9 +253,11 @@ test('a fila também é por clube', async () => {
 test('pedir, aparecer para o ADM, e ser aceito', async () => {
   const dono = await kit.signIn();
   const quer = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Porta ${++seq}`, owner: dono.id, visibility: 'public' });
+  const sala = await kit.makeClub({ name: `Porta ${++seq}`, owner: dono.id });
 
-  assert.equal((await req('POST', at(sala, '/join'), {}, quer.cookie)).status, 201);
+  const pedido = await req('POST', at(sala, '/join'), {}, quer.cookie);
+  assert.equal(pedido.status, 201);
+  assert.equal(pedido.body.requested, true, 'num clube fechado o clique vira um pedido');
 
   const fila = await req('GET', at(sala, '/requests'), null, dono.cookie);
   assert.equal(fila.body.requests.length, 1);
@@ -250,7 +279,7 @@ test('pedir, aparecer para o ADM, e ser aceito', async () => {
 test('recusar apaga o pedido e não põe ninguém dentro', async () => {
   const dono = await kit.signIn();
   const quer = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Recusa ${++seq}`, owner: dono.id, visibility: 'public' });
+  const sala = await kit.makeClub({ name: `Recusa ${++seq}`, owner: dono.id });
 
   await req('POST', at(sala, '/join'), {}, quer.cookie);
   await req('POST', at(sala, `/requests/${quer.id}`), { approve: false }, dono.cookie);
@@ -260,23 +289,33 @@ test('recusar apaga o pedido e não põe ninguém dentro', async () => {
   assert.equal(escrita.status, 403);
 });
 
-test('não dá para pedir entrada num clube privado — nem descobrir que ele existe', async () => {
+test('num clube aberto ninguém fica esperando na fila', async () => {
   const dono = await kit.signIn();
   const quer = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Fechado ${++seq}`, owner: dono.id });
-  assert.equal((await req('POST', at(sala, '/join'), {}, quer.cookie)).status, 404);
-});
-
-test('fechar o clube joga fora os pedidos pendentes', async () => {
-  const dono = await kit.signIn();
-  const quer = await kit.signIn();
-  const sala = await kit.makeClub({ name: `Fechando ${++seq}`, owner: dono.id, visibility: 'public' });
+  const sala = await kit.makeClub({ name: `Sem fila ${++seq}`, owner: dono.id, visibility: 'public' });
 
   await req('POST', at(sala, '/join'), {}, quer.cookie);
-  await req('PATCH', at(sala, ''), { visibility: 'private' }, dono.cookie);
-
   const fila = await req('GET', at(sala, '/requests'), null, dono.cookie);
-  assert.equal(fila.body.requests.length, 0, 'um pedido que ninguém mais poderia ter feito não é uma fila');
+  assert.equal(fila.body.requests.length, 0, 'entrar foi direto — não há o que aprovar');
+});
+
+/* ── abrir a sala admite quem estava esperando ───────────────────────────
+   Um pedido é alguém dizendo "quero entrar aqui". Abrindo o clube, entrar virou
+   um clique: deixar essas pessoas na fila seria fazê-las apertar um botão para
+   conseguir o que já lhes foi concedido. */
+test('abrir o clube admite quem estava na fila de pedidos', async () => {
+  const dono = await kit.signIn();
+  const quer = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Abrindo ${++seq}`, owner: dono.id });
+
+  await req('POST', at(sala, '/join'), {}, quer.cookie);
+  await req('PATCH', at(sala, ''), { visibility: 'public' }, dono.cookie);
+
+  assert.equal((await req('GET', at(sala, '/requests'), null, dono.cookie)).body.requests.length, 0);
+  const escreve = await req(
+    'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 6) }, quer.cookie
+  );
+  assert.equal(escreve.status, 201, 'quem pediu entrou junto com a porta abrindo');
 });
 
 /* ── quem manda ─────────────────────────────────────────────────────────── */
@@ -389,7 +428,44 @@ test('quem não é do clube não abre o cano dele', async () => {
 
   const res = await fetch(baseUrl + at(sala, '/live/stream'), { headers: { Cookie: fora.cookie } });
   await res.text();
-  assert.equal(res.status, 404);
+  assert.equal(res.status, 403);
+});
+
+/* ── o ADM geral é um só ─────────────────────────────────────────────────
+   Duas coisas com o mesmo nome em português, e confundir as duas é como poder
+   vaza num produto assim: ADM de um clube manda na sala dele e em nada mais; o
+   ADM da instalação cuida de contas. */
+
+test('quem funda um clube não ganha poder nenhum fora dele', async () => {
+  const chefe = await kit.signIn();
+  const alheio = await kit.signIn();
+  const minha = await kit.makeClub({ name: `Minha ${++seq}`, owner: chefe.id });
+  const outra = await kit.makeClub({ name: `Alheia ${++seq}`, owner: alheio.id, visibility: 'public' });
+
+  const eu = await req('GET', '/api/auth/me', null, chefe.cookie);
+  assert.equal(eu.body.reviewer.isAdmin, false, 'fundar uma sala não senta ninguém na cadeira da instalação');
+
+  assert.equal((await req('PATCH', at(outra, ''), { tagline: 'invadi' }, chefe.cookie)).status, 403);
+  assert.equal((await req('GET', at(outra, '/requests'), null, chefe.cookie)).status, 403);
+  assert.equal((await req('DELETE', `/api/reviewers/${alheio.id}`, null, chefe.cookie)).status, 403);
+
+  // E na dele, manda.
+  assert.equal((await req('PATCH', at(minha, ''), { tagline: 'aqui sim' }, chefe.cookie)).status, 200);
+});
+
+test('uma conta criada por senha nunca vira ADM da instalação', async () => {
+  /* Um cadastro não verifica e-mail nenhum — este app não manda e-mail. Aceitar
+     a cadeira por e-mail auto-declarado seria uma porta dos fundos com o nome de
+     uma variável de ambiente. */
+  const res = await req('POST', '/api/auth/register', {
+    name: 'Espertinho',
+    email: (process.env.CINECLUBE_ADMIN_EMAIL || 'dono@exemplo.com'),
+    password: 'umasenhaboa',
+  });
+  assert.ok(res.status === 201 || res.status === 409);
+  if (res.status === 201) {
+    assert.equal(res.body.reviewer.isAdmin, false);
+  }
 });
 
 /* ── a parede da sala de projeção ───────────────────────────────────────── */
@@ -413,11 +489,57 @@ test('duas salas, duas sessões independentes', async () => {
 test('a sala de projeção é de dentro: nem ler, sem ser membro', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
-  /* Pública de propósito: mesmo aberta para leitura, a sala de projeção não é.
-     Assistir junto é uma coisa que se faz de dentro, e o painel diz quem está
-     nela agora — que é informação sobre pessoas, não sobre filmes. */
+  /* Aberta de propósito: mesmo num clube que qualquer um lê, a sala de projeção
+     não é. Assistir junto é uma coisa que se faz de dentro, e o painel diz quem
+     está nela agora — que é informação sobre pessoas, não sobre filmes. */
   const sala = await kit.makeClub({ name: `Projeção aberta ${++seq}`, owner: dono.id, visibility: 'public' });
 
   assert.equal((await req('GET', at(sala, '/screening'), null, fora.cookie)).status, 403);
   assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 200, 'mas o acervo continua aberto');
+});
+
+/* ── criar conta sem Google ──────────────────────────────────────────────
+   Nem todo mundo tem, ou quer usar, uma conta Google. Um produto cuja única
+   porta é a de outra empresa decidiu de quem os seus usuários precisam ser
+   clientes. */
+
+test('cria conta com e-mail e senha, e já entra logado', async () => {
+  const mail = `nova-${crypto.randomUUID().slice(0, 8)}@exemplo.com`;
+  const res = await req('POST', '/api/auth/register', {
+    name: 'Sem Google', email: mail, password: 'umasenhaboa',
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.reviewer.name, 'Sem Google');
+
+  const cookie = res.setCookie.split(';')[0];
+  const eu = await req('GET', '/api/auth/me', null, cookie);
+  assert.equal(eu.body.reviewer.id, res.body.reviewer.id);
+  assert.equal(eu.body.needsPassword, false, 'quem cadastrou senha não precisa de outra');
+});
+
+test('o mesmo e-mail não vira duas contas', async () => {
+  const mail = `dupla-${crypto.randomUUID().slice(0, 8)}@exemplo.com`;
+  const um = { name: 'Primeiro', email: mail, password: 'umasenhaboa' };
+  assert.equal((await req('POST', '/api/auth/register', um)).status, 201);
+  const dois = await req('POST', '/api/auth/register', { ...um, name: 'Segundo' });
+  assert.equal(dois.status, 409);
+});
+
+test('o cadastro recusa e-mail torto, nome vazio e senha curta', async () => {
+  const base = { name: 'Alguém', email: 'ok@exemplo.com', password: 'umasenhaboa' };
+  assert.equal((await req('POST', '/api/auth/register', { ...base, email: 'nao-e-email' })).status, 400);
+  assert.equal((await req('POST', '/api/auth/register', { ...base, name: '   ' })).status, 400);
+  assert.equal((await req('POST', '/api/auth/register', { ...base, password: 'curta' })).status, 400);
+});
+
+test('conta criada por senha entra por senha, e a senha não volta em resposta nenhuma', async () => {
+  const mail = `volta-${crypto.randomUUID().slice(0, 8)}@exemplo.com`;
+  const feita = await req('POST', '/api/auth/register', {
+    name: 'Confere', email: mail, password: 'umasenhaboa',
+  });
+  const login = await req('POST', '/api/auth/login', { email: mail, password: 'umasenhaboa' });
+  assert.equal(login.status, 200);
+  const tudo = JSON.stringify(feita.body) + JSON.stringify(login.body);
+  assert.ok(!tudo.includes('umasenhaboa'));
+  assert.ok(!/password_hash|password_salt/.test(tudo));
 });

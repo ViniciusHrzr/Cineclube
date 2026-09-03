@@ -244,6 +244,27 @@ router.post('/login', wrap(async (req, res) => {
   res.json({ reviewer: publicReviewer(reviewer) });
 }));
 
+/* ── criar uma conta ──────────────────────────────────────────────────────
+   A porta para quem não usa Google. Entra logado, porque pedir para a pessoa
+   digitar a senha que ela acabou de escolher é o formulário duvidando dela.
+
+   Mesma frase para "e-mail já cadastrado" e nada mais — aqui, ao contrário do
+   login, a colisão precisa ser dita: sem ela a pessoa fica tentando criar uma
+   conta que já é dela e não entende por quê. É a troca honesta: um cadastro
+   sempre revela quais e-mails existem, e esconder isso quebraria o cadastro
+   inteiro para proteger uma informação que a tela de "esqueci a senha" de
+   qualquer produto também entrega. */
+router.post('/register', wrap(async (req, res) => {
+  const { name, email, password } = req.body || {};
+  const out = await auth.register({ name, email, password });
+  if (out.error) {
+    return res.status(out.error.includes('Já existe') ? 409 : 400).json({ error: out.error });
+  }
+  const token = await auth.createSession(out.reviewer.id);
+  auth.sendSessionCookie(res, token);
+  res.status(201).json({ reviewer: publicReviewer(out.reviewer) });
+}));
+
 router.post('/logout', wrap(async (req, res) => {
   await auth.destroySession(req.sessionToken);
   auth.clearSessionCookie(res);

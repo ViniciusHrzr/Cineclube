@@ -50,6 +50,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
      campos abertos ao lado do botão do Google seria a tela dizendo que espera
      que você digite — quando o que ela espera é um clique. */
   const [byPassword, setByPassword] = useState(false);
+  /* E dentro dela, entrar ou criar conta. O mesmo formulário com um campo a
+     mais: separar em duas telas faria a pessoa que errou a porta voltar e
+     redigitar o e-mail que ela acabou de escrever. */
+  const [mode, setMode] = useState<'entrar' | 'criar'>('entrar');
 
   /* Se esta instalação sequer tem a porta do Google configurada. Sem as
      variáveis no servidor o botão não aparece: um botão que leva a um 503 é pior
@@ -113,6 +117,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                 transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
               >
                 <PasswordEntry
+                  mode={mode}
+                  onMode={setMode}
                   onSignedIn={onSignedIn}
                   onBack={google ? () => setByPassword(false) : undefined}
                 />
@@ -134,10 +140,23 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setByPassword(true)}
+                  onClick={() => {
+                    setMode('entrar');
+                    setByPassword(true);
+                  }}
                   className="mt-5 w-full text-center font-display text-[12px] uppercase leading-none tracking-[0.14em] text-ink-dim transition-colors hover:text-beam"
                 >
                   Entrar com e-mail e senha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('criar');
+                    setByPassword(true);
+                  }}
+                  className="mt-3 w-full text-center text-[12.5px] text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
+                >
+                  Criar uma conta
                 </button>
               </motion.div>
             )}
@@ -147,9 +166,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
         {/* A conta nasce da primeira entrada pelo Google, e não de um cadastro.
             Dizer isso aqui evita a pergunta que a ausência de um "criar conta"
             provoca — e ela é a primeira que alguém faz nesta tela. */}
-        <p className="mx-auto mt-10 max-w-[38ch] text-center text-[12.5px] leading-relaxed text-ink-faint">
-          Não existe cadastro: entrar pelo Google pela primeira vez já cria a sua
-          conta. O clube vem depois.
+        <p className="mx-auto mt-10 max-w-[40ch] text-center text-[12.5px] leading-relaxed text-ink-faint">
+          Entrar pelo Google pela primeira vez já cria a sua conta. Quem preferir
+          cria uma com e-mail e senha. O clube vem depois.
         </p>
       </div>
     </div>
@@ -161,29 +180,43 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
    servidor também responde uma só: um formulário que distingue os dois casos é
    um jeito de descobrir quem tem conta aqui. */
 function PasswordEntry({
+  mode,
+  onMode,
   onSignedIn,
   onBack,
 }: {
+  mode: 'entrar' | 'criar';
+  onMode: (m: 'entrar' | 'criar') => void;
   onSignedIn: (u: SessionUser) => void;
   onBack?: () => void;
 }) {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = useRef<HTMLInputElement>(null);
 
+  const criando = mode === 'criar';
+
   useEffect(() => {
     first.current?.focus();
-  }, []);
+  }, [criando]);
+
+  const curta = criando && password.length > 0 && password.length < 8;
+  const pronto = criando
+    ? !!name.trim() && !!email.trim() && password.length >= 8
+    : !!email.trim() && !!password;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !pronto) return;
     setBusy(true);
     setError(null);
     try {
-      const { reviewer } = await auth.login(email.trim(), password);
+      const { reviewer } = criando
+        ? await auth.register(name.trim(), email.trim(), password)
+        : await auth.login(email.trim(), password);
       onSignedIn(reviewer);
     } catch (err) {
       setError((err as Error).message);
@@ -193,8 +226,21 @@ function PasswordEntry({
 
   return (
     <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
+      {/* O nome vem primeiro porque é a única pergunta sobre a pessoa; o resto
+          é credencial. Só existe ao criar — entrar não precisa saber quem você
+          diz que é, precisa saber quem você prova ser. */}
+      {criando ? (
+        <Field
+          ref={first}
+          label="Como te chamam"
+          autoComplete="name"
+          maxLength={60}
+          value={name}
+          onChange={setName}
+        />
+      ) : null}
       <Field
-        ref={first}
+        ref={criando ? undefined : first}
         label="E-mail"
         type="email"
         autoComplete="username"
@@ -204,16 +250,23 @@ function PasswordEntry({
       <Field
         label="Senha"
         type="password"
-        autoComplete="current-password"
+        autoComplete={criando ? 'new-password' : 'current-password'}
         value={password}
         onChange={setPassword}
+        hint={criando ? 'Pelo menos 8 caracteres.' : undefined}
+        bad={curta}
       />
 
       {error ? <Fault>{error}</Fault> : null}
 
-      <div className="mt-1 flex items-center gap-2">
-        <Key tone="commit" type="submit" disabled={busy || !email.trim() || !password}>
-          {busy ? 'Entrando' : 'Entrar'}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <Key tone="commit" type="submit" disabled={busy || !pronto}>
+          {busy ? (criando ? 'Criando' : 'Entrando') : criando ? 'Criar conta' : 'Entrar'}
+        </Key>
+        {/* Troca de modo sem perder o que já foi digitado: quem errou a porta
+            não deveria redigitar o e-mail que acabou de escrever. */}
+        <Key tone="ghost" onClick={() => { setError(null); onMode(criando ? 'entrar' : 'criar'); }}>
+          {criando ? 'Já tenho conta' : 'Criar uma conta'}
         </Key>
         {onBack ? (
           <Key tone="ghost" onClick={onBack}>

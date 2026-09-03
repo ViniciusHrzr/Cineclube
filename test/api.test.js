@@ -113,9 +113,17 @@ function scoresFor(genre, value) {
    protegem: uma rede que devolvesse todos os seus usuários a qualquer visitante
    não seria uma lista, seria um vazamento com paginação. */
 
-test('as contas de exemplo nascem no clube fundador', async () => {
-  const home = await db.prepare('SELECT slug FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
-  const { status, body } = await req('GET', `/api/c/${home.slug}/reviewers`);
+test('as contas de exemplo nascem no clube fundador, que é fechado', async () => {
+  const home = await db
+    .prepare('SELECT id, slug, visibility FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
+  assert.equal(home.visibility, 'private', 'o clube que já existia antes da rede não vira público');
+
+  /* Lido de dentro: o elenco de um clube fechado é conteúdo, e um estranho não
+     alcança. Que ele não alcance está provado em clubs.test.js; aqui o assunto
+     é só quem foi posto na sala. */
+  const dentro = await kit.signIn('Espia');
+  await kit.join(home.id, dentro.id);
+  const { status, body } = await req('GET', `/api/c/${home.slug}/reviewers`, null, dentro.cookie);
   assert.equal(status, 200);
   const names = body.reviewers.map(r => r.name);
   for (const quem of ['Ana Reis', 'Bruno Sá', 'Clara Lima']) {

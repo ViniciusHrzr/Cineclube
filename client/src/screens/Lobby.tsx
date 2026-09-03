@@ -57,9 +57,17 @@ export function Lobby({
     void load();
   }, [load]);
 
+  /* Uma ação, dois desfechos, e quem decide qual é a porta do clube: num clube
+     aberto você entra e a tela vai junto; num fechado vira um pedido e você
+     continua no saguão. O servidor diz qual aconteceu — a tela não adivinha
+     pela visibilidade, porque ela pode ter mudado entre a lista e o clique. */
   async function ask(slug: string) {
     try {
-      await clubs.join(slug);
+      const out = await clubs.join(slug);
+      if (out.joined) {
+        onEnter(slug);
+        return;
+      }
       setOpen(list => list.map(c => (c.slug === slug ? { ...c, requested: true } : c)));
     } catch (e) {
       setError((e as Error).message);
@@ -144,11 +152,12 @@ export function Lobby({
         {open.length ? (
           <section className="mt-16">
             <h2 className="font-display text-[26px] leading-none tracking-[0.04em] text-beam">
-              Clubes abertos
+              Outras salas
             </h2>
-            <p className="mt-3 max-w-[60ch] text-[13.5px] leading-relaxed text-ink-dim">
-              O acervo destes é aberto para leitura. Entrar — e escrever — depende
-              de quem administra a sala aceitar.
+            <p className="mt-3 max-w-[62ch] text-[13.5px] leading-relaxed text-ink-dim">
+              Nas <span className="text-ink">abertas</span> você entra e já pode
+              avaliar. Nas <span className="text-ink">fechadas</span> dá para ver
+              de que clube se trata, e entrar depende de quem administra aceitar.
             </p>
             <span className="mt-4 block h-px w-full bg-gradient-to-r from-beam/25 to-transparent" />
 
@@ -235,7 +244,7 @@ function ClubPanel({
         </span>
         {club.visibility === 'private' ? (
           <span className="legend absolute right-3 top-3 rounded-cell bg-house-deep/80 px-2 py-1 text-[9.5px] text-ink-dim">
-            Privado
+            Fechado
           </span>
         ) : null}
       </button>
@@ -280,7 +289,13 @@ function ClubPanel({
               Pedido enviado
             </button>
           ) : (
-            <Key onClick={onAsk}>Pedir para entrar</Key>
+            /* O rótulo diz o que vai acontecer, e não o que a sala é: numa
+               aberta o clique põe você dentro, numa fechada ele começa uma
+               espera. Um botão só que faz duas coisas diferentes com o mesmo
+               nome é o botão mentindo para metade das pessoas. */
+            <Key onClick={onAsk}>
+              {club.visibility === 'public' ? 'Entrar' : 'Pedir para entrar'}
+            </Key>
           )}
         </div>
       </div>
@@ -297,7 +312,7 @@ function ClubPanel({
 function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (slug: string) => void }) {
   const [name, setName] = useState('');
   const [tagline, setTagline] = useState('');
-  const [visibility, setVisibility] = useState<'public' | 'private'>('private');
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [photo, setPhoto] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -401,20 +416,23 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
             </div>
           </div>
 
+          {/* A escolha é sobre a PORTA, não sobre a fachada: os dois aparecem no
+              saguão com nome e foto. O que muda é como se entra, e é isso que as
+              duas frases dizem. */}
           <fieldset className="flex flex-col gap-2">
-            <span className="legend text-[10px]">Quem pode ver</span>
+            <span className="legend text-[10px]">Como se entra</span>
             <div className="flex gap-2">
-              <Choice
-                on={visibility === 'private'}
-                onClick={() => setVisibility('private')}
-                title="Privado"
-                line="Só quem é do clube. Não aparece para mais ninguém."
-              />
               <Choice
                 on={visibility === 'public'}
                 onClick={() => setVisibility('public')}
-                title="Público"
-                line="Qualquer um lê o acervo. Entrar depende de você aprovar."
+                title="Aberto"
+                line="Qualquer pessoa entra e já pode avaliar. Sem pedido, sem espera."
+              />
+              <Choice
+                on={visibility === 'private'}
+                onClick={() => setVisibility('private')}
+                title="Fechado"
+                line="Aparece no saguão, mas entrar depende de você aprovar. O acervo é só de quem é do clube."
               />
             </div>
           </fieldset>

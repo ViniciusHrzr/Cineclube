@@ -46,7 +46,13 @@ function toDTO(row, extra = {}) {
 
    Um clube em que você já está não aparece na vitrine — ele já está no
    chaveiro, e uma sala listada duas vezes na mesma tela é a tela dizendo que
-   não sabe quem você é. */
+   não sabe quem você é.
+
+   ── e a vitrine lista TODOS ─────────────────────────────────────────────
+   Aberto e fechado. Uma sala que ninguém enxerga é uma sala em que ninguém
+   consegue pedir para entrar, e um clube fechado quer ser achado — o que ele não
+   quer é ser lido. O que a fachada carrega é nome, foto, descrição e quantas
+   pessoas; o acervo fica atrás da porta (ver clubs.js). */
 index.get('/', wrap(async (req, res) => {
   const me = req.session?.reviewer_id || null;
 
@@ -57,7 +63,6 @@ index.get('/', wrap(async (req, res) => {
     SELECT c.*, COUNT(m.reviewer_id) AS members
     FROM clubs c
     LEFT JOIN club_members m ON m.club_id = c.id
-    WHERE c.visibility = 'public'
     GROUP BY c.id
     ORDER BY c.created_at ASC
   `).all();
@@ -83,13 +88,19 @@ index.get('/', wrap(async (req, res) => {
    Quem cria é ADM, e isso não é uma opção em lugar nenhum da interface: uma
    sala sem ninguém que possa aprovar uma entrada é uma sala que nasce trancada.
 
-   Nasce privado quando não se diz nada. O erro caro tem um lado só — um clube
-   que devia estar aberto e nasceu fechado é um menu a corrigir; o contrário é o
-   acervo de um grupo de amigos exposto sem ninguém ter pedido. */
+   Nasce aberto quando não se diz nada, e o formulário mostra as duas opções com
+   o que cada uma significa. As duas aparecem na vitrine; o que muda é a porta —
+   num clube aberto entrar é um clique, num fechado é um pedido que o ADM
+   aprova. */
 index.post('/', auth.requireSession, wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const tagline = String(req.body?.tagline || '').trim();
-  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  /* Aberto quando não se diz nada. Isto virou o padrão quando a semântica
+     mudou: `public` deixou de significar "qualquer um lê" e passou a significar
+     "qualquer um entra e avalia", que é o que faz uma rede crescer. Quem quer
+     uma sala de amigos marca fechado, e o formulário mostra as duas com o que
+     cada uma quer dizer — o padrão não decide sozinho. */
+  const visibility = req.body?.visibility === 'private' ? 'private' : 'public';
 
   if (!name) return res.status(400).json({ error: 'O clube precisa de um nome.' });
   if (name.length > MAX_NAME) {
@@ -129,7 +140,10 @@ index.post('/', auth.requireSession, wrap(async (req, res) => {
    Um clube. Tudo abaixo já passou por clubs.resolve, então req.club existe.
    ══════════════════════════════════════════════════════════════════════════ */
 
-scoped.get('/', clubs.requireReadable, wrap(async (req, res) => {
+/* A fachada: de todo mundo, inclusive de um clube fechado. É o que a vitrine
+   desenha e o que um link colado no Discord tem de conseguir mostrar para quem
+   ainda não é de lá. */
+scoped.get('/', clubs.requireVisible, wrap(async (req, res) => {
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
   const { n } = await db
     .prepare('SELECT COUNT(*) AS n FROM club_members WHERE club_id = ?').get(req.club.id);
@@ -149,7 +163,7 @@ scoped.get('/', clubs.requireReadable, wrap(async (req, res) => {
 
 /* A foto, como bytes e com cache eterno — o `?v=` muda quando ela muda, que é o
    que torna o "para sempre" seguro. Mesma mecânica do retrato de uma pessoa. */
-scoped.get('/photo', clubs.requireReadable, wrap(async (req, res) => {
+scoped.get('/photo', clubs.requireVisible, wrap(async (req, res) => {
   const row = await db.prepare('SELECT photo, photo_mime FROM clubs WHERE id = ?').get(req.club.id);
   if (!row?.photo) return res.status(404).json({ error: 'Este clube não tem foto.' });
   res.setHeader('Content-Type', row.photo_mime || 'image/webp');
@@ -188,11 +202,24 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
   if ('visibility' in patch) {
     const v = patch.visibility === 'public' ? 'public' : 'private';
     await db.prepare('UPDATE clubs SET visibility = ? WHERE id = ?').run(v, req.club.id);
-    /* Fechar o clube joga fora os pedidos pendentes: eles só existem como
-       consequência de ele estar aberto, e um pedido que ninguém mais pode ter
-       feito não é uma fila, é lixo com nome de gente. */
-    if (v === 'private') {
-      await db.prepare('DELETE FROM club_join_requests WHERE club_id = ?').run(req.club.id);
+    /* ── abrir a sala admite quem estava esperando ──────────────────────
+       Um pedido é alguém dizendo "quero entrar aqui". Abrindo o clube, entrar
+       virou um clique — deixar essas pessoas na fila seria fazê-las apertar um
+       botão para conseguir o que já lhes foi concedido, e simplesmente apagar
+       os pedidos jogaria fora a intenção delas sem dizer nada.
+
+       Fechar não mexe em nada: numa sala aberta ninguém cria pedido. */
+    if (v === 'public') {
+      const esperando = await db
+        .prepare('SELECT reviewer_id FROM club_join_requests WHERE club_id = ?')
+        .all(req.club.id);
+      if (esperando.length) {
+        await db.batch(esperando.map(r => ({
+          sql: 'INSERT INTO club_members (club_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
+          args: [req.club.id, r.reviewer_id],
+        })));
+        await db.prepare('DELETE FROM club_join_requests WHERE club_id = ?').run(req.club.id);
+      }
     }
   }
 
@@ -214,8 +241,10 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
 }));
 
 /* ── quem está aqui ───────────────────────────────────────────────────────
-   Legível por quem pode ler o clube, o que num clube público inclui quem está
-   de fora: saber quem já está na sala é metade da decisão de pedir para entrar. */
+   Conteúdo, e não fachada. A fachada diz QUANTAS pessoas — o número está no
+   card e ajuda a decidir se vale pedir para entrar. Quem são elas é coisa de
+   dentro: uma lista de nomes é informação sobre pessoas, e num clube fechado
+   ela não é de quem está do lado de fora. */
 scoped.get('/members', clubs.requireReadable, wrap(async (req, res) => {
   const rows = await clubs.roster(req.club.id);
   res.json({
@@ -288,17 +317,36 @@ scoped.patch('/members/:id', clubs.requireClubAdmin, wrap(async (req, res) => {
   res.json({ ok: true, role });
 }));
 
-/* ── pedir para entrar ────────────────────────────────────────────────────
-   Só clube público, porque um clube privado não aparece para quem não é dele —
-   e a rota responde 404 justamente para não confirmar que ele existe.
+/* ══════════════════════════════════════════════════════════════════════════
+   A porta.
 
-   Sem corpo e sem mensagem: um pedido é um nome numa lista, e a conversa sobre
-   por que você quer entrar acontece onde as pessoas já se falam. */
+   Uma rota, dois comportamentos, e é a visibilidade do clube que decide qual:
+
+   **Aberto** — entra na hora e já pode avaliar. Sem pedido, sem espera, sem
+   ninguém para aprovar. É o que faz uma rede crescer, e a consequência é
+   assumida: quem abre uma sala está dizendo que aceita quem chegar.
+
+   **Fechado** — vira um pedido, e um ADM decide. A sala aparece na vitrine com
+   nome e foto justamente para que este pedido seja possível; o que ela guarda é
+   o que tem dentro.
+
+   Sem corpo e sem mensagem nos dois casos: um pedido é um nome numa lista, e a
+   conversa sobre por que você quer entrar acontece onde as pessoas já se falam.
+   ══════════════════════════════════════════════════════════════════════════ */
 scoped.post('/join', auth.requireSession, wrap(async (req, res) => {
-  if (req.club.visibility !== 'public') {
-    return res.status(404).json({ error: 'Clube não encontrado.' });
-  }
   if (req.club.isMember) return res.status(409).json({ error: 'Você já está neste clube.' });
+
+  if (req.club.visibility === 'public') {
+    await db.prepare(
+      'INSERT INTO club_members (club_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+    ).run(req.club.id, req.session.reviewer_id);
+    /* Um pedido antigo, de quando a sala ainda era fechada, deixa de fazer
+       sentido no instante em que a pessoa está dentro. */
+    await db.prepare('DELETE FROM club_join_requests WHERE club_id = ? AND reviewer_id = ?')
+      .run(req.club.id, req.session.reviewer_id);
+    live.emit('club', req.session.reviewer_id, req.club.id);
+    return res.status(201).json({ joined: true });
+  }
 
   await db.prepare(
     'INSERT INTO club_join_requests (club_id, reviewer_id) VALUES (?, ?) ON CONFLICT DO NOTHING'

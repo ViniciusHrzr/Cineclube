@@ -73,25 +73,53 @@ async function resolve(req, res, next) {
   }
 }
 
-/* ── ler ──────────────────────────────────────────────────────────────────
-   Clube público é lido por qualquer um, inclusive deslogado — é isso que
-   alimenta a vitrine e é a versão por clube do "leitura é aberta" que este
-   produto sempre teve. Clube privado responde 404, e não 403, de propósito: um
-   403 confirma que o clube existe, e a existência de um clube privado é
-   exatamente a informação que ele não quer dar. */
-function requireReadable(req, res, next) {
-  if (req.club.isMember || req.club.visibility === 'public') return next();
-  res.status(404).json({ error: 'Clube não encontrado.' });
+/* ══════════════════════════════════════════════════════════════════════════
+   As duas camadas de "ver".
+
+   Elas são coisas diferentes e é a confusão entre as duas que faz um produto
+   assim ficar errado:
+
+   **A FACHADA** — nome, foto, descrição, quantas pessoas. Isso é de todo mundo,
+   inclusive de um clube fechado. Uma sala que ninguém consegue enxergar é uma
+   sala em que ninguém consegue pedir para entrar, e um clube fechado quer ser
+   achado; o que ele não quer é ser lido.
+
+   **O CONTEÚDO** — fichas, mural, conversa, fila, elenco. Isso é de quem é da
+   sala, a não ser que a sala seja aberta.
+
+   ── e por que 403 e não 404 ───────────────────────────────────────────────
+   Houve uma versão disto em que clube fechado respondia 404 para não confirmar
+   que existia. Isso deixou de fazer sentido no instante em que ele passou a
+   aparecer na vitrine com nome e foto: esconder pela rota o que a tela lista é
+   uma mentira que só engana quem escreveu o código. 403 é a resposta honesta, e
+   ela diz o que fazer.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** A fachada. Todo clube tem uma, e ela é de todo mundo. */
+function requireVisible(_req, _res, next) {
+  next();
 }
 
-/** Escrever é de quem é do clube. Sempre. */
+/** O conteúdo. De quem é da sala — ou de qualquer um, se ela for aberta. */
+function requireReadable(req, res, next) {
+  if (req.club.isMember || req.club.visibility === 'public') return next();
+  res.status(403).json({
+    error: 'Este clube é fechado. Peça para entrar para ver o que tem dentro.',
+  });
+}
+
+/* Escrever é de quem é do clube, sempre — e a diferença entre aberto e fechado
+   nunca é essa: é só como se entra. Num clube aberto, entrar é um clique; num
+   fechado, é um pedido que alguém aprova. Depois de dentro, os dois são iguais. */
 function requireMember(req, res, next) {
   if (!req.session) return res.status(401).json({ error: 'Entre para continuar.' });
   if (req.club.isMember) return next();
-  if (req.club.visibility === 'public') {
-    return res.status(403).json({ error: 'Você precisa entrar no clube para fazer isso.' });
-  }
-  res.status(404).json({ error: 'Clube não encontrado.' });
+  res.status(403).json({
+    error:
+      req.club.visibility === 'public'
+        ? 'Entre no clube para fazer isso.'
+        : 'Este clube é fechado. Peça para entrar.',
+  });
 }
 
 /* ── mandar ───────────────────────────────────────────────────────────────
@@ -102,10 +130,7 @@ function requireMember(req, res, next) {
 function requireClubAdmin(req, res, next) {
   if (!req.session) return res.status(401).json({ error: 'Entre para continuar.' });
   if (req.club.isClubAdmin || req.session.is_admin) return next();
-  if (req.club.isMember || req.club.visibility === 'public') {
-    return res.status(403).json({ error: 'Só quem administra o clube pode fazer isso.' });
-  }
-  res.status(404).json({ error: 'Clube não encontrado.' });
+  res.status(403).json({ error: 'Só quem administra o clube pode fazer isso.' });
 }
 
 /** Os membros de um clube, na ordem em que entraram. Usado pelo apelido também. */
@@ -132,6 +157,7 @@ const mineStmt = db.prepare(`
 module.exports = {
   findClub,
   resolve,
+  requireVisible,
   requireReadable,
   requireMember,
   requireClubAdmin,

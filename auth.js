@@ -118,6 +118,49 @@ async function lockedSecondsLeft(reviewer) {
    que cria uma pessoa vinda do Google, e ela precisa nascer com a sua. */
 const DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#e0b1a4', '#9fd0c0', '#d9c07a'];
 
+/* ── uma conta criada à mão ───────────────────────────────────────────────
+   Nem todo mundo tem, ou quer usar, uma conta Google. Isso não é um caso de
+   borda — é metade das pessoas —, e um produto cuja única porta é a de outra
+   empresa é um produto que decidiu de quem os seus usuários precisam ser
+   clientes.
+
+   O e-mail aqui NÃO é verificado, e é honesto dizer isso em vez de fingir: não
+   há serviço de e-mail neste app, então não há como mandar um link de
+   confirmação. A consequência é concreta e está contida: uma conta assim serve
+   para entrar e para usar o produto, e não serve para HERDAR nada. Só um e-mail
+   verificado pelo Google liga uma conta que já existia, e só ele senta na
+   cadeira de administrador da instalação — ver `accountForGoogle` e server.js.
+
+   O dia em que existir envio de e-mail, o que muda é uma coluna `email_verified`
+   e um link; nada do que está escrito acima deixa de valer. */
+async function register({ name, email, password }) {
+  const mail = String(email || '').trim().toLowerCase();
+  const quem = String(name || '').trim().slice(0, 60);
+
+  if (!isValidEmail(mail)) return { error: 'E-mail inválido.' };
+  if (!quem) return { error: 'Diga como você quer ser chamado.' };
+  if (!isValidPassword(password)) {
+    return { error: `A senha precisa ter entre ${MIN_PASSWORD} e ${MAX_PASSWORD} caracteres.` };
+  }
+
+  const taken = await db
+    .prepare('SELECT id FROM reviewers WHERE email = ? COLLATE NOCASE').get(mail);
+  if (taken) return { error: 'Já existe uma conta com este e-mail.' };
+
+  const id = 'p' + crypto.randomUUID();
+  const dot = DOTS[Math.floor(Math.random() * DOTS.length)];
+  await db.prepare('INSERT INTO reviewers (id, name, dot, email) VALUES (?, ?, ?, ?)')
+    .run(id, quem, dot, mail);
+  await setPassword(id, password);
+  return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id) };
+}
+
+/* Deliberadamente frouxo. A validação séria de e-mail é mandar um e para lá, e
+   isto não manda; o que esta regra evita é `João` e ` ` virando login, não uma
+   pessoa determinada a escrever um endereço que não é dela. */
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+const isValidEmail = mail => typeof mail === 'string' && mail.length <= 200 && EMAIL_RE.test(mail);
+
 /* ── a conta que o Google aponta ──────────────────────────────────────────
    Procurada por `sub` antes de por e-mail, e a ordem é a regra de segurança
    inteira: `sub` é o identificador que o Google garante estável para sempre,
@@ -306,9 +349,11 @@ module.exports = {
   MIN_PASSWORD,
   MAX_PASSWORD,
   isValidPassword,
+  isValidEmail,
   setPassword,
   checkPassword,
   lockedSecondsLeft,
+  register,
   accountForGoogle,
   createSession,
   readSession,
