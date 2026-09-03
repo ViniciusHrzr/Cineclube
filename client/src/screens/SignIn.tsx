@@ -436,8 +436,17 @@ export function ClaimAccount({
 
         {quem ? (
           <form onSubmit={submit} className="mx-auto flex w-full max-w-[300px] flex-col gap-3">
+            {/* Mascarado, como qualquer credencial. Este PIN tem os dias
+                contados, mas enquanto ele vale alguma coisa ele vale por
+                inteiro: quatro dígitos à mostra numa tela que alguém abre com
+                gente por perto são quatro dígitos que a pessoa ao lado leu.
+
+                `inputMode` sobrevive à máscara — o teclado do celular continua
+                numérico —, e `autoComplete="off"` existe para o navegador não
+                oferecer guardar uma senha que vai deixar de existir. */}
             <Field
               label="Seu PIN de antes"
+              type="password"
               inputMode="numeric"
               autoComplete="off"
               autoFocus
