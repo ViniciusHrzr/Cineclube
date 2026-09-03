@@ -100,6 +100,15 @@ export const auth = {
   logout: () => post<null>('/api/auth/logout', {}),
   setPassword: (password: string, current?: string) =>
     post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
+  /* As contas de antes do Google que ninguém reivindicou. A lista se esvazia
+     sozinha conforme as pessoas voltam, e no dia em que estiver vazia esta tela
+     deixa de aparecer para sempre. */
+  claimable: () =>
+    api<{ accounts: { id: string; name: string; dot: string; avatar: string | null }[] }>(
+      '/api/auth/claimable'
+    ),
+  claim: (reviewerId: string, pin: string) =>
+    post<{ reviewer: SessionUser }>('/api/auth/claim', { reviewerId, pin }),
 };
 
 /* ── as salas ─────────────────────────────────────────────────────────────

@@ -265,6 +265,73 @@ router.post('/register', wrap(async (req, res) => {
   res.status(201).json({ reviewer: publicReviewer(out.reviewer) });
 }));
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Reivindicar a conta de antes do Google.
+
+   O porquê inteiro está em auth.js. Aqui só a forma: quem já tinha conta escolhe
+   o próprio nome numa lista curta e prova com o PIN que sempre usou.
+
+   A lista só mostra contas que dividem um clube com quem perguntou. Como as
+   contas de antes estão todas no clube fundador, que é fechado, isso quer dizer
+   que ver a lista exige o ADM já ter deixado a pessoa entrar — e é esse aval, e
+   não o PIN, que impede um estranho de chutar quatro dígitos num rosto alheio.
+   ══════════════════════════════════════════════════════════════════════════ */
+router.get('/claimable', auth.requireSession, wrap(async (req, res) => {
+  const rows = await auth.claimable(req.session.reviewer_id);
+  res.json({
+    accounts: rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      dot: r.dot,
+      avatar: avatarUrl(r.id, r.avatar_rev),
+    })),
+  });
+}));
+
+router.post('/claim', auth.requireSession, wrap(async (req, res) => {
+  const { reviewerId, pin } = req.body || {};
+  const me = req.session.reviewer_id;
+  if (!reviewerId || reviewerId === me) {
+    return res.status(400).json({ error: 'Escolha qual conta é a sua.' });
+  }
+
+  /* Quem reivindica precisa ser uma conta de agora. Uma conta adormecida
+     reivindicando outra seria duas contas mortas se fundindo — e o caminho para
+     alguém encadear reivindicações sem nunca provar nada com uma credencial de
+     verdade. */
+  const quem = await getReviewer.get(me);
+  if (!quem?.google_sub && !quem?.password_hash) {
+    return res.status(409).json({ error: 'Entre pelo Google ou com uma senha antes de reivindicar.' });
+  }
+
+  /* A mesma condição da lista, cobrada aqui — porque a lista é uma sugestão e o
+     id viaja no corpo do pedido. Sem esta linha, um estranho tentaria PINs em
+     qualquer conta só por saber um id, e a proteção inteira seria decorativa. */
+  if (!(await auth.canClaim(me, reviewerId))) {
+    return res.status(403).json({ error: 'Você só reivindica uma conta de um clube em que já está.' });
+  }
+
+  const veredito = await auth.checkClaimPin(reviewerId, pin);
+  if (veredito === 'gone') {
+    return res.status(404).json({ error: 'Essa conta já foi reivindicada, ou não existe mais.' });
+  }
+  if (veredito === 'locked') {
+    const left = await auth.lockedSecondsLeft(await getReviewer.get(reviewerId));
+    return res.status(429).json({ error: `Muitas tentativas. Tente de novo em ${left}s.`, retryAfter: left });
+  }
+  if (veredito !== 'ok') return res.status(401).json({ error: 'PIN incorreto.' });
+
+  const out = await auth.claimAccount(me, reviewerId);
+  if (out.error) return res.status(409).json(out);
+
+  /* A sessão apontava para a conta que acabou de deixar de existir. Uma nova,
+     na conta de verdade — sem isto o navegador ficaria segurando um token órfão
+     e a pessoa cairia na tela de entrada logo depois de acertar o PIN. */
+  const token = await auth.createSession(out.reviewer.id);
+  auth.sendSessionCookie(res, token);
+  res.json({ reviewer: publicReviewer(out.reviewer) });
+}));
+
 router.post('/logout', wrap(async (req, res) => {
   await auth.destroySession(req.sessionToken);
   auth.clearSessionCookie(res);

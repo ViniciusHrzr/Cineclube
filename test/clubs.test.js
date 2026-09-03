@@ -498,6 +498,153 @@ test('a sala de projeção é de dentro: nem ler, sem ser membro', async () => {
   assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 200, 'mas o acervo continua aberto');
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Reivindicar a conta de antes do PIN.
+
+   Dez pessoas tinham conta quando entrar era um PIN. As fichas delas continuam
+   lá, e sem um caminho de volta cada uma ganharia uma conta nova e vazia.
+
+   O que estes testes protegem é a condição que faz o PIN bastar: num clube de
+   amigos os PINs se repetem, então nome mais quatro dígitos não seria prova
+   suficiente sozinho. Ver a lista exige já dividir um clube com a conta órfã —
+   e como as órfãs estão todas num clube fechado, isso quer dizer que o ADM já
+   deixou a pessoa entrar.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Uma conta como as de antes: PIN, e nada mais. */
+async function contaAntiga(nome, pin = '1234') {
+  const crypto2 = require('node:crypto');
+  const id = 'p' + crypto2.randomUUID();
+  const salt = crypto2.randomBytes(16).toString('hex');
+  const hash = crypto2.scryptSync(pin, salt, 64).toString('hex');
+  await db.prepare('INSERT INTO reviewers (id, name, dot) VALUES (?, ?, ?)').run(id, nome, '#b5abfc');
+  await db.prepare('UPDATE reviewers SET pin_hash = ?, pin_salt = ? WHERE id = ?').run(hash, salt, id);
+  return { id, name: nome, pin };
+}
+
+test('quem está de fora do clube não vê conta órfã nenhuma', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Órfãos ${++seq}`, owner: dono.id });
+  const velha = await contaAntiga(`Antigo ${++seq}`);
+  await kit.join(sala.id, velha.id);
+
+  const estranho = await kit.signIn();
+  const lista = await req('GET', '/api/auth/claimable', null, estranho.cookie);
+  assert.equal(lista.status, 200);
+  assert.ok(!lista.body.accounts.some(a => a.id === velha.id), 'a lista é o primeiro portão');
+
+  /* E o portão não é só a lista: o id viaja no corpo do pedido, então a mesma
+     condição é cobrada na reivindicação. Sem isto a proteção seria decorativa. */
+  const tenta = await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: velha.pin }, estranho.cookie);
+  assert.equal(tenta.status, 403, 'saber o id e o PIN não basta para quem não é do clube');
+});
+
+test('quem é do clube reivindica, e leva o histórico junto', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Volta ${++seq}`, owner: dono.id });
+  const velha = await contaAntiga(`Bruno Antigo ${++seq}`);
+  await kit.join(sala.id, velha.id);
+
+  // A ficha que ela deixou para trás.
+  const filme = movie();
+  await db.prepare(
+    `INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_genre, scores, final, date)
+     VALUES (?, ?, ?, ?, ?, 'Terror', '{}', 7, '2026-01-01')`
+  ).run('r-antiga-' + seq, sala.id, velha.id, filme.id, filme.title);
+
+  // A pessoa volta: entra de novo, e o ADM a aceita no clube.
+  const nova = await kit.signIn('Bruno Novo');
+  await kit.join(sala.id, nova.id);
+
+  const lista = await req('GET', '/api/auth/claimable', null, nova.cookie);
+  assert.ok(lista.body.accounts.some(a => a.id === velha.id), 'agora ela enxerga a própria conta antiga');
+
+  const errado = await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: '9999' }, nova.cookie);
+  assert.equal(errado.status, 401);
+
+  const certo = await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: velha.pin }, nova.cookie);
+  assert.equal(certo.status, 200);
+  assert.equal(certo.body.reviewer.id, velha.id, 'a conta que sobrevive é a antiga, com o histórico');
+  assert.equal(certo.body.reviewer.name, velha.name, 'e com o nome de antes');
+
+  /* A sessão nova aponta para a conta antiga, e a credencial do Google veio
+     junto — senão a pessoa acertaria o PIN e cairia na tela de entrada. */
+  const cookie = certo.setCookie.split(';')[0];
+  const eu = await req('GET', '/api/auth/me', null, cookie);
+  assert.equal(eu.body.reviewer.id, velha.id);
+
+  // A ficha continua onde estava, e a conta nova deixou de existir.
+  const acervo = await req('GET', at(sala, '/reviews'), null, cookie);
+  assert.ok(acervo.body.reviews.some(r => r.reviewerId === velha.id));
+  assert.equal(await db.prepare('SELECT id FROM reviewers WHERE id = ?').get(nova.id), undefined);
+});
+
+test('uma conta já reivindicada some da lista e não é reivindicável de novo', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Uma vez ${++seq}`, owner: dono.id });
+  const velha = await contaAntiga(`Só Uma Vez ${++seq}`);
+  await kit.join(sala.id, velha.id);
+
+  const primeira = await kit.signIn();
+  await kit.join(sala.id, primeira.id);
+  assert.equal(
+    (await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: velha.pin }, primeira.cookie)).status,
+    200
+  );
+
+  const segunda = await kit.signIn();
+  await kit.join(sala.id, segunda.id);
+  const lista = await req('GET', '/api/auth/claimable', null, segunda.cookie);
+  assert.ok(!lista.body.accounts.some(a => a.id === velha.id), 'a porta se fecha sozinha');
+  assert.equal(
+    (await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: velha.pin }, segunda.cookie)).status,
+    404
+  );
+});
+
+test('PINs iguais em contas diferentes não confundem nada', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Mesmo PIN ${++seq}`, owner: dono.id });
+  const ana = await contaAntiga(`Ana Igual ${++seq}`, '1234');
+  const bruno = await contaAntiga(`Bruno Igual ${++seq}`, '1234');
+  await kit.join(sala.id, ana.id);
+  await kit.join(sala.id, bruno.id);
+
+  const quem = await kit.signIn();
+  await kit.join(sala.id, quem.id);
+
+  /* O PIN é conferido contra A CONTA ESCOLHIDA, e não contra um conjunto. Quem
+     escolhe a Ana e digita 1234 vira a Ana, nunca o Bruno. */
+  const res = await req('POST', '/api/auth/claim', { reviewerId: ana.id, pin: '1234' }, quem.cookie);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reviewer.id, ana.id);
+  assert.equal(res.body.reviewer.name, ana.name);
+
+  // E a do Bruno continua intocada, esperando o dono.
+  const bruAinda = await db.prepare('SELECT google_sub FROM reviewers WHERE id = ?').get(bruno.id);
+  assert.equal(bruAinda.google_sub, null);
+});
+
+test('errar o PIN muitas vezes tranca a conta antiga por um tempo', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ name: `Trava ${++seq}`, owner: dono.id });
+  const velha = await contaAntiga(`Trancada ${++seq}`, '4321');
+  await kit.join(sala.id, velha.id);
+
+  const quem = await kit.signIn();
+  await kit.join(sala.id, quem.id);
+
+  let last;
+  for (let i = 0; i < 6; i++) {
+    last = await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: '0000' }, quem.cookie);
+  }
+  assert.equal(last.status, 429);
+
+  // E o PIN certo também espera — senão a trava seria só um aviso.
+  const certo = await req('POST', '/api/auth/claim', { reviewerId: velha.id, pin: '4321' }, quem.cookie);
+  assert.equal(certo.status, 429);
+});
+
 /* ── criar conta sem Google ──────────────────────────────────────────────
    Nem todo mundo tem, ou quer usar, uma conta Google. Um produto cuja única
    porta é a de outra empresa decidiu de quem os seus usuários precisam ser

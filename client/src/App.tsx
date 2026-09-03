@@ -30,7 +30,10 @@ import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening
 import { Key, Reel } from '@/components/bits';
 import { AccountSheet } from '@/components/settings';
 import { Lobby } from '@/screens/Lobby';
-import { SetPassword, SignIn } from '@/screens/SignIn';
+import { ClaimAccount, SetPassword, SignIn } from '@/screens/SignIn';
+
+/** Uma conta de antes da entrada pelo Google, esperando dono. */
+type Orphan = { id: string; name: string; dot: string; avatar: string | null };
 import { cn, plural } from '@/lib/utils';
 import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
@@ -242,6 +245,11 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(false);
   const [skippedPassword, setSkippedPassword] = useState(false);
+  /* As contas de antes da entrada pelo Google que ninguém reivindicou. `null`
+     enquanto não se perguntou; a lista se esvazia sozinha conforme as pessoas
+     voltam, e no dia em que estiver vazia esta tela some para sempre. */
+  const [orphans, setOrphans] = useState<Orphan[] | null>(null);
+  const [skippedClaim, setSkippedClaim] = useState(false);
   const [route, setRoute] = useState<Route>(() => routeFromHash());
   /** A folha da própria conta, aberta pelo rosto na barra do saguão. */
   const [self, setSelf] = useState(false);
@@ -264,6 +272,16 @@ export default function App() {
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
+
+  /* Só depois de haver sessão, e o erro morre em silêncio: uma lista vazia e uma
+     lista que não carregou levam ao mesmo lugar — seguir sem oferecer nada. */
+  useEffect(() => {
+    if (!me) return;
+    void auth
+      .claimable()
+      .then(r => setOrphans(r.accounts))
+      .catch(() => setOrphans([]));
+  }, [me]);
 
   useEffect(() => {
     const onHash = () => setRoute(routeFromHash());
@@ -322,6 +340,27 @@ export default function App() {
           void checkAuth();
         }}
         onSkip={() => setSkippedPassword(true)}
+      />
+    );
+  }
+
+  /* ── "você já tinha conta aqui?" ──────────────────────────────────────
+     Depois da senha e antes de tudo o mais, e só quando há o que reivindicar. A
+     lista só traz contas órfãs de um clube em que a pessoa já está (ver
+     auth.js), então esta tela naturalmente aparece DEPOIS de o ADM ter aceitado
+     a entrada dela — que é a ordem certa e é o que torna o PIN uma prova
+     suficiente. Some sozinha quando a última conta for reclamada. */
+  if (orphans && orphans.length > 0 && !skippedClaim) {
+    return (
+      <ClaimAccount
+        accounts={orphans}
+        onClaimed={() => {
+          setOrphans([]);
+          void checkAuth();
+          // A ficha, a fila e a conversa mudaram de dono: recarregar é o honesto.
+          location.reload();
+        }}
+        onSkip={() => setSkippedClaim(true)}
       />
     );
   }

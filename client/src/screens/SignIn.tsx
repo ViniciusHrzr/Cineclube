@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { auth, type SessionUser } from '@/lib/api';
+import { auth, initialsOf, reelColor, type SessionUser } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -371,6 +371,132 @@ export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: ()
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   "Você já tinha conta aqui?"
+
+   Dez pessoas usavam este produto quando entrar era um PIN. O PIN acabou; as
+   fichas delas, não. Esta tela é a ponte, e ela existe por um tempo só: some
+   sozinha quando a última conta for reivindicada, porque nenhuma conta nova
+   nasce com PIN.
+
+   ── por que os rostos voltaram, só aqui ───────────────────────────────────
+   O mural de rostos morreu na porta de entrada por um motivo específico — numa
+   rede, ele seria a lista de todos os usuários da plataforma. Aqui a lista é
+   outra coisa: são as poucas contas órfãs de uma migração, e reconhecer a
+   própria cara é exatamente o gesto que a tela pede. A mesma forma, com o
+   alcance certo.
+
+   Nada disto é obrigatório. Quem nunca teve conta aqui aperta "não é meu caso" e
+   segue — e vai continuar podendo voltar pelos ajustes se lembrar depois.
+   ══════════════════════════════════════════════════════════════════════════ */
+export function ClaimAccount({
+  accounts,
+  onClaimed,
+  onSkip,
+}: {
+  accounts: { id: string; name: string; dot: string; avatar: string | null }[];
+  onClaimed: () => void;
+  onSkip: () => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const quem = accounts.find(a => a.id === picked) ?? null;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!picked || pin.length !== 4 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.claim(picked, pin);
+      onClaimed();
+    } catch (err) {
+      setError((err as Error).message);
+      setPin('');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
+      <HolographicWall asBackdrop />
+      <div className="relative mx-auto flex w-full max-w-[820px] flex-1 flex-col justify-center px-5 py-14">
+        <header className="mb-9 text-center">
+          <h1 className="font-display text-[34px] leading-none tracking-[0.06em] text-beam">
+            {quem ? `Você é ${quem.name}?` : 'Você já tinha conta aqui?'}
+          </h1>
+          <p className="mx-auto mt-4 max-w-[48ch] text-[13.5px] leading-relaxed text-ink-dim">
+            {quem
+              ? 'Digite o PIN de 4 dígitos que você usava. As suas avaliações, o seu nome e a sua foto voltam para esta conta.'
+              : 'Estas contas são de antes da entrada pelo Google, e são do clube em que você acabou de entrar. Se uma delas é sua, as suas avaliações continuam lá esperando.'}
+          </p>
+        </header>
+
+        {quem ? (
+          <form onSubmit={submit} className="mx-auto flex w-full max-w-[300px] flex-col gap-3">
+            <Field
+              label="Seu PIN de antes"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              value={pin}
+              onChange={v => setPin(v.replace(/\D/g, '').slice(0, 4))}
+              className="q text-center text-[22px] tracking-[0.5em]"
+            />
+            {error ? <Fault>{error}</Fault> : null}
+            <div className="mt-1 flex items-center gap-2">
+              <Key tone="commit" type="submit" disabled={busy || pin.length !== 4}>
+                {busy ? 'Conferindo' : 'É minha'}
+              </Key>
+              <Key tone="ghost" onClick={() => { setPicked(null); setPin(''); setError(null); }}>
+                Voltar
+              </Key>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-start justify-center gap-6">
+              {accounts.map((a, i) => (
+                <motion.button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setPicked(a.id)}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(i, 8) * 0.045 }}
+                  className="group flex w-[104px] flex-col items-center gap-3 sm:w-[120px]"
+                >
+                  <span
+                    className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-plate font-display text-[32px] tracking-[0.06em] text-house-deep ring-1 ring-white/10 transition-transform duration-200 ease-beam group-hover:scale-[1.05]"
+                    style={{ background: reelColor(a.dot, a.id) }}
+                  >
+                    {a.avatar ? (
+                      <img src={a.avatar} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      initialsOf(a.name)
+                    )}
+                  </span>
+                  <span className="text-center text-[13.5px] text-ink-dim transition-colors group-hover:text-beam">
+                    {a.name}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+
+            <div className="mt-10 text-center">
+              <Key tone="ghost" onClick={onSkip}>
+                Nenhuma delas é minha
+              </Key>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── um campo ─────────────────────────────────────────────────────────────
    Recuado na sala, como todo campo deste produto: fundo `house-deep`, anel
    `house-rail`, cantos de 2px e o cursor vermelho — a única aparição de vermelho
@@ -394,13 +520,14 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         ref={ref}
         value={value}
         onChange={e => onChange(e.target.value)}
+        {...rest}
         className={cn(
           'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red',
           'ring-1 transition-shadow placeholder:text-ink-dim',
           'focus-visible:outline-none focus-visible:ring-dye-brass',
-          bad ? 'ring-dye-red-lit/60' : 'ring-house-rail'
+          bad ? 'ring-dye-red-lit/60' : 'ring-house-rail',
+          rest.className
         )}
-        {...rest}
       />
       {hint ? (
         <span className={cn('text-[12px]', bad ? 'text-dye-red-lit' : 'text-ink-faint')}>{hint}</span>
