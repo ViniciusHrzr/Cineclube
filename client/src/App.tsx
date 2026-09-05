@@ -1116,7 +1116,6 @@ function ClubApp({
         <Marquee
           tab={tab}
           onTab={goTab}
-          onOpenReview={goReview}
           onOpenSelf={() => goPerson()}
           me={me}
           club={ctx.club}
@@ -1256,7 +1255,6 @@ function Lamp({ on, playing }: { on: boolean; playing: boolean }) {
 function Marquee({
   tab,
   onTab,
-  onOpenReview,
   onOpenSelf,
   me,
   club,
@@ -1266,8 +1264,6 @@ function Marquee({
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
-  /** Onde um aviso do sino leva: a ficha que ele é sobre. */
-  onOpenReview: (reviewId: string) => void;
   /** O seu próprio rosto, que é a porta do seu perfil. */
   onOpenSelf: () => void;
   me: SessionUser;
@@ -1403,7 +1399,10 @@ function Marquee({
               <span className="q text-[12px] font-semibold leading-none">{club.pending}</span>
             </button>
           ) : null}
-          <Notices onOpenReview={onOpenReview} onOpenRequests={onOpenRequests} />
+          {/* Sem props: o sino é da rede, junta todas as salas da pessoa e
+              carrega o clube em cada linha, então ele mesmo sabe para onde
+              levar. Ele é o mesmo componente do saguão. */}
+          <Notices />
           {/* O seu rosto é a porta do seu perfil — e é o mesmo gesto que abre o
               de qualquer outra pessoa em qualquer lugar do app. Levava à sala
               de formulários chamada Avaliadores; agora leva à sua página. */}

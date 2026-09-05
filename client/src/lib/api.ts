@@ -359,7 +359,13 @@ export type Notice = {
   kind: 'comment' | 'reply' | 'mention' | 'vote' | 'like' | 'join';
   /** ISO em UTC, sem fuso no texto — ver `whenOf`. */
   at: string;
-  actor: { id: string; name: string; dot: string };
+  /* O retrato vem no aviso e não do elenco do clube: o sino é lido no saguão,
+     onde não há elenco nenhum para consultar. */
+  actor: { id: string; name: string; dot: string; avatar?: string | null };
+  /* De qual sala veio. Presente no sino da rede, ausente no de uma sala só —
+     lá a resposta é a sala em que se está. É também o que faz o clique levar
+     ao lugar certo de qualquer tela. */
+  club?: { name: string; slug: string };
   movieId?: number;
   reviewId?: string;
   /* O texto exato de que o aviso fala, quando há um. É o que faz o link levar
@@ -414,15 +420,31 @@ export type FeedEvent = {
 
 /* O sino é de uma sala: a pessoa em três clubes tem três sinos, e cada um conta
    o que aconteceu na sua. Ver routes/notifications.js. */
+/* ── o sino, e ele é da REDE ──────────────────────────────────────────────
+   Uma lista só, de todas as salas de que a pessoa é. Antes havia um sino por
+   clube e ele só existia dentro dele: quem estava em três salas precisava entrar
+   em cada uma para saber se alguém tinha respondido alguma coisa, e o saguão —
+   a primeira tela depois de entrar, onde "o que aconteceu enquanto eu não
+   estava?" é a única pergunta — não tinha nenhum.
+
+   Fora do escopo de clube (`api` e não `capi`), por isso mesmo. A rota por sala
+   continua existindo no servidor; nenhuma tela usa. */
 export const notifications = {
   all: () =>
-    capi<{ items: Notice[]; unread: number; seenAt: string | null; clearedAt: string | null }>(
-      '/notifications'
-    ),
-  seen: () => cpost<{ seenAt: string | null }>('/notifications/seen', {}),
-  /* Esvazia a sua lista movendo uma data. Não apaga comentário, voto nem
-     curtida: um aviso é a projeção de uma linha que é de outra pessoa. */
-  clear: () => cpost<{ clearedAt: string | null }>('/notifications/clear', {}),
+    api<{
+      items: Notice[];
+      unread: number;
+      /* O que a CONTA está esperando, que não é um acontecimento e por isso não
+         entra na lista ordenada por tempo nem some ao limpar. */
+      account: { verifyEmail: boolean };
+      /** Em quantas salas a pessoa está: abaixo de duas, dizer de qual sala veio
+          cada linha é repetir a mesma palavra em todas elas. */
+      clubs: number;
+    }>('/api/notices'),
+  seen: () => post<{ ok: true }>('/api/notices/seen', {}),
+  /* Esvazia a sua lista movendo uma data por sala. Não apaga comentário, voto
+     nem curtida: um aviso é a projeção de uma linha que é de outra pessoa. */
+  clear: () => post<{ ok: true }>('/api/notices/clear', {}),
 };
 
 export const social = {

@@ -366,6 +366,22 @@ router.post('/register', throttleRegister, wrap(async (req, res) => {
   }
   const token = await auth.createSession(out.reviewer.id);
   auth.sendSessionCookie(res, token);
+
+  /* ── a confirmação sai sozinha ─────────────────────────────────────────
+     Sem isto, o link só existia depois de a pessoa achar o sino e apertar um
+     botão — e o momento em que ela entende por que confirmar é ESTE, o de
+     acabar de criar a conta. Pedir a mesma ação duas telas depois é pedi-la a
+     alguém que já esqueceu o motivo.
+
+     O botão de reenviar continua existindo, e não é redundância: primeiro
+     envio some no spam, gente digita o endereço errado, provedor cai. Um é o
+     caminho normal; o outro é o conserto.
+
+     `await` e não disparado ao vento, porque `mail.send` nunca lança — o pior
+     caso é `sent: false`, que já está tratado. Mas o cadastro não morre por
+     causa dele: a conta já existe e a sessão já foi aberta acima. */
+  if (out.reviewer.email) await sendVerification(out.reviewer);
+
   res.status(201).json({ reviewer: publicReviewer(out.reviewer) });
 }));
 
@@ -472,18 +488,25 @@ router.post('/claim', auth.requireSession, wrap(async (req, res) => {
    senha" de qualquer produto entrega de qualquer jeito. Aqui não é necessária.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* Cria o link e manda. Um lugar só, porque são dois chamadores: o cadastro, que
+   dispara sozinho, e o botão de reenviar. Escrito duas vezes, o dia em que o
+   texto do e-mail mudar ele muda em um dos dois. */
+async function sendVerification(reviewer) {
+  const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
+  const { subject, text } = mail.verifyMail(
+    reviewer.name,
+    `${mail.baseUrl()}/#confirmar/${token}`
+  );
+  return mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
+}
+
 /** Reenviar a confirmação para o próprio endereço. */
 router.post('/verify/send', auth.requireSession, throttleVerifySend, wrap(async (req, res) => {
   const reviewer = await getReviewer.get(req.session.reviewer_id);
   if (!reviewer?.email) return res.status(400).json({ error: 'Sua conta não tem e-mail.' });
   if (reviewer.email_verified) return res.json({ ok: true, already: true });
 
-  const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
-  const { subject, text } = mail.verifyMail(
-    reviewer.name,
-    `${mail.baseUrl()}/#confirmar/${token}`
-  );
-  const out = await mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
+  const out = await sendVerification(reviewer);
   /* Um provedor fora do ar não é erro do produto, e a tela sabe dizer a
      diferença entre "mandamos" e "não conseguimos mandar agora". */
   res.json({ ok: true, sent: out.sent });

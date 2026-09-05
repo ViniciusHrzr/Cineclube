@@ -125,6 +125,11 @@ app.use('/api/clubs', clubRoutes.index);
 /* O que a rede está fazendo, acima da linha do clube: a única leitura do produto
    que atravessa salas, e ela só enxerga o que cada uma emprestou. Ver lobby.js. */
 app.use('/api/lobby', require('./routes/lobby'));
+/* O sino, e ele é da REDE e não de uma sala: quem está em três clubes tinha três
+   sinos e precisava entrar em cada um para saber se alguém respondeu. Fora do
+   escopo de clube porque o saguão — a tela em que a pergunta "o que aconteceu
+   enquanto eu não estava?" é a única pergunta — não tem sala nenhuma. */
+app.use('/api/notices', require('./routes/notices'));
 app.use('/api/reviewers', reviewerRoutes.index);
 
 const scoped = express.Router({ mergeParams: true });

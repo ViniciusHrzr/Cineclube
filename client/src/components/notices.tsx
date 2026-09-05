@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, MessageSquare, ThumbsDown, ThumbsUp, UserPlus } from 'lucide-react';
-import { PersonReel } from '@/components/person';
-import { notifications, type Notice } from '@/lib/api';
+import { Bell, Mail, MessageSquare, ThumbsDown, ThumbsUp, UserPlus } from 'lucide-react';
+import { Key, Reel } from '@/components/bits';
+import { auth, initialsOf, notifications, reelColor, type Notice } from '@/lib/api';
 import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
+
+/* ── para onde um aviso leva ──────────────────────────────────────────────
+   O endereço completo, com o clube na frente, porque o sino é lido de qualquer
+   lugar: do saguão, onde não há sala nenhuma, e de dentro de uma sala falando
+   de outra. Um destino relativo à sala atual acertaria só num dos dois casos.
+
+   `location.hash` e não uma função vinda por prop: quem monta este endereço é o
+   App (`clubHash`), e passá-la por duas telas para o sino chamar seria
+   encanamento para uma linha de texto. */
+const go = (slug: string, rest: string) =>
+  (location.hash = `c/${encodeURIComponent(slug)}/${rest}`);
 
 /* ══════════════════════════════════════════════════════════════════════════
    O sino: quem reagiu ao que é seu.
@@ -41,6 +52,68 @@ const POLL_MS = 90_000;
 /** Quanto tempo o distintivo fica pulando quando chega coisa nova. */
 const POP_MS = 700;
 
+/* ── confirme seu e-mail ──────────────────────────────────────────────────
+   O único aviso de CONTA que existe hoje, e a razão de ele morar no sino: ele
+   viveu por um dia numa faixa embaixo de "Suas salas", e uma faixa permanente
+   sobre algo que a pessoa pode não querer fazer agora não informa — cobra, toda
+   vez que a tela abre. Um sino guarda o mesmo recado e espera ser aberto.
+
+   O link já foi mandado uma vez, sozinho, no instante do cadastro. Este botão é
+   o conserto e não o caminho: primeiro envio some no spam, gente digita o
+   endereço errado, provedor cai.
+
+   A frase nomeia as duas coisas que a confirmação destrava. "Confirme seu
+   e-mail" sozinho é uma ordem sem motivo, e um motivo não dito é um motivo que
+   a pessoa inventa — quase sempre pior que o verdadeiro. */
+function ConfirmNotice() {
+  const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
+
+  async function mandar() {
+    setState('indo');
+    try {
+      const out = await auth.sendVerification();
+      setState(out.sent === false ? 'falhou' : 'foi');
+    } catch {
+      setState('falhou');
+    }
+  }
+
+  return (
+    <div className="flex gap-2.5 border-b border-white/[0.05] px-4 py-3.5">
+      <Mail className="mt-0.5 h-4 w-4 flex-none text-dye-brass" strokeWidth={1.8} aria-hidden />
+      <div className="min-w-0">
+        <p className="font-display text-[13px] uppercase leading-none tracking-[0.1em] text-ink">
+          Confirme seu e-mail
+        </p>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
+          Destrava <span className="text-ink">fundar um clube</span> e{' '}
+          <span className="text-ink">recuperar a senha</span> se um dia você perder o acesso. O
+          resto do Cineclube já funciona.
+        </p>
+
+        {state === 'foi' ? (
+          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-green-lit">
+            Mandamos de novo. Vale por 24 horas — se não chegar, olhe no spam.
+          </p>
+        ) : state === 'falhou' ? (
+          /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
+             isso é melhor que um sucesso falso que deixa a pessoa esperando uma
+             mensagem que não vem. */
+          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-red-lit">
+            Não conseguimos mandar agora. Tente de novo daqui a pouco.
+          </p>
+        ) : (
+          <div className="mt-3">
+            <Key onClick={() => void mandar()} disabled={state === 'indo'}>
+              {state === 'indo' ? 'Mandando' : 'Mandar de novo'}
+            </Key>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function iconOf(kind: Notice['kind'], value?: number) {
   if (kind === 'join') return UserPlus;
   if (kind === 'comment' || kind === 'reply' || kind === 'mention') return MessageSquare;
@@ -48,21 +121,14 @@ function iconOf(kind: Notice['kind'], value?: number) {
   return value === -1 ? ThumbsDown : ThumbsUp;
 }
 
-export function Notices({
-  onOpenReview,
-  onOpenRequests,
-}: {
-  onOpenReview: (reviewId: string, commentId?: string | null) => void;
-  /** Onde um pedido de entrada leva: a porta do clube, nos ajustes dele. */
-  onOpenRequests: () => void;
-}) {
-  /* O retrato vem do clube, que já carrega a lista de avaliadores, e não do
-     aviso: uma foto é um fato sobre a pessoa e não sobre o aviso, e mandá-la em
-     cada item repetiria a mesma URL dezenas de vezes na mesma resposta. Quem
-     resolve isso agora é `PersonReel`, que faz a mesma consulta ao clube para
-     todo rosto do produto. */
+export function Notices() {
   const [items, setItems] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
+  /* O que a conta está esperando. Não é um acontecimento e por isso não está na
+     lista: um estado não tem hora, não envelhece, e o botão de limpar não pode
+     dispensá-lo — limpar esconde o que já aconteceu, e isto ainda não. */
+  const [verify, setVerify] = useState(false);
+  const [clubs, setClubs] = useState(0);
   const [open, setOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -73,6 +139,8 @@ export function Notices({
       const got = await notifications.all();
       setItems(got.items);
       setUnread(got.unread);
+      setVerify(!!got.account?.verifyEmail);
+      setClubs(got.clubs ?? 0);
       setFailed(false);
     } catch {
       /* Um sino que não carregou não é um erro que merece um toast por cima da
@@ -274,16 +342,23 @@ export function Notices({
             ) : null}
           </div>
 
+          {/* O aviso de conta vem primeiro e fora da lista: ele não concorre por
+              recência com um comentário de ontem, porque não é uma coisa que
+              aconteceu — é uma coisa que falta. */}
+          {verify ? <ConfirmNotice /> : null}
+
           {failed && !items.length ? (
             <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
               Não foi possível carregar as novidades agora.
             </p>
           ) : !items.length ? (
-            <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
-              Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua ficha, concordar
-              com uma nota sua, curtir um comentário seu — ou pedir para entrar no clube — aparece
-              aqui.
-            </p>
+            verify ? null : (
+              <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
+                Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua ficha,
+                concordar com uma nota sua, curtir um comentário seu — ou pedir para entrar num
+                clube — aparece aqui.
+              </p>
+            )
           ) : (
             <ul className="flex flex-col">
               {items.map(n => {
@@ -302,12 +377,30 @@ export function Notices({
                         O painel se fecha antes de navegar: ele é ancorado ao
                         sino e ficaria aberto por cima do perfil que acabou de
                         abrir, falando de uma tela que não está mais embaixo. */}
-                    <PersonReel
-                      person={n.actor}
-                      size="sm"
-                      solo
-                      onNavigate={() => setOpen(false)}
-                    />
+                    {/* O rosto leva ao perfil de quem reagiu, e fica fora do
+                        botão da linha porque um controle não se aninha em
+                        outro — e porque são dois destinos: o rosto pergunta
+                        "quem é essa pessoa" e o resto responde "o que ela fez".
+
+                        O endereço carrega o clube, então funciona igual do
+                        saguão e de dentro de outra sala. */}
+                    <button
+                      type="button"
+                      aria-label={n.actor.name}
+                      onClick={() => {
+                        setOpen(false);
+                        if (n.club) go(n.club.slug, `perfil/${n.actor.id}`);
+                      }}
+                      className="flex-none"
+                    >
+                      <Reel
+                        color={reelColor(n.actor.dot, n.actor.id)}
+                        src={n.actor.avatar}
+                        size="sm"
+                      >
+                        {initialsOf(n.actor.name)}
+                      </Reel>
+                    </button>
                     <button
                       type="button"
                       /* Leva à ficha de que o aviso fala, aberta e à vista —
@@ -316,13 +409,17 @@ export function Notices({
                          com o leitor não terminou de avisar. */
                       onClick={() => {
                         setOpen(false);
+                        if (!n.club) return;
                         /* Um pedido de entrada não aponta para ficha nenhuma:
                            ele leva à porta, que é onde se aceita ou recusa. */
                         if (n.kind === 'join' || !n.reviewId) {
-                          onOpenRequests();
+                          go(n.club.slug, 'ajustes');
                           return;
                         }
-                        onOpenReview(n.reviewId, n.commentId);
+                        go(
+                          n.club.slug,
+                          `reviews/${n.reviewId}` + (n.commentId ? `/${n.commentId}` : '')
+                        );
                       }}
                       className="flex min-w-0 flex-1 gap-2.5 text-left"
                     >
@@ -333,6 +430,14 @@ export function Notices({
                           </span>{' '}
                           {n.text}
                         </span>
+                        {/* De qual sala, e só quando há mais de uma: com um
+                            clube só, a mesma palavra em toda linha não informa
+                            nada e ainda empurra o texto para baixo. */}
+                        {clubs > 1 && n.club ? (
+                          <span className="mt-1 block font-display text-[10.5px] uppercase leading-none tracking-[0.12em] text-dye-brass">
+                            {n.club.name}
+                          </span>
+                        ) : null}
                         {n.excerpt ? (
                           <span className="mt-1 block break-words text-[12px] italic leading-snug text-ink-faint">
                             “{n.excerpt}”

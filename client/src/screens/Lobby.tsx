@@ -1,21 +1,11 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Bell,
-  Check,
-  Clock,
-  Mail,
-  MessageSquare,
-  Plus,
-  ShieldCheck,
-  ThumbsDown,
-  ThumbsUp,
-} from 'lucide-react';
+import { Check, Clock, MessageSquare, Plus, ShieldCheck, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Blank, Fault, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
+import { Notices } from '@/components/notices';
 import { PortraitGate } from '@/components/portrait';
 import {
-  auth,
   clubs,
   fmt,
   initialsOf,
@@ -210,9 +200,11 @@ export function Lobby({
           <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
             CINECLUBE
           </span>
-          {/* O sino antes do rosto, como na marquise de dentro do clube: o que
-              espera por você vem antes de quem você é. */}
-          <LobbyBell me={me} />
+          {/* O mesmo sino da marquise de dentro do clube, e é o ponto: ele é da
+              REDE. Junta as salas todas e diz de qual veio cada linha, o que faz
+              desta tela — a primeira depois de entrar — o lugar onde "o que
+              aconteceu enquanto eu não estava?" tem resposta. */}
+          <Notices />
           <button
             type="button"
             onClick={onOpenSelf}
@@ -579,153 +571,6 @@ function RoomTab({
         )}
       />
     </button>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   O SINO DO SAGUÃO.
-
-   O sino de dentro de um clube responde "o que aconteceu comigo NAQUELA SALA" —
-   quem comentou minha ficha, quem discordou da minha nota. Este responde outra
-   pergunta, e por isso é outro sino: **o que a minha CONTA está esperando de
-   mim**. Nenhuma das duas listas cabe na outra: uma é sobre um lugar, esta é
-   sobre uma pessoa, e o saguão é justamente o lugar onde ainda não há sala.
-
-   Hoje ele carrega um aviso só, e isso é uma medida do produto e não do
-   componente. O aviso de confirmar o e-mail morava numa faixa embaixo de "Suas
-   salas", e estava no lugar errado por um motivo que vale escrever: uma faixa
-   permanente sobre uma coisa que a pessoa pode não querer fazer agora não
-   informa, ela cobra. Toda vez que a tela abre. Um sino guarda o mesmo recado e
-   espera ser aberto — que é a diferença entre avisar e insistir.
-
-   Some sozinho quando não há nada, e o ícone só acende quando há: um sino
-   permanentemente apagado ainda é uma promessa de que algo pode chegar ali.
-   ══════════════════════════════════════════════════════════════════════════ */
-function LobbyBell({ me }: { me: SessionUser }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  /* A lista. Derivada do estado da conta, como o sino do clube é derivado das
-     tabelas de reação — sem tabela de aviso em lugar nenhum, então um aviso
-     desaparece sozinho no instante em que deixa de ser verdade. */
-  const pendente = me.emailVerified === false;
-
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', key);
-    };
-  }, [open]);
-
-  return (
-    <div ref={box} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-        aria-label={pendente ? 'Novidades: 1 aviso' : 'Novidades'}
-        className={cn(
-          'relative flex h-[30px] w-[30px] items-center justify-center rounded-cell transition-colors duration-150',
-          open || pendente ? 'text-dye-brass' : 'text-ink-dim hover:text-ink'
-        )}
-      >
-        <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        {/* Latão e não vermelho: ter aviso por ler é um ESTADO, e o vermelho
-            desta sala é ação e gravação. Mesma regra do sino do clube. */}
-        {pendente ? (
-          <span className="q absolute -right-0.5 -top-0.5 min-w-[15px] rounded-[2px] bg-dye-brass px-[3px] text-[9.5px] font-semibold leading-[15px] text-house-deep">
-            1
-          </span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div
-          role="region"
-          aria-label="Novidades"
-          className="plate absolute right-0 top-[38px] z-40 max-h-[min(70dvh,520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
-        >
-          <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-house-seat px-4 py-3">
-            <span className="legend">Novidades</span>
-          </div>
-          {pendente ? <ConfirmNotice /> : <BellBlank />}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function BellBlank() {
-  return (
-    <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
-      Nada esperando por você.
-    </p>
-  );
-}
-
-/* ── confirme seu e-mail ──────────────────────────────────────────────────
-   O único aviso de conta que existe hoje. Aparece para quem se cadastrou por
-   senha e ainda não provou o endereço; quem entrou pelo Google nunca vê isto,
-   porque aquele endereço já chegou provado.
-
-   A frase nomeia as duas coisas que a confirmação destrava. "Confirme seu
-   e-mail" sozinho é uma ordem sem motivo, e um motivo não dito é um motivo que
-   a pessoa inventa — quase sempre pior que o verdadeiro. */
-function ConfirmNotice() {
-  const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
-
-  async function mandar() {
-    setState('indo');
-    try {
-      const out = await auth.sendVerification();
-      setState(out.sent === false ? 'falhou' : 'foi');
-    } catch {
-      setState('falhou');
-    }
-  }
-
-  return (
-    <div className="flex gap-3 px-4 py-3.5">
-      <Mail className="mt-0.5 h-4 w-4 flex-none text-dye-brass" strokeWidth={1.8} aria-hidden />
-      <div className="min-w-0">
-        <p className="font-display text-[13px] uppercase leading-none tracking-[0.1em] text-ink">
-          Confirme seu e-mail
-        </p>
-        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
-          Destrava <span className="text-ink">fundar um clube</span> e{' '}
-          <span className="text-ink">recuperar a senha</span> se um dia você
-          perder o acesso. O resto do Cineclube já funciona.
-        </p>
-
-        {state === 'foi' ? (
-          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-green-lit">
-            Mandamos o link. Vale por 24 horas — se não chegar, olhe no spam.
-          </p>
-        ) : state === 'falhou' ? (
-          /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
-             isso é melhor que um sucesso falso que deixa a pessoa esperando uma
-             mensagem que não vem. */
-          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-red-lit">
-            Não conseguimos mandar agora. Tente de novo daqui a pouco.
-          </p>
-        ) : (
-          <div className="mt-3">
-            <Key onClick={() => void mandar()} disabled={state === 'indo'}>
-              {state === 'indo' ? 'Mandando' : 'Mandar o link'}
-            </Key>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
