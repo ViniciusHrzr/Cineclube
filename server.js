@@ -53,6 +53,14 @@ app.use((_req, res, next) => {
   next();
 });
 
+/* E a política de conteúdo, que é a defesa contra script injetado e a única que
+   continua valendo depois de todas as outras falharem. Levantada do que os
+   arquivos publicados de fato referenciam — ver csp.js, onde cada permissão diz
+   de onde veio. Nasce em modo AVISO: ela é conferida no navegador das pessoas,
+   e `CINECLUBE_CSP=enforce` a liga sem tocar em código. */
+app.use(require('./csp').middleware());
+app.use('/api/csp-report', require('./routes/csp'));
+
 /* A megabyte, where the default is a tenth of that. The one thing this app
    accepts that is not a handful of fields is a profile picture, which arrives
    as base64 — already shrunk to a small square by the browser, but base64 costs
