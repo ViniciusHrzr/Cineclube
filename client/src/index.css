@@ -232,31 +232,45 @@
 }
 
 /* ── a parede de cartazes do saguão ───────────────────────────────────────
-   As caixas de cartaz na parede do foyer, andando devagar. Mesmo princípio do
-   creep da parede de celuloide, e pelo mesmo motivo: um cartaz não oscila, ele
-   passa. A pista carrega a lista duas vezes e viaja exatamente metade dela, o
-   que faz a emenda cair sobre a cópia e o laço não ter começo nem fim.
+   As caixas de cartaz na parede do foyer: elas andam sozinhas devagar e a mão
+   pode pegar, arrastar e arremessar. O motor é JS sobre `scrollLeft` — a
+   mecânica inteira, com o porquê, está em `usePosterRail` (screens/Lobby.tsx).
 
-   Que isso seja exato depende de uma coisa só: a folga entre as caixas é
-   `margin-right` em cada uma, e nunca `gap`. Com `gap`, a pista mede
-   `2n·largura + (2n−1)·folga` e metade dela não é o primeiro conjunto — sobra
-   meia folga por volta, e o salto aparece uma vez por minuto.
+   O que sobra aqui é o que só o CSS resolve.
 
-   `--run` é o tempo de uma volta, escrito pela tela a partir de quantos cartazes
-   existem, para a velocidade ser a mesma com oito ou com vinte e oito. */
-@keyframes poster-run {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    transform: translate3d(-50%, 0, 0);
-  }
-}
+   A BARRA SOME, e é o que motivou a troca: uma barra cinza atravessada debaixo
+   dos cartazes era a única peça de interface deste produto que ninguém desenhou.
+   O que se pode arrastar aqui não é conteúdo escondido — a informação da faixa
+   está escrita logo abaixo dela e no pódio —, então nada se perde tirando o
+   indicador. O cursor diz o que dá para fazer.
+
+   `overscroll-behavior-x: contain` porque sem ele, jogar a parede até a ponta
+   entrega o gesto para o navegador e a página inteira volta uma tela.
+
+   A folga entre as caixas é `margin-right` em cada uma, e nunca `gap`: o laço
+   infinito recua exatamente metade da pista, e com `gap` a pista mede
+   `2n·largura + (2n−1)·folga` — metade dela não é um conjunto inteiro de
+   cópias, e sobra meia folga por volta. */
 .poster-rail {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  /* No telefone quem rola é o dedo, e o eixo é declarado para o navegador não
+     esperar para decidir se o gesto era vertical. */
+  touch-action: pan-x;
+  cursor: grab;
 }
-.poster-rail-track {
-  animation: poster-run var(--run, 170s) linear infinite;
+.poster-rail::-webkit-scrollbar {
+  display: none;
+}
+.poster-rail[data-grabbing] {
+  cursor: grabbing;
+}
+/* Enquanto se arrasta, nada é selecionado: sem isto o gesto pinta a faixa de
+   azul e o cursor vira o de texto no meio do movimento. */
+.poster-rail[data-grabbing] * {
+  user-select: none;
 }
 
 /* Reduced motion is an intentional alternative, not a kill switch. What goes is
@@ -300,18 +314,11 @@
   .strip-creep {
     animation: none !important;
   }
-  /* A parede de cartazes para de andar e passa a andar com o dedo, que é o que
-     um polegar num telefone quer fazer com uma fileira de cartazes de qualquer
-     jeito. A barra some: ela seria a única coisa desenhada por baixo deles. */
+  /* A parede de cartazes deixa de convidar o cursor que não existe. Ela
+     continua rolando — com o dedo, pelo navegador, que é quem faz isso melhor.
+     Ver `usePosterRail`: onde não há ponteiro fino, o laço nem é montado. */
   .poster-rail {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .poster-rail::-webkit-scrollbar {
-    display: none;
-  }
-  .poster-rail-track {
-    animation: none !important;
+    cursor: auto;
   }
 }
 
@@ -370,12 +377,12 @@
 [data-render='software'] .strip-creep {
   animation: none;
 }
-[data-render='software'] .poster-rail {
-  overflow-x: auto;
-}
-[data-render='software'] .poster-rail-track {
-  animation: none;
-}
+/* A parede de cartazes NÃO entra nesta lista, ao contrário da de celuloide. O
+   que custa numa máquina sem GPU é uma superfície do tamanho da janela sendo
+   recomposta para sempre; esta é uma faixa de cento e setenta pixels de altura,
+   e o que ela move é a própria rolagem. Foi justamente numa máquina sem
+   aceleração que a barra feia apareceu — desligar a faixa lá seria consertar o
+   sintoma tirando a coisa. */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -391,14 +398,9 @@
   .animate-flicker {
     animation: none !important;
   }
-  /* A parede de celuloide é a sala e fica andando por decisão do dono; a de
-     cartazes é conteúdo se deslocando sozinho debaixo do olho, que é
-     exatamente o que esta preferência pede para não acontecer. Ela para e
-     passa a ser uma fileira que se rola com a mão. */
-  .poster-rail {
-    overflow-x: auto;
-  }
-  .poster-rail-track {
-    animation: none !important;
-  }
+  /* A parede de cartazes para de andar sozinha aqui — mas continua sendo
+     arrastável, e isso não é descuido. O que esta preferência desliga é o
+     movimento que COMEÇA sozinho; um arremesso é resposta a um gesto, como o
+     feixe que segue o cursor na parede de celuloide. Quem decide é
+     `usePosterRail`, em JS, porque quem move a faixa agora é ele. */
 }

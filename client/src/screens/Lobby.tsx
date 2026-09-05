@@ -20,7 +20,7 @@ import {
   type LobbySnapshot,
   type SessionUser,
 } from '@/lib/api';
-import { cn, named, norm, plural, whenOf } from '@/lib/utils';
+import { cn, named, norm, plural, useFinePointer, whenOf } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
    O saguão.
@@ -659,6 +659,175 @@ const tally = (n: number, one: string, many: string) =>
    dizem em texto está logo abaixo, na contagem, e mais adiante no pódio, que
    nomeia os filmes por escrito. Uma parede de cartazes é para ser vista.
    ══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   A PAREDE QUE SE PEGA COM A MÃO.
+
+   A faixa andava por uma animação CSS e, onde a animação não podia rodar, virava
+   uma caixa de rolagem com barra — e uma barra de rolagem cinza atravessada
+   debaixo dos cartazes é a única peça de interface deste produto que não foi
+   desenhada por ninguém.
+
+   Agora é um modelo só, e ele é melhor do que os dois que substitui: a pista
+   deriva sozinha, a mão pega, arrasta e ARREMESSA, e o arremesso desacelera de
+   volta para a deriva. É a mesma coisa que um cartaz preso num trilho faz quando
+   alguém o empurra.
+
+   ── por que a rolagem e não um transform ──────────────────────────────────
+   Porque arrastar é rolar. Um `translateX` guardado em estado obrigaria a
+   reimplementar a captura do ponteiro, o limite e o toque; `scrollLeft` já é
+   tudo isso, e no telefone o dedo continua sendo o dedo — o navegador dá inércia
+   melhor do que qualquer laço escrito aqui, então lá este arquivo não faz nada.
+
+   ── uma fórmula, dois comportamentos ──────────────────────────────────────
+   A velocidade persegue um alvo, e o alvo é a deriva. Com deriva, um arremesso
+   desacelera até virar o passo de repouso; sem ela (movimento reduzido), o alvo
+   é zero e a mesma linha vira inércia que para. Não há dois caminhos no código
+   porque não há duas ideias.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** px de rolagem por quadro em repouso. ~27px/s: um passo de quem passeia. */
+const DRIFT = 0.45;
+/** Quanto da distância até o alvo a velocidade fecha por quadro. */
+const SETTLE = 0.045;
+/** Abaixo disto a diferença não se vê: encosta no alvo e para de calcular. */
+const SNAP = 0.02;
+/* Teto do arremesso. Um mouse pode reportar um salto de centenas de pixels num
+   quadro — uma janela que perdeu o foco e voltou, um evento coalescido — e sem
+   isto a parede sairia em disparada por um movimento que ninguém fez. */
+const MAX_THROW = 42;
+
+/* Lido uma vez, como o `data-render` da parede de celuloide. O que esta
+   preferência desliga é o movimento que começa SOZINHO; arrastar continua,
+   porque é resposta a um gesto e não uma performance. */
+const REDUCED =
+  typeof window !== 'undefined' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function usePosterRail(live: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    /* No telefone este laço não existe: o dedo já rola, e o navegador dá uma
+       inércia melhor do que a daqui. Duas fontes escrevendo `scrollLeft` no
+       mesmo elemento brigariam entre si a cada quadro. */
+    if (!el || !live) return;
+
+    const target = REDUCED ? 0 : DRIFT;
+    let velocity = target;
+    let dragging = false;
+    let lastX = 0;
+    let lastT = 0;
+    let raf = 0;
+
+    /* A página inteira tem `zoom`, então o pixel do ponteiro e o pixel do
+       layout são unidades diferentes. Medido aqui e não dentro do `move`: um
+       rect e um offsetWidth são dois layouts forçados, e um mouse dispara
+       centenas de eventos por segundo. Ver a mesma nota em holographic-wall. */
+    let k = 1;
+    const measure = () => {
+      k = el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+
+    /* ── o laço, sem começo e sem fim ───────────────────────────────────
+       A pista carrega a lista um número PAR de vezes, então metade dela é um
+       conjunto inteiro de cópias: recuar meia pista cai exatamente sobre a
+       mesma imagem. O salto é dado ANTES de a rolagem chegar na borda, porque
+       o navegador prende `scrollLeft` em zero — deixar ele bater é o que
+       transformaria a volta num tranco. */
+    const step = (dx: number) => {
+      const half = el.scrollWidth / 2;
+      if (half <= 0) return;
+      let next = el.scrollLeft + dx;
+      if (next < 0) next += half;
+      else if (next >= half) next -= half;
+      el.scrollLeft = next;
+    };
+
+    const frame = () => {
+      raf = requestAnimationFrame(frame);
+      if (dragging) return;
+      const gap = target - velocity;
+      velocity = Math.abs(gap) < SNAP ? target : velocity + gap * SETTLE;
+      if (velocity) step(velocity);
+    };
+
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      velocity = 0;
+      lastX = e.clientX;
+      lastT = e.timeStamp;
+      el.setPointerCapture(e.pointerId);
+      el.dataset.grabbing = 'true';
+      /* Sem isto o navegador começa o arrasto nativo de imagem no primeiro
+         movimento, e a mão sai levando um fantasma do cartaz. */
+      e.preventDefault();
+    };
+
+    const move = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = (e.clientX - lastX) / k;
+      const dt = Math.max(1, e.timeStamp - lastT);
+      lastX = e.clientX;
+      lastT = e.timeStamp;
+      step(-dx);
+      /* Em px por quadro, e suavizado: um único evento com um salto grande não
+         pode virar sozinho um arremesso que a mão não deu. */
+      velocity = velocity * 0.7 + ((-dx * 16.7) / dt) * 0.3;
+    };
+
+    const up = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      delete el.dataset.grabbing;
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* o ponteiro já foi embora — soltar duas vezes não é erro */
+      }
+      velocity = Math.max(-MAX_THROW, Math.min(MAX_THROW, velocity));
+    };
+
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+
+    /* ── e nada roda com a parede fora da tela ───────────────────────────
+       Um laço perpétuo por uma faixa que já saiu de vista é trabalho contra
+       uma instância que dorme por falta dele. O `requestAnimationFrame` já
+       para com a aba escondida; isto cuida do outro caso, que é a pessoa ter
+       rolado a página para baixo. */
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !raf) raf = requestAnimationFrame(frame);
+        else if (!entry.isIntersecting && raf) {
+          cancelAnimationFrame(raf);
+          raf = 0;
+        }
+      },
+      { threshold: 0 }
+    );
+    io.observe(el);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      io.disconnect();
+      ro.disconnect();
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+    };
+  }, [live]);
+
+  return ref;
+}
+
 function PosterWall({
   films,
   counts,
@@ -677,9 +846,10 @@ function PosterWall({
   const CASE_PX = 125;
   const HALF_PX = 1800;
   const copies = Math.max(2, 2 * Math.ceil(HALF_PX / CASE_PX / films.length));
-  /* O tempo de uma volta cresce com o tamanho da metade, para a velocidade ser a
-     mesma numa parede de seis cartazes e numa de vinte e oito. */
-  const seconds = Math.round(((copies / 2) * films.length * CASE_PX) / 34);
+
+  /* O laço só é montado onde há ponteiro fino. No telefone o dedo já rola e o
+     navegador já dá inércia — melhor do que a daqui, e de graça. */
+  const rail = usePosterRail(useFinePointer());
 
   return (
     <section className="relative">
@@ -689,13 +859,11 @@ function PosterWall({
           cartazes se dissolvem para baixo e o texto fica dentro dessa
           dissolução, como um cartaz e a plaquinha embaixo dele. */}
       <div
+        ref={rail}
         aria-hidden
         className="poster-rail relative h-[132px] bg-house-deep/40 sm:h-[176px]"
       >
-        <div
-          className="poster-rail-track flex h-full w-max"
-          style={{ '--run': `${seconds}s` } as React.CSSProperties}
-        >
+        <div className="flex h-full w-max">
           {Array.from({ length: copies }).flatMap((_, copy) =>
             films.map(film => (
               <span
@@ -706,6 +874,9 @@ function PosterWall({
                   src={film.poster ?? undefined}
                   alt=""
                   loading="lazy"
+                  /* O arrasto nativo de imagem sai: sem isto, puxar a parede
+                     leva um fantasma do cartaz junto do cursor. */
+                  draggable={false}
                   className="h-full w-full object-cover opacity-[0.38] saturate-[0.85] transition duration-300 ease-beam group-hover:opacity-100 group-hover:saturate-100"
                 />
                 <span className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-house-deep/95 via-house-deep/75 to-transparent px-2 pb-6 pt-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -743,27 +914,11 @@ function PosterWall({
         />
       </div>
 
-      {/* ── e a luz da parede cai onde as palavras estão ─────────────────────
-          Uma mancha larguíssima e fraca de feixe logo abaixo dos cartazes: a
-          claridade que uma vitrine iluminada joga no chão à frente dela.
-
-          É emissão e não sombra, que é a diferença que este sistema faz questão
-          de manter — a regra é que profundidade aqui é ótica (a parede atrás, a
-          inclinação de um cartão, um fundo desfocado) e nunca uma caixa com
-          sombra. Isto é a mesma família do halo que segue o cursor na parede de
-          celuloide: luz que uma superfície acesa espalha no ar.
-
-          7% de feixe no centro, zero nas bordas. Precisa ser pouco: o trabalho
-          dela é fazer o olho ler os dois blocos como um só, e uma luz que se
-          nota vira decoração. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-[96px] h-[190px] sm:top-[128px] sm:h-[240px]"
-        style={{
-          background:
-            'radial-gradient(58% 100% at 50% 0%, rgba(255, 233, 196, 0.07), rgba(255, 233, 196, 0.02) 45%, transparent 72%)',
-        }}
-      />
+      {/* Houve aqui uma mancha de luz — a claridade que uma vitrine acesa jogaria
+          no chão à frente dela. Foi construída, vista e removida pelo dono: numa
+          tela escura, uma nuvem larga e clara não lê como luz, lê como uma
+          mancha. Registrado para não voltar. O que amarra a parede ao letreiro é
+          a dissolução acima e a sobreposição abaixo, e as duas bastam. */}
 
       {/* Sobe para DENTRO da faixa: o topo do letreiro fica onde os cartazes já
           se apagaram, e é isso que faz um referenciar o outro em vez de dois
