@@ -60,7 +60,29 @@ router.post(
 
     const directive = corte(r['violated-directive'] || r.effectiveDirective, 60);
     const blocked = corte(r['blocked-uri'] || r.blockedURL, 200);
-    const chave = `${directive}|${blocked}`;
+
+    /* ── o que estava escrito lá dentro ────────────────────────────────────
+       Para um script inline o `blocked-uri` é a palavra "inline", e só. Isso
+       diz que ALGUM script inline seria recusado e não diz qual — que foi
+       exatamente o buraco na primeira leitura destes avisos em produção: os
+       dois scripts do nosso HTML batiam com os hashes, então o recusado era um
+       terceiro, e a linha do log não tinha como dizer de onde ele veio.
+
+       O navegador manda um trecho do começo dele em `script-sample`. Quarenta
+       caracteres bastam para reconhecer se aquilo é código nosso, de uma
+       extensão do navegador ou de outra coisa. Cortado aqui de qualquer jeito:
+       o corpo é escrito pelo navegador, mas quem faz a requisição escolhe o
+       corpo. `source-file` e a linha completam, quando vêm.
+
+       As quebras de linha viram espaço para o aviso não virar cinco linhas de
+       log a partir de conteúdo que veio de fora. */
+    const sample = corte(
+      String(r['script-sample'] || r.sample || '').replace(/\s+/g, ' ').trim(),
+      120
+    );
+    const source = corte(r['source-file'] || r.sourceFile, 160);
+
+    const chave = `${directive}|${blocked}|${sample}`;
 
     if (!vistos.has(chave)) {
       if (vistos.size >= MAX_VISTOS) vistos.clear();
@@ -70,7 +92,9 @@ router.post(
          como latin-1. Um aviso que chega embaralhado é um aviso pela metade. */
       console.warn(
         `[csp] recusaria ${directive || 'algo'} -> ${blocked || 'sem origem'}` +
-          ` (em ${corte(r['document-uri'] || r.documentURL, 120) || 'página desconhecida'})`
+          ` (em ${corte(r['document-uri'] || r.documentURL, 120) || 'página desconhecida'})` +
+          (source ? ` | de ${source}${r['line-number'] ? ':' + Number(r['line-number']) : ''}` : '') +
+          (sample ? ` | trecho: ${sample}` : '')
       );
     }
 

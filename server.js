@@ -177,8 +177,51 @@ app.use(
   })
 );
 
-app.use((err, req, res, next) => {
-  console.error('[server] erro não tratado:', err);
+/* ══════════════════════════════════════════════════════════════════════════
+   O ÚLTIMO TRATADOR, e por que ele não imprime o erro inteiro.
+
+   Ele imprimia: `console.error('...', err)`. Parece a coisa mais óbvia do
+   mundo e tem um vazamento dentro.
+
+   Quando o corpo de uma requisição não é JSON válido, o `body-parser` levanta
+   um erro e **pendura o corpo cru nele**, em `err.body`. Imprimir o erro
+   imprime esse campo. Ou seja: qualquer requisição com JSON torto escrevia o
+   próprio conteúdo no log da instância — e o log é o instrumento com que se lê
+   todo o resto.
+
+   O caso caro não é o barulho. É `/api/auth/login` e `/api/auth/password`: um
+   corpo quase-válido com uma senha dentro, e a senha aparecia em texto puro no
+   painel do Render. Este produto guarda só um hash `scrypt`, nunca devolve a
+   senha em resposta nenhuma e nunca a registra em lugar nenhum — menos aqui,
+   por causa de um `console.error` de uma linha.
+
+   Então nada de corpo, nunca. O que sai é o que serve para consertar: a
+   mensagem, o tipo, e onde aconteceu.
+
+   ── e um JSON torto não é um erro do servidor ─────────────────────────────
+   Respondia 500, que quer dizer "eu quebrei". Um corpo malformado é o cliente
+   dizendo algo que não dá para ler, e isso é 400 — a diferença importa para
+   quem estiver do outro lado tentando entender se o problema é dele.
+   ══════════════════════════════════════════════════════════════════════════ */
+const CLIENT_FAULTS = {
+  'entity.parse.failed': [400, 'O corpo do pedido não é JSON válido.'],
+  'entity.too.large': [413, 'O conteúdo é grande demais.'],
+  'request.aborted': [400, 'O pedido foi interrompido.'],
+  'encoding.unsupported': [415, 'Codificação não suportada.'],
+  'charset.unsupported': [415, 'Codificação não suportada.'],
+};
+
+app.use((err, req, res, _next) => {
+  const known = CLIENT_FAULTS[err?.type];
+  if (known) {
+    const [status, mensagem] = known;
+    console.warn(`[server] ${err.type} em ${req.method} ${req.path}`);
+    return res.status(status).json({ error: mensagem });
+  }
+  /* Mensagem e pilha, e nada mais do objeto: um erro carregado de qualquer
+     lugar pode ter trazido junto um campo que não é para sair daqui. */
+  console.error(`[server] erro não tratado em ${req.method} ${req.path}: ${err?.message}`);
+  if (err?.stack) console.error(err.stack);
   res.status(500).json({ error: 'Erro interno.' });
 });
 

@@ -150,6 +150,111 @@ test('a fila também corta', async () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
+   1b. SQL DENTRO DO TEXTO
+
+   Nada aqui escapa nem filtra aspas, e é de propósito: escapar é a defesa de
+   quem monta SQL com texto, e este produto nunca monta. Todo valor viaja como
+   parâmetro (`client.execute({ sql, args })`), então o banco recebe a consulta
+   e os dados por caminhos separados e nunca lê um como o outro.
+
+   A consequência prática é a que estes testes fixam: uma carga de injeção é
+   gravada e devolvida LETRA POR LETRA, porque para o produto ela nunca foi
+   código — é o que alguém escreveu sobre um filme. Um dia em que ela voltar
+   modificada, ou faltando um pedaço, é o dia em que alguém começou a tratar
+   texto como comando.
+
+   As cargas abaixo são as clássicas, e a primeira é a que o dono do produto
+   testou à mão em produção.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const CARGAS = [
+  `'');SELECT * FROM review_comments;`,
+  `'; DROP TABLE reviews; --`,
+  `" OR 1=1 --`,
+  `\\'; DELETE FROM reviewers WHERE ''='`,
+  `%27%20OR%20%271%27%3D%271`,
+];
+
+test('injeção no comentário de uma ficha é gravada como texto', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ owner: dono.id, visibility: 'private' });
+
+  for (const carga of CARGAS) {
+    const m = movie();
+    const posted = await req(
+      'POST', at(sala, '/reviews'),
+      { movie: m, scores: scoresFor('Terror', 8), comment: carga },
+      dono.cookie
+    );
+    assert.equal(posted.status, 201);
+    assert.equal(posted.body.comment, carga, 'volta letra por letra');
+  }
+
+  /* E as tabelas que as cargas mandavam apagar continuam de pé. Se alguma
+     tivesse sido executada, isto é o que teria sumido. */
+  for (const tabela of ['reviews', 'review_comments', 'reviewers']) {
+    const row = await db.prepare(`SELECT COUNT(*) AS n FROM ${tabela}`).get();
+    assert.ok(Number.isFinite(Number(row.n)), `${tabela} deixou de existir`);
+  }
+});
+
+test('injeção na conversa, no nome do clube e no título do filme, idem', async () => {
+  const dono = await kit.signIn();
+  const carga = CARGAS[0];
+
+  /* Um nome de clube é o caso mais interessante dos três: ele é comparado com
+     COLLATE NOCASE numa consulta de unicidade e vira um slug. */
+  const feito = await req('POST', '/api/clubs', { name: `Sala ${carga}`.slice(0, 40) }, dono.cookie);
+  assert.equal(feito.status, 201);
+  const sala = feito.body.club;
+  assert.equal(sala.name, `Sala ${carga}`.slice(0, 40));
+
+  const ficha = await req(
+    'POST', `/api/c/${sala.slug}/reviews`,
+    { movie: movie({ title: carga }), scores: scoresFor('Terror', 6) },
+    dono.cookie
+  );
+  assert.equal(ficha.status, 201);
+  assert.equal(ficha.body.movieTitle, carga, 'o título volta inteiro');
+
+  const dito = await req(
+    'POST', `/api/c/${sala.slug}/social/reviews/${ficha.body.id}/comments`,
+    { body: carga }, dono.cookie
+  );
+  assert.equal(dito.status, 201);
+  assert.equal(dito.body.body, carga);
+
+  // E o clube ainda é encontrável pelo slug que saiu daquele nome.
+  assert.equal((await req('GET', `/api/c/${sala.slug}`, null, dono.cookie)).status, 200);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1c. O QUE VAI PARA O LOG
+
+   Um corpo com JSON torto fazia o `body-parser` levantar um erro com o corpo
+   cru pendurado nele, e o tratador imprimia o erro inteiro. Duas consequências:
+   qualquer um escrevia no log da instância a partir de fora, e um corpo
+   quase-válido para `/api/auth/login` levava uma senha em texto puro junto.
+
+   O que este teste fixa é a resposta; que o log ficou limpo está em server.js.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+test('JSON torto é 400 do cliente, e não 500 do servidor', async () => {
+  const res = await fetch(baseUrl + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"email":"x@y.z","password":"nao-fecha-a-chave"',
+  });
+  assert.equal(res.status, 400, 'um corpo ilegível é erro de quem mandou');
+  const corpo = await res.json();
+  assert.ok(corpo.error);
+  assert.ok(
+    !JSON.stringify(corpo).includes('nao-fecha-a-chave'),
+    'e a resposta não devolve o corpo que não conseguiu ler'
+  );
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
    2. QUANTAS VEZES
    ══════════════════════════════════════════════════════════════════════════ */
 
