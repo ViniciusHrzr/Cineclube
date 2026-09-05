@@ -70,14 +70,37 @@ async function main() {
        de ontem. Aqui o arquivo é o que o banco era naquele instante. */
     const esquema = await origem.execute(
       `SELECT type, name, sql FROM sqlite_master
-       WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
-       ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END`
+       WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'`
     );
-    for (const row of esquema.rows) await destino.execute(row.sql);
+    const tabelas = esquema.rows.filter(r => r.type === 'table');
+    const resto = esquema.rows.filter(r => r.type !== 'table');
 
-    const tabelas = esquema.rows.filter(r => r.type === 'table').map(r => r.name);
+    for (const row of tabelas) await destino.execute(row.sql);
+
+    /* ── as chaves ficam desligadas durante a carga ────────────────────────
+       Este é o mesmo gesto que o `.dump` do próprio SQLite faz, e ele existe
+       por uma razão que só aparece com dados de verdade: as tabelas são
+       copiadas na ordem em que foram criadas, e essa ordem não é a das
+       dependências. `review_comments` referencia `reviews` e foi criada antes
+       dela, então o primeiro comentário copiado bate num FOREIGN KEY.
+
+       Ordenar as tabelas por dependência resolveria isso e não resolveria o
+       resto: `review_comments.parent_id` aponta para a PRÓPRIA tabela, e aí a
+       ordem teria de valer também entre as linhas — uma resposta não pode
+       entrar antes do comentário que ela responde, e um lote de duzentas não
+       sabe disso.
+
+       Desligar é correto porque a origem JÁ é consistente: isto é uma cópia, e
+       não uma escrita nova. E não é um voto de confiança — a conferência no
+       fim liga as chaves de volta e manda o banco verificar cada uma. */
+    await destino.execute('PRAGMA foreign_keys = OFF');
+    const off = (await destino.execute('PRAGMA foreign_keys')).rows[0];
+    if (Number(Object.values(off)[0]) !== 0) {
+      throw new Error('não consegui desligar as chaves estrangeiras no arquivo de destino');
+    }
+
     let total = 0;
-    for (const tabela of tabelas) {
+    for (const { name: tabela } of tabelas) {
       const { rows } = await origem.execute(`SELECT * FROM "${tabela}"`);
       if (!rows.length) {
         console.log(`[backup] ${tabela}: vazia`);
@@ -85,21 +108,40 @@ async function main() {
       }
       const cols = (await origem.execute(`PRAGMA table_info("${tabela}")`)).rows.map(c => c.name);
       const sql = `INSERT INTO "${tabela}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        await destino.batch(
-          rows.slice(i, i + CHUNK).map(row => ({ sql, args: cols.map(c => row[c] ?? null) }))
-        );
+      try {
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          await destino.batch(
+            rows.slice(i, i + CHUNK).map(row => ({ sql, args: cols.map(c => row[c] ?? null) }))
+          );
+        }
+      } catch (e) {
+        /* Sem o nome da tabela, uma falha de cópia é uma mensagem do SQLite sem
+           endereço — e foi exatamente assim que este defeito apareceu. */
+        throw new Error(`ao copiar ${tabela}: ${e.message}`);
       }
       total += rows.length;
       console.log(`[backup] ${tabela}: ${rows.length} linha(s)`);
     }
 
+    /* Índices e gatilhos DEPOIS das linhas: um índice construído durante a
+       carga é reordenado a cada lote, e construído no fim é uma passada só. Um
+       índice único que falhe aqui é sinal de origem inconsistente, e é melhor
+       falhar do que gravar um arquivo que esconde isso. */
+    for (const row of resto) await destino.execute(row.sql);
+
     /* ── conferir antes de dizer que deu certo ─────────────────────────────
-       Um backup que ninguém abriu é uma esperança, não uma cópia. Isto lê o
-       arquivo recém-escrito de volta e confere o número de linhas contra a
-       origem — a falha que interessa (uma tabela que não copiou) é justamente a
-       que não levanta erro nenhum enquanto se escreve. */
-    for (const tabela of tabelas) {
+       Um backup que ninguém abriu é uma esperança, não uma cópia. São duas
+       conferências, e cada uma pega uma falha que a outra não vê.
+
+       AS CONTAGENS pegam a tabela que não copiou: é a falha que não levanta
+       erro nenhum enquanto se escreve.
+
+       AS CHAVES pegam o preço de tê-las desligado durante a carga. Ligadas de
+       volta, `foreign_key_check` percorre o arquivo inteiro e devolve uma linha
+       por referência quebrada. Zero linhas é a prova de que desligar não
+       escondeu nada — sem isto, a carga sem restrição seria um voto de
+       confiança em vez de uma técnica. */
+    for (const { name: tabela } of tabelas) {
       const aqui = (await destino.execute(`SELECT COUNT(*) AS n FROM "${tabela}"`)).rows[0].n;
       const la = (await origem.execute(`SELECT COUNT(*) AS n FROM "${tabela}"`)).rows[0].n;
       if (Number(aqui) !== Number(la)) {
@@ -107,9 +149,19 @@ async function main() {
       }
     }
 
+    await destino.execute('PRAGMA foreign_keys = ON');
+    const quebradas = (await destino.execute('PRAGMA foreign_key_check')).rows;
+    if (quebradas.length) {
+      const onde = [...new Set(quebradas.map(r => Object.values(r)[0]))].join(', ');
+      throw new Error(
+        `${quebradas.length} referência(s) quebrada(s) na cópia, em: ${onde}`
+      );
+    }
+
     const kb = Math.max(1, Math.round(fs.statSync(destinoPath).size / 1024));
     console.log(`\n[backup] pronto: ${destinoPath}`);
-    console.log(`[backup] ${tabelas.length} tabela(s), ${total} linha(s), ${kb} KB — conferido`);
+    console.log(`[backup] ${tabelas.length} tabela(s), ${total} linha(s), ${kb} KB`);
+    console.log('[backup] conferido: contagens batem e nenhuma referência quebrada');
   } finally {
     origem.close();
     destino.close();
