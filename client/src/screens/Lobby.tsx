@@ -5,6 +5,7 @@ import { Blank, Fault, Key, Poster, Reel, Strip } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { PortraitGate } from '@/components/portrait';
 import {
+  auth,
   clubs,
   fmt,
   initialsOf,
@@ -257,6 +258,8 @@ export function Lobby({
           )}
         </Region>
 
+        {me.emailVerified === false ? <ConfirmBanner /> : null}
+
         {darkNetwork && lendable.length ? (
           <DarkNetwork clubs={lendable} onOpen={slug => onEnter(slug, 'ajustes')} />
         ) : null}
@@ -387,6 +390,64 @@ function Region({
         className="mt-4 block h-px w-full bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
       />
       {children}
+    </section>
+  );
+}
+
+/* ── confirme seu e-mail ──────────────────────────────────────────────────
+   Aparece para quem se cadastrou por senha e ainda não provou o endereço. Quem
+   entrou pelo Google nunca vê isto: aquele endereço já chegou provado.
+
+   Não é uma chapa vermelha e não bloqueia nada. O produto inteiro continua
+   funcionando; o que a confirmação destrava são duas coisas específicas, e a
+   frase nomeia as duas em vez de dizer "confirme seu e-mail" e deixar a pessoa
+   adivinhar por que deveria se importar.
+
+   Some sozinho no instante em que a conta é confirmada, porque a condição que o
+   desenha é o próprio estado da conta. */
+function ConfirmBanner() {
+  const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
+
+  async function mandar() {
+    setState('indo');
+    try {
+      const out = await auth.sendVerification();
+      setState(out.sent === false ? 'falhou' : 'foi');
+    } catch {
+      setState('falhou');
+    }
+  }
+
+  return (
+    <section className="mt-12 max-w-[62ch] border-t border-white/[0.07] pt-6">
+      <h2 className="font-display text-[20px] leading-none tracking-[0.04em] text-ink-dim">
+        Confirme seu e-mail
+      </h2>
+      <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
+        Você pode usar o Cineclube normalmente. O que a confirmação destrava são
+        duas coisas: <span className="text-ink">fundar um clube</span> e{' '}
+        <span className="text-ink">recuperar a senha</span> se um dia você perder
+        o acesso.
+      </p>
+
+      {state === 'foi' ? (
+        <p className="mt-4 text-[13px] text-dye-green-lit">
+          Mandamos o link. Ele vale por 24 horas — se não chegar, olhe no spam.
+        </p>
+      ) : state === 'falhou' ? (
+        /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
+           isso é melhor que um sucesso falso que deixa a pessoa esperando uma
+           mensagem que não vem. */
+        <p className="mt-4 text-[13px] text-dye-red-lit">
+          Não conseguimos mandar agora. Tente de novo daqui a pouco.
+        </p>
+      ) : (
+        <div className="mt-4">
+          <Key onClick={() => void mandar()} disabled={state === 'indo'}>
+            {state === 'indo' ? 'Mandando' : 'Mandar o link'}
+          </Key>
+        </div>
+      )}
     </section>
   );
 }

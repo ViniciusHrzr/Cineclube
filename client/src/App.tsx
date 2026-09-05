@@ -32,6 +32,7 @@ import { Key, Reel } from '@/components/bits';
 import { AccountSheet, SettingsSheet } from '@/components/settings';
 import { Lobby } from '@/screens/Lobby';
 import { ClaimAccount, SetPassword, SignIn } from '@/screens/SignIn';
+import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
 
 /** Uma conta de antes da entrada pelo Google, esperando dono. */
 type Orphan = { id: string; name: string; dot: string; avatar: string | null };
@@ -253,6 +254,16 @@ function routeFromHash(): Route {
   return { club, tab, review, comment, person, sheet };
 }
 
+/* ── os dois endereços que um e-mail abre ─────────────────────────────────
+   `#confirmar/<token>` e `#senha/<token>`. Ficam fora de `routeFromHash` de
+   propósito: aquele resolve o que existe DENTRO de um clube, e estes dois são
+   anteriores a haver clube, conta ou sessão. Ler aqui é uma linha; ensinar a
+   outra função a falar de um mundo que não é o dela seria emaranhar as duas. */
+function emailRouteFromHash(): 'confirmar' | 'senha' | null {
+  const head = (location.hash || '').replace(/^#/, '').split('?')[0].split('/').filter(Boolean)[0];
+  return head === 'confirmar' || head === 'senha' ? head : null;
+}
+
 /** O endereço de uma seção dentro de um clube. Um lugar só que monta isto. */
 const clubHash = (slug: string, rest = '') =>
   `c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
@@ -278,6 +289,10 @@ export default function App() {
   const [orphans, setOrphans] = useState<Orphan[] | null>(null);
   const [skippedClaim, setSkippedClaim] = useState(false);
   const [route, setRoute] = useState<Route>(() => routeFromHash());
+  /* Lido junto da rota e pelo mesmo ouvinte: sair da tela de confirmação
+     reescreve o endereço, e sem isto o app continuaria mostrando a tela que o
+     endereço já não pede. */
+  const [emailRoute, setEmailRoute] = useState(() => emailRouteFromHash());
   /** A folha da própria conta, aberta pelo rosto na barra do saguão. */
   const [self, setSelf] = useState(false);
 
@@ -311,7 +326,10 @@ export default function App() {
   }, [me]);
 
   useEffect(() => {
-    const onHash = () => setRoute(routeFromHash());
+    const onHash = () => {
+      setRoute(routeFromHash());
+      setEmailRoute(emailRouteFromHash());
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -355,6 +373,21 @@ export default function App() {
         </div>
       </>
     );
+  }
+
+  /* ── os dois endereços que chegam por e-mail ────────────────────────────
+     Antes da pergunta "quem é você", e é o ponto: quem clicou num link de
+     redefinição está fora justamente porque não consegue responder essa
+     pergunta, e quem confirma um endereço pode estar fazendo isso no celular
+     enquanto a conta está aberta no computador.
+
+     Não são abas nem seções de clube nenhum, então não passam por
+     `routeFromHash` — ele só sabe falar de endereços que começam com `c/`. */
+  if (emailRoute === 'confirmar') {
+    return <ConfirmEmail onDone={() => { location.hash = ''; void checkAuth(); }} />;
+  }
+  if (emailRoute === 'senha') {
+    return <ResetPassword onSignedIn={u => { location.hash = ''; setMe(u); void checkAuth(); }} />;
   }
 
   if (!me) return <SignIn onSignedIn={u => { setMe(u); void checkAuth(); }} />;

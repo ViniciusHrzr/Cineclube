@@ -140,4 +140,8 @@ function stopTimers() {
   clearInterval(sweeper);
 }
 
-module.exports = { limit, reset, stopTimers, MAX_KEYS };
+/* `take` sai junto do middleware porque nem toda trava cabe numa camada de
+   rota. O pedido de redefinição de senha é medida em dois eixos — por endereço
+   de rede E por conta —, e o segundo só pode ser contado DEPOIS de descobrir se
+   existe conta para aquele e-mail, que é trabalho de dentro do manipulador. */
+module.exports = { limit, take, reset, stopTimers, MAX_KEYS };

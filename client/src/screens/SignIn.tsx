@@ -54,6 +54,13 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
      mais: separar em duas telas faria a pessoa que errou a porta voltar e
      redigitar o e-mail que ela acabou de escrever. */
   const [mode, setMode] = useState<'entrar' | 'criar'>('entrar');
+  /* Pedir o link de volta. É um terceiro estado desta mesma coluna e não uma
+     tela nova: quem chegou aqui já digitou o e-mail, e mandá-lo para outro
+     lugar seria pedir que digitasse de novo. */
+  const [forgot, setForgot] = useState<string | null>(null);
+  /* Se esta instalação sabe mandar e-mail. Sem isso "esqueci minha senha" não
+     aparece — um botão que não tem como funcionar é pior que a ausência dele. */
+  const [canMail, setCanMail] = useState(false);
 
   /* Se esta instalação sequer tem a porta do Google configurada. Sem as
      variáveis no servidor o botão não aparece: um botão que leva a um 503 é pior
@@ -61,7 +68,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   useEffect(() => {
     void auth
       .me()
-      .then(r => setGoogle(r.google !== false))
+      .then(r => {
+        setGoogle(r.google !== false);
+        setCanMail(r.mail === true);
+      })
       .catch(() => setGoogle(true));
   }, []);
 
@@ -108,7 +118,17 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
           ) : null}
 
           <AnimatePresence initial={false} mode="wait">
-            {byPassword ? (
+            {forgot !== null ? (
+              <motion.div
+                key="esqueci"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <ForgotPassword email={forgot} onBack={() => setForgot(null)} />
+              </motion.div>
+            ) : byPassword ? (
               <motion.div
                 key="senha"
                 initial={{ opacity: 0, y: 8 }}
@@ -120,6 +140,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                   mode={mode}
                   onMode={setMode}
                   onSignedIn={onSignedIn}
+                  canMail={canMail}
+                  onForgot={setForgot}
                   onBack={google ? () => setByPassword(false) : undefined}
                 />
               </motion.div>
@@ -183,11 +205,17 @@ function PasswordEntry({
   mode,
   onMode,
   onSignedIn,
+  canMail,
+  onForgot,
   onBack,
 }: {
   mode: 'entrar' | 'criar';
   onMode: (m: 'entrar' | 'criar') => void;
   onSignedIn: (u: SessionUser) => void;
+  /** Esta instalação sabe mandar e-mail. Sem isso, não há o que oferecer. */
+  canMail: boolean;
+  /** Leva o e-mail já digitado junto, para não pedir que seja escrito de novo. */
+  onForgot: (email: string) => void;
   onBack?: () => void;
 }) {
   const [name, setName] = useState('');
@@ -273,6 +301,95 @@ function PasswordEntry({
             Voltar
           </Key>
         ) : null}
+      </div>
+
+      {/* Só ao entrar, e só se esta instalação sabe mandar e-mail. Num
+          formulário de criar conta ele não quer dizer nada, e sem envio
+          configurado seria um botão que não tem como funcionar. */}
+      {!criando && canMail ? (
+        <button
+          type="button"
+          onClick={() => onForgot(email.trim())}
+          className="mt-1 self-start text-[12.5px] text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
+        >
+          Esqueci minha senha
+        </button>
+      ) : null}
+    </form>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Pedir o link de volta.
+
+   A tela responde a mesma coisa exista a conta ou não, e a frase diz isso em
+   voz alta em vez de fingir sucesso: "se existir uma conta com esse endereço".
+   Fingir que mandou seria mentir para quem digitou o e-mail errado — que é o
+   caso comum — e essa pessoa ficaria esperando uma mensagem que nunca vem.
+
+   O servidor faz o mesmo pelo mesmo motivo, e lá é uma regra de segurança: uma
+   resposta diferente transformaria a rota numa lista de quem tem conta aqui.
+   ══════════════════════════════════════════════════════════════════════════ */
+function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () => void }) {
+  const [email, setEmail] = useState(inicial);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const first = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || !email.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.requestReset(email.trim());
+      setSent(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setBusy(false);
+  }
+
+  if (sent) {
+    return (
+      <div className="mt-5">
+        <p className="text-[13.5px] leading-relaxed text-ink">
+          Se existir uma conta com <span className="text-beam">{email.trim()}</span>, o link já
+          está a caminho.
+        </p>
+        <p className="mt-3 text-[12.5px] leading-relaxed text-ink-dim">
+          Ele vale por uma hora e só funciona uma vez. Se não chegar em alguns
+          minutos, olhe no spam.
+        </p>
+        <div className="mt-5">
+          <Key tone="ghost" onClick={onBack}>
+            Voltar
+          </Key>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
+      <p className="text-[12.5px] leading-relaxed text-ink-dim">
+        Digite o e-mail da sua conta. Mandamos um link para você escolher uma
+        senha nova.
+      </p>
+      <Field ref={first} label="E-mail" type="email" autoComplete="username" value={email} onChange={setEmail} />
+      {error ? <Fault>{error}</Fault> : null}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <Key tone="commit" type="submit" disabled={busy || !email.trim()}>
+          {busy ? 'Mandando' : 'Mandar o link'}
+        </Key>
+        <Key tone="ghost" onClick={onBack}>
+          Voltar
+        </Key>
       </div>
     </form>
   );

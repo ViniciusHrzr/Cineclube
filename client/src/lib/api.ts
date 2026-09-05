@@ -36,6 +36,10 @@ export type SessionUser = {
   dot: string;
   isAdmin: boolean;
   email?: string | null;
+  /* O endereço já foi provado. Uma conta do Google nasce assim; uma criada por
+     senha prova uma vez, pelo link que chega na caixa de entrada. É o que
+     destrava fundar um clube e recuperar a senha — ver routes/auth.js. */
+  emailVerified?: boolean;
   avatar?: string | null;
   bio?: string | null;
 };
@@ -102,6 +106,10 @@ export const auth = {
       needsPassword?: boolean;
       /** Se esta instalação tem a porta do Google configurada. */
       google?: boolean;
+      /* Se esta instalação sabe mandar e-mail. Sem isso a tela não oferece
+         "reenviar confirmação" nem "esqueci minha senha" — um botão que não tem
+         como funcionar é pior que a ausência dele. */
+      mail?: boolean;
     }>('/api/auth/me'),
   /** Não é fetch: é uma navegação de verdade, porque quem responde é o Google. */
   googleUrl: '/api/auth/google',
@@ -126,6 +134,23 @@ export const auth = {
   /* "Não é nenhuma dessas." Gravado no servidor, e não aqui: a resposta tem de
      valer no celular da pessoa também. */
   dismissClaim: () => post<{ ok: true }>('/api/auth/claim/dismiss', {}),
+
+  /* ── os links que chegam por e-mail ─────────────────────────────────────
+     Confirmar um endereço e voltar para dentro sem a senha são a mesma coisa
+     com dois fins: um segredo de vida curta que só chega a quem lê aquela caixa
+     de entrada.
+
+     O link do e-mail aponta para a TELA (`#confirmar/<token>`), e é ela que
+     chama isto. Nunca para uma rota direta — servidores de e-mail e antivírus
+     abrem os links das mensagens antes de a pessoa ver, e um token que se gasta
+     ao ser aberto é um token que o scanner queima no caminho. */
+  sendVerification: () => post<{ ok: true; sent?: boolean; already?: boolean }>('/api/auth/verify/send', {}),
+  verifyEmail: (token: string) => post<{ ok: true; name: string }>('/api/auth/verify', { token }),
+  /* Responde igual exista a conta ou não: uma resposta diferente transformaria
+     isto numa lista de quem tem conta aqui. */
+  requestReset: (email: string) => post<{ ok: true }>('/api/auth/reset/request', { email }),
+  resetPassword: (token: string, password: string) =>
+    post<{ reviewer: SessionUser }>('/api/auth/reset', { token, password }),
 };
 
 /* ── as salas ─────────────────────────────────────────────────────────────

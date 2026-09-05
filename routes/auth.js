@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
+const mail = require('../mail');
 const throttle = require('../throttle');
 const wrap = require('../wrap');
 
@@ -48,6 +49,49 @@ const throttleLogin = throttle.limit({
   message: espera => `Muitas tentativas de entrada. Tente de novo em ${espera}.`,
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AS TRAVAS DOS LINKS POR E-MAIL
+
+   Toda rota nova abaixo é medida, pela mesma régua do resto do app, e cada
+   número vem do que a ação significa:
+
+   - **Pedir confirmação** é raro por natureza: você confirma um endereço uma
+     vez na vida, e reenvia quando o primeiro não chegou. Três por hora.
+   - **Pedir redefinição** é medido em DOIS eixos, e isso não é excesso. Por
+     conta, para ninguém encher a caixa de entrada de uma pessoa específica; por
+     endereço de rede, porque quem varre e-mails alheios não tem conta nenhuma e
+     escaparia inteiro de um limite por conta.
+   - **Apresentar um token** é o único que um programa tentaria adivinhar. São
+     256 bits de acaso, então adivinhar não é um caminho — mas a trava é barata
+     e transforma "impossível" em "impossível e barulhento".
+
+   Os dois pedidos ainda gastam um envio de e-mail de verdade, que é uma cota
+   diária com outro dono. Um laço sem trava aqui esgota o provedor e derruba o
+   recurso para o clube inteiro.
+   ══════════════════════════════════════════════════════════════════════════ */
+const throttleVerifySend = throttle.limit({
+  name: 'verify:send',
+  max: 3,
+  windowMs: 60 * 60_000,
+  message: espera => `Já mandamos a confirmação. Tente de novo em ${espera}.`,
+});
+
+const throttleResetByIp = throttle.limit({
+  name: 'reset:ip',
+  max: 10,
+  windowMs: 60 * 60_000,
+  by: 'ip',
+  message: espera => `Muitos pedidos daqui. Tente de novo em ${espera}.`,
+});
+
+const throttleTokenTry = throttle.limit({
+  name: 'token:try',
+  max: 20,
+  windowMs: 15 * 60_000,
+  by: 'ip',
+  message: espera => `Muitas tentativas. Tente de novo em ${espera}.`,
+});
+
 const getReviewer = db.prepare('SELECT * FROM reviewers WHERE id = ?');
 
 /* The picture travels as a URL for the same reason it does in the roster: the
@@ -63,6 +107,9 @@ function publicReviewer(r) {
     dot: r.dot,
     isAdmin: !!r.is_admin,
     email: r.email || null,
+    /* Se o endereço já foi provado. A tela precisa disto para saber se mostra o
+       aviso de confirmar e se oferece fundar um clube. */
+    emailVerified: !!r.email_verified,
     avatar: avatarUrl(r.id, r.avatar_rev),
   };
 }
@@ -135,12 +182,17 @@ router.get('/me', (req, res) => {
       dot: req.session.dot,
       isAdmin: !!req.session.is_admin,
       email: req.session.email || null,
+      emailVerified: !!req.session.email_verified,
       /* A bio vem junto porque o saguão precisa dela: lá não existe elenco de
          clube nenhum de onde lê-la, e a folha de conta é a mesma nos dois
          lugares. */
       bio: req.session.bio || null,
       avatar: avatarUrl(req.session.reviewer_id, req.session.avatar_rev),
     },
+    /* Se esta instalação sabe mandar e-mail. Sem isso a tela não oferece
+       "reenviar confirmação" nem "esqueci minha senha": um botão que não tem
+       como funcionar é pior que a ausência dele. */
+    mail: mail.configured(),
     /* A tela de cadastro de senha vive disto. É um estado da conta e não um
        passo de um assistente: quem pular hoje volta a ver o convite amanhã,
        porque a razão de ela existir — não depender de uma porta só — não
@@ -380,6 +432,135 @@ router.post('/claim', auth.requireSession, wrap(async (req, res) => {
   const token = await auth.createSession(out.reviewer.id);
   auth.sendSessionCookie(res, token);
   res.json({ reviewer: publicReviewer(out.reviewer) });
+}));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CONFIRMAR O ENDEREÇO, E VOLTAR PARA DENTRO SEM A SENHA.
+
+   As duas coisas moram juntas porque são a mesma: um segredo de vida curta que
+   só chega a quem lê aquela caixa, e cuja apresentação é a prova.
+
+   ── por que o link do e-mail não é a rota ─────────────────────────────────
+   O link leva à TELA (`#confirmar/<token>`), e é a tela que faz o POST. A
+   tentação é apontar direto para uma rota e resolver num GET, e ela custa caro:
+   servidores de e-mail e antivírus ABREM os links das mensagens antes de a
+   pessoa ver, para conferir se são seguros. Um token que se gasta ao ser aberto
+   é um token que o scanner do Gmail queima no caminho, e a pessoa clica num
+   link que já não vale sem ninguém ter errado nada.
+
+   Um POST vindo da tela não é feito por scanner nenhum.
+
+   ── e por que pedir redefinição sempre responde a mesma coisa ─────────────
+   "E-mail não cadastrado" transforma esta rota numa lista de quem tem conta
+   aqui: basta pedir uma redefinição para cada endereço que se queira testar. A
+   resposta é idêntica exista a conta ou não, e o que muda é só o que chega (ou
+   não chega) na caixa de entrada de quem for dono dela.
+
+   O cadastro revela colisão de e-mail e continua revelando — lá a informação é
+   necessária para a pessoa entender por que não consegue criar a conta, e
+   escondê-la quebraria o cadastro para proteger o que a tela de "esqueci minha
+   senha" de qualquer produto entrega de qualquer jeito. Aqui não é necessária.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Reenviar a confirmação para o próprio endereço. */
+router.post('/verify/send', auth.requireSession, throttleVerifySend, wrap(async (req, res) => {
+  const reviewer = await getReviewer.get(req.session.reviewer_id);
+  if (!reviewer?.email) return res.status(400).json({ error: 'Sua conta não tem e-mail.' });
+  if (reviewer.email_verified) return res.json({ ok: true, already: true });
+
+  const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
+  const { subject, text } = mail.verifyMail(
+    reviewer.name,
+    `${mail.baseUrl()}/#confirmar/${token}`
+  );
+  const out = await mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
+  /* Um provedor fora do ar não é erro do produto, e a tela sabe dizer a
+     diferença entre "mandamos" e "não conseguimos mandar agora". */
+  res.json({ ok: true, sent: out.sent });
+}));
+
+/** Apresentar o token de confirmação. Não exige sessão: pode chegar de outro aparelho. */
+router.post('/verify', throttleTokenTry, wrap(async (req, res) => {
+  const quem = await auth.useEmailToken(req.body?.token, 'verify');
+  if (!quem) {
+    return res.status(400).json({ error: 'Este link não vale mais. Peça outro.' });
+  }
+  await auth.markVerified(quem.id);
+  res.json({ ok: true, name: quem.name });
+}));
+
+/* Pedir para redefinir. Sem sessão, por definição: quem chegou aqui não
+   consegue entrar. */
+router.post('/reset/request', throttleResetByIp, wrap(async (req, res) => {
+  const reviewer = await auth.accountByEmail(req.body?.email);
+
+  /* Um segundo eixo, por conta, e ele só existe quando a conta existe: sem
+     isto, alguém em muitos endereços de rede diferentes poderia usar este
+     produto para encher a caixa de entrada de uma pessoa. */
+  if (reviewer) {
+    const cabe = throttle.take(`reset:conta|${reviewer.id}`, 5, 60 * 60_000);
+    if (cabe.ok) {
+      if (reviewer.email_verified) {
+        const token = await auth.createEmailToken(reviewer.id, 'reset', reviewer.email);
+        const { subject, text } = mail.resetMail(
+          reviewer.name,
+          `${mail.baseUrl()}/#senha/${token}`
+        );
+        await mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
+      } else {
+        /* ── o caminho que evita o beco sem saída ──────────────────────────
+           Uma conta sem endereço confirmado não recupera senha — é a regra do
+           produto, e ela está certa: devolver acesso por um endereço que
+           ninguém provou é devolver acesso a quem quer que tenha escrito
+           aquele endereço no cadastro.
+
+           Só que confirmar exige estar dentro, e quem está pedindo isto está
+           fora. Aplicada ao pé da letra, a regra tranca a pessoa para sempre.
+
+           Então o pedido não é recusado em silêncio: o que chega é o link de
+           CONFIRMAR. Clicando nele o endereço fica provado, e o pedido de
+           redefinição seguinte funciona. São dois passos em vez de um, num
+           caso raro, e nenhum deles entrega acesso a um endereço não provado. */
+        const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
+        const { subject, text } = mail.verifyFirstMail(
+          reviewer.name,
+          `${mail.baseUrl()}/#confirmar/${token}`
+        );
+        await mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
+      }
+    }
+  }
+
+  /* Sempre a mesma resposta, com conta ou sem. Ver a nota de abertura. */
+  res.json({ ok: true });
+}));
+
+/** Apresentar o token de redefinição junto da senha nova. */
+router.post('/reset', throttleTokenTry, wrap(async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!auth.isValidPassword(password)) {
+    return res.status(400).json({
+      error: `A senha precisa ter entre ${auth.MIN_PASSWORD} e ${auth.MAX_PASSWORD} caracteres.`,
+    });
+  }
+  const quem = await auth.useEmailToken(token, 'reset');
+  if (!quem) return res.status(400).json({ error: 'Este link não vale mais. Peça outro.' });
+
+  await auth.setPassword(quem.id, password);
+  /* ── e todo mundo sai ──────────────────────────────────────────────────
+     Redefinir uma senha é o que se faz quando se suspeita que alguém entrou.
+     Deixar as sessões abertas seria trocar a fechadura e não recolher as
+     cópias da chave. É a mesma regra da troca de senha por dentro do app.
+
+     Inclusive a de quem está redefinindo: logo abaixo nasce uma nova, para a
+     pessoa não ser mandada para a tela de entrada no segundo em que acabou de
+     provar quem é. */
+  await auth.destroyAllSessions(quem.id);
+
+  const reviewer = await getReviewer.get(quem.id);
+  const nova = await auth.createSession(quem.id);
+  auth.sendSessionCookie(res, nova);
+  res.json({ reviewer: publicReviewer(reviewer) });
 }));
 
 router.post('/logout', wrap(async (req, res) => {

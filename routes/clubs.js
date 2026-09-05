@@ -131,6 +131,36 @@ index.get('/', wrap(async (req, res) => {
    num clube aberto entrar é um clique, num fechado é um pedido que o ADM
    aprova. */
 index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
+  /* ── fundar exige um endereço provado ───────────────────────────────────
+     Não é sobre o clube: é sobre o custo de criar identidades. Um clube toma um
+     nome único da rede e uma vaga na vitrine, e uma conta custa uma requisição.
+     Exigindo confirmação, cada sala fundada passa a exigir uma caixa de entrada
+     de verdade — o que não impede ninguém determinado e encarece o automático,
+     que é tudo que uma trava deste tipo se propõe a fazer.
+
+     Uma conta do Google já chega verificada (ver db.js), então isto não pede
+     nada de quem entrou pela porta normal. Quem se cadastrou por senha confirma
+     uma vez, na vida.
+
+     Avaliar, comentar, entrar num clube e usar o produto continuam livres: a
+     regra encarece FUNDAR, e não participar.
+
+     ── e a conta SEM e-mail nenhum passa ──────────────────────────────────
+     Ela existe: `accountForGoogle` grava o endereço como nulo quando ele já
+     pertence a outra conta, para a entrada não morrer num 500 do lado de fora.
+     Essa pessoa entrou pelo Google e não tem endereço para confirmar — a regra
+     aplicada a ela não pede uma prova, tranca uma porta para sempre.
+
+     Deixá-la passar não abre nada: o que a regra encarece é criar identidades
+     baratas, e uma conta do Google já custou uma conta do Google. Quem é
+     medido aqui é quem se cadastrou por senha, que é a porta de graça. */
+  if (req.session.email && !req.session.email_verified) {
+    return res.status(403).json({
+      error: 'Confirme seu e-mail para fundar um clube. O link está na sua caixa de entrada.',
+      needsVerifiedEmail: true,
+    });
+  }
+
   const name = String(req.body?.name || '').trim();
   const tagline = String(req.body?.tagline || '').trim();
   /* Aberto quando não se diz nada. Isto virou o padrão quando a semântica

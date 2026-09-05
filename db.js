@@ -732,6 +732,56 @@ async function migrate() {
   await addReviewerCol('google_sub', 'google_sub TEXT');
   await addReviewerCol('password_hash', 'password_hash TEXT');
   await addReviewerCol('password_salt', 'password_salt TEXT');
+
+  /* ── o endereço é mesmo desta pessoa? ──────────────────────────────────
+     Até aqui um e-mail era o que alguém digitou. Isso bastava enquanto ele não
+     servia para nada além de identificar a conta na hora de entrar, e deixou de
+     bastar no dia em que passou a existir "esqueci minha senha": um endereço não
+     provado é um endereço que pode ser de outra pessoa, e mandar para lá o
+     caminho de volta de uma conta seria entregar a conta.
+
+     Zero por padrão — menos para quem entrou pelo Google, e essa exceção não é
+     conveniência. `accountForGoogle` já recusa ligar qualquer coisa a um e-mail
+     que o Google não tenha marcado como verificado (ver auth.js), então toda
+     conta com `google_sub` chegou aqui com o endereço já provado por quem tem
+     como prová-lo. Marcá-las como não verificadas seria pedir de novo uma prova
+     que já foi dada, e a primeira vítima seria o dono do clube. */
+  await addReviewerCol('email_verified', 'email_verified INTEGER NOT NULL DEFAULT 0');
+  if (!(await done('google-emails-verified'))) {
+    const r = await prepare(
+      'UPDATE reviewers SET email_verified = 1 WHERE google_sub IS NOT NULL AND email IS NOT NULL'
+    ).run();
+    await mark('google-emails-verified');
+    if (r?.rowsAffected) console.log(`[db] ${r.rowsAffected} conta(s) do Google já vêm verificadas`);
+  }
+
+  /* ── o que um link de e-mail carrega ───────────────────────────────────
+     Um token para confirmar o endereço, e um para redefinir a senha. Mesma
+     tabela porque são a mesma coisa com dois usos: um segredo de vida curta que
+     só chega a quem lê aquela caixa de entrada, e cuja apresentação é a prova.
+
+     Guarda só o SHA-256, exatamente como as sessões. O token viaja no e-mail e
+     no endereço que a pessoa abre; o banco nunca o tem. Um vazamento de banco
+     não devolve um único link utilizável.
+
+     `email` fica gravado junto porque o token vale para O ENDEREÇO ao qual foi
+     mandado: se a pessoa trocar o e-mail da conta entre pedir e clicar, o link
+     antigo deixa de valer em vez de confirmar um endereço que ninguém pediu.
+
+     Uso único, por exclusão: usar apaga a linha. Não há coluna de "já usado" —
+     ela seria uma segunda resposta, livre para discordar da primeira, para a
+     pergunta que a existência da linha já responde. */
+  await exec(`
+    CREATE TABLE IF NOT EXISTS email_tokens (
+      token_hash TEXT PRIMARY KEY,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS email_tokens_reviewer ON email_tokens(reviewer_id, kind);
+  `);
   await exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS reviewers_email
       ON reviewers(email COLLATE NOCASE) WHERE email IS NOT NULL;
@@ -896,6 +946,8 @@ async function migrate() {
 
   // Expired sessions are dead weight and a liability; clear them at boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+  // E pelo mesmo motivo, os links de e-mail que já não abrem nada.
+  await prepare("DELETE FROM email_tokens WHERE expires_at <= datetime('now')").run();
 }
 
 // Whatever needs the schema awaits this. The routes only call prepare() at

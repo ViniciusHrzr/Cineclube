@@ -197,8 +197,13 @@ async function accountForGoogle({ sub, email, name, verified }) {
         ? await db.prepare('SELECT * FROM reviewers WHERE is_admin = 1 AND google_sub IS NULL ORDER BY created_at LIMIT 1').get()
         : null);
     if (heir) {
-      await db.prepare('UPDATE reviewers SET google_sub = ?, email = COALESCE(email, ?) WHERE id = ?')
-        .run(sub, mail, heir.id);
+      /* E o endereço passa a estar provado: chegar aqui exige `verified` do
+         próprio Google (ver a guarda algumas linhas acima), que é a prova que
+         este produto não tem como produzir sozinho. */
+      await db.prepare(
+        `UPDATE reviewers SET google_sub = ?, email = COALESCE(email, ?), email_verified = 1
+         WHERE id = ?`
+      ).run(sub, mail, heir.id);
       const linked = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(heir.id);
       return { reviewer: linked, created: false };
     }
@@ -226,9 +231,15 @@ async function accountForGoogle({ sub, email, name, verified }) {
      de partida — a pessoa troca no próprio perfil como sempre pôde. */
   const id = 'p' + crypto.randomUUID();
   const dot = DOTS[Math.floor(Math.random() * DOTS.length)];
+  /* `email_verified` acompanha o endereço e nunca o precede: ele só vale 1
+     quando o endereço gravado é o `trusted` acima — o que o Google marcou como
+     verificado. Uma conta que nasce sem e-mail nasce não verificada, porque não
+     há endereço nenhum a verificar, e o dia em que ela ganhar um pela tela de
+     conta é o dia em que ele terá de ser provado como o de qualquer outra. */
+  const verificado = free && trusted ? 1 : 0;
   await db.prepare(
-    'INSERT INTO reviewers (id, name, dot, email, google_sub) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, (name || mail || 'Alguém').slice(0, 60), dot, free ? trusted : null, sub);
+    'INSERT INTO reviewers (id, name, dot, email, google_sub, email_verified) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, (name || mail || 'Alguém').slice(0, 60), dot, free ? trusted : null, sub, verificado);
   const created = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id);
   return { reviewer: created, created: true };
 }
@@ -457,6 +468,7 @@ async function readSession(token) {
   const row = await db
     .prepare(
       `SELECT s.reviewer_id, s.expires_at, r.name, r.dot, r.is_admin, r.avatar_rev, r.email, r.bio,
+              r.email_verified,
               (r.password_hash IS NOT NULL) AS has_password
        FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
        WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
@@ -474,6 +486,92 @@ async function readSession(token) {
     row.renewed = true;
   }
   return row;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   OS LINKS QUE CHEGAM POR E-MAIL.
+
+   Dois usos, uma mecânica: um segredo de vida curta que só chega a quem lê
+   aquela caixa de entrada, e cuja apresentação é a prova de que o endereço é
+   dela. Confirmar um e-mail e redefinir uma senha são a mesma frase com dois
+   fins.
+
+   Três decisões, e as três são as das sessões, pelos mesmos motivos:
+
+   1. **256 bits de acaso**, não um código de seis dígitos. Um código curto pede
+      uma trava por tentativa e um relógio; um token deste tamanho não é
+      adivinhado, e a trava vira uma segunda linha de defesa em vez da primeira.
+   2. **O banco guarda só o SHA-256.** O token vive no e-mail e no endereço que
+      a pessoa abre. Um vazamento de banco não devolve um único link utilizável.
+      Não há salt, e é correto: um salt existe para atrasar quem adivinha uma
+      senha humana, e aqui não há nada de humano para adivinhar.
+   3. **Uso único, por exclusão.** Usar apaga a linha. Uma coluna "já usado"
+      seria uma segunda resposta, livre para discordar da primeira, para a
+      pergunta que a existência da linha já responde.
+
+   As validades são diferentes e a diferença é o que cada link pode fazer.
+   Confirmar um endereço não dá acesso a nada, então 24 horas é conveniência
+   sem custo. Redefinir uma senha É o acesso, e uma hora é o tempo de ir ao
+   e-mail e voltar.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const TOKEN_HOURS = { verify: 24, reset: 1 };
+
+/** Cria um link novo e apaga os anteriores do mesmo tipo para a mesma pessoa. */
+async function createEmailToken(reviewerId, kind, email) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  /* Pedir um link novo invalida o anterior. Sem isto, cada pedido deixaria mais
+     um segredo válido circulando por e-mail — e quem pede duas vezes é quase
+     sempre alguém que não recebeu o primeiro, não alguém que queira dois. */
+  await db.prepare('DELETE FROM email_tokens WHERE reviewer_id = ? AND kind = ?')
+    .run(reviewerId, kind);
+  await db.prepare(
+    `INSERT INTO email_tokens (token_hash, reviewer_id, kind, email, expires_at)
+     VALUES (?, ?, ?, ?, datetime('now', '+' || ? || ' hours'))`
+  ).run(sha(token), reviewerId, kind, email, TOKEN_HOURS[kind]);
+  return token;
+}
+
+/* Lê e CONSOME. Devolve a conta, ou null — e um null só quer dizer uma coisa
+   para quem chama: o link não vale. Distinguir "não existe" de "expirou" de
+   "era de outro endereço" seria contar a quem apresenta um token errado alguma
+   coisa sobre os tokens certos.
+
+   `email` é comparado com o da conta AGORA: se a pessoa trocou o endereço entre
+   pedir e clicar, o link antigo confirmaria um endereço que ninguém pediu. */
+async function useEmailToken(token, kind) {
+  if (!token || typeof token !== 'string') return null;
+  const hash = sha(token);
+  const row = await db.prepare(
+    `SELECT t.reviewer_id, t.email, r.name, r.email AS conta_email
+     FROM email_tokens t JOIN reviewers r ON r.id = t.reviewer_id
+     WHERE t.token_hash = ? AND t.kind = ? AND t.expires_at > datetime('now')`
+  ).get(hash, kind);
+
+  /* Apagado mesmo quando não serve: um token apresentado é um token gasto, e
+     deixá-lo vivo depois de uma tentativa daria infinitas tentativas a quem
+     esteja variando alguma outra coisa. */
+  await db.prepare('DELETE FROM email_tokens WHERE token_hash = ?').run(hash);
+
+  if (!row) return null;
+  if (!row.conta_email || row.conta_email.toLowerCase() !== String(row.email).toLowerCase()) {
+    return null;
+  }
+  return { id: row.reviewer_id, name: row.name, email: row.conta_email };
+}
+
+/** Marca o endereço como provado. Idempotente: confirmar duas vezes não muda nada. */
+async function markVerified(reviewerId) {
+  await db.prepare('UPDATE reviewers SET email_verified = 1 WHERE id = ?').run(reviewerId);
+}
+
+/** A conta de um endereço, para o pedido de redefinição. Null é silêncio. */
+async function accountByEmail(email) {
+  const mail = String(email || '').trim().toLowerCase();
+  if (!mail) return null;
+  return (
+    (await db.prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE').get(mail)) || null
+  );
 }
 
 async function destroySession(token) {
@@ -563,6 +661,11 @@ module.exports = {
   canClaim,
   checkClaimPin,
   claimAccount,
+  createEmailToken,
+  useEmailToken,
+  markVerified,
+  accountByEmail,
+  TOKEN_HOURS,
   createSession,
   readSession,
   destroySession,

@@ -13,10 +13,15 @@ client/tsconfig.tsbuildinfo
 # Cópia do service worker do WebTorrent, refeita pelo `vendor:sw` a cada build.
 # Versionar seria guardar uma segunda cópia que pode divergir do pacote.
 client/public/sw.min.js
-data/*.db
-data/*.db-journal
-data/*.db-shm
-data/*.db-wal
+# ── o banco, e tudo que sai dele ──────────────────────────────────────────
+# A pasta inteira, e não `data/*.db`. Aquele padrão cobria o banco em uso e
+# deixava de fora qualquer subpasta — o que passou a importar no dia em que
+# `npm run backup` começou a escrever em `data/backups/`. Um backup é uma cópia
+# COMPLETA do banco, hashes de senha inclusive, e commitá-lo põe isso no
+# histórico do git, de onde não sai mais.
+#
+# Nada aqui é o produto: é estado desta máquina.
+data/
 *.log
 
 # O nome do servico e a URL publica. Fica so na maquina.

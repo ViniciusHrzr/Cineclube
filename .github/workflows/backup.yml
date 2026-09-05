@@ -1,0 +1,77 @@
+# ══════════════════════════════════════════════════════════════════════════
+# A cópia da noite.
+#
+# Roda todo dia às 06:00 UTC (03:00 em Brasília, quando ninguém está avaliando
+# nada), baixa o banco inteiro do Turso e guarda o arquivo como artefato desta
+# execução. Pega em: repositório → aba Actions → a execução do dia → Artifacts.
+#
+# ── por que artefato e não commit ─────────────────────────────────────────
+# Um banco commitado cresce o repositório para sempre e coloca hash de senha no
+# histórico do git, de onde ele não sai nunca mais. Um artefato tem prazo, mora
+# fora da árvore e é baixado por quem tem acesso ao repositório — que é
+# exatamente a permissão certa para um backup.
+#
+# ── os segredos ───────────────────────────────────────────────────────────
+# Settings → Secrets and variables → Actions, dois deles, com os mesmos valores
+# que estão no Render:
+#
+#   TURSO_DATABASE_URL
+#   TURSO_AUTH_TOKEN
+#
+# Um segredo do GitHub não é legível depois de salvo, nem por você, e o log
+# desta execução mascara qualquer aparição dele. Se um dia vazar, o conserto é
+# rodar um token novo no painel do Turso — o antigo morre no mesmo instante.
+#
+# `workflow_dispatch` deixa rodar à mão pelo botão, que é o que se quer antes de
+# uma migração arriscada.
+# ══════════════════════════════════════════════════════════════════════════
+name: Backup do banco
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+# Só ler o repositório. Um fluxo que baixa dados não tem por que poder escrever
+# em nada, e o padrão do GitHub é mais permissivo do que isto.
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    # Uma cópia que trava é uma cópia que não existe, e o padrão do runner são
+    # seis horas presas numa fila que ninguém está olhando.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `npm ci` e não `npm install`: o backup lê o banco de produção, e a
+      # versão exata de cada dependência tem de vir do lockfile e não de uma
+      # resolução feita no momento.
+      - name: Instalar
+        run: npm ci
+
+      - name: Copiar o banco
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          CINECLUBE_BACKUP_DIR: ${{ runner.temp }}/backup
+        run: npm run backup
+
+      - name: Guardar
+        uses: actions/upload-artifact@v4
+        with:
+          name: cineclube-db-${{ github.run_number }}
+          path: ${{ runner.temp }}/backup/*.db
+          # Noventa dias é o teto do GitHub, e o certo aqui: o estrago que um
+          # backup conserta costuma ser descoberto semanas depois.
+          retention-days: 90
+          # Uma cópia vazia não é uma cópia. Sem isto, um passo que rodou e não
+          # produziu arquivo nenhum sobe um artefato vazio e o painel fica todo
+          # verde por cima de nada.
+          if-no-files-found: error
