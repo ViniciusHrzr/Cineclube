@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const clubs = require('../clubs');
+const lobby = require('../lobby');
 const live = require('../live');
 const wrap = require('../wrap');
 const { readDataUrl } = require('../image');
@@ -38,6 +39,9 @@ function toDTO(row, extra = {}) {
        mostrar marcado se o ADM fechar a sala de novo. */
     showReviews: !!row.show_reviews,
     showComments: !!row.show_comments,
+    /* O terceiro interruptor, e ele não é sobre ler esta sala: é sobre o que ela
+       empresta às contas da rede no saguão. Ver lobby.js. */
+    showCharts: !!row.show_charts,
     photo: photoUrl(row),
     createdAt: row.created_at ?? null,
     ...extra,
@@ -82,7 +86,9 @@ index.get('/', wrap(async (req, res) => {
   const pending = new Set(asked);
 
   res.json({
-    mine: mine.map(c => toDTO(c, { role: c.role, isMember: true })),
+    mine: mine.map(c =>
+      toDTO(c, { role: c.role, isMember: true, members: Number(c.members) || 0 })
+    ),
     open: open
       .filter(c => !held.has(c.id))
       .map(c => toDTO(c, { members: Number(c.members) || 0, requested: pending.has(c.id) })),
@@ -249,7 +255,11 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
      fazem diferença nenhuma. Assim a política sobrevive a um período de porta
      aberta: fechar de novo devolve exatamente o que o ADM tinha escolhido, em
      vez de zerar em silêncio. */
-  for (const [campo, coluna] of [['showReviews', 'show_reviews'], ['showComments', 'show_comments']]) {
+  for (const [campo, coluna] of [
+    ['showReviews', 'show_reviews'],
+    ['showComments', 'show_comments'],
+    ['showCharts', 'show_charts'],
+  ]) {
     if (campo in patch) {
       await db.prepare(`UPDATE clubs SET ${coluna} = ? WHERE id = ?`)
         .run(patch[campo] ? 1 : 0, req.club.id);
@@ -269,6 +279,11 @@ scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
   }
 
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
+  /* Abrir a sala, fechá-la ou mexer no que ela empresta muda o que o saguão
+     deve contar. O cache dele tem um minuto de vida, e um minuto é tempo demais
+     para o ADM que acabou de desligar o interruptor continuar vendo o clube na
+     vitrine — o que ele leria como o botão não ter funcionado. */
+  lobby.invalidate();
   live.emit('club', req.session.reviewer_id, req.club.id);
   res.json({
     club: toDTO(row, {
@@ -308,6 +323,7 @@ scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
   live.emit('club', req.session.reviewer_id, req.club.id);
 
   await db.prepare('DELETE FROM clubs WHERE id = ?').run(req.club.id);
+  lobby.invalidate();
   res.status(204).end();
 }));
 

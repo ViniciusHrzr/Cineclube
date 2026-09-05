@@ -231,6 +231,34 @@
   animation-delay: var(--phase, 0s);
 }
 
+/* ── a parede de cartazes do saguão ───────────────────────────────────────
+   As caixas de cartaz na parede do foyer, andando devagar. Mesmo princípio do
+   creep da parede de celuloide, e pelo mesmo motivo: um cartaz não oscila, ele
+   passa. A pista carrega a lista duas vezes e viaja exatamente metade dela, o
+   que faz a emenda cair sobre a cópia e o laço não ter começo nem fim.
+
+   Que isso seja exato depende de uma coisa só: a folga entre as caixas é
+   `margin-right` em cada uma, e nunca `gap`. Com `gap`, a pista mede
+   `2n·largura + (2n−1)·folga` e metade dela não é o primeiro conjunto — sobra
+   meia folga por volta, e o salto aparece uma vez por minuto.
+
+   `--run` é o tempo de uma volta, escrito pela tela a partir de quantos cartazes
+   existem, para a velocidade ser a mesma com oito ou com vinte e oito. */
+@keyframes poster-run {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+.poster-rail {
+  overflow: hidden;
+}
+.poster-rail-track {
+  animation: poster-run var(--run, 170s) linear infinite;
+}
+
 /* Reduced motion is an intentional alternative, not a kill switch. What goes is
    travel that plays on its own: the entrances. What stays is feedback the
    visitor causes — the film wall still lights under the cursor, because that
@@ -270,6 +298,19 @@
     text-shadow: none;
   }
   .strip-creep {
+    animation: none !important;
+  }
+  /* A parede de cartazes para de andar e passa a andar com o dedo, que é o que
+     um polegar num telefone quer fazer com uma fileira de cartazes de qualquer
+     jeito. A barra some: ela seria a única coisa desenhada por baixo deles. */
+  .poster-rail {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .poster-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .poster-rail-track {
     animation: none !important;
   }
 }
@@ -329,6 +370,12 @@
 [data-render='software'] .strip-creep {
   animation: none;
 }
+[data-render='software'] .poster-rail {
+  overflow-x: auto;
+}
+[data-render='software'] .poster-rail-track {
+  animation: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -342,6 +389,16 @@
   .animate-frame-in,
   .animate-beam-in,
   .animate-flicker {
+    animation: none !important;
+  }
+  /* A parede de celuloide é a sala e fica andando por decisão do dono; a de
+     cartazes é conteúdo se deslocando sozinho debaixo do olho, que é
+     exatamente o que esta preferência pede para não acontecer. Ela para e
+     passa a ser uma fileira que se rola com a mão. */
+  .poster-rail {
+    overflow-x: auto;
+  }
+  .poster-rail-track {
     animation: none !important;
   }
 }

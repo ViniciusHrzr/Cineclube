@@ -893,6 +893,32 @@ function ClubRoom() {
               A sala de projeção nunca abre: assistir junto é de dentro, e o
               painel dela diz quem está na sala agora.
             </p>
+
+            {/* ── e o que a sala empresta para o saguão ──────────────────────
+                Uma pergunta diferente das duas de cima, e por isso uma região
+                própria: aquelas decidem se um estranho LÊ esta sala; esta decide
+                se o que ela avaliou entra nas contas da rede.
+
+                O que se empresta é número — média, contagem, um pôster. Quem deu
+                a nota e o que escreveu continuam do lado de dentro, a não ser
+                que "Mostrar avaliações" também esteja ligado, e é isso que a
+                última frase diz em vez de deixar supor. */}
+            <div className="mt-6">
+              <span className="legend mb-2 block">O que o clube empresta à rede</span>
+              <Switch
+                on={!!club.club.showCharts}
+                onToggle={() => void saveClub({ showCharts: !club.club.showCharts })}
+                title="Entrar nas contas do saguão"
+                line="As notas daqui contam na média da rede, e a sala aparece entre as mais ativas."
+              />
+              <p className="mt-3 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
+                {club.club.showCharts
+                  ? club.club.showReviews
+                    ? 'Ligada junto de “Mostrar avaliações”, uma ficha daqui pode ser a ficha em destaque do saguão — com o nome de quem escreveu e o que escreveu.'
+                    : 'O saguão soma as notas e mostra os pôsteres, sem dizer quem deu nota nem o que escreveu. Para uma ficha daqui poder ser destaque lá, ligue também “Mostrar avaliações”.'
+                  : 'Desligada, nada deste clube existe no saguão: nem na contagem de fichas, nem num pôster, nem num filme mais bem avaliado. O nome, a foto e quantas pessoas continuam à vista — é como alguém pede para entrar.'}
+              </p>
+            </div>
           </div>
         ) : null}
 

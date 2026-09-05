@@ -39,6 +39,9 @@ const reviewerRoutes = require('./routes/reviewers');
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
 app.use('/api/clubs', clubRoutes.index);
+/* O que a rede está fazendo, acima da linha do clube: a única leitura do produto
+   que atravessa salas, e ela só enxerga o que cada uma emprestou. Ver lobby.js. */
+app.use('/api/lobby', require('./routes/lobby'));
 app.use('/api/reviewers', reviewerRoutes.index);
 
 const scoped = express.Router({ mergeParams: true });

@@ -320,8 +320,12 @@ export default function App() {
     location.hash = '';
   }, []);
 
-  const enter = useCallback((slug: string) => {
-    location.hash = clubHash(slug, 'feed');
+  /* Entrar numa sala, e opcionalmente já num lugar dentro dela: o saguão põe uma
+     ficha inteira na tela e o clique nela tem de levar àquela ficha, não ao
+     mural do clube que a contém. Sem destino, a porta é o mural — que é onde
+     alguém que só quer entrar quer chegar. */
+  const enter = useCallback((slug: string, rest = 'feed') => {
+    location.hash = clubHash(slug, rest);
   }, []);
 
   if (!authChecked) {

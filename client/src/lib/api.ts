@@ -55,6 +55,10 @@ export type Club = {
      continuam gravadas, para fechar a sala devolver o que o ADM tinha escolhido. */
   showReviews?: boolean;
   showComments?: boolean;
+  /* O terceiro interruptor, e ele responde outra pergunta: os dois de cima
+     decidem se um estranho LÊ esta sala, este decide se o que ela avaliou entra
+     nas contas da rede no saguão — parede, pódio, atividade, cartaz. */
+  showCharts?: boolean;
   photo: string | null;
   createdAt?: string | null;
   /** Só quando você é de lá: 'admin' ou 'member'. */
@@ -134,7 +138,9 @@ export const clubs = {
   get: (slug: string) => api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`),
   update: (
     slug: string,
-    patch: Partial<Pick<Club, 'name' | 'tagline' | 'visibility' | 'showReviews' | 'showComments'>> & {
+    patch: Partial<
+      Pick<Club, 'name' | 'tagline' | 'visibility' | 'showReviews' | 'showComments' | 'showCharts'>
+    > & {
       photo?: string | null;
     }
   ) =>
@@ -167,6 +173,87 @@ export const clubs = {
       `/api/c/${encodeURIComponent(slug)}/requests/${reviewerId}`,
       { approve }
     ),
+};
+
+/* ── o saguão ─────────────────────────────────────────────────────────────
+   O que a rede está fazendo, acima da linha do clube. Tudo aqui é o que cada
+   sala emprestou de propósito: um clube fechado que não ligou nada não aparece
+   em campo nenhum destes. Ver lobby.js, que é onde a parede é desenhada.
+
+   Uma chamada só para seis coisas, porque são seis agregações na porta de
+   entrada — e uma porta que faz seis viagens é uma porta que pensa antes de
+   abrir. */
+export type LobbyMovie = {
+  id: number;
+  title: string;
+  year: number | null;
+  poster: string | null;
+  average: number;
+  takes: number;
+};
+
+export type LobbyPodiumMovie = LobbyMovie & { genre: string; clubs: number };
+
+export type LobbyClub = {
+  id: string;
+  name: string;
+  slug: string;
+  visibility: 'public' | 'private';
+  photo: string | null;
+  tagline: string | null;
+  /** Fichas gravadas na janela dos últimos `windowDays` dias. */
+  recent: number;
+  members: number;
+};
+
+/** Uma sala com sessão rolando neste segundo. Sai da memória, não do banco. */
+export type LobbyLive = {
+  club: {
+    id: string;
+    name: string;
+    slug: string;
+    visibility: 'public' | 'private';
+    photo: string | null;
+  };
+  movie: { id: number; title: string; year: number | null; poster: string | null };
+  watching: number;
+  status: 'playing' | 'paused';
+};
+
+/** A ficha da semana: a única coisa do saguão com um texto assinado dentro. */
+export type LobbyFeature = {
+  id: string;
+  club: { name: string; slug: string; visibility: 'public' | 'private' };
+  actor: { id: string; name: string; dot: string; avatar: string | null };
+  movieId: number;
+  movieTitle: string;
+  movieYear: number | null;
+  moviePoster: string | null;
+  genre: string;
+  final: number;
+  at: string;
+  ends: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  excerpt: string | null;
+  replies: number;
+  agrees: number;
+  disagrees: number;
+};
+
+export type LobbySnapshot = {
+  counts: { reviews: number; movies: number; clubs: number };
+  wall: LobbyMovie[];
+  podium: LobbyPodiumMovie[];
+  active: LobbyClub[];
+  live: LobbyLive[];
+  feature: LobbyFeature | null;
+  /** Quantas fichas um filme precisa ter para entrar no pódio. A tela imprime. */
+  floor: number;
+  /** Sobre quantos dias a atividade das salas é medida. */
+  windowDays: number;
+};
+
+export const lobby = {
+  get: () => api<LobbySnapshot>('/api/lobby'),
 };
 
 /* Your own name, your own portrait and your own bio. The route takes no id — it

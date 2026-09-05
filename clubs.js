@@ -176,9 +176,15 @@ const rosterStmt = db.prepare(`
 
 const roster = clubId => rosterStmt.all(clubId);
 
-/** Em quais clubes esta pessoa está. */
+/* Em quais clubes esta pessoa está.
+
+   Com o tamanho de cada um: o painel do saguão dizia quantas pessoas havia nas
+   salas da vitrine e nada nas suas — a contagem vinha do GROUP BY da outra
+   consulta, e o chaveiro não tinha nenhum. Ficava um cartão mudo do lado de um
+   cartão informado, sobre a sala que a pessoa conhece melhor. */
 const mineStmt = db.prepare(`
-  SELECT c.*, m.role, m.joined_at
+  SELECT c.*, m.role, m.joined_at,
+         (SELECT COUNT(*) FROM club_members x WHERE x.club_id = c.id) AS members
   FROM club_members m
   JOIN clubs c ON c.id = m.club_id
   WHERE m.reviewer_id = ?

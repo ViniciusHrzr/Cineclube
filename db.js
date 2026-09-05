@@ -595,6 +595,24 @@ async function migrate() {
          política que o ADM escolheu não se perde por ele ter aberto um mês. */
       show_reviews INTEGER NOT NULL DEFAULT 0,
       show_comments INTEGER NOT NULL DEFAULT 0,
+      /* ── e o que a sala empresta para o saguão ────────────────────────
+         Um terceiro interruptor, e ele responde uma pergunta que os dois de
+         cima não respondem. Aqueles decidem se um estranho consegue LER esta
+         sala; este decide se o que ela avaliou entra nas contas da rede — o
+         pódio de filmes, a parede de pôsteres, as salas em atividade.
+
+         São coisas diferentes o bastante para não caberem num interruptor só.
+         Uma média de rede não diz quem deu a nota nem em que sala; ela diz que
+         alguém, em algum lugar, achou aquilo bom. Um clube pode querer emprestar
+         isso e continuar com o acervo fechado, e o contrário também: mostrar as
+         fichas para quem chega pelo link e não aparecer em ranking nenhum.
+
+         Zero por padrão, como os outros dois e pelo mesmo motivo: nenhum clube
+         que já existe muda de comportamento porque uma coluna nova apareceu.
+         Emprestar é sempre um gesto de alguém.
+
+         Dormente enquanto o clube é aberto — um clube aberto já está na rede. */
+      show_charts INTEGER NOT NULL DEFAULT 0,
       /* SET NULL e não CASCADE: quem fundou o clube pode sair dele um dia, e o
          clube não vai junto. Quem manda é o papel em club_members. */
       created_by TEXT REFERENCES reviewers(id) ON DELETE SET NULL,
@@ -657,6 +675,11 @@ async function migrate() {
   if (!clubCols.includes('show_reviews')) {
     await exec('ALTER TABLE clubs ADD COLUMN show_reviews INTEGER NOT NULL DEFAULT 0');
     await exec('ALTER TABLE clubs ADD COLUMN show_comments INTEGER NOT NULL DEFAULT 0');
+  }
+  /* Separado dos dois de cima e não junto deles: um banco que já pegou aquela
+     migração não passaria por este bloco, e a coluna nova nunca chegaria. */
+  if (!clubCols.includes('show_charts')) {
+    await exec('ALTER TABLE clubs ADD COLUMN show_charts INTEGER NOT NULL DEFAULT 0');
   }
 
   /* ── o clube fundador nasceu aberto, e não devia ───────────────────────
