@@ -82,7 +82,18 @@ router.post(
     );
     const source = corte(r['source-file'] || r.sourceFile, 160);
 
-    const chave = `${directive}|${blocked}|${sample}`;
+    const line = Number.isFinite(Number(r['line-number'])) ? Number(r['line-number']) : null;
+
+    /* ── o lugar entra na chave, e isso não é detalhe ──────────────────────
+       A chave era diretiva + origem recusada. Para script inline os dois são
+       sempre "script-src-elem" e "inline", então DOIS scripts diferentes do
+       mesmo documento colapsavam numa linha só — e foi o que aconteceu na
+       primeira leitura em produção: os dois estavam sendo recusados e o log
+       mostrava um, o que fez parecer que só havia um problema.
+
+       Com o arquivo e a linha dentro, cada script recusado aparece uma vez. Um
+       aviso repetido continua não repetindo, que é o que se queria. */
+    const chave = `${directive}|${blocked}|${source}|${line}|${sample}`;
 
     if (!vistos.has(chave)) {
       if (vistos.size >= MAX_VISTOS) vistos.clear();
@@ -93,7 +104,7 @@ router.post(
       console.warn(
         `[csp] recusaria ${directive || 'algo'} -> ${blocked || 'sem origem'}` +
           ` (em ${corte(r['document-uri'] || r.documentURL, 120) || 'página desconhecida'})` +
-          (source ? ` | de ${source}${r['line-number'] ? ':' + Number(r['line-number']) : ''}` : '') +
+          (source ? ` | de ${source}${line !== null ? ':' + line : ''}` : '') +
           (sample ? ` | trecho: ${sample}` : '')
       );
     }

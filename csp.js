@@ -48,6 +48,30 @@ const path = require('node:path');
    política continua valendo para as respostas da API. */
 const INLINE = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
 
+/* ── a armadilha do fim de linha ──────────────────────────────────────────
+   Esta função existe por causa de um defeito que chegou até a produção, e ele é
+   a armadilha clássica de hash em CSP.
+
+   O navegador NÃO calcula o hash sobre os bytes que recebeu. Antes de o parser
+   de HTML olhar para qualquer coisa, ele normaliza o fluxo de entrada: todo
+   CRLF vira LF, e todo CR solto vira LF. O que ele hasheia é o texto do script
+   depois disso.
+
+   Este arquivo lia o HTML do disco e hasheava o que estava lá. Num repositório
+   cujo `index.html` está gravado em CRLF — que é o caso aqui, 119 CR no arquivo
+   publicado —, os dois hashes ficam diferentes por causa de um caractere que o
+   navegador já tinha jogado fora, e a política recusa os dois scripts do
+   próprio produto.
+
+   O sintoma não ajuda: para script inline o `blocked-uri` é a palavra "inline",
+   e o aviso aponta a linha do documento e mais nada. Se isto tivesse ido para o
+   modo de bloquear em vez do modo de aviso, a página teria perdido o ajuste de
+   zoom e a detecção de GPU sem uma mensagem de erro em lugar nenhum. É
+   exatamente para isto que a rodada em modo aviso existe.
+
+   Normalizar aqui é fazer com este texto o que o parser fará com ele. */
+const asHtmlParser = s => s.replace(/\r\n?/g, '\n');
+
 /** Para onde o navegador manda o que ele teria bloqueado. Ver routes/csp.js. */
 const REPORT_PATH = '/api/csp-report';
 
@@ -60,10 +84,13 @@ function inlineHashes(indexPath) {
   }
   const out = [];
   for (const m of html.matchAll(INLINE)) {
-    /* O corpo exato, sem aparar nada: o navegador calcula sobre os mesmos bytes
-       que estão entre as tags, espaço em branco incluído. Um `.trim()` aqui
-       produziria um hash que nunca bate com nada. */
-    const digest = crypto.createHash('sha256').update(m[1], 'utf8').digest('base64');
+    /* O corpo inteiro, sem aparar: o espaço em branco conta, e um `.trim()`
+       aqui produziria um hash que nunca bate com nada. O que muda é só o fim de
+       linha, e por quê está escrito em `asHtmlParser`. */
+    const digest = crypto
+      .createHash('sha256')
+      .update(asHtmlParser(m[1]), 'utf8')
+      .digest('base64');
     out.push(`'sha256-${digest}'`);
   }
   return out;

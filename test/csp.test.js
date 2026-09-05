@@ -124,6 +124,69 @@ test('cada script inline entra pelo hash, e são exatamente dois', async () => {
   for (const h of hashes) assert.ok(d['script-src'].includes(h), `falta o hash ${h}`);
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   O FIM DE LINHA, que é como este arquivo errou uma vez.
+
+   O navegador não hasheia os bytes que recebeu. O parser de HTML normaliza o
+   fluxo de entrada antes de olhar para qualquer coisa — todo CRLF vira LF, todo
+   CR solto vira LF — e é o texto DEPOIS disso que ele hasheia.
+
+   Este arquivo lia o HTML do disco e hasheava o que estava lá. Com o
+   `index.html` publicado gravado em CRLF, os dois hashes ficavam diferentes por
+   causa de um caractere que o navegador já tinha descartado, e a política
+   recusava os dois scripts do próprio produto. Em modo de bloquear, a página
+   teria perdido o ajuste de zoom e a detecção de GPU sem uma única mensagem de
+   erro; foi o modo de aviso que contou.
+
+   O teste é o que impede a volta: o mesmo script com os dois fins de linha tem
+   de produzir o mesmo hash, e ele tem de ser o do LF, que é o que o navegador
+   calcula.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+test('o hash é o do texto que o parser vê, e não o dos bytes em disco', () => {
+  const corpo = '\n  var a = 1;\n  var b = 2;\n';
+  const pagina = fim => `<!doctype html><html><head><script>${corpo.replace(/\n/g, fim)}</script></head><body></body></html>`;
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cineclube-csp-'));
+  const escrever = (nome, texto) => {
+    const p = path.join(dir, nome);
+    fs.writeFileSync(p, texto);
+    return p;
+  };
+
+  try {
+    const comLf = csp.inlineHashes(escrever('lf.html', pagina('\n')));
+    const comCrlf = csp.inlineHashes(escrever('crlf.html', pagina('\r\n')));
+    const comCr = csp.inlineHashes(escrever('cr.html', pagina('\r')));
+
+    assert.equal(comLf.length, 1);
+    assert.deepEqual(comCrlf, comLf, 'CRLF tem de dar o mesmo hash que LF');
+    assert.deepEqual(comCr, comLf, 'e um CR solto também — o parser normaliza os dois');
+
+    /* E que esse hash é o do texto normalizado, não o de outra coisa: é o
+       número que o navegador vai calcular. */
+    const esperado = crypto.createHash('sha256').update(corpo, 'utf8').digest('base64');
+    assert.deepEqual(comLf, [`'sha256-${esperado}'`]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('o index.html publicado é hasheado sem os CR que ele tem', () => {
+  /* O arquivo de verdade, que é onde isto aconteceu. Se ele estiver em CRLF, o
+     hash publicado tem de ser o da versão normalizada — e se um dia ele passar
+     a ser LF, a asserção continua valendo sem mudar nada. */
+  const html = fs.readFileSync(PUBLIC_INDEX, 'utf8');
+  const corpos = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)];
+  assert.equal(corpos.length, 2);
+
+  const esperados = corpos.map(m => {
+    const normalizado = m[1].replace(/\r\n?/g, '\n');
+    return `'sha256-${crypto.createHash('sha256').update(normalizado, 'utf8').digest('base64')}'`;
+  });
+  assert.deepEqual(csp.inlineHashes(PUBLIC_INDEX), esperados);
+});
+
 /* ── e tudo que a página de fato carrega ─────────────────────────────────── */
 
 test('a política permite cada origem que os arquivos publicados referenciam', async () => {
