@@ -265,11 +265,7 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Os mais bem avaliados"
-            note={`A média de todos os clubes que emprestam suas notas, entre os filmes com pelo menos ${plural(
-              net?.floor ?? 3,
-              'ficha',
-              'fichas'
-            )}.`}
+            note="A média de todos os clubes."
           >
             <div className="mt-7 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-6">
               {podium.map((film, i) => (
@@ -283,7 +279,7 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Salas em atividade"
-            note={`Fichas gravadas nos últimos ${net?.windowDays ?? 30} dias. Não é quem avaliou mais desde sempre — esse pódio a sala mais antiga nunca perderia.`}
+            note={`Fichas dos últimos ${net?.windowDays ?? 30} dias.`}
           >
             <ul className="mt-6">
               {active.map((club, i) => (
