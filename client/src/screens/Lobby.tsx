@@ -706,17 +706,20 @@ const SNAP = 0.02;
    isto a parede sairia em disparada por um movimento que ninguém fez. */
 const MAX_THROW = 42;
 
-/* ── o pé da faixa desaparece de verdade ──────────────────────────────────
-   A curva é lenta na metade de cima e rápida no fim: até 55% o cartaz está
-   inteiro, e a queda toda acontece no último terço. É o que faz a dissolução
-   ler como o cartaz se apagando, e não como a faixa ter uma altura menor.
+/* ── a última linha do cartaz não pode ser uma linha ──────────────────────
+   Esta máscara tem um trabalho pequeno e um só: tirar o corte reto da borda de
+   baixo. Quem escurece o pé da faixa é o véu de sombra, mais abaixo; aqui o
+   assunto é só a aresta.
 
-   Termina em zero antes da borda — a 96% e não a 100% — porque uma máscara que
-   chega ao fim exatamente na última linha de pixels deixa uma fita de um pixel
-   acesa em telas com escala fracionária, e uma linha clara atravessando o pé da
-   parede é justamente o que este véu existe para não haver. */
-const POSTER_FADE =
-  'linear-gradient(to bottom, #000 0%, #000 55%, rgba(0,0,0,0.72) 74%, rgba(0,0,0,0.22) 88%, transparent 96%)';
+   Foi uma dissolução de um terço da altura por um dia, e era demais — os
+   cartazes sumiam em vez de terminarem. O tamanho certo é o de uma borda: os
+   últimos vinte e quatro pixels, e nada antes disso.
+
+   Em PIXELS e não em porcentagem, e é a diferença que faz a coisa parecer a
+   mesma nos dois tamanhos: a faixa tem 132px no telefone e 176px no computador,
+   e uma borda de 15% seria vinte pixels lá e vinte e seis aqui — a mesma
+   intenção com duas espessuras. Uma aresta suave tem uma espessura só. */
+const POSTER_FADE = 'linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%)';
 
 /* Lido uma vez, como o `data-render` da parede de celuloide. O que esta
    preferência desliga é o movimento que começa SOZINHO; arrastar continua,
@@ -895,19 +898,22 @@ function PosterWall({
           dissolução — os cartazes viram sala, e o texto fica dentro disso.
 
           ── e a dissolução é de DUAS naturezas ─────────────────────────────
-          Uma escurece e a outra apaga, e as duas juntas dizem uma coisa que
-          nenhuma diz sozinha.
+          Uma escurece e a outra apaga, e cada uma tem um tamanho de trabalho
+          bem diferente.
 
-          O véu escuro (mais abaixo) pinta a cor da sala POR CIMA do cartaz: o
-          cartaz continua lá, na sombra. Sozinho, ele tapa — e o que ele tapa
-          não é só o cartaz, é a parede de celuloide que fica atrás de tudo
-          neste produto. O pé da faixa virava um retângulo preto no meio de uma
-          sala viva.
+          O véu escuro (mais abaixo) faz o percurso longo: pinta a cor da sala
+          por cima do cartaz ao longo do pé inteiro da faixa. É ele que apaga a
+          imagem e abre espaço para o letreiro.
 
-          A máscara aqui é alfa: ela não pinta nada, ela dissolve. Onde o cartaz
-          some, quem aparece é o que estava atrás dele — a parede de celuloide,
-          com o feixe correndo nela. Os cartazes não terminam contra um fundo,
-          eles se dissolvem NA sala.
+          A máscara é alfa e tem um trabalho pequeno: tirar o corte reto da
+          borda de baixo, e nada além disso. Ela chegou a dissolver um terço da
+          altura e era demais — os cartazes sumiam em vez de terminarem. O que
+          ela faz agora é o que uma aresta suave faz, na espessura de uma
+          aresta.
+
+          Onde ela apaga, quem aparece é o que estava atrás — a parede de
+          celuloide, com o feixe correndo nela. É a diferença entre um cartaz
+          que termina contra um fundo e um que termina na sala.
 
           Na moldura e não na faixa, de propósito. Uma máscara na caixa que rola
           seria pintada no espaço dela e ficaria parada — funciona —, mas aqui
