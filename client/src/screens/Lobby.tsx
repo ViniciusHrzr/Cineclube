@@ -853,15 +853,30 @@ function PosterWall({
 
   return (
     <section className="relative">
-      {/* Sem borda embaixo. Uma linha dura ali fazia a parede TERMINAR, e o
-          letreiro começava do zero num bloco separado — dois pedaços que por
-          acaso estavam um em cima do outro. O que os liga está logo abaixo: os
-          cartazes se dissolvem para baixo e o texto fica dentro dessa
-          dissolução, como um cartaz e a plaquinha embaixo dele. */}
+      {/* ══════════════════════════════════════════════════════════════════
+          A MOLDURA, e por que ela existe.
+
+          Os véus — as duas pontas e a dissolução de baixo — moravam dentro da
+          faixa. Enquanto ela era `overflow: hidden` isso funcionava; no dia em
+          que virou uma caixa de ROLAGEM, parou, e de um jeito que só aparece
+          esperando: um elemento absoluto dentro de um container que rola faz
+          parte do conteúdo rolável dele. Os véus foram desenhados na posição
+          zero e saíram deslizando junto com os cartazes. Depois de alguns
+          segundos a parede não tinha véu nenhum.
+
+          Então há duas camadas agora: esta moldura, que não rola e segura os
+          véus, e a faixa lá dentro, que rola. Os véus ficam parados porque o
+          pai deles ficou parado.
+
+          Sem borda embaixo: uma linha dura ali fazia a parede TERMINAR, e o
+          letreiro começava do zero num bloco separado. O que os liga é a
+          dissolução — os cartazes viram sala, e o texto fica dentro disso.
+          ══════════════════════════════════════════════════════════════════ */}
+      <div className="relative h-[132px] sm:h-[176px]">
       <div
         ref={rail}
         aria-hidden
-        className="poster-rail relative h-[132px] bg-house-deep/40 sm:h-[176px]"
+        className="poster-rail absolute inset-0 bg-house-deep/40"
       >
         <div className="flex h-full w-max">
           {Array.from({ length: copies }).flatMap((_, copy) =>
@@ -891,6 +906,7 @@ function PosterWall({
             ))
           )}
         </div>
+      </div>
 
         {/* As pontas da parede caem para dentro da sala, em vez de serem cortadas
             pela beirada da janela. */}
@@ -904,13 +920,23 @@ function PosterWall({
         />
 
         {/* ── a parede se apaga para baixo ────────────────────────────────
-            O terço de baixo dos cartazes escurece até a cor da sala, então a
-            faixa não tem fim — ela vira sala. É o que permite o letreiro subir
-            para dentro dela sem disputar legibilidade com nenhuma imagem: onde
-            o texto começa, já é quase só o escuro do fundo. */}
+            Os cartazes escurecem até a cor da sala, então a faixa não tem fim —
+            ela vira sala. É o que permite o letreiro subir para dentro dela sem
+            disputar legibilidade com imagem nenhuma.
+
+            Começa cedo e quase invisível: aos 40% da queda ainda são 20% de
+            escuro, e é isso que faz ler como um apagar e não como uma tampa. O
+            trecho que importa é o fim — sólido aos 88%, porque os últimos trinta
+            e poucos pixels são onde o topo do título encosta, e ali não pode
+            haver cartaz brigando com a palavra.
+
+            As paradas são 40% e 90% porque a escala de posição do Tailwind anda
+            de cinco em cinco: `to-88%` não existe, não vira classe nenhuma, e
+            sai da folha em silêncio — o véu terminaria só no fim do próprio
+            corpo, que é justamente onde ele não pode terminar. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-b from-transparent via-house/70 to-house"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[70%] bg-gradient-to-b from-transparent via-house/20 via-40% to-house to-90%"
         />
       </div>
 
