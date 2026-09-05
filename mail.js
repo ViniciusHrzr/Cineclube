@@ -41,6 +41,35 @@ const configured = () => !!(key() && from());
    em todo pedido de link — e um log que se repete é um log que não se lê. */
 let avisou = false;
 
+/* ══════════════════════════════════════════════════════════════════════════
+   O QUE UM 401 QUASE SEMPRE QUER DIZER.
+
+   `Key not found` é o provedor dizendo que não reconhece a chave, e a causa
+   quase nunca é uma chave errada digitada: é a chave ERRADA copiada. A página
+   "SMTP & API" do Brevo mostra as credenciais de SMTP em destaque — um login e
+   uma senha mestra — e a chave da API v3 fica na aba ao lado. Copiar a senha de
+   SMTP e colar aqui produz exatamente esta mensagem, e nada na mensagem sugere
+   que foi isso.
+
+   Uma chave v3 começa com `xkeysib-`. Então o diagnóstico é conferir a FORMA e
+   dizer o que está errado, em vez de deixar quem está lendo o log adivinhar.
+
+   ── e o que este log não conta ────────────────────────────────────────────
+   Nada da chave. Sai o comprimento e um sim/não sobre o prefixo — e `xkeysib-`
+   é o marcador público do formato, do mesmo tipo que `sk_live_` ou `ghp_`: ele
+   identifica o TIPO da credencial, não a credencial. Um segredo em log é um
+   segredo vazado, e um diagnóstico que exige vazar o segredo para funcionar não
+   é um diagnóstico, é o problema seguinte.
+   ══════════════════════════════════════════════════════════════════════════ */
+function keyHint() {
+  const k = key();
+  const forma = `${k.length} caracteres`;
+  if (k.startsWith('xkeysib-')) {
+    return `[mail] a chave tem a forma certa (xkeysib-…, ${forma}), então ela foi revogada, é de outra conta, ou está incompleta. Gere outra em SMTP & API → API Keys.`;
+  }
+  return `[mail] a chave NÃO começa com "xkeysib-" (${forma}) — isso é a senha de SMTP, não a chave da API. No Brevo: SMTP & API → aba API Keys → Generate a new API key.`;
+}
+
 /* ── o endereço público deste app ─────────────────────────────────────────
    O link do e-mail precisa ser absoluto, e a única fonte disso é a mesma
    variável que o fluxo do Google já usa. Sem ela o link sairia relativo, o que
@@ -95,6 +124,7 @@ async function send({ to, toName, subject, text }) {
     if (!res.ok) {
       const detalhe = (await res.text().catch(() => '')).slice(0, 200);
       console.error(`[mail] o provedor recusou (${res.status}): ${detalhe}`);
+      if (res.status === 401) console.error(keyHint());
       return { sent: false, reason: 'rejected' };
     }
     return { sent: true };
@@ -165,4 +195,13 @@ const verifyFirstMail = (nome, link) => ({
   ].join('\n'),
 });
 
-module.exports = { send, configured, baseUrl, verifyMail, resetMail, verifyFirstMail, TIMEOUT_MS };
+module.exports = {
+  send,
+  configured,
+  keyHint,
+  baseUrl,
+  verifyMail,
+  resetMail,
+  verifyFirstMail,
+  TIMEOUT_MS,
+};

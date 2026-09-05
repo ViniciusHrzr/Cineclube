@@ -336,6 +336,32 @@ test('apresentar tokens em rajada bate na porta', async () => {
   assert.ok(codes.includes(429), 'adivinhar não é caminho, mas tem de ser barulhento');
 });
 
+/* ── o diagnóstico de uma chave recusada ──────────────────────────────────
+   Um 401 do Brevo diz "Key not found" e não diz o que fazer. A causa quase
+   nunca é uma chave errada digitada: é a chave ERRADA copiada — a página do
+   provedor mostra as credenciais de SMTP em destaque e a chave da API na aba ao
+   lado, e as duas parecem igualmente "a chave".
+
+   O que este teste protege é a linha do log ser útil E não vazar nada. */
+test('a dica de chave diz qual é o erro sem contar a chave', () => {
+  const antes = process.env.BREVO_API_KEY;
+  try {
+    process.env.BREVO_API_KEY = 'senha-de-smtp-que-nao-e-chave';
+    const errada = mail.keyHint();
+    assert.match(errada, /xkeysib/, 'diz qual é o formato certo');
+    assert.match(errada, /API Keys/, 'e onde achá-lo');
+    assert.ok(!errada.includes('senha-de-smtp-que-nao-e-chave'), 'sem a chave dentro');
+
+    process.env.BREVO_API_KEY = 'xkeysib-' + 'a'.repeat(60);
+    const certa = mail.keyHint();
+    assert.match(certa, /revogada|outra conta|incompleta/, 'com a forma certa, a causa é outra');
+    assert.ok(!certa.includes('a'.repeat(60)), 'e continua sem a chave dentro');
+  } finally {
+    if (antes === undefined) delete process.env.BREVO_API_KEY;
+    else process.env.BREVO_API_KEY = antes;
+  }
+});
+
 test('a tela de entrada consegue saber se há envio, estando deslogada', async () => {
   /* O defeito que este teste trava: `mail` estava só no ramo de quem TEM
      sessão, e a única tela que precisa da resposta — a de entrada — é a única

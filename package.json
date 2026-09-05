@@ -8,6 +8,7 @@
     "start": "node server.js",
     "test": "node --test",
     "backup": "node scripts/backup.js",
+    "mail:check": "node scripts/mail-check.js",
     "migrate:turso": "node scripts/migrate-to-turso.js",
     "migrate:criterios": "node scripts/migrate-criteria-keys.js",
     "doc:criterios": "node scripts/criterios-doc.js",
