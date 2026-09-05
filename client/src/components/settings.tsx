@@ -80,9 +80,32 @@ export function AccountSheet({
   );
 }
 
-export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsSheet({
+  open,
+  onClose,
+  focus,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /* Em que região a folha abre. Ela é uma coluna só — Conta, Senha, Sala —, e
+     quem chega pelo endereço `#c/<slug>/ajustes` foi mandado ao interruptor da
+     sala, não à própria bio. Abrir na primeira região e deixar a pessoa rolar
+     atrás do que o botão prometeu é o botão entregando meia promessa. */
+  focus?: 'clube';
+}) {
   const club = useClub();
   const mine = club.reviewers.find(p => p.id === club.me.id);
+
+  useEffect(() => {
+    if (!open || focus !== 'clube') return;
+    /* Depois do frame em que a folha montou: o `<dialog>` acabou de virar
+       modal e o alvo ainda não tem posição no momento em que este efeito roda. */
+    const id = window.requestAnimationFrame(() => {
+      document.getElementById('ajustes-clube')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [open, focus]);
+
   return (
     <Sheet open={open} onClose={onClose} label="Ajustes">
       <Account
@@ -162,15 +185,18 @@ function Sheet({
 function Region({
   title,
   first,
+  anchor,
   children,
 }: {
   title: string;
   /** A primeira região não abre com uma régua: não há nada acima dela. */
   first?: boolean;
+  /** Um nome para esta região, quando alguém precisa ser levado direto a ela. */
+  anchor?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn(!first && 'mt-7 border-t border-white/[0.07] pt-6')}>
+    <section id={anchor} className={cn(!first && 'mt-7 border-t border-white/[0.07] pt-6')}>
       <p className="legend mb-4">{title}</p>
       {children}
     </section>
@@ -754,7 +780,7 @@ function ClubRoom() {
         </div>
       </Region>
 
-      <Region title="O que este clube é">
+      <Region title="O que este clube é" anchor="ajustes-clube">
         <div className="flex flex-wrap items-start gap-5">
           <div className="flex flex-col items-center gap-2">
             <span className="flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-plate bg-house-deep ring-1 ring-house-rail">

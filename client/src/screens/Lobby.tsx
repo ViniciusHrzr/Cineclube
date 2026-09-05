@@ -143,6 +143,27 @@ export function Lobby({
      tela volta a ser a de antes — que é o certo, e não um estado degradado. */
   const hasWall = wall.length >= 4;
 
+  /* ── quando a rede inteira está no escuro ──────────────────────────────
+     Toda seção desta tela se cala quando não tem o que dizer, e há um caso em
+     que essa regra produz uma tela que MENTE: uma rede em que os clubes existem
+     e avaliam, e nenhum deles emprestou nada. O saguão fica idêntico ao de
+     antes, e quem administra a sala não tem como saber que existe um
+     interruptor — muito menos que ele é a razão de a tela estar vazia.
+
+     Um estado vazio que não diz por que está vazio é um defeito, e este é
+     especialmente caro porque a pessoa que pode consertá-lo é exatamente a que
+     está olhando para ele. Então: se não há NADA da rede e você administra uma
+     sala fechada que não empresta, a tela diz isso e aponta o caminho.
+
+     Só para o ADM, e só sobre as salas dele: emprestar o acervo é uma decisão
+     de quem manda na sala, e cutucar um membro comum sobre uma escolha que ele
+     não pode tomar seria pedir que ele fosse cobrar de outra pessoa. */
+  const darkNetwork =
+    net !== null && !hasWall && !podium.length && !active.length && !live.length && !feature;
+  const lendable = (mine ?? []).filter(
+    c => c.role === 'admin' && c.visibility === 'private' && !c.showCharts
+  );
+
   /* Uma ação, dois desfechos, e quem decide qual é a porta do clube: num clube
      aberto você entra e a tela vai junto; num fechado vira um pedido e você
      continua no saguão. O servidor diz qual aconteceu — a tela não adivinha
@@ -235,6 +256,10 @@ export function Lobby({
             </div>
           )}
         </Region>
+
+        {darkNetwork && lendable.length ? (
+          <DarkNetwork clubs={lendable} onOpen={slug => onEnter(slug, 'ajustes')} />
+        ) : null}
 
         {podium.length ? (
           <Region
@@ -366,6 +391,57 @@ function Region({
         className="mt-4 block h-px w-full bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
       />
       {children}
+    </section>
+  );
+}
+
+/* ── a rede no escuro ─────────────────────────────────────────────────────
+   O convite que aparece quando o saguão não tem nada da rede para mostrar e
+   quem está olhando é a pessoa que pode mudar isso.
+
+   Não é um aviso de erro e não usa a chapa vermelha: nada quebrou, e o clube
+   estar fechado para a rede é uma escolha legítima que pode continuar sendo a
+   escolha. É um texto e uma porta, do tamanho de um estado vazio — porque é
+   isso que ele é.
+
+   Diz o que se ganha e o que NÃO se dá, nesta ordem, porque a segunda metade é
+   a que decide: emprestar uma média não é publicar o que alguém escreveu, e a
+   pessoa precisa saber disso antes de apertar e não depois. */
+function DarkNetwork({
+  clubs,
+  onOpen,
+}: {
+  clubs: Club[];
+  onOpen: (slug: string) => void;
+}) {
+  const one = clubs.length === 1 ? clubs[0] : null;
+  return (
+    <section className="mt-14 max-w-[62ch]">
+      <h2 className="font-display text-[22px] leading-none tracking-[0.04em] text-ink-dim">
+        A rede ainda está no escuro
+      </h2>
+      <p className="mt-3.5 text-[13px] leading-relaxed text-ink-dim">
+        O saguão mostra a parede de cartazes, os filmes mais bem avaliados e as
+        salas em atividade a partir do que cada clube <span className="text-ink">empresta</span> —
+        e {one ? <span className="text-ink">{one.name}</span> : 'nenhuma das salas que você administra'} ainda
+        não empresta nada.
+      </p>
+      <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
+        O que se empresta é número: a média entra nas contas da rede e o pôster
+        entra na parede. <span className="text-ink">Quem deu a nota e o que escreveu continuam
+        aqui dentro</span>, a não ser que você ligue “Mostrar avaliações” também.
+      </p>
+      <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
+        {one ? 'O interruptor está em' : 'Os interruptores estão em'} Ajustes do clube,
+        em “O que o clube empresta à rede”.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        {clubs.map(c => (
+          <Key key={c.id} onClick={() => onOpen(c.slug)}>
+            {clubs.length === 1 ? 'Abrir os ajustes' : c.name}
+          </Key>
+        ))}
+      </div>
     </section>
   );
 }

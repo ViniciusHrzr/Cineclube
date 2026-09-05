@@ -208,6 +208,21 @@ type Route = {
   review: string | null;
   comment: string | null;
   person: string | null;
+  /* A folha de ajustes do clube, aberta pelo endereço. Não é uma aba e nunca
+     vai ser uma: é uma folha por cima da sala. Ganhou endereço porque o saguão
+     precisa poder MANDAR alguém nela — o convite de emprestar o acervo à rede
+     tem um botão que diz "abrir os ajustes", e um botão que diz isso e larga a
+     pessoa no mural é o botão mentindo. */
+  sheet: boolean;
+};
+
+const BLANK: Route = {
+  club: null,
+  tab: null,
+  review: null,
+  comment: null,
+  person: null,
+  sheet: false,
 };
 
 function routeFromHash(): Route {
@@ -216,9 +231,7 @@ function routeFromHash(): Route {
   const clean = raw.split('?')[0];
   const parts = clean.split('/').filter(Boolean);
 
-  if (parts[0] !== 'c' || !parts[1]) {
-    return { club: null, tab: null, review: null, comment: null, person: null };
-  }
+  if (parts[0] !== 'c' || !parts[1]) return BLANK;
   const club = decodeURIComponent(parts[1]);
   const [head, tail, deeper] = parts.slice(2);
 
@@ -232,7 +245,12 @@ function routeFromHash(): Route {
   /* De quem é o perfil. `perfil` sem id, e o endereço antigo `people`, são o
      seu — quem escreveu qualquer um dos dois estava pedindo a própria página. */
   const person = tab === 'perfil' && tail ? decodeURIComponent(tail) : null;
-  return { club, tab, review, comment, person };
+  /* `ajustes` não é aba, então `tab` continua nulo e a sala abre no mural com a
+     folha por cima — que é exatamente o que acontece quando se abre os ajustes
+     de dentro. Fechar a folha limpa o segmento, ou o endereço continuaria
+     dizendo que ela está aberta depois de ela ter sido fechada. */
+  const sheet = head === 'ajustes';
+  return { club, tab, review, comment, person, sheet };
 }
 
 /** O endereço de uma seção dentro de um clube. Um lugar só que monta isto. */
@@ -480,8 +498,19 @@ function ClubApp({
   /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
      sessão porque a coisa toda é justamente para quem NÃO está nela. */
   const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
-  /** A folha de ajustes, aberta por três lugares. Ver `openClubSettings`. */
-  const [sheetOpen, setSheetOpen] = useState(false);
+  /* A folha de ajustes, aberta por quatro lugares agora — a engrenagem do
+     próprio perfil, o distintivo de pedidos na marquise, um aviso do sino, e o
+     endereço `#c/<slug>/ajustes`, que é como o saguão manda alguém direto ao
+     interruptor de emprestar o acervo à rede. Nasce aberta quando o endereço
+     pede. Ver `openClubSettings` e `routeFromHash`. */
+  const [sheetOpen, setSheetOpen] = useState(route.sheet);
+
+  /* O endereço continua mandando enquanto ele existir: chegar em `ajustes`
+     abre, e voltar para uma seção qualquer fecha. Sem isto, o botão de voltar
+     deixaria a folha aberta sobre o mural. */
+  useEffect(() => {
+    if (route.sheet) setSheetOpen(true);
+  }, [route.sheet]);
 
   const refreshClub = useCallback(async () => {
     const got = await clubsApi.get(slug);
@@ -1109,7 +1138,26 @@ function ClubApp({
 
       {/* A folha de ajustes vive aqui e não na tela de perfil: ela é aberta por
           três lugares, e o pedido de entrada precisava de um deles. */}
-      <SettingsSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <SettingsSheet
+        open={sheetOpen}
+        focus={route.sheet ? 'clube' : undefined}
+        onClose={() => {
+          setSheetOpen(false);
+          /* Se a folha foi aberta PELO endereço, fechá-la tem de tirar o
+             endereço junto: senão um F5 a reabre e o botão de voltar aponta
+             para a folha que a pessoa acabou de fechar. `replace` e não uma
+             navegação nova, porque abrir e fechar uma folha não é um lugar
+             onde alguém queira voltar. */
+          if (route.sheet) {
+            history.replaceState(null, '', '#' + clubHash(slug, 'feed'));
+            /* `replaceState` não dispara `hashchange`, e são dois ouvintes de
+               `hashchange` — o desta tela e o do app inteiro — que mantêm a
+               rota viva. Sem o evento, os dois ficariam achando que a folha
+               ainda está aberta enquanto o endereço já diz que não. */
+            window.dispatchEvent(new HashChangeEvent('hashchange'));
+          }
+        }}
+      />
 
       <ProjectionSheet
         movieId={sheetId}
