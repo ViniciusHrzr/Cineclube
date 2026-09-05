@@ -696,6 +696,18 @@ const SNAP = 0.02;
    isto a parede sairia em disparada por um movimento que ninguém fez. */
 const MAX_THROW = 42;
 
+/* ── o pé da faixa desaparece de verdade ──────────────────────────────────
+   A curva é lenta na metade de cima e rápida no fim: até 55% o cartaz está
+   inteiro, e a queda toda acontece no último terço. É o que faz a dissolução
+   ler como o cartaz se apagando, e não como a faixa ter uma altura menor.
+
+   Termina em zero antes da borda — a 96% e não a 100% — porque uma máscara que
+   chega ao fim exatamente na última linha de pixels deixa uma fita de um pixel
+   acesa em telas com escala fracionária, e uma linha clara atravessando o pé da
+   parede é justamente o que este véu existe para não haver. */
+const POSTER_FADE =
+  'linear-gradient(to bottom, #000 0%, #000 55%, rgba(0,0,0,0.72) 74%, rgba(0,0,0,0.22) 88%, transparent 96%)';
+
 /* Lido uma vez, como o `data-render` da parede de celuloide. O que esta
    preferência desliga é o movimento que começa SOZINHO; arrastar continua,
    porque é resposta a um gesto e não uma performance. */
@@ -871,8 +883,36 @@ function PosterWall({
           Sem borda embaixo: uma linha dura ali fazia a parede TERMINAR, e o
           letreiro começava do zero num bloco separado. O que os liga é a
           dissolução — os cartazes viram sala, e o texto fica dentro disso.
-          ══════════════════════════════════════════════════════════════════ */}
-      <div className="relative h-[132px] sm:h-[176px]">
+
+          ── e a dissolução é de DUAS naturezas ─────────────────────────────
+          Uma escurece e a outra apaga, e as duas juntas dizem uma coisa que
+          nenhuma diz sozinha.
+
+          O véu escuro (mais abaixo) pinta a cor da sala POR CIMA do cartaz: o
+          cartaz continua lá, na sombra. Sozinho, ele tapa — e o que ele tapa
+          não é só o cartaz, é a parede de celuloide que fica atrás de tudo
+          neste produto. O pé da faixa virava um retângulo preto no meio de uma
+          sala viva.
+
+          A máscara aqui é alfa: ela não pinta nada, ela dissolve. Onde o cartaz
+          some, quem aparece é o que estava atrás dele — a parede de celuloide,
+          com o feixe correndo nela. Os cartazes não terminam contra um fundo,
+          eles se dissolvem NA sala.
+
+          Na moldura e não na faixa, de propósito. Uma máscara na caixa que rola
+          seria pintada no espaço dela e ficaria parada — funciona —, mas aqui
+          ela precisa alcançar também os véus das pontas, que são irmãos da
+          faixa e não filhos dela. Aplicada no pai, alcança tudo de uma vez.
+
+          `-webkit-` junto: o Safari ainda pede o prefixo, e sem ele a faixa
+          termina num corte reto em metade dos telefones. */}
+      <div
+        className="relative h-[132px] sm:h-[176px]"
+        style={{
+          maskImage: POSTER_FADE,
+          WebkitMaskImage: POSTER_FADE,
+        }}
+      >
       <div
         ref={rail}
         aria-hidden
