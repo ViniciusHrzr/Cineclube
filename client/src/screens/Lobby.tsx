@@ -683,9 +683,14 @@ function PosterWall({
 
   return (
     <section className="relative">
+      {/* Sem borda embaixo. Uma linha dura ali fazia a parede TERMINAR, e o
+          letreiro começava do zero num bloco separado — dois pedaços que por
+          acaso estavam um em cima do outro. O que os liga está logo abaixo: os
+          cartazes se dissolvem para baixo e o texto fica dentro dessa
+          dissolução, como um cartaz e a plaquinha embaixo dele. */}
       <div
         aria-hidden
-        className="poster-rail relative h-[132px] border-y border-white/[0.06] bg-house-deep/40 sm:h-[176px]"
+        className="poster-rail relative h-[132px] bg-house-deep/40 sm:h-[176px]"
       >
         <div
           className="poster-rail-track flex h-full w-max"
@@ -726,9 +731,45 @@ function PosterWall({
           aria-hidden
           className="pointer-events-none absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-house to-transparent sm:w-28"
         />
+
+        {/* ── a parede se apaga para baixo ────────────────────────────────
+            O terço de baixo dos cartazes escurece até a cor da sala, então a
+            faixa não tem fim — ela vira sala. É o que permite o letreiro subir
+            para dentro dela sem disputar legibilidade com nenhuma imagem: onde
+            o texto começa, já é quase só o escuro do fundo. */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-b from-transparent via-house/70 to-house"
+        />
       </div>
 
-      <div className="relative mx-auto w-full max-w-[1240px] px-4 pt-7 sm:px-6 sm:pt-9">
+      {/* ── e a luz da parede cai onde as palavras estão ─────────────────────
+          Uma mancha larguíssima e fraca de feixe logo abaixo dos cartazes: a
+          claridade que uma vitrine iluminada joga no chão à frente dela.
+
+          É emissão e não sombra, que é a diferença que este sistema faz questão
+          de manter — a regra é que profundidade aqui é ótica (a parede atrás, a
+          inclinação de um cartão, um fundo desfocado) e nunca uma caixa com
+          sombra. Isto é a mesma família do halo que segue o cursor na parede de
+          celuloide: luz que uma superfície acesa espalha no ar.
+
+          7% de feixe no centro, zero nas bordas. Precisa ser pouco: o trabalho
+          dela é fazer o olho ler os dois blocos como um só, e uma luz que se
+          nota vira decoração. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-[96px] h-[190px] sm:top-[128px] sm:h-[240px]"
+        style={{
+          background:
+            'radial-gradient(58% 100% at 50% 0%, rgba(255, 233, 196, 0.07), rgba(255, 233, 196, 0.02) 45%, transparent 72%)',
+        }}
+      />
+
+      {/* Sobe para DENTRO da faixa: o topo do letreiro fica onde os cartazes já
+          se apagaram, e é isso que faz um referenciar o outro em vez de dois
+          blocos empilhados. Sem o negativo havia trinta e seis pixels de nada
+          entre a parede e o que ela é. */}
+      <div className="relative mx-auto -mt-7 w-full max-w-[1240px] px-4 sm:-mt-9 sm:px-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
           O que a rede andou vendo
         </h1>
