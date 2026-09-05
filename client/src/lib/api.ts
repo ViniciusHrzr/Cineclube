@@ -599,6 +599,15 @@ export function clubPath(path: string) {
   return `/api/c/${encodeURIComponent(currentClub)}${path}`;
 }
 
+/* Há sala aberta? Existe para quem PODE rodar fora de uma — e desde que o sino
+   passou a ser da rede, isso deixou de ser hipotético: ele vive no saguão, onde
+   não há clube, e o cano ao vivo que ele escuta é por sala.
+
+   Uma pergunta e não um `try` em volta de `clubPath`: o lançamento ali é para
+   pegar uma chamada de clube feita cedo demais, que é um defeito. "Ainda não há
+   sala" não é defeito nenhum, é o saguão. */
+export const hasClub = () => currentClub !== null;
+
 /** `api`, dentro do clube aberto. Todo o resto do produto usa esta. */
 export const capi = <T>(path: string, opts?: RequestInit) => api<T>(clubPath(path), opts);
 
