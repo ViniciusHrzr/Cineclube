@@ -336,6 +336,19 @@ test('apresentar tokens em rajada bate na porta', async () => {
   assert.ok(codes.includes(429), 'adivinhar não é caminho, mas tem de ser barulhento');
 });
 
+test('a tela de entrada consegue saber se há envio, estando deslogada', async () => {
+  /* O defeito que este teste trava: `mail` estava só no ramo de quem TEM
+     sessão, e a única tela que precisa da resposta — a de entrada — é a única
+     que não tem. "Esqueci minha senha" nunca aparecia.
+
+     Um fato sobre a instalação, e não sobre uma pessoa: do mesmo tipo que já se
+     descobre olhando se o botão do Google está na tela. */
+  const deslogado = await req('GET', '/api/auth/me');
+  assert.equal(deslogado.body.reviewer, null, 'sem cookie, sem pessoa');
+  assert.equal(typeof deslogado.body.mail, 'boolean', 'e mesmo assim a capacidade vem');
+  assert.equal(typeof deslogado.body.google, 'boolean');
+});
+
 test('sem provedor configurado o app não quebra — ele diz que não mandou', async () => {
   assert.equal(mail.configured(), false, 'os testes rodam sem chave, de propósito');
   const quem = await porSenha();

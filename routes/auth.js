@@ -174,7 +174,17 @@ function readCookie(req, name) {
    configuradas o botão não deve nem aparecer, e um botão que leva a um 503 é
    pior do que um botão que não está lá. */
 router.get('/me', (req, res) => {
-  if (!req.session) return res.json({ reviewer: null, google: configured() });
+  /* ── as duas capacidades vão nos DOIS ramos ────────────────────────────
+     Este é o ramo de quem está deslogado, e é justamente ele que a tela de
+     entrada consulta. `mail` estava só no ramo de baixo, então "Esqueci minha
+     senha" nunca aparecia: a única tela que precisa da resposta é a única que
+     não a recebia.
+
+     Nenhuma das duas conta nada sobre ninguém — são fatos sobre a INSTALAÇÃO,
+     do mesmo tipo que já se descobre olhando se o botão do Google está lá. */
+  if (!req.session) {
+    return res.json({ reviewer: null, google: configured(), mail: mail.configured() });
+  }
   res.json({
     reviewer: {
       id: req.session.reviewer_id,
