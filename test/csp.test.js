@@ -124,6 +124,39 @@ test('cada script inline entra pelo hash, e são exatamente dois', async () => {
   for (const h of hashes) assert.ok(d['script-src'].includes(h), `falta o hash ${h}`);
 });
 
+/* ── o que a árvore tem e o navegador não recebe ──────────────────────────
+   `npm audit` no cliente aponta quatro falhas altas, todas no mesmo caminho:
+   webtorrent → torrent-discovery → bittorrent-tracker → `ip`, cujo `isPublic`
+   classifica endereços errado (SSRF).
+
+   Elas não chegam ao navegador. O build de browser do WebTorrent não inclui o
+   rastreador de rede que usa `ip` — é código de Node, para um cliente que abre
+   sockets de verdade —, e o pacote publicado não tem uma linha dele. Além
+   disso, SSRF é uma falha de quem faz requisições a partir de um servidor; uma
+   página não tem esse poder, e `connect-src` fecha o que sobraria.
+
+   Isto é uma AFIRMAÇÃO SOBRE O ARTEFATO, então é medida e não anotada. No dia
+   em que uma versão nova do WebTorrent passar a embarcar aquele caminho, é aqui
+   que aparece — em vez de continuar sendo verdade porque alguém escreveu que
+   era, uma vez, num commit. */
+test('o rastreador de rede do Node não vai junto para o navegador', () => {
+  const dir = path.join(__dirname, '..', 'public', 'assets');
+  const publicados = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+  assert.ok(publicados.length, 'não há bundle publicado para conferir');
+
+  for (const f of publicados) {
+    const code = fs.readFileSync(path.join(dir, f), 'utf8');
+    /* As marcas são as da API do pacote `ip`, e só elas. `toBuffer` e `fromLong`
+       chegaram a entrar nesta lista e saíram no mesmo minuto: são nomes que meia
+       dúzia de utilitários de bytes usam, e um teste que acusa o pacote errado é
+       pior que nenhum — ele ensina a ignorar o próprio alarme. `isPublic` é a
+       função nomeada no aviso. */
+    for (const marca of ['isPublic', 'isPrivate', 'isLoopback']) {
+      assert.ok(!code.includes(marca), `${f} embarcou o pacote 'ip' (${marca})`);
+    }
+  }
+});
+
 /* ══════════════════════════════════════════════════════════════════════════
    O FIM DE LINHA, que é como este arquivo errou uma vez.
 

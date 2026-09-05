@@ -23,5 +23,8 @@
   "dependencies": {
     "@libsql/client": "^0.17.4",
     "express": "^4.19.2"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }
