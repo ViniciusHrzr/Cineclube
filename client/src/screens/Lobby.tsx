@@ -195,7 +195,17 @@ export function Lobby({
     <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
       <HolographicWall asBackdrop />
 
-      <header className="relative border-b border-white/[0.07] bg-house/95">
+      {/* Presa no topo, como a marquise de dentro de um clube — mesmas classes,
+          e é a mesma coisa: a barra é a porta de saída (o rosto, o sino, sair) e
+          uma porta que sobe com a página é uma porta que se perde justamente
+          quando alguém rolou longe o bastante para querer usá-la.
+
+          Sem desfoque de fundo, pela razão escrita na marquise: a barra fica
+          sobre a parede de celuloide, que nunca para de andar — desfocar uma
+          faixa de largura inteira sobre um fundo vivo é refazer o borrão a cada
+          quadro, rolando ou não. Uma barra mais opaca lê quase igual e custa
+          zero. */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
         <div className="mx-auto flex max-w-[1240px] items-center gap-x-6 px-4 py-3 sm:px-6">
           <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
             CINECLUBE
