@@ -4,9 +4,31 @@ const db = require('../db');
 const auth = require('../auth');
 const clubs = require('../clubs');
 const wrap = require('../wrap');
+const throttle = require('../throttle');
 const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
+
+/* ── comentar ─────────────────────────────────────────────────────────────
+   O único texto livre que uma pessoa escreve para as outras neste produto, e
+   por isso a superfície mais valiosa para quem quiser despejar qualquer coisa
+   numa rede social — que é o que este produto está prestes a virar.
+
+   Vinte por minuto. Uma discussão de clube em cima de uma ficha é rápida e
+   pode ser em rajada, então o número é folgado: vinte comentários por minuto é
+   mais do que qualquer pessoa digita, mesmo brigando. Passar disso não é ter
+   opinião, é ter um laço.
+
+   O voto e a curtida não têm trava própria e é de propósito: os dois são uma
+   linha com chave primária por (alvo, pessoa), então apertar mil vezes não
+   cria mil nada — cria e apaga a mesma linha. O teto de trás em server.js
+   cuida do custo de bater na porta. */
+const throttleComment = throttle.limit({
+  name: 'comment',
+  max: 20,
+  windowMs: 60_000,
+  message: espera => `Muitos comentários seguidos. Tente de novo em ${espera}.`,
+});
 
 /* ── o clube entra por baixo ──────────────────────────────────────────────
    Nada aqui tem coluna `club_id`, e é de propósito: um comentário pendura numa
@@ -157,7 +179,7 @@ router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
    Quem assina é a sessão e nunca o corpo, igual à avaliação. Comentar a própria
    avaliação é permitido de propósito: responder a quem te respondeu é metade de
    uma conversa. */
-router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
+router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMember, throttleComment, wrap(async (req, res) => {
   const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
 

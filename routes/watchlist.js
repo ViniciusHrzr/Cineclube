@@ -4,10 +4,20 @@ const auth = require('../auth');
 const clubs = require('../clubs');
 const wrap = require('../wrap');
 const { fillEnglishTitle } = require('../english');
-const { GENRES } = require('../criteria');
+const { cleanMovie } = require('../movie');
+const throttle = require('../throttle');
 const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
+
+/* Encher a fila é um gesto de escolher, e escolher é lento. Sessenta por hora é
+   uma tarde inteira montando a temporada do clube, e é pouco para um programa. */
+const throttleQueue = throttle.limit({
+  name: 'watchlist',
+  max: 60,
+  windowMs: 60 * 60_000,
+  message: espera => `Muitos filmes postos na fila seguidos. Tente de novo em ${espera}.`,
+});
 
 /* position is the club's arrangement; added_at only breaks ties for rows that
    predate the column.
@@ -74,16 +84,17 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
 }));
 
 // The queue is shared, so changing it is a club action and needs a member.
-router.post('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
-  const { movie } = req.body || {};
-  if (!movie || !movie.id || !movie.title) {
-    return res.status(400).json({ error: 'Filme inválido.' });
-  }
-  const genre = GENRES.includes(movie.genre) ? movie.genre : 'Drama';
+router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(async (req, res) => {
+  /* Mesmo saneamento da ficha, e pelo mesmo motivo: o id vem de quem escreve, e
+     sem teto nos textos a fila é um jeito de gravar um megabyte por chamada. */
+  const limpo = cleanMovie(req.body?.movie);
+  if (limpo.error) return res.status(400).json({ error: limpo.error });
+  const movie = limpo.movie;
+
   await insertStmt.run({
     clubId: req.club.id,
-    movieId: movie.id, movieTitle: movie.title, movieYear: movie.year ?? null,
-    movieGenre: genre, moviePoster: movie.poster ?? null,
+    movieId: movie.id, movieTitle: movie.title, movieYear: movie.year,
+    movieGenre: movie.genre, moviePoster: movie.poster,
     addedBy: req.session.reviewer_id
   });
   /* A fila é uma das telas que filtram o banco, então o filme entra nela já

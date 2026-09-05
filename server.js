@@ -6,7 +6,53 @@ const db = require('./db');
 
 const auth = require('./auth');
 
+const throttle = require('./throttle');
+
 const app = express();
+
+/* ── um proxy, e exatamente um ────────────────────────────────────────────
+   O Render termina o TLS na frente do app, então `req.ip` sem isto é o endereço
+   do proxy — o MESMO para todo mundo no mundo. Um limite por IP montado sobre
+   esse valor não é um limite por pessoa: é um limite global, e a primeira coisa
+   que ele derruba é o clube.
+
+   `1` e não `true`. Com `true` o Express acredita no `X-Forwarded-For` inteiro,
+   e esse cabeçalho é escrito por quem faz a requisição — quem quisesse burlar o
+   limite bastava mandar um endereço inventado a cada chamada. Com `1` ele lê
+   apenas o salto que o nosso próprio proxy acrescentou, que é o único pedaço
+   dessa lista em que dá para confiar. */
+app.set('trust proxy', 1);
+
+/* ── três cabeçalhos ──────────────────────────────────────────────────────
+   Não é um pacote de segurança; são três linhas cujo motivo dá para escrever.
+
+   **nosniff** é o que importa aqui, e é por causa de uma coisa que este app faz:
+   ele serve ARQUIVO DE GENTE do próprio domínio — o retrato de uma pessoa e a
+   foto de um clube saem de `/api/...` como bytes. O tipo é conferido na entrada
+   (image.js aceita três, e só três), mas sem `nosniff` o navegador tem
+   permissão para desconfiar do que dizemos e adivinhar pelo conteúdo. Uma
+   adivinhação que dê "HTML" transforma um upload em página do nosso domínio, com
+   acesso ao cookie de sessão. Com o cabeçalho, o tipo declarado é o que vale.
+
+   **DENY** porque nada neste produto é para ser aberto dentro do site de outra
+   pessoa, e um app que pode ser emoldurado pode ter os cliques roubados.
+
+   **Referrer-Policy** para o endereço de uma ficha não viajar dentro do
+   cabeçalho `Referer` quando alguém clica num link de trailer para fora.
+
+   O que falta e não é uma linha: uma **CSP**. Ela é a defesa de verdade contra
+   script injetado, e não entra aqui de improviso — esta página carrega fonte do
+   Google, imagem do TMDB, `blob:` para o vídeo e um worker do WebTorrent, e uma
+   política escrita sem enumerar tudo isso quebra o app em produção de um jeito
+   que só aparece no navegador de outra pessoa. É trabalho de uma passada
+   própria, com o app aberto na frente. */
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 /* A megabyte, where the default is a tenth of that. The one thing this app
    accepts that is not a handful of fields is a profile picture, which arrives
    as base64 — already shrunk to a small square by the browser, but base64 costs
@@ -15,6 +61,35 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 // Every request learns who is signed in; individual routes decide if they care.
 app.use(auth.attachSession);
+
+/* ── o teto de trás ───────────────────────────────────────────────────────
+   As travas que importam são as das rotas — criar conta, fundar clube,
+   comentar —, cada uma com um número que vem do que aquela ação significa. Esta
+   não sabe nada sobre significado: ela existe para o caso que nenhuma das
+   outras cobre, que é alguém simplesmente MARTELAR a API.
+
+   Trezentos por minuto é muito para uma pessoa e pouco para um laço. Uma tela
+   deste app faz umas poucas chamadas ao abrir, e as duas que repetem sozinhas —
+   o mural a cada 120s e o sino a cada 90s — somam menos de duas por minuto.
+
+   Depois de `attachSession`, para uma pessoa logada ser medida pela conta e não
+   pelo endereço: duas pessoas do clube atrás do mesmo roteador são duas
+   pessoas, e o limitador precisa saber disso. Ver throttle.js.
+
+   Fora daqui ficam os dois canos de eventos — o `stream` da sala ao vivo e o de
+   avisos. Uma conexão SSE fica aberta por horas e é uma requisição só; contá-la
+   aqui não protegeria nada, e reconectar depois de uma queda de rede esbarraria
+   num limite feito para outra coisa. Eles têm o próprio teto, que é o certo para
+   o que eles gastam: número de conexões simultâneas, em live.js e screening.js. */
+const backstop = throttle.limit({
+  name: 'api',
+  max: 300,
+  windowMs: 60_000,
+  message: espera => `Muitos pedidos seguidos. Tente de novo em ${espera}.`,
+});
+app.use('/api', (req, res, next) =>
+  req.path.endsWith('/stream') ? next() : backstop(req, res, next)
+);
 
 /* ══════════════════════════════════════════════════════════════════════════
    Duas famílias de rota, e a fronteira entre elas é uma pergunta só: isto

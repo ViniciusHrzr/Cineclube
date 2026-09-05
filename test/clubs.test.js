@@ -14,6 +14,7 @@ const live = require('../live');
 const screening = require('../screening');
 const auth = require('../auth');
 const clubs = require('../clubs');
+const throttle = require('../throttle');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
@@ -49,9 +50,19 @@ test.before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
+/* ── por que este arquivo zera as travas ──────────────────────────────────
+   Esta suíte cadastra e funda muito mais do que uma pessoa cadastraria e
+   fundaria, e faz tudo do mesmo endereço: sem isto ela bate na trava de
+   `/register` (cinco por hora por IP) e falha em testes que não são sobre ela.
+
+   Zerar aqui não afrouxa nada — quem verifica que as travas travam é
+   `abuse.test.js`, e lá elas rodam de verdade. */
+test.beforeEach(() => throttle.reset());
+
 test.after(async () => {
   live.stopTimers();
   screening.stopTimers();
+  throttle.stopTimers();
   const closed = new Promise(resolve => server.close(resolve));
   server.closeAllConnections?.();
   await closed;

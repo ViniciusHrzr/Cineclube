@@ -6,6 +6,8 @@ const clubs = require('../clubs');
 const wrap = require('../wrap');
 const { answeredIn, critsFor, finalOf, GENRES } = require('../criteria');
 const { fillEnglishTitle } = require('../english');
+const { cleanMovie } = require('../movie');
+const throttle = require('../throttle');
 const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
@@ -124,18 +126,33 @@ router.get('/averages', clubs.canRead('reviews'), wrap(async (req, res) => {
 /* A take is signed by whoever is signed in. The body may still name a reviewer
    — the client sends it — but the session is the authority, so nobody can post
    a rating under someone else's name by editing a request. */
-router.post('/', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
-  const { movie, scores, comment } = req.body || {};
+/* Uma ficha é onze notas lidas com calma, e regravar é comum — corrigir meio
+   ponto depois da discussão é o comportamento normal aqui. Trinta por hora cobre
+   uma noite de clube inteira com folga e ainda assim fecha a porta para quem
+   quer encher a tabela de fichas. */
+const throttleReview = throttle.limit({
+  name: 'review',
+  max: 30,
+  windowMs: 60 * 60_000,
+  message: espera => `Muitas avaliações gravadas seguidas. Tente de novo em ${espera}.`,
+});
+
+router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(async (req, res) => {
+  const { scores, comment } = req.body || {};
   const reviewerId = req.session.reviewer_id;
   // Quem assina é a sessão, e ser membro já foi conferido pelo middleware — a
   // checagem de "avaliador existe" que morava aqui era a versão sem clubes disso.
-  if (!movie || !movie.id || !movie.title) {
-    return res.status(400).json({ error: 'Filme inválido.' });
-  }
+  /* O filme vem do corpo e por isso passa por movie.js: o id é escolhido por
+     quem escreve, então a unicidade (uma ficha por pessoa por filme) não segura
+     nada sozinha, e sem teto nos textos uma ficha só cabe um megabyte de lixo. */
+  const limpo = cleanMovie(req.body?.movie);
+  if (limpo.error) return res.status(400).json({ error: limpo.error });
+  const movie = limpo.movie;
+
   if (!scores || typeof scores !== 'object') {
     return res.status(400).json({ error: 'Notas inválidas.' });
   }
-  const genre = GENRES.includes(movie.genre) ? movie.genre : 'Drama';
+  const genre = movie.genre;
   const cs = critsFor(genre);
   const cleanScores = {};
   for (const c of cs) {
@@ -164,11 +181,9 @@ router.post('/', auth.requireSession, clubs.requireMember, wrap(async (req, res)
      silencioso. */
   await upsertStmt.run({
     id, clubId: req.club.id, reviewerId, movieId: movie.id,
-    movieTitle: movie.title, movieYear: movie.year ?? null, movieGenre: genre,
-    moviePoster: movie.poster ?? null, movieDirector: movie.director ?? null,
-    movieRuntime: Number.isFinite(Number(movie.runtime)) && Number(movie.runtime) > 0
-      ? Math.round(Number(movie.runtime))
-      : null,
+    movieTitle: movie.title, movieYear: movie.year, movieGenre: genre,
+    moviePoster: movie.poster, movieDirector: movie.director,
+    movieRuntime: movie.runtime,
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
   await deleteWatchlistStmt.run(req.club.id, movie.id);

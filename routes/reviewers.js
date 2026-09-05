@@ -7,6 +7,17 @@ const { handlesFor } = require('../handles');
 const clubs = require('../clubs');
 const live = require('../live');
 const { readDataUrl } = require('../image');
+const throttle = require('../throttle');
+
+/* Trocar nome, bio ou retrato. O retrato é o que pesa: até 400 KB gravados numa
+   linha, e a rota aceita um novo a cada chamada. Vinte por hora é muito para
+   quem está escolhendo uma foto e pouco para quem está gravando bytes. */
+const throttleProfile = throttle.limit({
+  name: 'profile',
+  max: 20,
+  windowMs: 60 * 60_000,
+  message: espera => `Muitas mudanças seguidas no perfil. Tente de novo em ${espera}.`,
+});
 
 /* Dois roteadores, e a divisão é a mesma pergunta em todo lugar deste recorte:
    isto é sobre uma PESSOA ou sobre uma SALA?
@@ -123,7 +134,7 @@ scoped.get('/', clubs.requireReadable, wrap(async (req, res) => {
 
    The admin is deliberately not an exception. Resetting a forgotten PIN is
    letting someone back in; renaming them is speaking for them. */
-router.patch('/me', auth.requireSession, wrap(async (req, res) => {
+router.patch('/me', auth.requireSession, throttleProfile, wrap(async (req, res) => {
   const id = req.session.reviewer_id;
   const patch = req.body || {};
 

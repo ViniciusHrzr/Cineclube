@@ -4,6 +4,7 @@ const db = require('../db');
 const auth = require('../auth');
 const clubs = require('../clubs');
 const lobby = require('../lobby');
+const throttle = require('../throttle');
 const live = require('../live');
 const wrap = require('../wrap');
 const { readDataUrl } = require('../image');
@@ -19,6 +20,32 @@ const { readDataUrl } = require('../image');
 
 const index = express.Router();
 const scoped = express.Router({ mergeParams: true });
+
+/* ── fundar é raro, e caro quando não é ───────────────────────────────────
+   Um clube é uma sala com nome único na rede, e o nome é o recurso escasso: mil
+   clubes criados por um programa não enchem o banco (uma sala vazia são poucas
+   dezenas de bytes) — eles tomam mil nomes e enchem a vitrine do saguão, que é a
+   primeira tela do produto.
+
+   Cinco por dia por conta. Fundar um clube é um gesto de convidar gente, e
+   ninguém convida cinco grupos de amigos por dia; para quem funda o sexto no
+   mesmo dia, esperar até amanhã é barato. Junto com a trava de cadastro, que é o
+   que impede alguém de simplesmente trocar de conta, isto fecha a torneira. */
+const throttleFound = throttle.limit({
+  name: 'club:create',
+  max: 5,
+  windowMs: 24 * 60 * 60_000,
+  message: espera => `Muitos clubes fundados hoje. Tente de novo em ${espera}.`,
+});
+
+/* Trocar a foto de um clube é gravar até 400 KB. Vinte por hora é mais do que
+   qualquer pessoa escolhendo um cartaz, e é um teto para quem só quer escrever. */
+const throttleClubEdit = throttle.limit({
+  name: 'club:edit',
+  max: 20,
+  windowMs: 60 * 60_000,
+  message: espera => `Muitas mudanças seguidas na sala. Tente de novo em ${espera}.`,
+});
 
 const MAX_NAME = 40;
 /* Uma linha sobre o clube, do mesmo tamanho da bio de uma pessoa e pelo mesmo
@@ -103,7 +130,7 @@ index.get('/', wrap(async (req, res) => {
    o que cada uma significa. As duas aparecem na vitrine; o que muda é a porta —
    num clube aberto entrar é um clique, num fechado é um pedido que o ADM
    aprova. */
-index.post('/', auth.requireSession, wrap(async (req, res) => {
+index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const tagline = String(req.body?.tagline || '').trim();
   /* Aberto quando não se diz nada. Isto virou o padrão quando a semântica
@@ -198,7 +225,7 @@ scoped.get('/photo', clubs.requireVisible, wrap(async (req, res) => {
   res.end(Buffer.from(row.photo, 'base64'));
 }));
 
-scoped.patch('/', clubs.requireClubAdmin, wrap(async (req, res) => {
+scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res) => {
   const patch = req.body || {};
 
   if ('name' in patch) {

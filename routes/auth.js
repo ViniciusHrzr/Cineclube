@@ -2,9 +2,51 @@ const crypto = require('node:crypto');
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
+const throttle = require('../throttle');
 const wrap = require('../wrap');
 
 const router = express.Router();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AS DUAS TRAVAS DA PORTA, e elas não são a que já existia.
+
+   `auth.js` tranca UMA CONTA depois de cinco senhas erradas, por um tempo que
+   cresce. Isso protege contra quem está adivinhando a senha de alguém, e não
+   alcança nada do que vem abaixo — porque quem vem abaixo não está adivinhando.
+
+   **Cadastrar é a raiz de todo o resto.** Toda outra trava deste produto conta
+   por conta: trinta fichas por hora, vinte comentários por minuto. Uma conta
+   nova custa uma requisição, então quem pode criar mil identidades tem mil
+   vezes cada um daqueles limites, e nenhum deles quer dizer coisa alguma.
+
+   **E as duas rotas rodam `scryptSync`**, que é caro de propósito — é o que
+   torna uma senha roubada difícil de quebrar. Só que ele é síncrono e o Node
+   tem uma thread: cada tentativa para o servidor inteiro por uma fração de
+   segundo. Sem isto, um laço em `/register` não precisa de brecha nenhuma para
+   derrubar o app; basta pedir educadamente, muitas vezes. A trava por conta não
+   ajuda aqui: quem varre e-mails diferentes está sempre na primeira tentativa
+   de uma conta que não existe.
+
+   Por IP, e não por conta, porque a conta é justamente o que ainda não existe.
+   Cinco cadastros por hora cobre uma casa em que duas pessoas se inscrevem na
+   mesma noite; vinte entradas em quinze minutos cobre quem erra, corrige e
+   volta. Os dois são paredes para um laço.
+   ══════════════════════════════════════════════════════════════════════════ */
+const throttleRegister = throttle.limit({
+  name: 'register',
+  max: 5,
+  windowMs: 60 * 60_000,
+  by: 'ip',
+  message: espera => `Muitas contas criadas daqui. Tente de novo em ${espera}.`,
+});
+
+const throttleLogin = throttle.limit({
+  name: 'login',
+  max: 20,
+  windowMs: 15 * 60_000,
+  by: 'ip',
+  message: espera => `Muitas tentativas de entrada. Tente de novo em ${espera}.`,
+});
 
 const getReviewer = db.prepare('SELECT * FROM reviewers WHERE id = ?');
 
@@ -210,7 +252,7 @@ router.get('/google/callback', wrap(async (req, res) => {
 /* ── e-mail e senha ───────────────────────────────────────────────────────
    Uma forma só de falhar para senha errada e para e-mail que não existe, para
    este endpoint não virar um jeito de descobrir quem tem conta aqui. */
-router.post('/login', wrap(async (req, res) => {
+router.post('/login', throttleLogin, wrap(async (req, res) => {
   const { email, password } = req.body || {};
   const mail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const reviewer = mail
@@ -254,7 +296,7 @@ router.post('/login', wrap(async (req, res) => {
    sempre revela quais e-mails existem, e esconder isso quebraria o cadastro
    inteiro para proteger uma informação que a tela de "esqueci a senha" de
    qualquer produto também entrega. */
-router.post('/register', wrap(async (req, res) => {
+router.post('/register', throttleRegister, wrap(async (req, res) => {
   const { name, email, password } = req.body || {};
   const out = await auth.register({ name, email, password });
   if (out.error) {
