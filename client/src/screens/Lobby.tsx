@@ -1,7 +1,17 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Clock, MessageSquare, Plus, ShieldCheck, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Blank, Fault, Key, Poster, Reel, Strip } from '@/components/bits';
+import {
+  Bell,
+  Check,
+  Clock,
+  Mail,
+  MessageSquare,
+  Plus,
+  ShieldCheck,
+  ThumbsDown,
+  ThumbsUp,
+} from 'lucide-react';
+import { Blank, Fault, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { PortraitGate } from '@/components/portrait';
 import {
@@ -20,7 +30,7 @@ import {
   type LobbySnapshot,
   type SessionUser,
 } from '@/lib/api';
-import { cn, plural, whenOf } from '@/lib/utils';
+import { cn, named, norm, plural, whenOf } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
    O saguão.
@@ -200,6 +210,9 @@ export function Lobby({
           <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
             CINECLUBE
           </span>
+          {/* O sino antes do rosto, como na marquise de dentro do clube: o que
+              espera por você vem antes de quem você é. */}
+          <LobbyBell me={me} />
           <button
             type="button"
             onClick={onOpenSelf}
@@ -231,34 +244,14 @@ export function Lobby({
           </div>
         ) : null}
 
-        <Region
+        <Rooms
           level={hasWall ? 2 : 1}
-          title="Suas salas"
-          action={
-            <Key onClick={() => setFounding(true)}>
-              <Plus className="h-[15px] w-[15px]" strokeWidth={2} />
-              Fundar um clube
-            </Key>
-          }
-        >
-          {mine === null ? (
-            <p className="legend animate-flicker mt-8">Acendendo o projetor</p>
-          ) : mine.length ? (
-            <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {mine.map((c, i) => (
-                <ClubPanel key={c.id} club={c} index={i} onOpen={() => onEnter(c.slug)} />
-              ))}
-            </div>
-          ) : (
-            <div className="mt-8">
-              <Blank title="Você ainda não está em nenhum clube">
-                Funde o seu, ou peça para entrar num dos que estão abertos aqui embaixo.
-              </Blank>
-            </div>
-          )}
-        </Region>
-
-        {me.emailVerified === false ? <ConfirmBanner /> : null}
+          mine={mine}
+          open={open}
+          onEnter={onEnter}
+          onFound={() => setFounding(true)}
+          onAsk={c => (c.requested ? void unask(c.slug) : void ask(c.slug))}
+        />
 
         {darkNetwork && lendable.length ? (
           <DarkNetwork clubs={lendable} onOpen={slug => onEnter(slug, 'ajustes')} />
@@ -308,31 +301,6 @@ export function Lobby({
           </Region>
         ) : null}
 
-        {open.length ? (
-          <Region
-            className="mt-16"
-            title="Outras salas"
-            note={
-              <>
-                Nas <span className="text-ink">abertas</span> você entra e já pode
-                avaliar. Nas <span className="text-ink">fechadas</span> dá para ver
-                de que clube se trata, e entrar depende de quem administra aceitar.
-              </>
-            }
-          >
-            <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {open.map((c, i) => (
-                <ClubPanel
-                  key={c.id}
-                  club={c}
-                  index={i}
-                  onOpen={() => onEnter(c.slug)}
-                  onAsk={() => (c.requested ? void unask(c.slug) : void ask(c.slug))}
-                />
-              ))}
-            </div>
-          </Region>
-        ) : null}
       </main>
 
       {founding ? (
@@ -354,18 +322,16 @@ export function Lobby({
    telas de dentro de um clube (ver `Bill`), num corpo menor porque aqui são
    seis regiões numa página e não uma tela inteira.
 
-   `level` existe por um motivo só: a parede de cartazes carrega o `h1` desta
-   tela, e quando ela não existe — rede sem nenhuma ficha — a página ficaria sem
-   nenhum. Aí a primeira região assume. */
+   Sempre `h2`: o `h1` desta tela é o da parede de cartazes, e quando ela não
+   existe — rede sem nenhuma ficha — quem assume é o seletor de salas, que é a
+   primeira coisa da página. Nenhuma destas regiões é a primeira. */
 function Region({
-  level = 2,
   title,
   note,
   action,
   className,
   children,
 }: {
-  level?: 1 | 2;
   title: string;
   note?: React.ReactNode;
   /** O que fica na linha do título, na outra ponta. */
@@ -373,13 +339,12 @@ function Region({
   className?: string;
   children: React.ReactNode;
 }) {
-  const Heading = level === 1 ? 'h1' : 'h2';
   return (
     <section className={className}>
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <Heading className="font-display text-[26px] leading-none tracking-[0.04em] text-beam sm:text-[30px]">
+        <h2 className="font-display text-[26px] leading-none tracking-[0.04em] text-beam sm:text-[30px]">
           {title}
-        </Heading>
+        </h2>
         {action}
       </div>
       {note ? (
@@ -394,18 +359,328 @@ function Region({
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AS SALAS, NUM LUGAR SÓ.
+
+   Eram duas seções empilhadas, e a de baixo — a vitrine — vivia depois de um
+   pódio, de uma lista de atividade e de uma ficha inteira. Quem quisesse
+   procurar um clube para entrar rolava a página inteira até achar, e quem já
+   tinha salas nunca via que existiam outras.
+
+   As duas respondem perguntas diferentes e continuam respondendo: `Suas salas` é
+   o chaveiro de quem já chegou, `Outras salas` é a vitrine de quem está
+   olhando. Mas as duas são A MESMA COISA — uma lista de clubes — e a pergunta
+   que separa as duas ("já sou de lá?") é uma escolha, não uma posição na
+   página. Escolha é o que um seletor faz.
+
+   ── o sublinhado vermelho ─────────────────────────────────────────────────
+   O mesmo tratamento da marquise de dentro de um clube, e pela mesma regra
+   escrita no DESIGN.md: vermelho marca ONDE VOCÊ ESTÁ, latão marca o que você
+   escolheu. Isto é uma seção em que se está, não um filtro que se liga, então é
+   vermelho — e é o que faz o seletor ser reconhecível como navegação antes de
+   ser lido, porque o produto já usa essa forma na barra de cima.
+
+   ── a contagem ao lado do nome ────────────────────────────────────────────
+   Existe para a aba fechada não ser uma caixa preta. Sem o número, "Outras
+   salas" é um convite a clicar para descobrir se há algo lá; com ele, a pessoa
+   decide sem trocar de aba — e num saguão com uma sala só, decide não clicar.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** A partir de quantas salas uma busca deixa de ser mobília e vira ferramenta. */
+const SEARCH_FROM = 5;
+
+function Rooms({
+  level,
+  mine,
+  open,
+  onEnter,
+  onFound,
+  onAsk,
+}: {
+  level: 1 | 2;
+  /** Null enquanto a lista não chegou — que é diferente de estar vazia. */
+  mine: Club[] | null;
+  open: Club[];
+  onEnter: (slug: string) => void;
+  onFound: () => void;
+  onAsk: (club: Club) => void;
+}) {
+  const [tab, setTab] = useState<'mine' | 'open'>('mine');
+  const [query, setQuery] = useState('');
+
+  const lista = tab === 'mine' ? (mine ?? []) : open;
+  /* Filtra por nome e pela linha de descrição, sem acento e sem caixa — ver
+     `norm` e `named`. Buscar só pelo nome erraria "os que gostam de terror",
+     que é exatamente o tipo de coisa que faz alguém querer entrar numa sala. */
+  const q = norm(query.trim());
+  const vistos = q ? lista.filter(c => named(q, c.name, c.tagline)) : lista;
+
+  /* A busca aparece pelo total das duas listas, e não pela da aba aberta:
+     medida por aba, ela apareceria e sumiria ao alternar, o que faz a linha
+     inteira pular debaixo do cursor. */
+  const buscavel = (mine?.length ?? 0) + open.length >= SEARCH_FROM;
+
+  const Heading = level === 1 ? 'h1' : 'h2';
+
+  return (
+    <section>
+      {/* O título da região não é desenhado: os nomes das duas abas SÃO o
+          título, e um "Salas" por cima deles seria a mesma palavra duas vezes
+          em dois tamanhos. O `h1`/`h2` fica na aba ativa, que é o que um leitor
+          de tela precisa ouvir para saber onde está. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="flex items-end gap-6" role="tablist" aria-label="Salas">
+          <RoomTab
+            id="mine"
+            on={tab === 'mine'}
+            onPick={() => setTab('mine')}
+            count={mine?.length ?? null}
+            as={tab === 'mine' ? Heading : 'span'}
+          >
+            Suas salas
+          </RoomTab>
+          <RoomTab
+            id="open"
+            on={tab === 'open'}
+            onPick={() => setTab('open')}
+            count={open.length}
+            as={tab === 'open' ? Heading : 'span'}
+          >
+            Outras salas
+          </RoomTab>
+        </div>
+
+        <Key onClick={onFound}>
+          <Plus className="h-[15px] w-[15px]" strokeWidth={2} />
+          Fundar um clube
+        </Key>
+      </div>
+
+      <span
+        aria-hidden
+        className="mt-4 block h-px w-full bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
+      />
+
+      {/* A frase da vitrine só existe na vitrine: ela explica a diferença entre
+          aberta e fechada, que é uma pergunta que ninguém faz sobre uma sala em
+          que já está. */}
+      {tab === 'open' ? (
+        <p className="mt-4 max-w-[68ch] text-[13px] leading-relaxed text-ink-dim">
+          Nas <span className="text-ink">abertas</span> você entra e já pode
+          avaliar. Nas <span className="text-ink">fechadas</span> dá para ver de
+          que clube se trata, e entrar depende de quem administra aceitar.
+        </p>
+      ) : null}
+
+      {buscavel ? (
+        <div className="mt-5 max-w-[380px]">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={tab === 'mine' ? 'Buscar nas suas salas' : 'Buscar uma sala'}
+          />
+        </div>
+      ) : null}
+
+      {mine === null ? (
+        <p className="legend animate-flicker mt-8">Acendendo o projetor</p>
+      ) : vistos.length ? (
+        <div
+          role="tabpanel"
+          id="salas-painel"
+          /* Apontado para a aba ativa. Um `tabpanel` sem dono é a metade da
+             promessa que `role="tab"` faz: o leitor de tela anuncia a região e
+             não sabe dizer de qual das duas abas ela é. */
+          aria-labelledby={`salas-${tab}`}
+          className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {vistos.map((c, i) => (
+            <ClubPanel
+              key={c.id}
+              club={c}
+              index={i}
+              onOpen={() => onEnter(c.slug)}
+              onAsk={tab === 'open' ? () => onAsk(c) : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-8">
+          {/* Três vazios diferentes, e dizer a mesma frase nos três seria a tela
+              não saber o que aconteceu. Uma busca sem resultado não é a mesma
+              coisa que uma rede sem salas. */}
+          {q ? (
+            <Blank title="Nenhuma sala com esse nome">
+              Tente outro pedaço do nome, ou o que o clube diz sobre si.
+            </Blank>
+          ) : tab === 'mine' ? (
+            <Blank title="Você ainda não está em nenhum clube">
+              Funde o seu, ou veja em <span className="text-ink">Outras salas</span> os
+              que já existem.
+            </Blank>
+          ) : (
+            <Blank title="Não há outras salas por enquanto">
+              Toda sala da rede é uma que alguém fundou. A próxima pode ser a sua.
+            </Blank>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RoomTab({
+  id,
+  on,
+  onPick,
+  count,
+  as: As,
+  children,
+}: {
+  id: string;
+  on: boolean;
+  onPick: () => void;
+  /** Null enquanto a lista não chegou: um zero ali seria uma afirmação falsa. */
+  count: number | null;
+  as: 'h1' | 'h2' | 'span';
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`salas-${id}`}
+      aria-selected={on}
+      aria-controls="salas-painel"
+      onClick={onPick}
+      className="group relative pb-2.5"
+    >
+      <As
+        className={cn(
+          'flex items-baseline gap-2 font-display text-[26px] leading-none tracking-[0.04em] transition-colors duration-150 sm:text-[30px]',
+          on ? 'text-beam' : 'text-ink-dim group-hover:text-ink'
+        )}
+      >
+        {children}
+        {count !== null ? (
+          <span className={cn('q text-[13px] font-medium', on ? 'text-ink-dim' : 'text-ink-faint')}>
+            {count}
+          </span>
+        ) : null}
+      </As>
+      {/* Pregado na borda de baixo do botão, como na marquise. Sempre montado e
+          só trocando de opacidade: aparecer e sumir do fluxo mudaria a altura da
+          linha a cada troca de aba. */}
+      <span
+        aria-hidden
+        className={cn(
+          'absolute inset-x-0 bottom-0 h-[2px] bg-dye-red transition-opacity duration-150',
+          on ? 'opacity-100' : 'opacity-0'
+        )}
+      />
+    </button>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   O SINO DO SAGUÃO.
+
+   O sino de dentro de um clube responde "o que aconteceu comigo NAQUELA SALA" —
+   quem comentou minha ficha, quem discordou da minha nota. Este responde outra
+   pergunta, e por isso é outro sino: **o que a minha CONTA está esperando de
+   mim**. Nenhuma das duas listas cabe na outra: uma é sobre um lugar, esta é
+   sobre uma pessoa, e o saguão é justamente o lugar onde ainda não há sala.
+
+   Hoje ele carrega um aviso só, e isso é uma medida do produto e não do
+   componente. O aviso de confirmar o e-mail morava numa faixa embaixo de "Suas
+   salas", e estava no lugar errado por um motivo que vale escrever: uma faixa
+   permanente sobre uma coisa que a pessoa pode não querer fazer agora não
+   informa, ela cobra. Toda vez que a tela abre. Um sino guarda o mesmo recado e
+   espera ser aberto — que é a diferença entre avisar e insistir.
+
+   Some sozinho quando não há nada, e o ícone só acende quando há: um sino
+   permanentemente apagado ainda é uma promessa de que algo pode chegar ali.
+   ══════════════════════════════════════════════════════════════════════════ */
+function LobbyBell({ me }: { me: SessionUser }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  /* A lista. Derivada do estado da conta, como o sino do clube é derivado das
+     tabelas de reação — sem tabela de aviso em lugar nenhum, então um aviso
+     desaparece sozinho no instante em que deixa de ser verdade. */
+  const pendente = me.emailVerified === false;
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', key);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-label={pendente ? 'Novidades: 1 aviso' : 'Novidades'}
+        className={cn(
+          'relative flex h-[30px] w-[30px] items-center justify-center rounded-cell transition-colors duration-150',
+          open || pendente ? 'text-dye-brass' : 'text-ink-dim hover:text-ink'
+        )}
+      >
+        <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+        {/* Latão e não vermelho: ter aviso por ler é um ESTADO, e o vermelho
+            desta sala é ação e gravação. Mesma regra do sino do clube. */}
+        {pendente ? (
+          <span className="q absolute -right-0.5 -top-0.5 min-w-[15px] rounded-[2px] bg-dye-brass px-[3px] text-[9.5px] font-semibold leading-[15px] text-house-deep">
+            1
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <div
+          role="region"
+          aria-label="Novidades"
+          className="plate absolute right-0 top-[38px] z-40 max-h-[min(70dvh,520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+        >
+          <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-house-seat px-4 py-3">
+            <span className="legend">Novidades</span>
+          </div>
+          {pendente ? <ConfirmNotice /> : <BellBlank />}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BellBlank() {
+  return (
+    <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
+      Nada esperando por você.
+    </p>
+  );
+}
+
 /* ── confirme seu e-mail ──────────────────────────────────────────────────
-   Aparece para quem se cadastrou por senha e ainda não provou o endereço. Quem
-   entrou pelo Google nunca vê isto: aquele endereço já chegou provado.
+   O único aviso de conta que existe hoje. Aparece para quem se cadastrou por
+   senha e ainda não provou o endereço; quem entrou pelo Google nunca vê isto,
+   porque aquele endereço já chegou provado.
 
-   Não é uma chapa vermelha e não bloqueia nada. O produto inteiro continua
-   funcionando; o que a confirmação destrava são duas coisas específicas, e a
-   frase nomeia as duas em vez de dizer "confirme seu e-mail" e deixar a pessoa
-   adivinhar por que deveria se importar.
-
-   Some sozinho no instante em que a conta é confirmada, porque a condição que o
-   desenha é o próprio estado da conta. */
-function ConfirmBanner() {
+   A frase nomeia as duas coisas que a confirmação destrava. "Confirme seu
+   e-mail" sozinho é uma ordem sem motivo, e um motivo não dito é um motivo que
+   a pessoa inventa — quase sempre pior que o verdadeiro. */
+function ConfirmNotice() {
   const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
 
   async function mandar() {
@@ -419,36 +694,38 @@ function ConfirmBanner() {
   }
 
   return (
-    <section className="mt-12 max-w-[62ch] border-t border-white/[0.07] pt-6">
-      <h2 className="font-display text-[20px] leading-none tracking-[0.04em] text-ink-dim">
-        Confirme seu e-mail
-      </h2>
-      <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
-        Você pode usar o Cineclube normalmente. O que a confirmação destrava são
-        duas coisas: <span className="text-ink">fundar um clube</span> e{' '}
-        <span className="text-ink">recuperar a senha</span> se um dia você perder
-        o acesso.
-      </p>
+    <div className="flex gap-3 px-4 py-3.5">
+      <Mail className="mt-0.5 h-4 w-4 flex-none text-dye-brass" strokeWidth={1.8} aria-hidden />
+      <div className="min-w-0">
+        <p className="font-display text-[13px] uppercase leading-none tracking-[0.1em] text-ink">
+          Confirme seu e-mail
+        </p>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
+          Destrava <span className="text-ink">fundar um clube</span> e{' '}
+          <span className="text-ink">recuperar a senha</span> se um dia você
+          perder o acesso. O resto do Cineclube já funciona.
+        </p>
 
-      {state === 'foi' ? (
-        <p className="mt-4 text-[13px] text-dye-green-lit">
-          Mandamos o link. Ele vale por 24 horas — se não chegar, olhe no spam.
-        </p>
-      ) : state === 'falhou' ? (
-        /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
-           isso é melhor que um sucesso falso que deixa a pessoa esperando uma
-           mensagem que não vem. */
-        <p className="mt-4 text-[13px] text-dye-red-lit">
-          Não conseguimos mandar agora. Tente de novo daqui a pouco.
-        </p>
-      ) : (
-        <div className="mt-4">
-          <Key onClick={() => void mandar()} disabled={state === 'indo'}>
-            {state === 'indo' ? 'Mandando' : 'Mandar o link'}
-          </Key>
-        </div>
-      )}
-    </section>
+        {state === 'foi' ? (
+          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-green-lit">
+            Mandamos o link. Vale por 24 horas — se não chegar, olhe no spam.
+          </p>
+        ) : state === 'falhou' ? (
+          /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
+             isso é melhor que um sucesso falso que deixa a pessoa esperando uma
+             mensagem que não vem. */
+          <p className="mt-3 text-[12.5px] leading-relaxed text-dye-red-lit">
+            Não conseguimos mandar agora. Tente de novo daqui a pouco.
+          </p>
+        ) : (
+          <div className="mt-3">
+            <Key onClick={() => void mandar()} disabled={state === 'indo'}>
+              {state === 'indo' ? 'Mandando' : 'Mandar o link'}
+            </Key>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
