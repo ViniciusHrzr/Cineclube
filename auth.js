@@ -404,15 +404,23 @@ async function claimAccount(newId, oldId) {
        linhas não podem carregar o mesmo valor nem por um instante. */
     { sql: 'UPDATE reviewers SET email = NULL, google_sub = NULL WHERE id = ?', args: [newId] },
     {
+      /* `email_verified` acompanha o e-mail, e tem de acompanhar: a coluna
+         nasceu depois desta fusão e ficou de fora dela. O efeito era silencioso
+         e caro — a conta antiga herdava um endereço provado pelo Google e
+         continuava marcada como não confirmada, então a pessoa passava a ver o
+         aviso de confirmar e não conseguia fundar clube, por um endereço que
+         ela já tinha provado. Uma credencial que se move sem o fato que a
+         qualifica é meia credencial. */
       sql: `UPDATE reviewers
             SET email = ?, google_sub = ?, password_hash = ?, password_salt = ?,
-                auth_attempts = 0, locked_until = NULL
+                email_verified = ?, auth_attempts = 0, locked_until = NULL
             WHERE id = ?`,
       args: [
         nova.email ?? null,
         nova.google_sub ?? null,
         nova.password_hash ?? null,
         nova.password_salt ?? null,
+        nova.email_verified ? 1 : 0,
         oldId,
       ],
     },

@@ -362,6 +362,38 @@ test('a dica de chave diz qual é o erro sem contar a chave', () => {
   }
 });
 
+/* ── juntar duas contas leva o endereço PROVADO junto ─────────────────────
+   A fusão move a credencial da conta nova para a antiga, e `email_verified`
+   ficou de fora dela: a coluna nasceu depois da fusão existir.
+
+   O efeito era silencioso e caro. A conta antiga herdava um endereço provado
+   pelo Google e continuava marcada como não confirmada — então a pessoa via o
+   aviso de confirmar e não conseguia fundar um clube, por causa de um endereço
+   que ela já tinha provado. Uma credencial que se move sem o fato que a
+   qualifica é meia credencial. */
+test('juntar contas leva o e-mail confirmado junto da credencial', async () => {
+  const nova = await kit.signIn('Quem Entrou Pelo Google');
+  const velhaId = 'p' + crypto.randomUUID();
+  await db.prepare('INSERT INTO reviewers (id, name, dot) VALUES (?, ?, ?)')
+    .run(velhaId, 'Quem Já Estava Aqui', '#e0362c');
+
+  const antes = await db.prepare('SELECT email_verified FROM reviewers WHERE id = ?').get(velhaId);
+  assert.equal(Number(antes.email_verified), 0, 'a conta adormecida não tem endereço provado');
+
+  const out = await auth.claimAccount(nova.id, velhaId);
+  assert.ok(!out.error, out.error);
+
+  const depois = await db
+    .prepare('SELECT email, email_verified, google_sub FROM reviewers WHERE id = ?')
+    .get(velhaId);
+  assert.ok(depois.email, 'o endereço veio');
+  assert.ok(depois.google_sub, 'e a porta do Google também');
+  assert.equal(Number(depois.email_verified), 1, 'e o fato de ele estar provado veio junto');
+
+  // E a conta nova foi dissolvida, não duplicada.
+  assert.equal(await db.prepare('SELECT id FROM reviewers WHERE id = ?').get(nova.id), undefined);
+});
+
 test('a tela de entrada consegue saber se há envio, estando deslogada', async () => {
   /* O defeito que este teste trava: `mail` estava só no ramo de quem TEM
      sessão, e a única tela que precisa da resposta — a de entrada — é a única
