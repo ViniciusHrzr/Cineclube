@@ -991,19 +991,47 @@ function usePosterRail(live: boolean) {
     const SLOP = 4;
     let travel = 0;
 
+    /* ── nem captura de ponteiro, nem preventDefault ────────────────────
+       As duas coisas estavam aqui e as duas matavam o clique nos cartazes.
+
+       `preventDefault` num `pointerdown` cancela os eventos de mouse de
+       compatibilidade que vêm depois — e o `click` é um deles. Ele estava aqui
+       para impedir o arrasto nativo da imagem, trabalho que o `draggable={false}`
+       de cada cartaz já faz, e que o `dragstart` abaixo garante.
+
+       `setPointerCapture` redireciona os eventos para o elemento que capturou,
+       e o `click` vai junto: ele passava a nascer na FAIXA em vez de no cartaz,
+       então o botão nunca era avisado. A captura existia para não perder o
+       ponteiro ao sair da faixa no meio de um arrasto — e ouvir no `window`
+       resolve isso sem retarget nenhum.
+
+       O preço é lembrar de tirar os dois ouvintes do window ao soltar, o que a
+       limpeza abaixo faz. */
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
+      /* ── uma recusa que sobrou ────────────────────────────────────────
+         A recusa de clique é armada com `once`, e `once` só desarma quando o
+         evento chega. Um arrasto que termina FORA da faixa não gera clique
+         nenhum — e a recusa ficava lá, esperando, para engolir o próximo
+         clique de verdade.
+
+         Aqui é o lugar de limpar: um clique sempre vem logo depois do
+         `pointerup` do mesmo gesto, então qualquer recusa que ainda exista
+         quando um gesto NOVO começa é de um gesto que já acabou. */
+      el.removeEventListener('click', swallow, { capture: true });
       dragging = true;
       travel = 0;
       velocity = 0;
       lastX = e.clientX;
       lastT = e.timeStamp;
-      el.setPointerCapture(e.pointerId);
       el.dataset.grabbing = 'true';
-      /* Sem isto o navegador começa o arrasto nativo de imagem no primeiro
-         movimento, e a mão sai levando um fantasma do cartaz. */
-      e.preventDefault();
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     };
+
+    /* O arrasto nativo de imagem, pelo caminho que não custa o clique. */
+    const noDrag = (e: DragEvent) => e.preventDefault();
 
     const move = (e: PointerEvent) => {
       if (!dragging) return;
@@ -1026,23 +1054,19 @@ function usePosterRail(live: boolean) {
       e.stopPropagation();
     };
 
-    const up = (e: PointerEvent) => {
+    const up = () => {
       if (!dragging) return;
       dragging = false;
       delete el.dataset.grabbing;
-      try {
-        el.releasePointerCapture(e.pointerId);
-      } catch {
-        /* o ponteiro já foi embora — soltar duas vezes não é erro */
-      }
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       velocity = Math.max(-MAX_THROW, Math.min(MAX_THROW, velocity));
       if (travel > SLOP) el.addEventListener('click', swallow, { capture: true, once: true });
     };
 
     el.addEventListener('pointerdown', down);
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
+    el.addEventListener('dragstart', noDrag);
 
     /* ── e nada roda com a parede fora da tela ───────────────────────────
        Um laço perpétuo por uma faixa que já saiu de vista é trabalho contra
@@ -1066,10 +1090,13 @@ function usePosterRail(live: boolean) {
       io.disconnect();
       ro.disconnect();
       el.removeEventListener('pointerdown', down);
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
-      el.removeEventListener('pointercancel', up);
+      el.removeEventListener('dragstart', noDrag);
       el.removeEventListener('click', swallow, { capture: true });
+      /* Desmontar no meio de um arrasto deixaria dois ouvintes no window
+         mexendo num elemento que já saiu da árvore. */
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
   }, [live]);
 
