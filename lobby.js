@@ -36,8 +36,16 @@ const { excerpt, endsOf } = require('./takes');
    entrar.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const ELIGIBLE = `(c.visibility = 'public' OR c.show_charts = 1)`;
-const READABLE = `(c.visibility = 'public' OR (c.show_charts = 1 AND c.show_reviews = 1))`;
+/* As duas paredes como funções do apelido da tabela: a mesma regra precisa ser
+   escrita sobre `c` na consulta de fora e sobre outro apelido numa subconsulta,
+   e duas cópias da condição de privacidade são duas chances de uma delas ficar
+   para trás. */
+const eligible = t => `(${t}.visibility = 'public' OR ${t}.show_charts = 1)`;
+const readable = t =>
+  `(${t}.visibility = 'public' OR (${t}.show_charts = 1 AND ${t}.show_reviews = 1))`;
+
+const ELIGIBLE = eligible('c');
+const READABLE = readable('c');
 
 /** Quantos pôsteres a parede carrega. Ela repete a lista para emendar sem costura. */
 const WALL = 28;
@@ -147,6 +155,107 @@ const featureStmt = db.prepare(`
   ORDER BY reactions DESC, (rv.comment IS NOT NULL AND rv.comment <> '') DESC, rv.recorded_at DESC
   LIMIT 1
 `);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AS FICHAS DE UM FILME, EM TODA A REDE.
+
+   O que se lê ao abrir um cartaz da parede: quem já viu isto, e o que achou.
+
+   ── a ordem é por quem avaliou mais ───────────────────────────────────────
+   Escolhido pelo dono do produto, e o argumento dele é bom: quem tem cem fichas
+   neste app já enfrentou os onze critérios cem vezes, e um 7 dessa pessoa
+   carrega uma régua que um 7 de quem avaliou uma vez não carrega. Não é
+   qualidade de opinião — é quantidade de calibragem, que é a única coisa aqui
+   que um banco sabe medir.
+
+   O que ela NÃO é: uma média ponderada. As notas continuam valendo todas o
+   mesmo no pódio e na média da rede. O que a credibilidade decide é quem
+   aparece primeiro numa lista de cinco, que é uma pergunta de edição e não de
+   aritmética.
+
+   A contagem que ordena conta só as salas que emprestam — senão alguém com
+   trezentas fichas numa sala fechada lideraria uma lista da qual ele não
+   participa.
+
+   ── uma ficha por pessoa ──────────────────────────────────────────────────
+   A mesma pessoa avalia o mesmo filme em dois clubes com notas independentes, e
+   é assim que este produto funciona de propósito. Numa lista de cinco, porém,
+   ela apareceria duas vezes — e uma lista com a mesma cara duas vezes é uma
+   lista com quatro pessoas se dizendo cinco. Escolhida em JS, depois de ordenar:
+   `GROUP BY` no SQLite escolheria uma linha arbitrária da dupla.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Quantas fichas a folha de um filme mostra. */
+const TAKES = 5;
+
+const filmTakesStmt = db.prepare(`
+  SELECT rv.id, rv.final, rv.scores, rv.movie_genre, rv.comment, rv.recorded_at,
+         r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot,
+         r.avatar_rev AS actor_avatar_rev,
+         c.name AS club_name, c.slug AS club_slug,
+         (SELECT COUNT(*) FROM reviews x JOIN clubs xc ON xc.id = x.club_id
+           WHERE x.reviewer_id = r.id AND ${eligible('xc')}) AS credibility
+  FROM reviews rv
+  JOIN reviewers r ON r.id = rv.reviewer_id
+  JOIN clubs c ON c.id = rv.club_id
+  WHERE ${READABLE} AND rv.movie_id = ?
+  ORDER BY credibility DESC, rv.recorded_at DESC
+  LIMIT ${TAKES * 4}
+`);
+
+/* A conta da rede sobre este filme, sob a parede mais frouxa: uma média não diz
+   quem deu a nota, então ela vale para toda sala que empresta — inclusive as que
+   não abrem as fichas assinadas. É o mesmo critério do pódio. */
+const filmVerdictStmt = db.prepare(`
+  SELECT AVG(rv.final) AS average, COUNT(*) AS takes, COUNT(DISTINCT rv.club_id) AS clubs
+  FROM reviews rv
+  JOIN clubs c ON c.id = rv.club_id
+  WHERE ${ELIGIBLE} AND rv.movie_id = ?
+`);
+
+async function film(movieId) {
+  const id = Number(movieId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+
+  const [linhas, conta] = await Promise.all([
+    filmTakesStmt.all(id),
+    filmVerdictStmt.get(id),
+  ]);
+
+  const vistos = new Set();
+  const takes = [];
+  for (const row of linhas) {
+    if (vistos.has(row.actor_id)) continue;
+    vistos.add(row.actor_id);
+    takes.push({
+      id: row.id,
+      actor: {
+        id: row.actor_id,
+        name: row.actor_name,
+        dot: row.actor_dot,
+        avatar: row.actor_avatar_rev
+          ? `/api/reviewers/${row.actor_id}/avatar?v=${row.actor_avatar_rev}`
+          : null,
+      },
+      club: { name: row.club_name, slug: row.club_slug },
+      final: Number(row.final),
+      at: row.recorded_at,
+      ends: endsOf(row.movie_genre, row.scores),
+      excerpt: row.comment ? excerpt(row.comment, 200) : null,
+      /* Vai para a tela porque é o que explica a ordem. Um ranking cuja regra
+         não está à vista é um ranking que parece arbitrário. */
+      credibility: Number(row.credibility) || 0,
+    });
+    if (takes.length >= TAKES) break;
+  }
+
+  return {
+    takes,
+    average: conta?.takes ? Number(conta.average) : null,
+    count: Number(conta?.takes) || 0,
+    clubs: Number(conta?.clubs) || 0,
+  };
+}
 
 /** As salas que emprestaram alguma coisa, por id. É o que a sessão ao vivo casa. */
 const eligibleClubsStmt = db.prepare(`
@@ -314,4 +423,4 @@ async function snapshot() {
   return { ...base, live };
 }
 
-module.exports = { snapshot, invalidate, FLOOR, WINDOW_DAYS };
+module.exports = { snapshot, film, invalidate, FLOOR, WINDOW_DAYS, TAKES };

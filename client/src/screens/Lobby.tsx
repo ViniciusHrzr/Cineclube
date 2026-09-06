@@ -1,11 +1,12 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Clock, MessageSquare, Plus, ShieldCheck, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Blank, Fault, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
+import { Check, Clock, MessageSquare, Play, Plus, ShieldCheck, ThumbsDown, ThumbsUp, X } from 'lucide-react';
+import { Blank, Fault, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { Notices } from '@/components/notices';
 import { PortraitGate } from '@/components/portrait';
 import {
+  api,
   clubs,
   fmt,
   initialsOf,
@@ -14,10 +15,13 @@ import {
   type Club,
   type LobbyClub,
   type LobbyFeature,
+  type LobbyFilm,
   type LobbyLive,
   type LobbyMovie,
   type LobbyPodiumMovie,
   type LobbySnapshot,
+  type LobbyTake,
+  type Movie,
   type SessionUser,
 } from '@/lib/api';
 import { cn, named, norm, plural, useFinePointer, whenOf } from '@/lib/utils';
@@ -358,6 +362,202 @@ function Region({
       />
       {children}
     </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A FOLHA DE UM FILME, VISTO PELA REDE.
+
+   Abre ao clicar num cartaz da parede, e é deliberadamente MENOR que a folha de
+   projeção de dentro de um clube. Lá a folha é uma sala de espera antes de
+   avaliar: elenco, equipe, onde assistir, o botão de gravar. Aqui não há sala,
+   não há o que gravar, e quem clicou num cartaz de uma parede que anda fez uma
+   pergunta curta — "que filme é esse, e o que acharam?".
+
+   Então são três coisas: o que o filme é (sinopse e trailer), o que a rede
+   achou (a média), e quem achou (as cinco fichas).
+
+   ── de onde vem cada metade ───────────────────────────────────────────────
+   Sinopse e trailer são do TMDB, pela rota do catálogo, que é pública e tem
+   cache. As fichas são nossas, por `/api/lobby/film/:id`. Duas chamadas em
+   paralelo e não uma no servidor: juntá-las lá seria pagar a requisição ao TMDB
+   de novo, do lado errado do cache do navegador.
+
+   ── e a folha abre com o que já se sabe ───────────────────────────────────
+   Título, ano, cartaz e nota vêm do cartaz que foi clicado — a parede já os
+   tinha. A folha nasce completa naquilo e preenche o resto quando chega, em vez
+   de mostrar um esqueleto do que já estava na tela um segundo atrás.
+
+   Um `<dialog>` nativo, como a folha de projeção, e pelo mesmo motivo: a
+   plataforma dá a armadilha de foco, o Escape e a inércia do fundo de graça.
+   ══════════════════════════════════════════════════════════════════════════ */
+function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [detalhe, setDetalhe] = useState<Movie | null>(null);
+  const [rede, setRede] = useState<LobbyFilm | null>(null);
+  const [faltou, setFaltou] = useState(false);
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  /* O Escape passa pelo mesmo caminho do botão: sem isto o `<dialog>` fecha
+     sozinho e o React continua achando que ele está aberto. */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    el.addEventListener('cancel', cancel);
+    return () => el.removeEventListener('cancel', cancel);
+  }, [onClose]);
+
+  useEffect(() => {
+    let vivo = true;
+    void Promise.allSettled([
+      api<Movie>(`/api/catalog/movie/${film.id}`),
+      lobbyApi.film(film.id),
+    ]).then(([tmdb, nossas]) => {
+      if (!vivo) return;
+      if (tmdb.status === 'fulfilled') setDetalhe(tmdb.value);
+      else setFaltou(true);
+      if (nossas.status === 'fulfilled') setRede(nossas.value);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [film.id]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-label={`Sobre ${film.title}`}
+      onClick={e => {
+        if (e.target === ref.current) onClose();
+      }}
+      className="w-full max-w-[720px] bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm open:animate-beam-in sm:p-4"
+    >
+      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto p-5 sm:p-6">
+        <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
+          <X className="h-4 w-4" strokeWidth={1.8} />
+        </IconKey>
+
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <Poster
+            src={film.poster}
+            alt={`Pôster de ${film.title}`}
+            className="aspect-[2/3] w-[110px] flex-none sm:w-[150px]"
+          />
+
+          <div className="min-w-0 flex-1">
+            <h2 className="pr-10 font-display text-[26px] leading-none tracking-[0.03em] text-beam sm:text-[30px]">
+              {film.title}
+            </h2>
+            <p className="q mt-2 text-[12px] text-ink-dim">
+              {[film.year ?? '—', detalhe?.genre].filter(Boolean).join(' · ')}
+            </p>
+
+            {/* A conta da rede, na régua de sempre — uma nota é reconhecível
+                como nota antes de ser lida. */}
+            <div className="mt-4 flex items-center gap-3">
+              <Strip value={rede?.average ?? film.average} cells={10} className="h-[6px] w-[120px] flex-none" />
+              <span className="q text-[15px] font-medium text-beam">
+                {fmt(rede?.average ?? film.average)}
+              </span>
+              <span className="q text-[11px] text-ink-faint">/10</span>
+              <span className="q text-[11px] text-ink-dim">
+                {plural(rede?.count ?? film.takes, 'ficha', 'fichas')}
+              </span>
+            </div>
+
+            <p className="mt-4 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">
+              {detalhe
+                ? detalhe.overview || 'Sem sinopse disponível no TMDB.'
+                : faltou
+                  ? 'Não foi possível falar com o TMDB agora.'
+                  : 'Carregando a sinopse…'}
+            </p>
+
+            {detalhe?.trailerUrl ? (
+              <a
+                href={detalhe.trailerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-dye-red-lit transition-colors hover:text-dye-red-glow"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
+                Ver o trailer
+              </a>
+            ) : null}
+          </div>
+        </div>
+
+        {/* ── quem já viu ──────────────────────────────────────────────────
+            A legenda diz a regra da ordem. Um ranking cuja regra não está à
+            vista parece arbitrário, e este tem uma boa: quem enfrentou os onze
+            critérios mais vezes carrega uma régua mais aferida. */}
+        {rede?.takes.length ? (
+          <section className="mt-7 border-t border-white/[0.07] pt-5">
+            <span className="legend">
+              {rede.takes.length === 1 ? 'Quem já viu' : `As ${rede.takes.length} de quem mais avalia`}
+            </span>
+            <ul className="mt-4 flex flex-col gap-4">
+              {rede.takes.map(take => (
+                <PeekTake key={take.id} take={take} />
+              ))}
+            </ul>
+          </section>
+        ) : rede ? (
+          <p className="mt-7 border-t border-white/[0.07] pt-5 text-[13px] leading-relaxed text-ink-dim">
+            Nenhuma sala que empresta o acervo avaliou este filme ainda.
+          </p>
+        ) : null}
+      </div>
+    </dialog>
+  );
+}
+
+function PeekTake({ take }: { take: LobbyTake }) {
+  return (
+    <li className="flex gap-3">
+      <Reel color={reelColor(take.actor.dot, take.actor.id)} src={take.actor.avatar} size="md">
+        {initialsOf(take.actor.name)}
+      </Reel>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
+            {take.actor.name}
+          </span>
+          <span className="font-display text-[10.5px] uppercase tracking-[0.12em] text-dye-brass">
+            {take.club.name}
+          </span>
+          <span className="q ml-auto text-[15px] font-medium text-beam">{fmt(take.final)}</span>
+        </div>
+
+        {take.ends ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+            <span className="flex items-center gap-1.5 text-ink-dim">
+              <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+              {take.ends.high.name}
+              <span className="q text-beam">{fmt(take.ends.high.value)}</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-ink-dim">
+              <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+              {take.ends.low.name}
+              <span className="q text-ink">{fmt(take.ends.low.value)}</span>
+            </span>
+          </div>
+        ) : null}
+
+        {take.excerpt ? (
+          <p className="mt-2 break-words text-[13px] italic leading-relaxed text-ink-dim">
+            “{take.excerpt}”
+          </p>
+        ) : null}
+      </div>
+    </li>
   );
 }
 
@@ -780,9 +980,21 @@ function usePosterRail(live: boolean) {
       if (velocity) step(velocity);
     };
 
+    /* ── puxar não é clicar ─────────────────────────────────────────────
+       Cada cartaz abre uma folha, e a mesma superfície é o que se agarra para
+       arrastar a parede. Sem isto, todo arremesso terminaria abrindo o filme
+       que estava debaixo do dedo quando a mão soltou.
+
+       A distância percorrida é o que separa os dois gestos, e o corte é baixo:
+       quatro pixels é mais do que o tremor de uma mão parada e menos do que
+       qualquer intenção de puxar. */
+    const SLOP = 4;
+    let travel = 0;
+
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
       dragging = true;
+      travel = 0;
       velocity = 0;
       lastX = e.clientX;
       lastT = e.timeStamp;
@@ -799,10 +1011,19 @@ function usePosterRail(live: boolean) {
       const dt = Math.max(1, e.timeStamp - lastT);
       lastX = e.clientX;
       lastT = e.timeStamp;
+      travel += Math.abs(dx);
       step(-dx);
       /* Em px por quadro, e suavizado: um único evento com um salto grande não
          pode virar sozinho um arremesso que a mão não deu. */
       velocity = velocity * 0.7 + ((-dx * 16.7) / dt) * 0.3;
+    };
+
+    /* Engolido na CAPTURA, antes de chegar ao cartaz. Um clique só nasce depois
+       do `pointerup`, então basta armar a recusa aqui e desarmá-la sozinha —
+       `once` — para que o clique seguinte, o de verdade, passe. */
+    const swallow = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
     };
 
     const up = (e: PointerEvent) => {
@@ -815,6 +1036,7 @@ function usePosterRail(live: boolean) {
         /* o ponteiro já foi embora — soltar duas vezes não é erro */
       }
       velocity = Math.max(-MAX_THROW, Math.min(MAX_THROW, velocity));
+      if (travel > SLOP) el.addEventListener('click', swallow, { capture: true, once: true });
     };
 
     el.addEventListener('pointerdown', down);
@@ -847,6 +1069,7 @@ function usePosterRail(live: boolean) {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      el.removeEventListener('click', swallow, { capture: true });
     };
   }, [live]);
 
@@ -860,6 +1083,9 @@ function PosterWall({
   films: LobbyMovie[];
   counts: LobbySnapshot['counts'];
 }) {
+  /* Qual cartaz está aberto. Guardado aqui e não no saguão inteiro porque a
+     folha é da parede: nada mais nesta tela abre um filme. */
+  const [aberto, setAberto] = useState<LobbyMovie | null>(null);
   /* ── quantas vezes a lista se repete ───────────────────────────────────
      A metade da pista precisa ser mais larga que qualquer tela, ou o laço mostra
      o fim da fileira e volta com um pulo. Com vinte e oito cartazes uma cópia já
@@ -929,16 +1155,28 @@ function PosterWall({
           WebkitMaskImage: POSTER_FADE,
         }}
       >
-      <div
-        ref={rail}
-        aria-hidden
-        className="poster-rail absolute inset-0 bg-house-deep/40"
-      >
+      {/* ── a faixa deixou de ser só imagem ────────────────────────────────
+          Cada cartaz abre a folha do filme, então ela não pode mais ser
+          `aria-hidden`: esconder do leitor de tela uma região que contém
+          botões é escondê-los de quem depende dele.
+
+          Só que a lista é REPETIDA — é o que faz o laço não ter emenda — e
+          cinquenta e seis botões para vinte e oito filmes seriam cinquenta e
+          seis paradas de tabulação para vinte e oito destinos. Então a primeira
+          cópia é a de verdade e as outras são decoração: `aria-hidden` e fora
+          da ordem de foco, uma por uma. Quem enxerga vê uma parede contínua;
+          quem tabula percorre cada filme uma vez. */}
+      <div ref={rail} className="poster-rail absolute inset-0 bg-house-deep/40">
         <div className="flex h-full w-max">
           {Array.from({ length: copies }).flatMap((_, copy) =>
             films.map(film => (
-              <span
+              <button
+                type="button"
                 key={`${copy}:${film.id}`}
+                onClick={() => setAberto(film)}
+                aria-hidden={copy > 0 || undefined}
+                tabIndex={copy > 0 ? -1 : undefined}
+                aria-label={`${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'ficha', 'fichas')}`}
                 className="group relative mr-2 h-full w-[88px] flex-none overflow-hidden bg-house-deep sm:w-[117px]"
               >
                 <img
@@ -958,7 +1196,7 @@ function PosterWall({
                     {fmt(film.average)} · {plural(film.takes, 'ficha', 'fichas')}
                   </span>
                 </span>
-              </span>
+              </button>
             ))
           )}
         </div>
@@ -1017,6 +1255,14 @@ function PosterWall({
           {tally(counts.clubs, 'sala', 'salas')}
         </p>
       </div>
+
+      {/* Montada só quando há filme aberto: um `<dialog>` fechado no ar ainda é
+          um nó com um `showModal` esperando, e a folha busca duas coisas ao
+          nascer. Remontar por filme também é o que garante que ela nunca mostre
+          a sinopse do cartaz anterior por um quadro. */}
+      {aberto ? (
+        <FilmPeek key={aberto.id} film={aberto} onClose={() => setAberto(null)} />
+      ) : null}
     </section>
   );
 }

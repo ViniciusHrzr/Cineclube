@@ -277,8 +277,36 @@ export type LobbySnapshot = {
   windowDays: number;
 };
 
+/* ── uma ficha na folha de um filme ───────────────────────────────────────
+   Ordenadas por `credibility`: quantas fichas aquela pessoa já escreveu nas
+   salas que emprestam. Quem enfrentou os onze critérios cem vezes carrega uma
+   régua que quem os enfrentou uma vez não carrega — e é a única coisa aqui que
+   um banco sabe medir. Não pondera nota nenhuma: decide só quem aparece
+   primeiro numa lista de cinco, que é edição e não aritmética. */
+export type LobbyTake = {
+  id: string;
+  actor: { id: string; name: string; dot: string; avatar: string | null };
+  club: { name: string; slug: string };
+  final: number;
+  at: string;
+  ends: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  excerpt: string | null;
+  credibility: number;
+};
+
+export type LobbyFilm = {
+  takes: LobbyTake[];
+  /** A média da rede, ou null quando ninguém que empresta avaliou este filme. */
+  average: number | null;
+  count: number;
+  clubs: number;
+};
+
 export const lobby = {
   get: () => api<LobbySnapshot>('/api/lobby'),
+  /* O que a REDE sabe sobre um filme. Sinopse e trailer não vêm daqui: são do
+     TMDB, e a rota do catálogo já os serve com cache. */
+  film: (movieId: number) => api<LobbyFilm>(`/api/lobby/film/${movieId}`),
 };
 
 /* Your own name, your own portrait and your own bio. The route takes no id — it

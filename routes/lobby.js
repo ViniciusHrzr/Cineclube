@@ -21,4 +21,20 @@ router.get('/', wrap(async (_req, res) => {
   res.json(await lobby.snapshot());
 }));
 
+/* ── um filme, visto pela rede ────────────────────────────────────────────
+   O que abre ao clicar num cartaz da parede. Só o que a rede sabe sobre aquele
+   filme — as fichas e a conta —, porque sinopse e trailer são do TMDB e o
+   cliente já tem uma rota para eles (`/api/catalog/movie/:id`), pública e com
+   cache. Duplicar a chamada ao TMDB aqui seria pagar a mesma requisição de novo
+   e ter uma segunda cópia da conversão para manter.
+
+   Sem sessão, como o resto deste arquivo: tudo que sai daqui é o que as salas
+   emprestaram de propósito. A parede de quem aparece assinado é a mesma da
+   ficha em destaque — ver `film` em lobby.js. */
+router.get('/film/:movieId', wrap(async (req, res) => {
+  const out = await lobby.film(req.params.movieId);
+  if (!out) return res.status(400).json({ error: 'Filme inválido.' });
+  res.json(out);
+}));
+
 module.exports = router;
