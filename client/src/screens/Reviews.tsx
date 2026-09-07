@@ -17,12 +17,9 @@ import {
   Poster,
   SearchField,
 } from '@/components/bits';
-/* O voto e a conversa saíram desta tela e viraram peça — o feed passou a
-   oferecer os dois na porta de entrada do clube, e são as mesmas regras. Ver a
-   nota de abertura em components/social.tsx. */
+/* Voto, conversa e detalhamento saíram desta tela e viraram peça: o feed e o
+   perfil abrem a ficha no lugar, com as mesmas regras. */
 import { Conversation, TakeVotes } from '@/components/social';
-/* E o detalhamento saiu pelo mesmo motivo: o perfil abre a ficha na própria
-   página agora, em vez de mandar quem está explorando alguém para cá. */
 import { Breakdown } from '@/components/take';
 import { PersonReel } from '@/components/person';
 import { cdel, fmt, runtimeOf, type Review } from '@/lib/api';
@@ -31,51 +28,28 @@ import { useClub } from '@/App';
 
 export function ReviewsScreen() {
   const club = useClub();
-  /* By film, not by person. What the club comes here asking is "what did we
-     think of that one", and the answer to that is a film with everyone's takes
-     under it. */
+  /* Por filme e não por pessoa: o que se vem perguntar aqui é "o que a gente
+     achou daquele", e a resposta é um filme com as fichas de todo mundo. */
   const [view, setView] = useState<'reviewer' | 'movie'>('movie');
-  /* A set and not a single id: two takes on the same film, or the same film
-     under two people, is exactly the comparison this screen exists for, and
-     opening the second one used to close the first. */
+  /* Um conjunto e não um id: duas fichas abertas lado a lado é a comparação para
+     a qual esta tela existe. */
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
-  /* Da maior para a menor por padrão: o arquivo é lido para achar o que o clube
-     mais gostou muito mais vezes do que para achar o que ele detestou. */
+  /* Da maior para a menor: o arquivo é lido para achar o que o clube mais gostou
+     muito mais vezes do que o contrário. */
   const [desc, setDesc] = useState(true);
 
-  /* ── a ficha que o endereço pede ────────────────────────────────────────
-     `#reviews/r1a2b3c` chega aqui como `club.focusReview`, e três coisas têm de
-     acontecer para que o link tenha valor: a carta que contém a ficha se abre,
-     a ficha se abre, e a página rola até ela.
-
-     A ordem importa e o tempo também. As gavetas animam de `0fr` a `1fr` em
-     240ms, e rolar antes disso mira um elemento que ainda tem altura zero — a
-     página para no lugar errado e a ficha aparece fora da tela. Por isso o
-     scroll espera a gaveta terminar.
-
-     O alvo é limpado assim que é consumido: sem isso, fechar a carta à mão
-     seria desfeito no próximo redesenho, e o acervo teria uma ficha que se
-     recusa a fechar.
-
-     Uma avaliação apagada — ou de um filme que a busca escondeu — não abre nada
-     e não rola nada. O endereço fica, a aba abre, e é isso: é o que sobra de
-     honesto quando a coisa apontada não está mais lá. */
+  /* A ficha que o endereço pede. As gavetas animam de `0fr` a `1fr` em 240ms, e
+     rolar antes disso mira um elemento de altura zero — daí o atraso abaixo. O
+     alvo é limpado assim que consumido, senão fechar a carta à mão seria
+     desfeito no próximo redesenho. */
   const wanted = club.focusReview;
   const { clearFocusReview } = club;
-  /* Dois estados, e separá-los é o conserto de um defeito real: a ficha chegava
-     por link, abria, e fechava sozinha dois segundos e meio depois.
-
-     `flash` é o brilho, e ele TEM de apagar. `arrived` é a chegada, e ela NÃO
-     pode apagar. Estavam na mesma variável, e a carta que contém a ficha — a
-     pessoa numa visão, o filme na outra — estava aberta por causa do brilho.
-     Quando o brilho apagava, a carta se fechava e levava a ficha junto.
-
-     `arrived` sobrevive porque não é um efeito visual: é a resposta a "esta
-     carta foi aberta?", e foi. A partir daí ela se comporta como qualquer carta
-     que alguém abriu à mão, inclusive podendo ser fechada. */
+  /* Dois estados e não um, e isso conserta um defeito real: `flash` é o brilho e
+     TEM de apagar; `arrived` é a chegada e NÃO pode. Na mesma variável, a carta
+     ficava aberta por causa do brilho — e se fechava com ele, dois segundos e
+     meio depois, levando a ficha junto. */
   const [flash, setFlash] = useState<string | null>(null);
   const [arrived, setArrived] = useState<string | null>(null);
-  /** Rolagem e apagar do destaque. Ver a nota longa dentro do efeito. */
   const timers = useRef<number[]>([]);
 
   useEffect(() => {
@@ -86,23 +60,15 @@ export function ReviewsScreen() {
       return;
     }
 
-    // A ficha abre; a carta que a contém é aberta pela visão, que sabe se
-    // agrupa por pessoa ou por filme.
     setOpenIds(prev => (prev.has(wanted) ? prev : new Set(prev).add(wanted)));
     setArrived(wanted);
     setFlash(wanted);
     clearFocusReview();
 
-    /* ── por que estes temporizadores não moram no cleanup deste efeito ────
-       Porque este efeito apaga o próprio gatilho. `clearFocusReview()` acima
-       zera `club.focusReview`, que é `wanted`, que é dependência daqui — então
-       o React roda o cleanup deste efeito no instante seguinte a ele terminar.
-
-       Com os `clearTimeout` ali dentro, os dois temporizadores que acabaram de
-       ser agendados eram cancelados antes de disparar: a página não rolava e o
-       destaque não apagava. Guardados em ref e limpos só na desmontagem, eles
-       sobrevivem à limpeza do gatilho e continuam cancelando corretamente
-       quando a pessoa sai da aba. */
+    /* Os temporizadores ficam em ref e NÃO no cleanup deste efeito: ele apaga o
+       próprio gatilho — `clearFocusReview()` zera `wanted`, que é dependência
+       daqui —, então o React roda o cleanup no instante seguinte. Ali dentro,
+       os dois eram cancelados antes de disparar. */
     const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     timers.current.push(
       window.setTimeout(() => {
@@ -111,8 +77,6 @@ export function ReviewsScreen() {
           block: 'center',
         });
       }, 300),
-      // Longo o bastante para o olho encontrar depois de a rolagem terminar,
-      // curto o bastante para não virar um estado permanente da fileira.
       window.setTimeout(() => setFlash(null), 2600)
     );
   }, [wanted, club.reviews, clearFocusReview]);
@@ -126,11 +90,8 @@ export function ReviewsScreen() {
   }, []);
   const [query, setQuery] = useState('');
 
-  /* Title or person, in one field. This screen is the club's record and it is
-     read two ways — "what did we think of that one" and "what has she rated" —
-     so a search that only matched films would answer half the questions asked
-     of it. Both views filter from the same set, so switching between them
-     while searching keeps the same answer on screen. */
+  /* Filme ou pessoa, no mesmo campo: esta tela é lida das duas maneiras, e uma
+     busca só de filmes responderia metade das perguntas feitas a ela. */
   const filtering = query.trim().length > 0;
   const q = norm(query.trim());
   const shown = filtering
@@ -186,15 +147,9 @@ export function ReviewsScreen() {
           </Chip>
         ))}
 
-        {/* ── da maior ou da menor ────────────────────────────────────────
-            Um botão e não dois chips: são dois estados de uma coisa só, e uma
-            fila de filtros em que dois deles são o mesmo filtro invertido faz
-            o olho ler quatro escolhas onde há três. O ícone diz para que lado a
-            lista corre, e o rótulo ao lado diz em palavras — sozinho, um ícone
-            de ordenação é um símbolo que cada produto desenha diferente.
-
-            Separado dos chips por uma folga maior: eles escolhem O QUE se
-            agrupa, este escolhe em QUE ORDEM. */}
+        {/* Um botão e não dois chips: dois estados de uma coisa só, e dois chips
+            fariam o olho ler quatro escolhas onde há três. Afastado dos chips
+            por uma folga maior — eles escolhem O QUE se agrupa, este a ORDEM. */}
         <button
           type="button"
           onClick={() => setDesc(d => !d)}
@@ -242,16 +197,10 @@ export function ReviewsScreen() {
   );
 }
 
-/* ── what you may do with a take ──────────────────────────────────────────
-   A take belongs to whoever gave it. Yours is yours to change or to unsay;
-   somebody else's is not, and the screen used to offer "Editar" on every one of
-   them. That button did not edit theirs — it could not, the server signs a take
-   with the session — it opened your own card for that film, which means the
-   only thing it ever did was mislead.
-
-   In its place, on a film you have not rated: an invitation. On one you already
-   have, nothing at all — you have said your piece, and the record showing you
-   somebody else's take is not a prompt to do anything about it. */
+/* Uma ficha é de quem a deu. A tela oferecia "Editar" em todas, e aquele botão
+   não editava a dos outros — o servidor assina a ficha com a sessão —, ele abria
+   a SUA daquele filme. No lugar dele: um convite, num filme que você ainda não
+   avaliou; nada, num que você já avaliou. */
 function TakeActions({
   r,
   onDelete,
@@ -261,9 +210,7 @@ function TakeActions({
   r: Review;
   onDelete: () => void;
   className?: string;
-  /* Where the film's own card already carries the invitation — the by-film
-     view — this one stays quiet. Saying it twice on the same screen would make
-     the reader check whether the two are different things. */
+  /** Fica quieto onde o cartão do filme já carrega o convite (visão por filme). */
   invite?: boolean;
 }) {
   const club = useClub();
@@ -296,14 +243,8 @@ function TakeActions({
   );
 }
 
-/* ── the invitation, where the film is ────────────────────────────────────
-   It used to live inside the drawer, which meant the club only found out they
-   could weigh in by opening somebody else's take first — the one action the
-   screen wants to offer was behind the one interaction nobody had a reason to
-   perform. It belongs next to the film's own score, in the open.
-
-   The rule it carries is unchanged: on a film you have already rated there is
-   nothing to invite, so nothing is drawn. */
+/* Morava dentro da gaveta, o que fazia a única ação que a tela quer oferecer
+   ficar atrás da única interação que ninguém tinha motivo para fazer. */
 function Invite({ movieId, className }: { movieId: number; className?: string }) {
   const club = useClub();
   const rated = club.reviews.some(x => x.reviewerId === club.me.id && x.movieId === movieId);
@@ -317,17 +258,9 @@ function Invite({ movieId, className }: { movieId: number; className?: string })
 }
 
 
-/* ── a seta da gaveta, ao lado dos votos ──────────────────────────────────
-   A fileira inteira abre a ficha, e a seta diz que ela abre. Enquanto a linha
-   era um botão só, a seta morava dentro dele; com o par de polegares na mesma
-   linha isso deixou de ser possível — um botão dentro de outro não é uma coisa
-   que o navegador monte — e a linha virou um botão largo com os votos e a seta
-   ao lado.
-
-   Escondida do leitor de tela de propósito: o gesto que ela oferece é o mesmo
-   do botão que ocupa o resto da fileira, e um segundo controle anunciando o
-   mesmo `aria-expanded` seria a mesma frase dita duas vezes seguidas. Para o
-   mouse ela continua clicável, que é o que ela sempre foi. */
+/* Fora do botão porque um botão dentro de outro não é coisa que o navegador
+   monte. Escondida do leitor de tela: o gesto é o mesmo do botão ao lado, e um
+   segundo `aria-expanded` seria a mesma frase duas vezes. */
 function DrawerArrow({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
     <span
@@ -358,33 +291,23 @@ function Take({
   onDelete: () => void;
 }) {
   return (
-    /* A row inside the person's card, not a card of its own. The surface here
-       belongs to the reviewer — everything under that header is one person's
-       record — and a plate for each film sitting on top of that plate would be
-       two boxes claiming the same thing. A hairline is enough to say where one
-       film ends, exactly as the by-film view separates the people under it. */
+    /* Uma fileira dentro do cartão da pessoa, e não um cartão próprio: uma placa
+       por filme em cima da placa dela seriam duas caixas reivindicando a mesma
+       coisa. Um fio de cabelo basta. */
     <div
       id={`take-${r.id}`}
-      /* ── acabou de chegar por link ──────────────────────────────────────
-         Uma folha do facho por cima da fileira, apagando sozinha. Não é um anel
-         nem uma borda colorida: aquilo desenharia uma caixa nova em volta de
-         uma fileira que não tem caixa, e ela ficaria com uma forma diferente
-         das vizinhas pelo tempo do brilho. Uma lâmina de luz por trás some sem
-         deixar geometria para trás.
+      /* Chegando por link, uma lâmina de luz por trás, apagando sozinha: um anel
+         desenharia uma caixa em volta de uma fileira que não tem caixa.
 
-         `scroll-mt` porque a marquise é fixa: sem isso o `scrollIntoView`
+         `scroll-mt` porque a marquise é fixa — sem isso o `scrollIntoView`
          entrega a fileira debaixo do cabeçalho. */
       className={cn(
         'scroll-mt-24 border-t border-white/[0.06] transition-colors duration-700',
         lit && 'bg-beam/[0.07]'
       )}
     >
-      {/* Os polegares saíram da gaveta e vieram para cá, encostados na nota —
-          é dela que se concorda ou se discorda, e enterrados dois cliques
-          abaixo eles só eram encontrados por quem já tinha aberto a ficha por
-          outro motivo. Ficam FORA do botão que abre a gaveta porque um botão
-          dentro de outro não existe em HTML, e porque reagir a uma nota nunca
-          deveria também dobrar um painel. */}
+      {/* Os polegares encostados na nota — é dela que se concorda. FORA do botão
+          que abre a gaveta: reagir a uma nota não deve dobrar um painel. */}
       <div className="flex items-center gap-2 px-3 transition-colors hover:bg-beam/[0.05]">
         <button
           type="button"
@@ -418,19 +341,10 @@ function Take({
   );
 }
 
-/* ── a nota do TMDB, embaixo da do clube ──────────────────────────────────
-   The club's number stays the big one and this stays a footnote, which is the
-   hierarchy the whole product argues for: the verdict here is the club's, and
-   TMDB is the thing it is measured against rather than the thing it is
-   measured by.
-
-   Named TMDB and not "o mundo". It is one site's voters — a specific crowd with
-   a specific bias — and the club is entitled to know which crowd it is
-   disagreeing with.
-
-   Silent when the film cache has never seen the film, which after the column
-   was added means a film rated long ago and not opened since. It fills itself
-   in the next time anybody looks the film up. */
+/* Nota de rodapé, com o número do clube grande: o veredito aqui é do clube, e o
+   TMDB é aquilo contra o que ele se mede. Chamado de TMDB e não "o mundo" — é o
+   público de um site, com o viés dele, e o clube tem direito de saber com quem
+   está discordando. Calado quando o cache nunca viu o filme. */
 function CrowdNote({ crowd }: { crowd: Review['crowd'] }) {
   if (!crowd) return null;
   return (
@@ -438,17 +352,10 @@ function CrowdNote({ crowd }: { crowd: Review['crowd'] }) {
   );
 }
 
-/* ── the person, and everything they sat through ──────────────────────────
-   The mirror of the by-film view, and it earns the same shape for the same
-   reason: this screen is read by looking for one thing in it. Every take from
-   every member laid out at once is a sheet you scroll past, and the member you
-   came for is not helped by the other five being open. So a person arrives as a
-   person — face, name, how many films and their average — and the films are one
-   press away.
-
-   Two levels here too, and they mean what they meant on the other side:
-   opening the person asks what they rated, opening a film asks what they gave
-   each criterion. */
+/* O espelho da visão por filme, com a mesma forma pelo mesmo motivo: esta tela é
+   lida procurando UMA coisa nela, e quem se procura não é ajudado pelos outros
+   cinco estarem abertos. Dois níveis — abrir a pessoa pergunta o que ela
+   avaliou, abrir um filme pergunta o que ela deu em cada critério. */
 function ByReviewer({
   reviews,
   filtering,
@@ -459,29 +366,22 @@ function ByReviewer({
   onToggle,
   onDelete,
 }: {
-  /* Already filtered by the search upstairs, same as the by-film view. */
   reviews: Review[];
-  /* Whether a search is running — not to filter with, only to decide whether
-     the cards should stand open. See below. */
+  /** Se há busca rodando — não para filtrar, só para decidir se as cartas abrem. */
   filtering: boolean;
-  /** Which way the score runs. Decided once, above both views. */
   desc: boolean;
   openIds: ReadonlySet<string>;
-  /** A ficha que acabou de chegar por link, acesa por alguns segundos. */
+  /** A ficha que chegou por link, acesa por alguns segundos. */
   lit: string | null;
-  /* A mesma ficha, mas o valor que não apaga: é ele que abre a carta de quem a
-     assinou. Ver o comentário sobre `flash` e `arrived` lá em cima. */
+  /** A mesma ficha, no valor que não apaga: abre a carta de quem a assinou. */
   arrived: string | null;
   onToggle: (id: string) => void;
   onDelete: (r: Review) => void;
 }) {
   const club = useClub();
 
-  /* Which people are showing their takes. Kept here and not in the card for
-     the same reason as the other view: the card is redrawn whenever the record
-     changes, and state living inside it would fold itself back up.
-
-     Everything starts closed. */
+  /* Aqui e não no cartão: ele é redesenhado a cada mudança no acervo, e estado
+     morando dentro dele se fecharia sozinho. Tudo começa fechado. */
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const toggleGroup = (id: string) =>
     setOpen(prev => {
@@ -491,21 +391,17 @@ function ByReviewer({
       return next;
     });
 
-  /* Uma ficha que chegou por link abre a carta de quem a assinou, uma vez, do
-     mesmo jeito que um clique abriria — e a partir daí ela é uma carta aberta
-     como qualquer outra, que fecha quando alguém a fecha. O efeito só corre
-     quando `arrived` muda, então reabrir à força nunca acontece.
-
-     Isto também é o que faz o link continuar valendo depois de trocar de visão:
-     a outra montada com o mesmo `arrived` abre a carta certa lá também. */
+  /* Abre a carta de quem assinou uma vez, como um clique abriria; daí em diante
+     ela fecha quando alguém a fecha. É também o que faz o link continuar valendo
+     depois de trocar de visão. */
   useEffect(() => {
     if (!arrived) return;
     const who = reviews.find(r => r.id === arrived)?.reviewerId;
     if (who) setOpen(prev => (prev.has(who) ? prev : new Set(prev).add(who)));
   }, [arrived, reviews]);
 
-  /* A search hides the people it did not match: a column of empty names is not
-     an answer to "what did she rate". */
+  /* A busca esconde quem ela não casou: uma coluna de nomes vazios não responde
+     "o que ela avaliou". */
   const people = club.reviewers.filter(p => !filtering || reviews.some(r => r.reviewerId === p.id));
 
   if (!club.reviewers.length)
@@ -517,20 +413,13 @@ function ByReviewer({
         const items = reviews
           .filter(r => r.reviewerId === p.id)
           .sort((a, b) => (desc ? b.final - a.final : a.final - b.final));
-        /* A search forces every matching card open. Collapsed, a hit would show
-           the name of someone who rated the film you typed and then hide the
-           film itself — the card would be the answer to a question you did not
-           ask. Clearing the field hands the cards back to whatever you had
-           opened by hand.
-
-           Um link também abre a carta de quem assinou a ficha — mas por
-           `setOpen` no efeito acima, e não por uma condição aqui. A condição foi
-           o defeito: ela dependia do destaque, o destaque apaga em dois segundos
-           e meio, e a carta se fechava sozinha levando a ficha junto. */
+        /* A busca abre toda carta que casou: fechada, ela mostraria o nome de
+           quem avaliou o filme digitado e esconderia o filme. Um link abre pelo
+           `setOpen` do efeito acima e não por uma condição aqui — a condição foi
+           o defeito, porque dependia do destaque, que apaga sozinho. */
         const expanded = filtering || open.has(p.id);
-        /* Nothing to open on someone who has not rated anything: a chevron that
-           unfolds an empty drawer is a promise the card cannot keep. The header
-           already says "nenhuma avaliação". */
+        /* Quem não avaliou nada não abre: uma seta que desdobra gaveta vazia é
+           uma promessa que o cartão não cumpre. */
         const openable = items.length > 0;
 
         return (

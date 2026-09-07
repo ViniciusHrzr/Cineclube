@@ -257,8 +257,8 @@ function Header({
                 alt=""
                 loading="lazy"
                 /* `max-w-none` porque o preflight do Tailwind põe
-                   `max-width: 100%` em toda imagem, e aqui a largura tem de
-                   sair da altura — sem isto o pôster volta a ser espremido. */
+                   `max-width: 100%` em toda imagem, e aqui a largura sai da
+                   altura — sem isto o pôster volta a ser espremido. */
                 className="h-full w-auto max-w-none flex-none opacity-[0.24]"
               />
             ))}
@@ -266,15 +266,12 @@ function Header({
         </div>
       ) : null}
 
-      {/* O conteúdo é empurrado para baixo da capa quando ela existe, e sobe
-          quando não existe. Um espaçador de altura fixa deixaria um perfil sem
-          fichas abrindo com um palmo de nada. */}
+      {/* Empurrado para baixo da capa quando ela existe, e sobe quando não: um
+          espaçador fixo abriria um perfil sem fichas com um palmo de nada. */}
       <div className={cn('relative', cover.length && 'pt-[104px]')}>
         <div className="flex flex-wrap items-end gap-x-5 gap-y-4">
-          {/* O retrato no tamanho em que vale a pena olhar, no mesmo quadro
-              quadrado que o pequeno usa em todo lugar. Um anel do próprio
-              fundo da sala em volta: sobre a capa ele é o que separa a pessoa
-              dos filmes atrás dela. */}
+          {/* Um anel da cor da sala em volta: sobre a capa, é o que separa a
+              pessoa dos filmes atrás dela. */}
           <Reel
             color={reelColor(person.dot, person.id)}
             src={person.avatar}
@@ -296,8 +293,8 @@ function Header({
                 </span>
               ) : null}
             </h1>
-            {/* O apelido em latão porque um `@` é uma pessoa apontada, e apontar
-                uma pessoa já é latão em toda a conversa deste produto. */}
+            {/* Latão: um `@` é uma pessoa apontada, e apontar alguém já é latão
+                em toda a conversa deste produto. */}
             <p className="q mt-2 flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink-dim">
               {person.handle ? <span className="text-dye-brass">@{person.handle}</span> : null}
               {person.handle && since ? <span aria-hidden>·</span> : null}
@@ -313,27 +310,14 @@ function Header({
           ) : null}
         </div>
 
-        {/* A bio: a única coisa nesta página que a pessoa afirma sobre si.
-            Ausente é o estado normal — todo o resto aqui é derivado do que ela
-            fez, e derivado é mais honesto. */}
         {person.bio ? (
           <p className="mt-4 max-w-[62ch] text-[14px] leading-relaxed text-ink">{person.bio}</p>
         ) : null}
 
-        {/* ── os dois números que interessam ──────────────────────────────
-            Quantos filmes e a média. Uma frase tabular e não uma fileira de
-            cartões: caixas com um número grande e um rótulo pequeno gastam um
-            quarto da tela para dizer o que cabe numa linha. Os números são
-            `ink` e as palavras são `ink-dim`, então o olho pega os números
-            primeiro e o resto se lê como texto.
-
-            Havia mais quatro aqui — comentários escritos, concordâncias,
+        {/* Havia mais quatro números aqui — comentários, concordâncias,
             discordâncias e curtidas recebidas — e o dono os cortou em
-            30/08/2026. Estavam medindo a coisa errada no lugar errado: um
-            perfil abre dizendo o que a pessoa VIU, e um placar de reação
-            recebida logo abaixo do nome transforma isso num boletim de
-            popularidade. A reação continua onde ela significa alguma coisa,
-            que é ao lado da ficha que a recebeu. */}
+            30/08/2026: um placar de reação abaixo do nome vira boletim de
+            popularidade. A reação fica ao lado da ficha que a recebeu. */}
         <p className="q mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-ink-dim">
           <span>
             <span className="text-ink">{takes.length}</span>{' '}
@@ -353,14 +337,8 @@ function Header({
   );
 }
 
-/* ══ o que ela mais amou e o que mais detestou ════════════════════════════
-   Duas fichas, dois pôsteres, e nenhuma média. É o módulo mais barato da
-   página e um dos que mais dizem: extremos são o que qualquer pessoa conta
-   primeiro quando explica o próprio gosto para outra.
-
-   Lado a lado e do mesmo tamanho, de propósito. O de cima em destaque e o de
-   baixo pequeno seria a página opinando sobre qual dos dois vale mais — e o
-   filme que alguém odiou é tão informativo quanto o que amou. */
+/* Lado a lado e do mesmo tamanho: o filme que alguém odiou é tão informativo
+   quanto o que amou. */
 function Ends({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: string) => void }) {
   const club = useClub();
   const ends = endsOf(club.reviews, person.id);
@@ -408,15 +386,9 @@ function EndCard({
   );
 }
 
-/* ══ ela contra o público ═════════════════════════════════════════════════
-   A única régua externa que este produto tem, e ela sai de graça: a nota do
-   TMDB já viaja em toda ficha.
-
-   Escrito como frase e não como painel. É um fato único com um número dentro,
-   e um fato único num cartão com rótulo em versalete é um número procurando
-   parecer um relatório. A frase carrega o caso junto — o filme onde a distância
-   foi maior — porque um número sem exemplo é estatística e com exemplo é
-   argumento. */
+/* A única régua externa que este produto tem, e sai de graça: a nota do TMDB já
+   viaja em toda ficha. Frase e não painel — e carrega o filme onde a distância
+   foi maior, porque número sem exemplo é estatística. */
 function Crowd({
   person,
   mine,
@@ -430,11 +402,10 @@ function Crowd({
   const crowd = crowdGapOf(club.reviews, person.id);
   if (!crowd) return null;
 
-  /* A frase muda de pessoa gramatical no seu próprio perfil. Um perfil que só
-     fala de você na terceira pessoa é um dossiê sobre você. */
+  /* Um perfil que fala de você na terceira pessoa é um dossiê sobre você. */
   const subject = mine ? 'você' : person.name.split(' ')[0];
-  /* Meio ponto é o passo do controle de nota. Uma diferença menor que isso não é
-     "mais generoso", é a mesma opinião com ruído de arredondamento em volta. */
+  /* Meio ponto é o passo do controle de nota: menos que isso não é "mais
+     generoso", é a mesma opinião com ruído de arredondamento em volta. */
   const aligned = Math.abs(crowd.gap) < 0.5;
   const leaning = crowd.gap > 0 ? 'generoso' : 'severo';
 
@@ -467,36 +438,18 @@ function Crowd({
   );
 }
 
-/* ══ a régua dela ═════════════════════════════════════════════════════════
-   A distribuição das notas em dez faixas. Responde o que a média esconde: duas
-   pessoas com média 7,4 podem ser opostas — uma que dá 7 e 8 em tudo, outra que
-   dá 3 e 10 —, e a segunda é muito mais interessante de ter no clube.
+/* A distribuição das notas em dez faixas: responde o que a média esconde — duas
+   pessoas com média 7,4 podem ser opostas.
 
-   Feito das mesmas células de película do resto do produto, empilhadas em vez
-   de enfileiradas. Não é um gráfico de barras emprestado de um painel: é a
-   mesma matéria, virada de lado. */
-/* ── uma faixa se aponta, e ela responde ──────────────────────────────────
-   A primeira versão eram dez blocos de altura proporcional, e ela falhava em
-   duas coisas de uma vez. Não dava para LER — quatro colunas de alturas
-   parecidas não dizem se são duas ou três fichas, e a faixa vazia virava um
-   fiapo indistinguível do eixo. E não respondia a pergunta que ela mesma
-   provoca: alguém que vê três filmes entre 7 e 8 quer saber quais.
-
-   A altura agora é uma pilha de células, uma por filme. A contagem se lê
-   contando, que é exato, em vez de se estimar por comprimento, que não é. E é
-   a mesma matéria do resto do produto — a régua de nota é uma fileira de
-   células, esta é a mesma coisa virada de lado.
-
-   Apontar uma faixa acende ela em facho e derrama os filmes dela embaixo.
-   Passar o mouse mostra; clicar prende, e é o que faz isto funcionar no dedo,
-   onde não existe passar por cima. Uma faixa vazia não é botão: não há o que
-   ela possa mostrar, e um alvo que não responde é pior do que nenhum. */
+   A altura é uma pilha de células, uma por filme, e não um bloco proporcional:
+   a contagem se lê contando, que é exato, em vez de se estimar por comprimento.
+   Passar o mouse mostra os filmes da faixa; clicar prende, que é o que faz isto
+   funcionar no dedo. Faixa vazia não é botão. */
 function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: string) => void }) {
   const club = useClub();
   const spread = spreadOf(club.reviews, person.id);
-  /* Duas fontes para o mesmo destaque: a passagem do mouse, que é efêmera, e o
-     clique, que fica. O `??` é o que deixa o ponteiro pré-visualizar sem tirar
-     do lugar o que alguém prendeu. */
+  /* O `??` deixa o ponteiro pré-visualizar sem tirar do lugar o que foi
+     prendido no clique. */
   const [hover, setHover] = useState<number | null>(null);
   const [pinned, setPinned] = useState<number | null>(null);
   if (!spread || spread.n < FLOOR.ends) return null;
@@ -547,10 +500,8 @@ function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: stri
                     onClick={() => setPinned(p => (p === i ? null : i))}
                     className="flex w-full flex-col-reverse gap-[2px] rounded-[1px] pt-4"
                   >
-                    {/* Uma célula por filme, empilhada de baixo para cima. Doze
-                        pixels de altura: o bastante para se contar de relance e
-                        pouco o bastante para uma pessoa com quinze fichas numa
-                        faixa não estourar a placa. */}
+                    {/* Doze pixels: contável de relance, e baixo o bastante para
+                        quinze fichas numa faixa não estourarem a placa. */}
                     {films.map(r => (
                       <span
                         key={r.id}
@@ -562,10 +513,8 @@ function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: stri
                     ))}
                   </button>
                 ) : (
-                  /* A faixa vazia é o dado mais fácil de perder e um dos mais
-                     interessantes: é onde essa pessoa nunca pôs uma nota. Fica
-                     como uma célula apagada, da altura de uma só, para o buraco
-                     ter forma em vez de virar um fiapo colado no eixo. */
+                  /* Uma célula apagada, e não nada: é onde essa pessoa nunca pôs
+                     nota, e o buraco precisa ter forma. */
                   <span
                     aria-label={label}
                     title={label}
@@ -585,9 +534,9 @@ function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: stri
           })}
         </ul>
 
-        {/* Os filmes da faixa apontada, na própria placa. Uma gaveta aqui seria
-            um painel que empurra a página inteira a cada passagem de mouse; a
-            lista só troca de conteúdo, e a placa cresce uma vez. */}
+        {/* Na própria placa: uma gaveta empurraria a página inteira a cada
+            passagem de mouse. A lista troca de conteúdo, e a placa cresce uma
+            vez só. */}
         {band?.length ? (
           <ul className="mt-4 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
             {band.map(r => (
@@ -609,9 +558,8 @@ function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: stri
           </ul>
         ) : null}
 
-        {/* A instrução aparece só enquanto ninguém apontou nada. Depois disso a
-            pessoa já sabe, e uma linha permanente explicando um gesto que já foi
-            feito é ruído. */}
+        {/* Só enquanto ninguém apontou: uma linha explicando um gesto já feito é
+            ruído. */}
         {active == null ? (
           <p className="q mt-3 text-[10.5px] text-ink-dim">
             aponte uma faixa para ver os filmes dela
@@ -622,17 +570,10 @@ function Ruler({ person, onOpenTake }: { person: Reviewer; onOpenTake: (id: stri
   );
 }
 
-/* ══ com quem ela concorda ════════════════════════════════════════════════
-   O módulo mais social da página, e ele não existe em nenhum outro app de
-   filme: é uma rede medida em gosto, não em quem segue quem.
-
-   Cada linha é uma pessoa, a distância média entre as notas das duas nos filmes
-   que ambas viram, e — quando existe — o filme onde elas mais brigaram. A
-   distância é desenhada como comprimento, porque "1,8" precisa ser convertido
-   e um comprimento não.
-
-   Cada linha é uma porta para o perfil daquela pessoa. É por aqui que se navega
-   o clube: você chega em alguém pelo feed, vê com quem ela discorda, e vai. */
+/* Uma rede medida em gosto e não em quem segue quem: a distância média entre as
+   notas de duas pessoas nos filmes que ambas viram, e o filme onde brigaram
+   mais. Cada linha é uma porta para o perfil daquela pessoa — é por aqui que se
+   navega o clube. */
 function Affinities({ person, mine }: { person: Reviewer; mine: boolean }) {
   const club = useClub();
   const list = affinityOf(club.reviews, club.reviewers, person.id);
@@ -661,14 +602,10 @@ function Affinities({ person, mine }: { person: Reviewer; mine: boolean }) {
                   {a.clash ? ` · brigaram em ${a.clash.title}` : ''}
                 </span>
               </span>
-              {/* A distância como comprimento e como número. A régua enche da
-                  DIREITA para a esquerda: acordo é distância zero, e uma barra
-                  que cresce com a discordância deixa o par mais parecido com a
-                  barra mais curta — que é a leitura certa e a intuitiva.
-
-                  Cinco pontos de escala e não dez: dois amigos que discordam
-                  cinco pontos em média já é o teto real da coisa, e usar dez
-                  espremeria todas as linhas do clube no primeiro terço. */}
+              {/* A régua enche da DIREITA para a esquerda: acordo é distância
+                  zero, e a barra mais cheia tem de ser o par mais parecido.
+                  Escala de cinco pontos e não dez — cinco de diferença média já
+                  é o teto real, e dez espremeria todo mundo no primeiro terço. */}
               <span className="flex flex-none items-center gap-2.5">
                 <Strip
                   value={Math.max(0, 10 - Math.min(5, a.gap) * 2)}
@@ -690,17 +627,9 @@ function Affinities({ person, mine }: { person: Reviewer; mine: boolean }) {
   );
 }
 
-/* ══ você e ela, ficha por ficha ══════════════════════════════════════════
-   A afinidade diz *quanto*; isto diz *onde*. Duas colunas, os filmes que vocês
-   dois viram, do maior desacordo para o menor — porque ninguém abre isto para
-   descobrir onde concordou.
-
-   Numa gaveta e não numa rota: quem aperta está no meio de ler um perfil, e
-   trocar de página para ver uma comparação e voltar é perder o lugar. Fechada
-   ao chegar, porque a página já é longa e isto é uma segunda pergunta.
-
-   Não existe no seu próprio perfil: comparar você com você é uma coluna de
-   zeros. */
+/* A afinidade diz quanto; isto diz onde. Do maior desacordo para o menor, porque
+   ninguém abre isto para descobrir onde concordou. Não existe no seu próprio
+   perfil: comparar você com você é uma coluna de zeros. */
 function Compare({ person }: { person: Reviewer }) {
   const club = useClub();
   const [open, setOpen] = useState(false);
@@ -735,8 +664,7 @@ function Compare({ person }: { person: Reviewer }) {
       <Drawer open={open}>
         {touched ? (
           <div className="pt-4">
-            {/* O cabeçalho das colunas, uma vez. Sem ele as duas notas de cada
-                linha são dois números sem dono. */}
+            {/* Sem ele, as duas notas de cada linha são números sem dono. */}
             <div className="flex items-center gap-3 pb-2">
               <span className="min-w-0 flex-1" />
               <span className="legend w-[46px] flex-none text-center text-[10px]">Você</span>
@@ -747,9 +675,7 @@ function Compare({ person }: { person: Reviewer }) {
             </div>
             <ul className="flex flex-col">
               {rows.map(c => {
-                /* O mesmo limiar da régua de divergência do acervo: a partir de
-                   dois pontos a diferença acende em facho, porque discordar é
-                   informação e não defeito. */
+                /* O mesmo limiar da divergência no acervo: dois pontos. */
                 const loud = c.gap >= 2;
                 return (
                   <li key={c.movieId} className="border-t border-white/[0.06]">
@@ -789,13 +715,8 @@ function Compare({ person }: { person: Reviewer }) {
   );
 }
 
-/* ══ em que gêneros ela vive ══════════════════════════════════════════════
-   Quantas fichas e a média em cada gênero. Sem piso: contar filmes não afirma
-   nada sobre gosto, e "três de terror" é verdade absoluta mesmo com três fichas
-   no total.
-
-   Uma linha corrida de fatias e não uma lista. É informação de contorno — dá o
-   feitio do que a pessoa assiste sem pedir leitura linha a linha. */
+/* Sem piso, ao contrário do resto da página: contar filmes não afirma nada sobre
+   gosto, e "três de terror" é verdade absoluta mesmo com três fichas no total. */
 function Genres({ person }: { person: Reviewer }) {
   const club = useClub();
   const list = genresOf(club.reviews, person.id);
@@ -822,50 +743,27 @@ function Genres({ person }: { person: Reviewer }) {
   );
 }
 
-/* ══ o que ela pôs na fila ════════════════════════════════════════════════
-   A fila é do clube, mas cada filme nela foi ideia de alguém — e o que uma
-   pessoa quer ver é tão revelador quanto o que ela já viu. É a única coisa
-   neste perfil que fala do futuro.
+/* Um trilho e não uma grade: era uma grade que crescia para baixo, e numa fila
+   de trinta filmes ela empurrava o resto da página para fora da tela — a seção
+   menos importante ocupando mais espaço que qualquer outra.
 
-   ── um trilho, não uma parede ───────────────────────────────────────────
-   Era uma grade que crescia para baixo, e numa fila de trinta filmes ela
-   empurrava tudo o que vem depois para fora da tela: quem estava lendo o perfil
-   de alguém passava a rolar um mural de pôsteres de filmes que ninguém viu
-   ainda. A fila é a seção menos importante da página e estava ocupando mais
-   espaço que qualquer outra.
-
-   Uma linha só, que corre para o lado. O que sobra da tela continua sendo da
-   página, e a fila diz o tamanho dela sem tomar a altura.
-
-   ── por que sem biblioteca de animação ──────────────────────────────────
-   Porque `scrollBy({ behavior: 'smooth' })` é a rolagem animada do próprio
-   navegador: composta fora da thread principal, interrompível pelo dedo no meio
-   do movimento, e já obediente a `prefers-reduced-motion` sem ninguém pedir.
-   Qualquer animação escrita à mão aqui seria uma reimplementação pior — e o
-   projeto teria de carregar um segundo pacote de animação para isso.
-
-   O que é animado à mão é o que o navegador não dá: as máscaras das bordas, que
-   acendem só do lado em que ainda há filme, e a gaveta do "ver todos", que é a
-   mesma transição de `grid-template-rows` que o resto do produto usa. */
+   `scrollBy({ behavior: 'smooth' })` é a rolagem animada do próprio navegador:
+   composta fora da thread principal, interrompível pelo dedo, e já obediente a
+   `prefers-reduced-motion`. À mão só o que o navegador não dá — as máscaras das
+   bordas e a gaveta do "ver todos". */
 function Queued({ person }: { person: Reviewer }) {
   const club = useClub();
   const items = club.watchlist.filter(w => w.addedBy === person.id);
   const [open, setOpen] = useState(false);
   const [touched, setTouched] = useState(false);
   const rail = useRef<HTMLUListElement>(null);
-  /* O que a régua de rolagem sabe sobre si mesma. Medido, nunca deduzido da
-     contagem: quantos pôsteres cabem depende da largura da janela, do zoom da
-     interface e do tamanho da fonte, e chutar isso erra em metade das telas. */
+  /* Medido, nunca deduzido da contagem: quantos pôsteres cabem depende da
+     largura da janela, do zoom e do tamanho da fonte. */
   const [edge, setEdge] = useState({ start: true, end: true, over: false });
 
-  /* Uma medição só, chamada pela rolagem, pelo redimensionamento e pela troca
-     de conteúdo. `passive` porque isto nunca cancela o gesto — segurar a
-     rolagem para decidir se uma máscara acende é exatamente o defeito que essa
-     bandeira existe para evitar.
-
-     A folga de 2px absorve o arredondamento subpixel: em zoom fracionário
-     `scrollLeft + clientWidth` fica dezenas de milésimos abaixo de
-     `scrollWidth`, e sem ela a máscara da direita nunca apagaria. */
+  /* `passive` porque isto nunca cancela o gesto. A folga de 2px absorve o
+     arredondamento subpixel: em zoom fracionário `scrollLeft + clientWidth` fica
+     milésimos abaixo de `scrollWidth`, e a máscara da direita nunca apagaria. */
   const measure = useCallback(() => {
     const el = rail.current;
     if (!el) return;
@@ -880,7 +778,7 @@ function Queued({ person }: { person: Reviewer }) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     // As crianças também: um pôster que chega troca a largura do conteúdo sem
-    // trocar a do trilho, e só o observador do trilho não veria isso.
+    // trocar a do trilho.
     for (const child of Array.from(el.children)) ro.observe(child);
     el.addEventListener('scroll', measure, { passive: true });
     return () => {
@@ -891,10 +789,9 @@ function Queued({ person }: { person: Reviewer }) {
 
   if (!items.length) return null;
 
-  /* Oitenta por cento da largura visível, e não uma contagem de pôsteres: uma
-     seta que anda "três filmes" anda distâncias diferentes em cada tela. O
-     resto de vinte por cento é a âncora — sobra sempre um pôster do que estava
-     à vista, e é ele que diz que a fileira andou em vez de ter trocado. */
+  /* Oitenta por cento da largura visível e não uma contagem de pôsteres: uma
+     seta que anda "três filmes" anda distâncias diferentes em cada tela. Os
+     vinte por cento que sobram são a âncora do que estava à vista. */
   const nudge = (dir: 1 | -1) => {
     const el = rail.current;
     if (!el) return;
@@ -906,9 +803,8 @@ function Queued({ person }: { person: Reviewer }) {
     <Region
       title="Na fila"
       note={
-        /* A opção de abrir tudo só existe quando há o que abrir. Com seis
-           pôsteres numa tela larga nada está escondido, e um "ver todos" ali
-           seria um botão que não faz nada visível. */
+        /* Só quando há o que abrir: com tudo à vista, "ver todos" seria um botão
+           que não faz nada visível. */
         edge.over || open ? (
           <button
             type="button"
@@ -926,31 +822,19 @@ function Queued({ person }: { person: Reviewer }) {
         )
       }
     >
-      {/* ── o trilho ───────────────────────────────────────────────────────
-          Recolhe quando a grade abre, e as duas transições correm juntas: a
-          altura do trilho fecha no mesmo tempo em que a da grade abre, então a
+      {/* Recolhe quando a grade abre, e as duas transições correm juntas: a
           seção nunca salta de tamanho no meio da troca. */}
       <Drawer open={!open}>
         <div className="relative">
           <ul
             ref={rail}
-            /* `scroll-px-11` são os mesmos 44px da máscara, e ele é a peça de
-               teclado desta lista: cada pôster é um botão, então o Tab já
-               percorre o trilho e o navegador rola sozinho até o que recebeu
-               foco — mas rolaria até encostá-lo na borda, que é justamente onde
-               a máscara o apaga e a seta o cobre. Com o recuo, o pôster focado
-               para dentro do claro.
-
-               A barra de rolagem some porque mora sobre a fileira e a corta; as
-               setas e as máscaras é que dizem que há mais. */
+            /* `scroll-px-11` são os mesmos 44px da máscara, e é a peça de
+               teclado desta lista: sem o recuo, o Tab rolaria o pôster focado até
+               a borda, que é onde a máscara o apaga e a seta o cobre. */
             className="flex gap-3 overflow-x-auto scroll-px-11 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             style={{
-              /* A máscara é o gesto: a fileira não termina numa borda reta, ela
-                 se apaga onde continua. Só do lado em que há mais — apagar uma
-                 ponta que já acabou seria dizer que existe conteúdo ali.
-
-                 Escrita em duas paradas por lado para que os lados possam ser
-                 ligados e desligados de forma independente. */
+              /* Só do lado em que há mais: apagar uma ponta que já acabou seria
+                 dizer que existe conteúdo ali. */
               maskImage: `linear-gradient(to right, ${
                 edge.start ? 'black 0' : 'transparent 0, black 44px'
               }, ${edge.end ? 'black 100%' : 'black calc(100% - 44px), transparent 100%'})`,
@@ -966,25 +850,18 @@ function Queued({ person }: { person: Reviewer }) {
             ))}
           </ul>
 
-          {/* As setas, uma por lado, e só a que tem para onde ir. Ficam fora do
-              `<ul>` porque a máscara as apagaria junto com os pôsteres, e
-              escondidas do leitor de tela porque um trilho de rolagem já é
-              percorrível pelo teclado — para quem lê por áudio elas seriam dois
-              controles a mais oferecendo o que a lista já faz. */}
+          {/* Fora do `<ul>` porque a máscara as apagaria junto com os pôsteres, e
+              escondidas do leitor de tela porque o trilho já é percorrível pelo
+              teclado. */}
           <RailKey side="left" show={!edge.start} onClick={() => nudge(-1)} />
           <RailKey side="right" show={!edge.end} onClick={() => nudge(1)} />
         </div>
       </Drawer>
 
-      {/* A grade inteira, com a mesma medida de pôster do trilho, para que
-          expandir seja a mesma fileira quebrando em linhas e não um segundo
-          desenho da mesma coisa.
-
-          Montada só depois do primeiro "ver todos": as duas formas desenham os
-          mesmos filmes, e montá-las juntas de saída seria pedir ao navegador
-          duas imagens por filme numa seção que a maioria das pessoas nunca vai
-          abrir. Depois de aberta ela fica, senão o recolher animaria de altura
-          zero para altura zero. */}
+      {/* Montada só depois do primeiro "ver todos": as duas formas desenham os
+          mesmos filmes, e montar as duas de saída seriam duas imagens por filme
+          numa seção que a maioria nunca abre. Depois de aberta ela fica, senão o
+          recolher animaria de altura zero para altura zero. */}
       <Drawer open={open}>
         {touched ? (
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-3 pb-1">
@@ -1000,7 +877,6 @@ function Queued({ person }: { person: Reviewer }) {
   );
 }
 
-/** Um pôster da fila. O mesmo nas duas formas — o trilho e a grade. */
 function QueuedPoster({ item, onOpen }: { item: WatchItem; onOpen: () => void }) {
   return (
     <button
@@ -1020,11 +896,9 @@ function QueuedPoster({ item, onOpen }: { item: WatchItem; onOpen: () => void })
   );
 }
 
-/* A seta que empurra o trilho. Aparece e some com uma opacidade — some, e não
-   deixa de ser desenhada, porque um controle que salta para fora do DOM ao ser
+/* Some por opacidade e não sai do DOM: um controle que desaparece ao ser
    apertado tira o foco de baixo do dedo no fim do gesto. `pointer-events`
-   acompanham a opacidade para que a seta apagada não intercepte o clique do
-   pôster que está embaixo dela. */
+   acompanham, para a seta apagada não interceptar o clique do pôster. */
 function RailKey({
   side,
   show,
@@ -1041,10 +915,8 @@ function RailKey({
       aria-hidden
       tabIndex={-1}
       onClick={onClick}
-      /* 63px é a metade da altura de um pôster: 84px de largura na proporção
-         2:3 dão 126px. Centrada no PÔSTER e não na fileira, porque a fileira
-         inclui a linha do título embaixo e a seta desceria para o meio do
-         texto. Um valor fixo funciona porque a largura do item também é fixa. */
+      /* 63px é metade da altura do pôster (84px de largura em 2:3 dão 126px).
+         Centrada no PÔSTER e não na fileira, que inclui o título embaixo. */
       className={cn(
         'absolute top-[63px] flex h-8 w-8 -translate-y-1/2 items-center justify-center',
         'rounded-cell bg-house/85 text-ink-dim ring-1 ring-house-rail',
@@ -1058,27 +930,13 @@ function RailKey({
   );
 }
 
-/* ══ tudo o que ela avaliou ═══════════════════════════════════════════════
-   O arquivo dela, do mais recente para o mais antigo — a única lista da página
-   em ordem de tempo, porque é a única que responde "o que andou vendo".
+/* A ficha abre AQUI, e não no acervo: cada linha levava para outra aba e quem
+   estava percorrendo doze fichas de uma pessoa não voltava. As peças são as
+   MESMAS do acervo e do feed (`Breakdown`, `TakeVotes`, `Conversation`), que é
+   o motivo de o detalhamento ter saído de screens/ e virado componente.
 
-   ── a ficha abre AQUI ───────────────────────────────────────────────────
-   Cada linha levava ao acervo, e isso estava errado de um jeito que só aparece
-   usando: quem está percorrendo doze fichas de uma pessoa clica numa, é jogado
-   para outra aba, e não volta. O perfil virava um índice de saída em vez de um
-   lugar onde se explora alguém — e explorar era a coisa toda.
-
-   Agora a linha desdobra na própria lista: os onze critérios, o que a pessoa
-   escreveu, o par de polegares e a conversa inteira. Não é uma cópia de nada —
-   são as MESMAS peças do acervo e do feed (`Breakdown`, `TakeVotes`,
-   `Conversation`), que é o motivo de o detalhamento ter saído de screens/
-   e virado componente.
-
-   Uma de cada vez, e essa é a diferença deliberada para o acervo, onde várias
-   ficam abertas juntas. Lá a tela existe para COMPARAR — duas fichas do mesmo
-   filme lado a lado é a pergunta que ela responde. Aqui todas as fichas são da
-   mesma pessoa, não há nada para comparar entre elas, e doze gavetas abertas
-   fariam a página perder o pé. */
+   Uma de cada vez, ao contrário do acervo: lá a tela existe para COMPARAR duas
+   fichas do mesmo filme; aqui são todas da mesma pessoa. */
 function Takes({
   person,
   mine,
@@ -1087,8 +945,7 @@ function Takes({
 }: {
   person: Reviewer;
   mine: boolean;
-  /* Qual ficha está aberta. Vem de cima porque quatro lugares da página abrem
-     uma — ver a nota em `ProfileScreen`. */
+  /** Vem de cima porque quatro lugares da página abrem uma. */
   open: string | null;
   onToggle: (id: string) => void;
 }) {
@@ -1114,8 +971,7 @@ function Takes({
     );
   }
 
-  /* Uma ficha aberta nunca fica escondida atrás do "ver as outras": abrir uma
-     coisa e ela não aparecer é o botão mentindo. */
+  /* Uma ficha aberta nunca fica escondida atrás do "ver as outras". */
   const openIndex = open ? takes.findIndex(r => r.id === open) : -1;
   const shown = all || openIndex >= 12 ? takes : takes.slice(0, 12);
   const hidden = takes.length - shown.length;
@@ -1152,28 +1008,23 @@ function TakeLine({
   onToggle: () => void;
 }) {
   const club = useClub();
-  /* A reação que a ficha juntou, contada do que o clube já carregou. Muda no
-     zero, como em todo lugar: uma fileira de zeros embaixo de cada linha conta
-     que ninguém falou nada, que é ruído com formato de dado. */
+  /* Cada contagem se cala em zero: uma fileira de zeros embaixo de cada linha é
+     ruído com formato de dado. */
   const cast = club.votes.filter(v => v.reviewId === review.id);
   const up = cast.filter(v => v.value === 1).length;
   const down = cast.filter(v => v.value === -1).length;
   const talk = club.comments.filter(c => c.reviewId === review.id).length;
 
-  /* Aberta uma vez, montada para sempre — enquanto a fileira viver. Montar as
-     doze de saída seria uma tela inteira de trabalho, com doze conversas e doze
-     detalhamentos, pelo que ninguém pediu ainda; e desmontar ao fechar faria a
-     gaveta recolher de altura zero para altura zero, um sumiço seco no lugar da
-     animação. Mesma decisão que a conversa do feed já tinha tomado. */
+  /* Aberta uma vez, montada para sempre: montar as doze de saída seriam doze
+     conversas e doze detalhamentos que ninguém pediu, e desmontar ao fechar
+     faria a gaveta recolher de altura zero para altura zero. */
   const [touched, setTouched] = useState(open);
   if (open && !touched) setTouched(true);
 
   return (
     <div id={`ficha-${review.id}`} className="scroll-mt-24">
-      {/* Os contadores de reação só aparecem com a gaveta FECHADA. Abertos, os
-          controles de verdade estão logo abaixo com os mesmos números dentro —
-          e o mesmo par de números duas vezes na mesma fileira faz o olho parar
-          para procurar a diferença entre eles. */}
+      {/* Os contadores só aparecem com a gaveta FECHADA: abertos, os controles de
+          verdade estão logo abaixo com os mesmos números dentro. */}
       <button
         type="button"
         onClick={onToggle}
@@ -1229,12 +1080,6 @@ function TakeLine({
       </span>
       </button>
 
-      {/* ── a ficha aberta ────────────────────────────────────────────────
-          As mesmas peças do acervo e do feed, montadas aqui. `Breakdown` traz
-          os onze critérios e o que a pessoa escreveu; `TakeVotes` traz o par de
-          polegares com as mesmas regras de sempre (na própria ficha os botões
-          somem e sobra o placar); `Conversation` traz o fio inteiro, com
-          resposta, menção e curtida. */}
       <Drawer open={open}>
         {touched ? (
           <div id={`ficha-corpo-${review.id}`} className="px-2 pb-4 pt-1">
