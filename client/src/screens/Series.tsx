@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronLeft, Layers, Play, Plus, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronLeft, Layers, Play, Plus, Star, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import {
   Bill,
@@ -609,7 +609,13 @@ export function ShowScreen({
                   ep={ep}
                   takes={porEpisodio.get(`${ep.season}x${ep.episode}`) ?? []}
                   meId={meId}
+                  showId={show.id}
+                  showTitle={show.title}
+                  showPoster={show.poster}
+                  genre={genero}
                   onOpen={() => setAberto(ep)}
+                  onSaved={onSaved}
+                  fault={fault}
                 />
               ))}
             </ul>
@@ -643,18 +649,39 @@ export function ShowScreen({
 }
 
 /* ── uma linha de episódio ────────────────────────────────────────────────
-   O quadro, o número, o título, e o que o clube já disse. A linha inteira abre
-   a folha; o que ela mostra sem abrir é o placar. */
+   O quadro, o número, o título, e o que o clube já disse.
+
+   A linha tem dois gestos, e são de tamanhos diferentes. **Marcar que viu** é
+   o de toda semana, e por isso o check é o próprio controle: clicar nele
+   marca, clicar de novo desmarca, e nada abre. Ele era um símbolo do estado —
+   parecia um check e não era —, e mudar de estado obrigava a abrir a folha,
+   ler nove critérios e achar um botão lá dentro para dizer uma coisa que o
+   dedo já estava em cima de dizer.
+
+   **Avaliar** é o gesto raro, e é um botão com nome ao lado do check: quem
+   quer dar nota pede a folha, e quem só viu o episódio nunca precisa dela. */
 function EpisodeRow({
   ep,
   takes,
   meId,
+  showId,
+  showTitle,
+  showPoster,
+  genre,
   onOpen,
+  onSaved,
+  fault,
 }: {
   ep: Episode;
   takes: EpisodeTake[];
   meId: string;
+  showId: number;
+  showTitle: string;
+  showPoster: string | null;
+  genre: string;
   onOpen: () => void;
+  onSaved: () => void;
+  fault: (msg: string) => void;
 }) {
   const minha = takes.find(t => t.reviewerId === meId) ?? null;
   const comNota = takes.filter(t => t.final != null);
@@ -662,51 +689,118 @@ function EpisodeRow({
     ? comNota.reduce((s, t) => s + (t.final ?? 0), 0) / comNota.length
     : null;
 
+  const [salvando, setSalvando] = useState(false);
+  /* O check responde ao toque e não à volta da rede: gravar recarrega o acervo
+     inteiro, e esperar por ele deixava o gesto mais barato do produto com meio
+     segundo de silêncio depois do clique. O palpite cai sozinho quando a ficha
+     volta do servidor — ou na hora, se ela não voltar. */
+  const [otimista, setOtimista] = useState<boolean | null>(null);
+  useEffect(() => {
+    setOtimista(null);
+  }, [minha]);
+  const visto = otimista ?? minha != null;
+
+  const alternar = useCallback(async () => {
+    if (salvando) return;
+    const marcar = minha == null;
+    /* Desmarcar apaga a linha, e a linha é onde a nota mora. Um toque distraído
+       não leva uma ficha criteriosa junto sem perguntar. */
+    if (
+      !marcar &&
+      minha?.final != null &&
+      !confirm(
+        `Desmarcar T${ep.season}E${ep.episode} apaga também a sua nota deste episódio. Continuar?`
+      )
+    ) {
+      return;
+    }
+    setSalvando(true);
+    setOtimista(marcar);
+    try {
+      if (marcar) {
+        await showsApi.mark(showId, ep.season, ep.episode, {
+          showTitle,
+          showPoster,
+          episodeTitle: ep.title,
+          genre,
+        });
+      } else {
+        await showsApi.unmark(showId, ep.season, ep.episode);
+      }
+      onSaved();
+    } catch (e) {
+      setOtimista(null);
+      fault(
+        (marcar ? 'Não foi possível marcar: ' : 'Não foi possível desmarcar: ') +
+          (e as Error).message
+      );
+    } finally {
+      setSalvando(false);
+    }
+  }, [
+    salvando,
+    minha,
+    showId,
+    ep.season,
+    ep.episode,
+    ep.title,
+    showTitle,
+    showPoster,
+    genre,
+    onSaved,
+    fault,
+  ]);
+
   return (
     <li className="border-t border-white/[0.06] first:border-t-0">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="group flex w-full items-center gap-3 rounded-cell px-2 py-3 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
-      >
-        {/* O quadro do episódio é 16:9 e não um cartaz: é uma cena, não uma
-            capa. Sem quadro, uma caixa vazia da mesma medida — o buraco tem de
-            ter forma, ou a lista desalinha. */}
-        {ep.still ? (
-          <img
-            src={ep.still}
-            alt=""
-            loading="lazy"
-            className="aspect-video w-[104px] flex-none rounded-cell object-cover ring-1 ring-white/[0.06]"
-          />
-        ) : (
-          <span aria-hidden className="aspect-video w-[104px] flex-none rounded-cell bg-house-deep ring-1 ring-white/[0.06]" />
-        )}
+      {/* O contêiner não é mais um botão: dentro dele há três alvos com três
+          destinos, e um botão dentro de outro é HTML inválido antes de ser
+          confuso. O realce de linha continua, agora no grupo. */}
+      <div className="group flex w-full items-center gap-3 rounded-cell px-2 py-3 transition-colors duration-150 hover:bg-beam/[0.05]">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          {/* O quadro do episódio é 16:9 e não um cartaz: é uma cena, não uma
+              capa. Sem quadro, uma caixa vazia da mesma medida — o buraco tem de
+              ter forma, ou a lista desalinha. */}
+          {ep.still ? (
+            <img
+              src={ep.still}
+              alt=""
+              loading="lazy"
+              className="aspect-video w-[104px] flex-none rounded-cell object-cover ring-1 ring-white/[0.06]"
+            />
+          ) : (
+            <span aria-hidden className="aspect-video w-[104px] flex-none rounded-cell bg-house-deep ring-1 ring-white/[0.06]" />
+          )}
 
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-baseline gap-x-2">
-            <span className="q text-[11.5px] text-ink-dim">
-              T{ep.season}E{String(ep.episode).padStart(2, '0')}
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className="q text-[11.5px] text-ink-dim">
+                T{ep.season}E{String(ep.episode).padStart(2, '0')}
+              </span>
+              <span className="truncate text-[14px] text-ink transition-colors group-hover:text-beam">
+                {ep.title}
+              </span>
+              {/* O TMDB marca fim de arco e fim de temporada. É informação que o
+                  clube usaria de cor, e ela vem de graça. */}
+              {ep.kind === 'finale' ? (
+                <span className="legend flex-none text-[9px] text-dye-brass">Final</span>
+              ) : null}
             </span>
-            <span className="truncate text-[14px] text-ink transition-colors group-hover:text-beam">
-              {ep.title}
+            <span className="q mt-1 block text-[11px] text-ink-faint">
+              {[ep.airDate ? whenBR(ep.airDate) : null, ep.runtime ? `${ep.runtime} min` : null]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
-            {/* O TMDB marca fim de arco e fim de temporada. É informação que o
-                clube usaria de cor, e ela vem de graça. */}
-            {ep.kind === 'finale' ? (
-              <span className="legend flex-none text-[9px] text-dye-brass">Final</span>
-            ) : null}
           </span>
-          <span className="q mt-1 block text-[11px] text-ink-faint">
-            {[ep.airDate ? whenBR(ep.airDate) : null, ep.runtime ? `${ep.runtime} min` : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        </span>
+        </button>
 
-        <span className="flex flex-none items-center gap-3">
-          {/* O que o clube deu, e o que VOCÊ deu. Os dois calam quando não
-              existem: um zero ali seria a tela inventando um veredito. */}
+        <div className="flex flex-none items-center gap-2 sm:gap-3">
+          {/* O que o clube deu. Cala quando não existe: um zero ali seria a tela
+              inventando um veredito. */}
           {media != null ? (
             <span className="hidden flex-col items-end sm:flex">
               <span className="q text-[15px] font-medium text-beam">{fmt(media)}</span>
@@ -716,42 +810,66 @@ function EpisodeRow({
             </span>
           ) : null}
 
-          {/* O estado da SUA linha, num símbolo só: visto, nota rápida, ou a
-              criteriosa. É o placar do gesto principal desta tela. */}
-          <MineMark take={minha} />
-        </span>
-      </button>
+          {/* A SUA nota, quando existe. Não é mais o mesmo lugar do check: um
+              número não se clica para virar um check. */}
+          {minha?.final != null ? <MineNote take={minha} /> : null}
+
+          <SeenCheck on={visto} busy={salvando} onToggle={() => void alternar()} />
+
+          {/* Avaliar tem nome inteiro onde cabe, e no telefone é a estrela: o
+              check ao lado dele já é o gesto comum, e dois botões escritos em
+              caixa alta numa linha de 360px empurravam o título do episódio
+              para fora. */}
+          <Key
+            tone="flush"
+            onClick={onOpen}
+            aria-label={minha?.final != null ? 'Mudar sua nota' : 'Avaliar este episódio'}
+            className="h-9 px-2.5 py-0 text-[10.5px] tracking-[0.1em] coarse:h-11 coarse:px-3 coarse:text-[11px]"
+          >
+            <Star className="h-3.5 w-3.5 sm:hidden" strokeWidth={1.8} aria-hidden />
+            <span className="hidden sm:inline">Avaliar</span>
+          </Key>
+        </div>
+      </div>
     </li>
   );
 }
 
-/** A sua marca no episódio: nada, visto, nota, ou ficha. */
-function MineMark({ take }: { take: EpisodeTake | null }) {
-  if (!take) {
-    return (
-      <span
-        aria-label="Você ainda não viu"
-        title="Você ainda não viu"
-        className="flex h-9 w-9 items-center justify-center rounded-cell text-ink-faint ring-1 ring-house-rail"
-      >
-        <Check className="h-4 w-4" strokeWidth={1.8} />
-      </span>
-    );
-  }
-  if (take.final == null) {
-    return (
-      <span
-        aria-label="Visto, sem nota"
-        title="Visto, sem nota"
-        className="flex h-9 w-9 items-center justify-center rounded-cell bg-dye-brass/10 text-dye-brass ring-1 ring-dye-brass/50"
-      >
-        <Check className="h-4 w-4" strokeWidth={2.4} />
-      </span>
-    );
-  }
+/* ── o check ──────────────────────────────────────────────────────────────
+   Um alternador, e ele diz isso antes de ser tocado: apagado tem a moldura de
+   uma caixa vazia e o V só insinuado, e aceso é o latão que carrega estado no
+   resto do produto. Sem os dois desenhos, "marcado" e "não marcado" seriam a
+   mesma caixa com o mesmo V dentro — que era exatamente o problema. */
+function SeenCheck({ on, busy, onToggle }: { on: boolean; busy: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={on ? 'Visto — clique para desmarcar' : 'Marcar como visto'}
+      title={on ? 'Visto — clique para desmarcar' : 'Marcar como visto'}
+      disabled={busy}
+      onClick={onToggle}
+      className={cn(
+        'flex h-9 w-9 flex-none items-center justify-center rounded-cell ring-1',
+        'coarse:h-11 coarse:w-11',
+        'transition-[background-color,color,box-shadow] duration-150 active:translate-y-px',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        on
+          ? 'bg-dye-brass/15 text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
+          : 'text-ink-faint/45 ring-house-rail hover:bg-beam/[0.06] hover:text-beam hover:ring-beam/50'
+      )}
+    >
+      <Check className="h-4 w-4" strokeWidth={on ? 2.6 : 1.8} />
+    </button>
+  );
+}
+
+/** A sua nota no episódio, quando você deu uma. */
+function MineNote({ take }: { take: EpisodeTake }) {
   return (
     <span
-      aria-label={`Sua nota: ${fmt(take.final)}${take.scores ? ', criteriosa' : ''}`}
+      aria-label={`Sua nota: ${fmt(take.final ?? 0)}${take.scores ? ', criteriosa' : ''}`}
       title={take.scores ? 'Avaliação criteriosa' : 'Sua nota'}
       className={cn(
         'flex h-9 min-w-[38px] items-center justify-center rounded-cell px-1.5 ring-1',
@@ -762,7 +880,7 @@ function MineMark({ take }: { take: EpisodeTake | null }) {
           : 'text-ink ring-house-rail'
       )}
     >
-      <span className="q text-[14px] font-medium">{fmt(take.final)}</span>
+      <span className="q text-[14px] font-medium">{fmt(take.final ?? 0)}</span>
     </span>
   );
 }
