@@ -1374,10 +1374,18 @@ function SectionTabs({
                coluna que ocupa a janela inteira, ela não tem em relação a que
                se mexer. Ver a moldura do app, onde está o porquê inteiro.
 
-               `env(safe-area-inset-bottom)` é a faixa da barra de gestos: sem
-               ela, a fileira de botões fica debaixo da barra do sistema e
-               metade dos toques vira "voltar". */
-            'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 pb-[env(safe-area-inset-bottom)] coarse:flex'
+               ── e SEM recuo de área segura ──────────────────────────────
+               Ele esteve aqui e engordava a barra, somando o espaço do sistema
+               uma segunda vez. `env(safe-area-inset-bottom)` existe para
+               devolver o que `viewport-fit=cover` toma — e sem `cover`, que
+               saiu no commit anterior, o navegador nunca chegou a tomar: a
+               janela já termina onde os botões começam.
+
+               Somar os dois é pagar duas vezes pela mesma faixa. Se um dia
+               isto rodar de ponta a ponta da tela, o recuo volta junto com o
+               `cover` que o justifica — os dois são um par, e um sozinho é
+               sempre o erro de um dos dois lados. */
+            'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 coarse:flex'
           : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
     >
@@ -1401,10 +1409,14 @@ function SectionTabs({
                 ? /* Cinco colunas iguais que dividem a largura: um alvo por
                      seção, do tamanho da tela dividido por cinco, e nenhum
                      deles perto de outro o bastante para ser tocado por
-                     engano. Cinquenta e seis pixels de altura passam do piso de
-                     toque com folga, que aqui é o mínimo — esta é a barra que a
-                     mão encosta sem olhar. */
-                  'min-h-[56px] flex-1 flex-col justify-center gap-1.5 px-1 text-[11px] tracking-[0.1em]'
+                     engano.
+
+                     Quarenta e oito e não os cinquenta e seis de uma barra do
+                     Android: aquela medida pressupõe um ícone acima da palavra,
+                     e esta é só palavra — a altura extra viraria ar. Ainda
+                     passa do piso de toque, e o alvo é a coluna inteira, que
+                     tem um quinto da tela de largura. */
+                  'min-h-[48px] flex-1 flex-col justify-center gap-1 px-1 text-[11px] tracking-[0.1em]'
                 : 'flex-none rounded-cell px-3 py-2 text-[14px] tracking-[0.12em]',
               /* Acesa, a palavra vira vermelha — mas nunca por cima do creme da
                  aba atual. Estar aberto e estar acontecendo são duas informações
