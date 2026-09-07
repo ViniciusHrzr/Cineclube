@@ -160,12 +160,15 @@ function Sheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
+      /* Um rolador só, e ele é a placa. O porquê inteiro está em film.tsx: o
+         `<dialog>` rola por conta própria, e dois roladores aninhados travam o
+         gesto no dedo. */
       className={cn(
-        'w-full max-w-[620px] bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
+        'w-full max-w-[620px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
         'open:animate-beam-in'
       )}
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto p-5 sm:p-7">
+      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-7">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>

@@ -190,12 +190,31 @@ export function ProjectionSheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
+      /* ── um rolador só, e ele é a placa ────────────────────────────────
+         O `<dialog>` também rolava, e ninguém pediu por isso: o navegador dá a
+         ele `overflow: auto` e um `max-height` próprio — `calc(100% - 6px -
+         2em)` no Chrome — bem menor que a tela. A placa aqui dentro pedia
+         `100dvh - 1rem`, que passa disso, então o conteúdo transbordava do
+         diálogo e os dois viravam caixa de rolagem, uma dentro da outra.
+
+         No mouse isso é uma barra feia a mais. No dedo é o travamento: cada
+         toque tem de ser resolvido entre dois roladores aninhados antes de
+         mover um pixel, e a folha abria pesada.
+
+         `max-h-[100dvh]` derruba o teto do navegador e `overflow-hidden` tira o
+         diálogo da disputa. A placa passa a ser a única que rola, e o teto dela
+         desconta o recuo do diálogo em cada tamanho — 1rem no telefone (`p-2`),
+         2rem daí para cima (`sm:p-4`). Antes descontava 1rem nos dois, e no
+         computador sobrava exatamente o rolo extra.
+
+         `overscroll-contain` fecha a última porta: sem ele, chegar ao fim desta
+         lista passa o gesto para a página atrás da folha. */
       className={cn(
-        'w-full max-w-[900px] bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
+        'w-full max-w-[900px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
         'open:animate-beam-in'
       )}
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto p-5 sm:p-7">
+      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-7">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>

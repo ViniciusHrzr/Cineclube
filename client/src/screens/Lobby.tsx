@@ -229,7 +229,7 @@ export function Lobby({
         {podium.length ? (
           <Region
             className="mt-16"
-            title="Os mais bem avaliados"
+            title="Melhores avaliados"
             note="A média de todos os clubes."
           >
             <div className="mt-7 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-6">
@@ -263,7 +263,7 @@ export function Lobby({
         {feature ? (
           <Region
             className="mt-16"
-            title="A ficha em destaque"
+            title="Ficha em destaque"
             note={`A avaliação que mais moveu a rede nos últimos ${net?.windowDays ?? 30} dias.`}
           >
             <FeatureTake take={feature} onOpen={() => onEnter(feature.club.slug, `reviews/${feature.id}`)} />
@@ -383,9 +383,10 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      className="w-full max-w-[720px] bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm open:animate-beam-in sm:p-4"
+      /* Um rolador só, e ele é a placa — o porquê está em components/film.tsx. */
+      className="w-full max-w-[720px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm open:animate-beam-in sm:p-4"
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto p-5 sm:p-6">
+      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>
@@ -1088,7 +1089,7 @@ function PosterWall({
           blocos empilhados. */}
       <div className="relative mx-auto -mt-7 w-full max-w-[1240px] px-4 sm:-mt-9 sm:px-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
-          Avaliações populares
+          Filmes populares
         </h1>
         {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
         <p className="q mt-3 text-[13px] text-ink-dim">
