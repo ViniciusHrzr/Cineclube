@@ -396,7 +396,7 @@ function Take({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15px] font-semibold">{r.movieTitle}</span>
             <span className="q block text-[11px] text-ink-dim">
-              {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
+              {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
             </span>
           </span>
           <span className="flex flex-none flex-col items-end gap-1">
@@ -725,11 +725,25 @@ function ByMovie({
                   button rather than inside it: a control nested in another
                   control is not a thing a browser will build, and pressing
                   "rate this too" should never also fold a card open. */}
+              {/* ── por que a linha inteira, e não uma fração dela ──────────
+                  Isto dividia a linha com o "Avaliar também" e o resultado no
+                  telefone era o cartão da imagem: o título reduzido a UMA letra
+                  e a linha de dados quebrando palavra por palavra, com os
+                  pontos separadores sozinhos em linhas próprias.
+
+                  A causa não é o `flex-wrap` — é o `min-w-0` com `flex-1`. Sem
+                  piso de largura, o navegador prefere ESPREMER o primeiro item
+                  até quase zero a mandar o segundo para a linha de baixo, e o
+                  espremido era o filme inteiro. `w-full` tira a escolha: no
+                  telefone o filme ocupa a linha e o convite desce sozinho.
+
+                  `min-w-0` fica, e é outro assunto: é ele que permite ao título
+                  cortar com reticências dentro da largura que agora existe. */}
               <button
                 type="button"
                 onClick={() => toggleGroup(head.movieId)}
                 aria-expanded={expanded}
-                className="group flex min-w-0 flex-1 items-center gap-3 text-left"
+                className="group flex w-full min-w-0 items-center gap-3 text-left sm:w-auto sm:flex-1"
               >
                 <Poster src={head.moviePoster} className="h-[68px] w-[45px] flex-none" />
                 <span className="min-w-0 flex-1">
@@ -749,11 +763,17 @@ function ByMovie({
                          one member having rated it before the archive recorded
                          durations does not blank the number for everyone. */
                       runtimeOf(items.find(r => r.movieRuntime != null)?.movieRuntime),
-                      [...new Set(items.map(r => r.movieGenre))].join(' · '),
+                      [...new Set(items.map(r => r.movieGenre))].join(' · '),
                       plural(items.length, 'avaliação', 'avaliações'),
                     ]
                       .filter(Boolean)
-                      .join(' · ')}
+                      /* Espaço NÃO separável antes do ponto: ele gruda no que
+                         acabou de ser dito, e a quebra acontece depois dele. Com
+                         espaço comum dos dois lados, uma linha estreita deixa o
+                         ponto órfão no começo da linha seguinte — que foi o que
+                         apareceu no telefone e não é erro de largura, é erro de
+                         tipografia esperando uma largura estreita. */
+                      .join(' · ')}
                   </span>
                 </span>
                 {/* Any take that knows it speaks for the film, same as the

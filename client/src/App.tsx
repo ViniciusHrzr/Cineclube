@@ -1249,7 +1249,19 @@ function ClubApp({
    Respira enquanto o filme roda e fica parada quando alguém pausou. Duas
    informações pelo preço de nenhuma pergunta a mais, e a diferença é visível
    pelo canto do olho, que é de onde esta lâmpada vai ser vista. */
-function Lamp({ on, playing }: { on: boolean; playing: boolean }) {
+function Lamp({
+  on,
+  playing,
+  className,
+}: {
+  on: boolean;
+  playing: boolean;
+  /* A margem à direita serve à marquise, onde a lâmpada fica ANTES da palavra
+     na mesma linha. Na barra de baixo ela fica acima e centrada, e ali a mesma
+     margem a empurraria para fora do meio. Vem por fora porque quem sabe disso
+     é quem monta a fileira, não a lâmpada. */
+  className?: string;
+}) {
   return (
     <span
       aria-hidden
@@ -1259,7 +1271,8 @@ function Lamp({ on, playing }: { on: boolean; playing: boolean }) {
         /* O brilho também está na classe acima, e não só no laço: sob
            `prefers-reduced-motion` o index.css corta o laço em uma volta, e o
            repouso depois dela tem de ser a lâmpada acesa — não a apagada. */
-        on && playing && 'animate-lamp'
+        on && playing && 'animate-lamp',
+        className
       )}
     />
   );
@@ -1377,7 +1390,27 @@ function SectionTabs({
                   : 'text-ink-dim hover:text-ink'
             )}
           >
-            {t.id === 'screening' ? <Lamp on={lit} playing={room.status === 'playing'} /> : null}
+            {/* ── a lâmpada, e o alinhamento das cinco palavras ─────────────
+                Na marquise ela vem antes da palavra, na mesma linha, e colapsa
+                para largura zero quando apagada — a fileira não se mexe.
+
+                Na barra de baixo ela fica ACIMA, e aí só a Sessão tinha esse
+                elemento: as outras quatro palavras ficavam centradas na altura
+                e a dela descia doze pixels. Cinco rótulos de navegação em duas
+                alturas diferentes é a barra parecendo quebrada, e era.
+
+                Então a fatia existe em TODAS, e só uma a preenche. Vazia ela
+                mede seis pixels e não desenha nada, que é o preço certo por as
+                cinco palavras assentarem na mesma linha. */}
+            {bar ? (
+              <span aria-hidden className="flex h-1.5 items-center justify-center">
+                {t.id === 'screening' ? (
+                  <Lamp on={lit} playing={room.status === 'playing'} className="mr-0" />
+                ) : null}
+              </span>
+            ) : t.id === 'screening' ? (
+              <Lamp on={lit} playing={room.status === 'playing'} />
+            ) : null}
             {t.label}
             {/* Em cima o traço sublinha a palavra; embaixo ele a cobre. Nos dois
                 casos é a borda voltada para o conteúdo. Na marquise ele começa
