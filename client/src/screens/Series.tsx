@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, Play, Plus, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronLeft, Layers, Play, Plus, Trash2, X } from 'lucide-react';
+import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import {
   Bill,
   Blank,
@@ -12,6 +13,7 @@ import {
   Reel,
   SearchField,
   Skeleton,
+  Strip,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
 import {
@@ -187,47 +189,123 @@ const GENRES = [
   'Ficção científica', 'Romance', 'Suspense', 'Terror',
 ];
 
+/* ── o cartaz de uma série ────────────────────────────────────────────────
+   A MESMA peça do catálogo de filmes, e não uma parecida: a célula de celuloide
+   que tomba na direção da mão e cujas camadas se separam. Isso não é enfeite
+   aqui — é o que faz um cartaz de série se comportar como um cartaz neste
+   produto, e um catálogo com duas físicas diferentes é o app dizendo que são
+   dois apps.
+
+   A tarja que sobe diz o que o clique entrega, e ela muda de texto porque o
+   destino é outro: num filme abre a folha de leitura, aqui abrem as temporadas.
+   Prometer "sinopse e trailer" e entregar uma lista de episódios seria a tarja
+   mentindo pela metade.
+
+   Os controles moram na fileira de baixo, e não sobre o cartaz. Era um `+`
+   flutuando no canto do pôster — ele funcionava e brigava com as camadas em
+   relevo e com a tarja, e a fileira é onde este produto já põe as ações de uma
+   célula.
+
+   Sem ponteiro fino, `CardContainer` não constrói nada: nem perspectiva, nem
+   contexto 3D, nem manipuladores. No dedo isto é um cartão comum. */
 function SeriesCell({
   show,
   inQueue,
+  seen,
+  average,
   onOpen,
   onQueue,
+  onRemove,
 }: {
   show: SeriesItem;
-  inQueue: boolean;
+  inQueue?: boolean;
+  /** O progresso do clube, quando esta célula está na lista de acompanhadas. */
+  seen?: string | null;
+  average?: number | null;
   onOpen: () => void;
-  onQueue: () => void;
+  onQueue?: () => void;
+  onRemove?: () => void;
 }) {
   return (
-    <div className="group/cell relative">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <Poster src={show.poster} alt={`Pôster de ${show.title}`} className="aspect-[2/3] w-full" />
-        <span className="mt-2 block truncate text-[13.5px] text-ink transition-colors group-hover/cell:text-beam">
-          {show.title}
-        </span>
-        <span className="q block text-[11px] text-ink-dim">
-          {[show.year ?? '—', show.genre].filter(Boolean).join(' · ')}
-        </span>
-      </button>
+    <CardContainer containerClassName="block h-full w-full" className="h-full w-full">
+      <CardBody className="flex h-full w-full flex-col">
+        <CardItem translateZ={60} className="w-full">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`Ver as temporadas de ${show.title}`}
+            className="group/cell block w-full text-left"
+          >
+            {/* A tarja está escondida por um translate, então precisa de uma
+                caixa posicionada que a corte — senão ela resolve contra um
+                ancestral distante e fica permanentemente sobre o título. */}
+            <span className="relative block overflow-hidden rounded-cell">
+              <Poster src={show.poster} alt={`Pôster de ${show.title}`} className="aspect-[2/3] w-full" />
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center gap-1.5 bg-beam px-2 py-2 font-display text-[11px] uppercase tracking-[0.14em] text-house-deep transition-transform duration-200 ease-beam group-hover/cell:translate-y-0 group-focus-visible/cell:translate-y-0 motion-reduce:transition-none">
+                <Layers className="h-3.5 w-3.5" strokeWidth={2} />
+                Temporadas
+              </span>
+            </span>
+          </button>
+        </CardItem>
 
-      {/* Pôr na fila sem abrir a série: o gesto de "essa a gente vai ver" é
-          rápido e não precisa de uma tela. Fora do botão do cartaz porque um
-          controle não se aninha em outro. */}
-      <button
-        type="button"
-        onClick={onQueue}
-        disabled={inQueue}
-        title={inQueue ? 'Já está na fila do clube' : 'Pôr na fila do clube'}
-        aria-label={inQueue ? `${show.title} já está na fila` : `Pôr ${show.title} na fila`}
-        className={cn(
-          'absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-cell',
-          'bg-house-deep/90 ring-1 ring-white/10 transition-colors',
-          inQueue ? 'text-dye-brass' : 'text-ink-dim hover:text-beam'
-        )}
-      >
-        {inQueue ? <Check className="h-4 w-4" strokeWidth={2.2} /> : <Plus className="h-4 w-4" strokeWidth={2} />}
-      </button>
-    </div>
+        <CardItem translateZ={30} className="mt-3 w-full">
+          <h3 className="text-[14px] font-semibold leading-tight text-ink">{show.title}</h3>
+          {show.original ? (
+            <p className="q mt-0.5 truncate text-[11px] text-ink-faint" title={show.original}>
+              {show.original}
+            </p>
+          ) : null}
+          <p className="q mt-0.5 text-[11.5px] text-ink-dim">
+            {show.year ?? '—'} · {show.genre}
+          </p>
+          {/* O progresso do clube, e a média só quando existe: um clube que
+              acompanha sem avaliar não tem nota, e imprimir 0,0 ali seria a tela
+              inventando um veredito. */}
+          {seen ? (
+            <div className="mt-2 flex items-center gap-2">
+              {average != null ? (
+                <>
+                  <Strip value={average} cells={10} className="h-[5px] flex-1" />
+                  <span className="q text-[11.5px] text-beam">{fmt(average)}</span>
+                </>
+              ) : (
+                <span className="q flex-1 text-[11.5px] text-ink-dim">sem nota ainda</span>
+              )}
+            </div>
+          ) : null}
+          {seen ? <p className="q mt-1 text-[11px] text-ink-faint">{seen}</p> : null}
+        </CardItem>
+
+        {/* A chave repete o destino do cartaz, e isso não é redundância: a tarja
+            que anuncia esse destino é de HOVER, e no dedo ela não existe. Sem a
+            palavra escrita aqui, um cartaz no telefone não diz o que faz. */}
+        <CardItem translateZ={18} className="mt-auto flex w-full items-center gap-2 pt-3">
+          <Key tone="flush" className="flex-1 px-2" onClick={onOpen}>
+            Episódios
+          </Key>
+          {onQueue ? (
+            <IconKey
+              active={inQueue}
+              aria-pressed={inQueue}
+              aria-label={inQueue ? `${show.title} já está na lista` : `Acompanhar ${show.title}`}
+              onClick={onQueue}
+            >
+              <Bookmark
+                className="h-4 w-4"
+                fill={inQueue ? 'currentColor' : 'none'}
+                strokeWidth={1.7}
+              />
+            </IconKey>
+          ) : null}
+          {onRemove ? (
+            <IconKey aria-label={`Tirar ${show.title} da lista`} onClick={onRemove}>
+              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+            </IconKey>
+          ) : null}
+        </CardItem>
+      </CardBody>
+    </CardContainer>
   );
 }
 
@@ -259,9 +337,9 @@ export function SeriesQueueScreen({
     return (
       <section>
         <Bill title="Minhas séries" />
-        <Blank title="A fila de séries está vazia">
-          Ache uma série no catálogo e ponha na fila. O que o clube combinar de acompanhar
-          aparece aqui, com o quanto já foi visto.
+        <Blank title="O clube ainda não acompanha nenhuma série">
+          Ache uma no catálogo e marque para acompanhar. O que o clube combinar de ver aparece
+          aqui, com o quanto já foi visto.
         </Blank>
       </section>
     );
@@ -273,31 +351,31 @@ export function SeriesQueueScreen({
         title="Minhas séries"
         note={`${plural(shows.length, 'série', 'séries')} que o clube acompanha`}
       />
+      {/* A MESMA célula do catálogo, com a tesoura no lugar do marcador. É o que
+          o universo de filmes já faz — a fila e o catálogo desenham o mesmo
+          `FilmCell` —, e duas células parecidas para a mesma coisa divergem na
+          terceira mexida. */}
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {shows.map(s => (
-          <li key={s.id} className="group/cell relative">
-            <button type="button" onClick={() => onOpen(s.id)} className="block w-full text-left">
-              <Poster src={s.poster} alt={`Pôster de ${s.title}`} className="aspect-[2/3] w-full" />
-              <span className="mt-2 block truncate text-[13.5px] text-ink transition-colors group-hover/cell:text-beam">
-                {s.title}
-              </span>
-              <span className="q block text-[11px] text-ink-dim">
-                {/* O progresso, e a média só quando existe: um clube que
-                    acompanha sem avaliar não tem nota, e imprimir 0,0 ali seria
-                    a tela inventando um veredito. */}
-                {s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`}
-                {s.average != null ? ` · ${fmt(s.average)}` : ''}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(s.id)}
-              title="Tirar da fila"
-              aria-label={`Tirar ${s.title} da fila`}
-              className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-cell bg-house-deep/90 text-ink-dim ring-1 ring-white/10 transition-colors hover:text-dye-red-lit"
-            >
-              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-            </button>
+          <li key={s.id}>
+            <SeriesCell
+              show={{
+                id: s.id,
+                title: s.title,
+                original: s.original,
+                year: s.year,
+                genre: s.genre,
+                genres: [s.genre],
+                poster: s.poster,
+                crowd: null,
+              }}
+              seen={
+                s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`
+              }
+              average={s.average}
+              onOpen={() => onOpen(s.id)}
+              onRemove={() => onRemove(s.id)}
+            />
           </li>
         ))}
       </ul>
@@ -484,7 +562,7 @@ export function ShowScreen({
               }
             >
               {inQueue ? <Check className="h-3.5 w-3.5" strokeWidth={2.2} /> : <Plus className="h-3.5 w-3.5" strokeWidth={2} />}
-              {inQueue ? 'Na fila do clube' : 'Pôr na fila'}
+              {inQueue ? 'O clube acompanha' : 'Acompanhar'}
             </Key>
             {show.trailerUrl ? (
               <a
