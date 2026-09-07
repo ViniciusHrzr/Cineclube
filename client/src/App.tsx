@@ -1161,6 +1161,9 @@ function recOf(room: ScreeningPulse) {
     .join(' · ');
 }
 
+/** A ordem da barra do dedo, por decisão do dono. A marquise segue a tabela. */
+const BAR_ORDER: readonly TabId[] = ['screening', 'catalog', 'feed', 'watchlist', 'reviews'];
+
 function SectionTabs({
   variant,
   tab,
@@ -1176,6 +1179,17 @@ function SectionTabs({
   rec: string | null;
 }) {
   const bar = variant === 'bar';
+  /* A tabela lá em cima continua sendo a verdade sobre QUAIS seções existem e
+     sobre a ordem da marquise; `BAR_ORDER` diz só em que ordem a barra do dedo
+     as desenha. O que não está nomeado lá vai para o fim em vez de sumir — uma
+     seção nova não pode desaparecer do telefone por esquecimento. */
+  const shown = TABS.filter(t => !('hidden' in t && t.hidden));
+  const items = bar
+    ? [
+        ...BAR_ORDER.flatMap(id => shown.filter(t => t.id === id)),
+        ...shown.filter(t => !BAR_ORDER.includes(t.id)),
+      ]
+    : shown;
   return (
     <nav
       aria-label="Seções"
@@ -1193,7 +1207,7 @@ function SectionTabs({
           : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
     >
-      {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
+      {items.map(t => {
         const on = tab === t.id;
         /* A lâmpada é da Sessão e de mais nada: é a única aba que corresponde a
            um cômodo em vez de a uma prateleira. */
