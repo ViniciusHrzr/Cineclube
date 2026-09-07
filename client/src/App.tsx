@@ -998,8 +998,25 @@ function ClubApp({
 
         {/* O único que rola no telefone. `overscroll-contain` impede o gesto de
             vazar para a página de trás no fim da lista — é o que evita o "puxar
-            para atualizar" do Android disparar no fim de um acervo. */}
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10">
+            para atualizar" do Android disparar no fim de um acervo.
+
+            ── e o recuo do rodapé some na tela de avaliar ──────────────────
+            Aquela tela termina num cartão colado no rodapé — a nota final e a
+            chave de gravar, `sticky bottom-0` em Rate.tsx. Um recuo no fim de
+            um ROLADOR é espaço depois do conteúdo, e um elemento colado no
+            rodapé não passa por cima dele: ele assenta acima, e a página
+            aparece por baixo do cartão.
+
+            Nas outras telas o recuo é o respiro do fim da lista e fica. Aqui a
+            última coisa da tela é o próprio cartão, e o fim dele é o fim. Só no
+            dedo — no computador o cartão é uma coluna ao lado, presa pelo topo
+            (`lg:bottom-auto`), e ali o respiro continua servindo. */}
+        <main
+          className={cn(
+            'mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain sm:px-6 sm:pt-10',
+            tab === 'rate' ? 'coarse:pb-0' : 'coarse:pb-8'
+          )}
+        >
           {bootError ? (
             <section>
               <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">A sessão não começou</h1>
