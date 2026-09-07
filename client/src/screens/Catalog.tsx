@@ -711,7 +711,15 @@ export function WatchlistScreen() {
                         }}
                         aria-label={`Mover ${w.title}. Posição ${club.watchlist.findIndex(x => x.id === w.id) + 1} de ${club.watchlist.length}. Use as setas.`}
                         style={{ touchAction: 'none' }}
-                        className="absolute left-1.5 top-1.5 z-20 cursor-grab rounded-cell bg-house-deep/85 p-1.5 text-ink-dim ring-1 ring-white/10 backdrop-blur-sm transition-colors hover:text-beam active:cursor-grabbing"
+                        /* Sem desfoque de fundo, e não é economia de estilo: os
+                           dois selos deste cartão desfocavam o que estava atrás
+                           deles, e a grade mostra vinte e quatro cartões — até
+                           quarenta e oito regiões borradas de uma vez, cada uma
+                           sobre um pôster. Num telefone isso é a aba inteira
+                           arrastando. Uma chapa mais opaca lê igual e custa
+                           zero; a mesma troca já foi feita na marquise e nas
+                           folhas modais. */
+                        className="absolute left-1.5 top-1.5 z-20 cursor-grab rounded-cell bg-house-deep/90 p-1.5 text-ink-dim ring-1 ring-white/10 transition-colors hover:text-beam active:cursor-grabbing"
                       >
                         <GripVertical className="h-4 w-4" strokeWidth={1.8} />
                       </button>
@@ -743,7 +751,8 @@ export function WatchlistScreen() {
                         className="pointer-events-none absolute inset-x-0 top-0 z-20 aspect-[2/3]"
                         aria-hidden
                       >
-                        <span className="absolute bottom-1.5 left-1.5 flex rounded-cell bg-house-deep/85 p-[3px] ring-1 ring-white/10 backdrop-blur-sm">
+                        {/* Sem desfoque, pelo motivo escrito na alça acima. */}
+                        <span className="absolute bottom-1.5 left-1.5 flex rounded-cell bg-house-deep/90 p-[3px] ring-1 ring-white/10">
                           <Reel color={reelColor(owner.dot, owner.id)} src={owner.avatar} size="sm">
                             {initialsOf(owner.name)}
                           </Reel>
