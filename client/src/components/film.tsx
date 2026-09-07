@@ -208,9 +208,20 @@ export function ProjectionSheet({
          computador sobrava exatamente o rolo extra.
 
          `overscroll-contain` fecha a última porta: sem ele, chegar ao fim desta
-         lista passa o gesto para a página atrás da folha. */
+         lista passa o gesto para a página atrás da folha.
+
+         ── e o fundo não é desfocado ──────────────────────────────────────
+         Era `backdrop-blur-sm`, e é o mesmo erro que a marquise já tinha
+         cometido e desfeito (ver App.tsx): o `::backdrop` cobre a tela inteira,
+         e atrás dele fica a parede de celuloide, que nunca para de andar. Um
+         `backdrop-filter` sobre conteúdo que muda todo quadro é um borrão de
+         tela cheia refeito todo quadro — no telefone, o travamento que se sente
+         ao abrir a folha.
+
+         Um fundo mais opaco lê quase igual e custa zero. A parede também para
+         enquanto a folha está aberta; isso mora no index.css. */
       className={cn(
-        'w-full max-w-[900px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
+        'w-full max-w-[900px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
       )}
     >

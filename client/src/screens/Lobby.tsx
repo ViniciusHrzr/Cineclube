@@ -383,8 +383,9 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      /* Um rolador só, e ele é a placa — o porquê está em components/film.tsx. */
-      className="w-full max-w-[720px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm open:animate-beam-in sm:p-4"
+      /* Um rolador só, e o fundo sem desfoque — os dois porquês estão em
+         components/film.tsx. */
+      className="w-full max-w-[720px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
     >
       <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
@@ -1584,7 +1585,9 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-house-deep/80 backdrop-blur-sm sm:items-center">
+    /* Sem desfoque, pela razão em components/film.tsx: a parede atrás nunca para
+       de andar, e um borrão sobre ela é refeito a cada quadro. */
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-house-deep/95 sm:items-center">
       <motion.form
         onSubmit={submit}
         initial={{ opacity: 0, y: 16 }}

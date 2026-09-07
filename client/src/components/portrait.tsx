@@ -181,7 +181,8 @@ export function PortraitGate({
       onClick={e => {
         if (e.target === dialogRef.current) onCancel();
       }}
-      className="w-full max-w-[420px] bg-transparent p-3 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm open:animate-beam-in"
+      /* Fundo sem desfoque, pela razão em components/film.tsx. */
+      className="w-full max-w-[420px] bg-transparent p-3 text-ink backdrop:bg-house-deep/95 open:animate-beam-in"
     >
       <div className="plate p-5">
         <span className="legend">Enquadrar</span>

@@ -280,6 +280,23 @@
   animation-delay: var(--phase, 0s);
 }
 
+/* ── e a parede para quando alguém abre uma folha ─────────────────────────
+   Uma folha modal cobre a tela inteira. A parede atrás dela continuava andando:
+   oito camadas promovidas se mexendo para ninguém, e o compositor recompondo a
+   tela toda a cada quadro para desenhar um resultado que está inteiramente
+   escondido.
+
+   No computador isso passa despercebido. No telefone é o travamento — abrir a
+   ficha de um filme ou os ajustes ficava pesado, e a causa não era nada dentro
+   da folha, era o que sobrou correndo atrás dela.
+
+   `animation-play-state` e não `animation: none`: pausar guarda a posição de
+   cada tira, então fechar a folha devolve a parede onde ela estava em vez de
+   fazer as oito saltarem para o começo do laço de uma vez. */
+html:has(dialog[open]) .strip-creep {
+  animation-play-state: paused;
+}
+
 /* ── a parede de cartazes do saguão ───────────────────────────────────────
    As caixas de cartaz na parede do foyer: elas andam sozinhas devagar e a mão
    pode pegar, arrastar e arremessar. O motor é JS sobre `scrollLeft` — a

@@ -160,11 +160,11 @@ function Sheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      /* Um rolador só, e ele é a placa. O porquê inteiro está em film.tsx: o
-         `<dialog>` rola por conta própria, e dois roladores aninhados travam o
-         gesto no dedo. */
+      /* Um rolador só, e o fundo sem desfoque. O porquê dos dois está em
+         film.tsx: o `<dialog>` rola por conta própria, e um `backdrop-filter`
+         sobre a parede que anda é um borrão de tela cheia refeito todo quadro. */
       className={cn(
-        'w-full max-w-[620px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/80 backdrop:backdrop-blur-sm sm:p-4',
+        'w-full max-w-[620px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
       )}
     >
