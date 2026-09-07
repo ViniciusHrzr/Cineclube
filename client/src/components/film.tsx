@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bookmark, Check, Info, Play, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, Info, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
-import { Fault, IconKey, Key, Poster, Skeleton, Strip } from '@/components/bits';
+import { Fault, IconKey, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
 import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 
@@ -294,15 +294,7 @@ export function ProjectionSheet({
                 <p className="mt-3 text-[12px] text-ink-dim">Elenco: {movie.cast.map(c => c.name).join(', ')}</p>
               ) : null}
               {movie.trailerUrl ? (
-                <a
-                  href={movie.trailerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-flex w-fit items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-dye-red-glow"
-                >
-                  <Play className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
-                  Assistir trailer
-                </a>
+                <TrailerKey url={movie.trailerUrl} title={movie.title} className="mt-3" />
               ) : null}
 
               <WatchOn watch={movie.watch} />

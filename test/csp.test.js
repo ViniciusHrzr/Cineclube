@@ -248,12 +248,16 @@ test('o atributo de estilo passa, e um bloco de estilo injetado não', async () 
   assert.ok(!d['style-src-elem'].includes(`'unsafe-inline'`));
 });
 
-test('nada emoldura e nada é emoldurado', async () => {
+test('a única moldura é a do trailer, e ninguém emoldura o produto', async () => {
   const d = directivesOf(await headerFromServer());
   assert.deepEqual(d['frame-ancestors'], [`'none'`]);
-  assert.deepEqual(d['frame-src'], [`'none'`]);
   assert.deepEqual(d['object-src'], [`'none'`]);
   assert.deepEqual(d['base-uri'], [`'self'`]);
+
+  /* A folha do trailer, e nada mais. A lista tem UM endereço de propósito:
+     `frame-src` é permissão para rodar outro site dentro do nosso, e um `https:`
+     aqui daria essa permissão ao mundo inteiro. */
+  assert.deepEqual(d['frame-src'], ['https://www.youtube-nocookie.com']);
 });
 
 /* ── vigiar antes de trancar ─────────────────────────────────────────────── */

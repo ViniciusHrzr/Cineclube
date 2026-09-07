@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Clock, MessageSquare, Play, Plus, ShieldCheck, ThumbsDown, ThumbsUp, X } from 'lucide-react';
-import { Blank, Fault, IconKey, Key, Poster, Reel, SearchField, Strip } from '@/components/bits';
+import { Check, Clock, MessageSquare, Plus, ShieldCheck, ThumbsDown, ThumbsUp, X } from 'lucide-react';
+import { Blank, Fault, IconKey, Key, Poster, Reel, SearchField, Strip, TrailerKey } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { Notices } from '@/components/notices';
 import { PortraitGate } from '@/components/portrait';
@@ -610,15 +610,13 @@ function FilmPeek({
             </p>
 
             {detalhe?.trailerUrl ? (
-              <a
-                href={detalhe.trailerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-dye-red-lit transition-colors hover:text-dye-red-glow"
+              <TrailerKey
+                url={detalhe.trailerUrl}
+                title={film.title}
+                className="mt-3 tracking-[0.12em]"
               >
-                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
                 Ver o trailer
-              </a>
+              </TrailerKey>
             ) : null}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronLeft, Layers, Play, Plus, Star, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronLeft, Layers, Plus, Star, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import {
   Bill,
@@ -14,6 +14,7 @@ import {
   SearchField,
   Skeleton,
   Strip,
+  TrailerKey,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
 import {
@@ -565,15 +566,13 @@ export function ShowScreen({
               {inQueue ? 'O clube acompanha' : 'Acompanhar'}
             </Key>
             {show.trailerUrl ? (
-              <a
-                href={show.trailerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-cell px-2 py-1.5 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-dye-red-lit transition-colors hover:text-dye-red-glow"
+              <TrailerKey
+                url={show.trailerUrl}
+                title={show.title}
+                className="rounded-cell px-2 py-1.5 tracking-[0.12em]"
               >
-                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
                 Trailer
-              </a>
+              </TrailerKey>
             ) : null}
           </div>
         </div>

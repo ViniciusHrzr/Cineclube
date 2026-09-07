@@ -169,10 +169,22 @@ function policy({ indexPath, https }) {
        a partir de um blob. */
     'worker-src': [`'self'`, 'blob:'],
 
-    /* Nada neste produto é moldura de nada. Não há um único `<iframe>` no
-       cliente — conferido —, e o trailer é um LINK para o YouTube, que abre uma
-       aba e não uma moldura. */
-    'frame-src': [`'none'`],
+    /* ── a única moldura do produto ────────────────────────────────────────
+       O trailer era um link para fora e virou uma folha com o player do YouTube
+       dentro (ver `TrailerKey` em components/bits.tsx). Esta linha era `'none'`
+       e precisou abrir — sem ela o navegador recusa o iframe, e a folha abre
+       vazia.
+
+       Um endereço, e não `https:`. O que entra aqui é permissão para EXECUTAR
+       outro site dentro do nosso, com o que ele quiser rodar lá dentro; a lista
+       tem um domínio porque o produto emoldura uma coisa só.
+
+       `youtube-nocookie.com` é o endereço que o próprio YouTube publica para
+       este uso: o mesmo player, sem gravar cookie de rastreio em quem só abriu
+       a ficha. `www.youtube.com` NÃO entra — nada nosso aponta para lá, e uma
+       origem a mais aqui é uma origem a mais com direito de rodar dentro da
+       página. */
+    'frame-src': ['https://www.youtube-nocookie.com'],
     /* E ninguém emoldura este produto. É o X-Frame-Options em versão moderna;
        os dois vão juntos porque nem todo navegador aposentou o antigo. */
     'frame-ancestors': [`'none'`],

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, Play, Search } from 'lucide-react';
-import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
+import { Check, Search } from 'lucide-react';
+import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
 /* As réguas saíram daqui e viraram peça no dia em que um episódio ganhou ficha
    própria: são a mesma interação sobre listas de critérios diferentes. */
 import { Channels } from '@/components/channels';
@@ -347,15 +347,7 @@ function Slate({
             <p className="mt-2 text-[12px] text-ink-dim">Elenco: {movie.cast.map(c => c.name).join(', ')}</p>
           ) : null}
           {movie.trailerUrl ? (
-            <a
-              href={movie.trailerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-2 font-display text-[12px] uppercase tracking-[0.14em] text-dye-red-lit hover:text-dye-red-glow"
-            >
-              <Play className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
-              Assistir trailer
-            </a>
+            <TrailerKey url={movie.trailerUrl} title={movie.title} className="mt-3" />
           ) : null}
         </div>
       ) : null}

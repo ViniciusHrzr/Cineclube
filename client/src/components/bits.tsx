@@ -1,4 +1,5 @@
-import { Search as SearchIcon, X as XIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Play as PlayIcon, Search as SearchIcon, X as XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmt } from '@/lib/api';
 
@@ -431,6 +432,163 @@ export function Drawer({ open, children }: { open: boolean; children: React.Reac
         {children}
       </div>
     </div>
+  );
+}
+
+/* ══ o trailer ════════════════════════════════════════════════════════════
+   Ele era um link para fora, em quatro telas. Clicar mandava a pessoa para o
+   YouTube — outra aba, outro produto, e uma parede de recomendações do outro
+   lado convidando a ficar lá. O clube estava escolhendo um filme, e o gesto
+   que ajuda a escolher tirava todo mundo da sala.
+
+   Agora o trailer é uma folha que abre por cima da ficha, com a moldura do
+   YouTube dentro. Fechar devolve a pessoa exatamente onde ela estava, com a
+   ficha aberta e a rolagem no mesmo lugar.
+
+   ── três decisões que este componente toma ───────────────────────────────
+   **`youtube-nocookie.com`.** O mesmo player, sem o cookie de rastreio até
+   alguém dar play. É o endereço que o YouTube publica para isso, e não custa
+   nada — é uma letra a mais numa string.
+
+   **A moldura só existe enquanto a folha está aberta.** Fechar DESMONTA o
+   iframe, e é isso que para o som. Esconder com CSS deixaria o trailer tocando
+   atrás da ficha, que é o defeito clássico deste padrão.
+
+   **A saída para o YouTube continua lá dentro.** Nem todo vídeo permite ser
+   emoldurado — o dono do canal decide isso, e quando ele diz não o player
+   mostra um aviso e mais nada. O link no rodapé da folha é o que faz esse caso
+   continuar tendo resposta em vez de virar um retângulo preto.
+
+   E se o endereço não for do YouTube, ou não tiver um id reconhecível, o
+   componente volta a ser o link para fora que sempre foi. Nenhuma ficha fica
+   sem trailer por causa de uma expressão regular. */
+
+/** Os três formatos que uma URL de trailer aparece: `watch?v=`, `youtu.be/` e `embed/`. */
+const YT_ID = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/;
+
+export function TrailerKey({
+  url,
+  title,
+  className,
+  children,
+}: {
+  url: string;
+  /** O nome da obra, para a folha e para o `title` da moldura. */
+  title: string;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const id = YT_ID.exec(url)?.[1] ?? null;
+
+  /* A mesma tipografia dos quatro links que este componente substituiu: vermelho
+     de ação, versalete, e o triângulo antes do texto. */
+  const look = cn(
+    'inline-flex w-fit items-center gap-2 font-display text-[12px] uppercase leading-none tracking-[0.14em]',
+    'text-dye-red-lit transition-colors hover:text-dye-red-glow',
+    className
+  );
+  const rotulo = children ?? 'Assistir trailer';
+
+  if (!id) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className={look}>
+        <PlayIcon className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
+        {rotulo}
+      </a>
+    );
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={look}>
+        <PlayIcon className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
+        {rotulo}
+      </button>
+      {aberto ? (
+        <TrailerSheet id={id} url={url} title={title} onClose={() => setAberto(false)} />
+      ) : null}
+    </>
+  );
+}
+
+function TrailerSheet({
+  id,
+  url,
+  title,
+  onClose,
+}: {
+  id: string;
+  url: string;
+  title: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  /* O Esc fecha pelo nosso caminho e não pelo do navegador: fechado por fora, o
+     React continuaria achando que a folha está aberta e a moldura não sairia da
+     árvore — ou seja, o som continuaria. */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    el.addEventListener('cancel', cancel);
+    return () => el.removeEventListener('cancel', cancel);
+  }, [onClose]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-label={`Trailer de ${title}`}
+      onClick={e => {
+        if (e.target === ref.current) onClose();
+      }}
+      /* Esta folha é uma tela dentro de uma sala escura, então o fundo é o mais
+         fechado do produto — o quarto ao redor do projetor apaga. */
+      className="w-full max-w-[980px] bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
+    >
+      <div className="plate relative p-3 sm:p-4">
+        <div className="flex items-center gap-3 pr-1">
+          <p className="legend min-w-0 flex-1 truncate">Trailer · {title}</p>
+          <IconKey aria-label="Fechar" onClick={onClose} className="flex-none">
+            <XIcon className="h-4 w-4" strokeWidth={1.8} />
+          </IconKey>
+        </div>
+
+        {/* 16:9 pela proporção e não por altura fixa: a folha encolhe com a
+            janela e o vídeo nunca ganha tarja de dois lados. */}
+        <div className="mt-3 aspect-video w-full overflow-hidden rounded-cell bg-black ring-1 ring-white/[0.08]">
+          <iframe
+            /* `autoplay` porque a pessoa acabou de clicar em "assistir": o
+               gesto do navegador é o mesmo, e um segundo clique dentro da
+               folha seria pedir a mesma coisa duas vezes. `rel=0` mantém as
+               sugestões do fim dentro do canal do próprio filme. */
+            src={`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+            title={`Trailer de ${title}`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allowFullScreen
+            className="h-full w-full border-0"
+          />
+        </div>
+
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="q mt-3 inline-flex items-center gap-1.5 text-[11.5px] text-ink-dim transition-colors hover:text-beam"
+        >
+          Abrir no YouTube
+        </a>
+      </div>
+    </dialog>
   );
 }
 
