@@ -1347,15 +1347,12 @@ function PosterWall({
           {universe === 'series' ? 'Séries populares' : 'Filmes populares'}
         </h1>
         {/* Uma frase e não três cartões de estatística: é a legenda da parede.
-            Quando os cartazes são emprestados do TMDB ela diz isso — uma
-            contagem da rede embaixo de uma parede que não é da rede leria como
-            se aqueles fossem os números daqueles cartazes. */}
-        {fromTmdb ? (
-          <p className="mt-3 max-w-[62ch] text-[13px] leading-relaxed text-ink-dim">
-            As mais vistas no TMDB. Quando os clubes avaliarem quatro séries, esta parede
-            passa a ser <span className="text-ink">o que a rede andou vendo</span>.
-          </p>
-        ) : (
+            Com os cartazes emprestados do TMDB não há legenda nenhuma — a
+            contagem da rede ali leria como se fossem os números daqueles
+            cartazes, e o título já é verdade nos dois casos. O que garante que
+            nada minta é a parede emprestada não anunciar nota (ver a tarja
+            abaixo): nada nela reivindica um veredito do clube. */}
+        {fromTmdb ? null : (
           <p className="q mt-3 text-[13px] text-ink-dim">
             {tally(counts.reviews, 'avaliação', 'avaliações')} ·{' '}
             {universe === 'series'
