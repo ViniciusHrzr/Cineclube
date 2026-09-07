@@ -12,6 +12,7 @@ import {
   initialsOf,
   lobby as lobbyApi,
   reelColor,
+  seriesApi,
   type Club,
   type LobbyClub,
   type LobbyFeature,
@@ -138,13 +139,59 @@ export function Lobby({
     [onEnter, universe]
   );
 
-  const wall = net?.wall ?? [];
+  const daRede = net?.wall ?? [];
   const live = net?.live ?? [];
   const podium = net?.podium ?? [];
   const active = net?.active ?? [];
   const feature = net?.feature ?? null;
   /* Abaixo de quatro cartazes não há parede: há três filmes numa faixa larga,
      que passa a parecer coisa que não terminou de carregar. */
+  const redeTemParede = daRede.length >= 4;
+
+  /* ── e a parede de séries cai no TMDB quando a rede ainda não enche ─────
+     O universo de séries enche muito mais devagar que o de filmes, e isso não é
+     um estado inicial que passa: um clube avalia um filme numa NOITE e uma série
+     leva semanas. Toda seção deste saguão é derivada do que a rede avaliou, e
+     com essa cadência a porta de entrada de séries ficaria vazia por meses.
+
+     Então a parede — e só ela — tem um segundo dono. Sem quatro séries avaliadas
+     na rede, ela mostra as populares do TMDB.
+
+     Duas coisas que fazem isso não ser mentira: a legenda diz de onde os cartazes
+     vieram, e a troca é por tudo ou nada. Misturar as duas fontes na mesma faixa
+     seria pendurar o que a rede achou ao lado do que ela nunca viu, sem nada
+     dizendo qual é qual.
+
+     O resto do saguão continua calado quando não sabe. O TMDB tem uma lista de
+     populares; ele não tem opinião do clube, e um pódio ou um destaque saídos
+     dali seriam este produto citando outro como se fosse ele. */
+  const [populares, setPopulares] = useState<LobbyMovie[] | null>(null);
+  const precisaTmdb = universe === 'series' && net !== null && !redeTemParede;
+
+  useEffect(() => {
+    if (!precisaTmdb || populares) return;
+    let vivo = true;
+    void seriesApi
+      .popular()
+      .then(r => {
+        if (!vivo) return;
+        setPopulares(
+          r.results
+            .filter(s => s.poster)
+            /* `average` e `takes` em zero, e a parede sabe ler isso: a tarja de
+               hover cala a nota quando não há nenhuma, em vez de anunciar 0,0
+               como se a rede tivesse detestado. */
+            .map(s => ({ id: s.id, title: s.title, year: s.year, poster: s.poster, average: 0, takes: 0 }))
+        );
+      })
+      .catch(() => vivo && setPopulares([]));
+    return () => {
+      vivo = false;
+    };
+  }, [precisaTmdb, populares]);
+
+  const doTmdb = precisaTmdb && (populares?.length ?? 0) >= 4;
+  const wall = doTmdb ? (populares as LobbyMovie[]) : daRede;
   const hasWall = wall.length >= 4;
 
   /* A regra de se calar produz um caso em que a tela MENTE: clubes existem e
@@ -154,9 +201,13 @@ export function Lobby({
      uma sala fechada que não empresta, a tela diz isso e aponta o caminho.
 
      Só para o ADM: emprestar o acervo é decisão de quem manda na sala, e
-     cutucar um membro comum seria pedir que ele fosse cobrar de outra pessoa. */
+     cutucar um membro comum seria pedir que ele fosse cobrar de outra pessoa.
+
+     Medido contra o que a REDE tem, e não contra a parede desenhada: com a
+     parede caindo no TMDB, olhar para ela diria que há conteúdo quando o que
+     existe é uma lista emprestada de fora. */
   const darkNetwork =
-    net !== null && !hasWall && !podium.length && !active.length && !live.length && !feature;
+    net !== null && !redeTemParede && !podium.length && !active.length && !live.length && !feature;
   const lendable = (mine ?? []).filter(
     c => c.role === 'admin' && c.visibility === 'private' && !c.showCharts
   );
@@ -235,7 +286,9 @@ export function Lobby({
           `main` rolar prenderia a parede no alto para sempre, comendo um terço
           da tela. No computador esta camada não faz nada. */}
       <div className="flex flex-1 flex-col coarse:min-h-0 coarse:overflow-y-auto coarse:overscroll-contain">
-        {hasWall ? <PosterWall films={wall} counts={net!.counts} universe={universe} /> : null}
+        {hasWall ? (
+          <PosterWall films={wall} counts={net!.counts} universe={universe} fromTmdb={doTmdb} />
+        ) : null}
         {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={go} /> : null}
 
         <main className="relative mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
@@ -1142,10 +1195,13 @@ function PosterWall({
   films,
   counts,
   universe,
+  fromTmdb,
 }: {
   films: LobbyMovie[];
   counts: LobbySnapshot['counts'] & { episodes?: number };
   universe: Universe;
+  /** A parede está emprestada do TMDB porque a rede ainda não encheu a dela. */
+  fromTmdb?: boolean;
 }) {
   /* Aqui e não no saguão inteiro porque a folha é da parede: nada mais nesta
      tela abre um filme. */
@@ -1206,7 +1262,14 @@ function PosterWall({
                 onClick={() => setAberto(film)}
                 aria-hidden={copy > 0 || undefined}
                 tabIndex={copy > 0 ? -1 : undefined}
-                aria-label={`${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'avaliação', 'avaliações')}`}
+                /* Sem nota quando não há nenhuma: um cartaz emprestado do TMDB
+                   anunciado como "0,0 em 0 avaliações" seria a rede dizendo que
+                   detestou uma série que ela nunca viu. */
+                aria-label={
+                  film.takes
+                    ? `${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'avaliação', 'avaliações')}`
+                    : film.title
+                }
                 className="group relative mr-2 h-full w-[88px] flex-none overflow-hidden bg-house-deep sm:w-[117px]"
               >
                 <img
@@ -1235,9 +1298,11 @@ function PosterWall({
                   <span className="block truncate font-display text-[12px] leading-none tracking-[0.05em] text-beam">
                     {film.title}
                   </span>
-                  <span className="q mt-1.5 block text-[10.5px] text-ink-dim">
-                    {fmt(film.average)} · {plural(film.takes, 'avaliação', 'avaliações')}
-                  </span>
+                  {film.takes ? (
+                    <span className="q mt-1.5 block text-[10.5px] text-ink-dim">
+                      {fmt(film.average)} · {plural(film.takes, 'avaliação', 'avaliações')}
+                    </span>
+                  ) : null}
                 </span>
               </button>
             ))
@@ -1281,13 +1346,23 @@ function PosterWall({
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
           {universe === 'series' ? 'Séries populares' : 'Filmes populares'}
         </h1>
-        {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
-        <p className="q mt-3 text-[13px] text-ink-dim">
-          {tally(counts.reviews, 'avaliação', 'avaliações')} ·{' '}
-          {universe === 'series'
-            ? `${tally(counts.movies, 'série', 'séries')} · ${tally(counts.episodes ?? 0, 'episódio', 'episódios')}`
-            : `${tally(counts.movies, 'filme', 'filmes')} · ${tally(counts.clubs, 'clube', 'clubes')}`}
-        </p>
+        {/* Uma frase e não três cartões de estatística: é a legenda da parede.
+            Quando os cartazes são emprestados do TMDB ela diz isso — uma
+            contagem da rede embaixo de uma parede que não é da rede leria como
+            se aqueles fossem os números daqueles cartazes. */}
+        {fromTmdb ? (
+          <p className="mt-3 max-w-[62ch] text-[13px] leading-relaxed text-ink-dim">
+            As mais vistas no TMDB. Quando os clubes avaliarem quatro séries, esta parede
+            passa a ser <span className="text-ink">o que a rede andou vendo</span>.
+          </p>
+        ) : (
+          <p className="q mt-3 text-[13px] text-ink-dim">
+            {tally(counts.reviews, 'avaliação', 'avaliações')} ·{' '}
+            {universe === 'series'
+              ? `${tally(counts.movies, 'série', 'séries')} · ${tally(counts.episodes ?? 0, 'episódio', 'episódios')}`
+              : `${tally(counts.movies, 'filme', 'filmes')} · ${tally(counts.clubs, 'clube', 'clubes')}`}
+          </p>
+        )}
       </div>
 
       {/* Montada só quando há filme aberto, e remontada por filme: garante que
