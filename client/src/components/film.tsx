@@ -201,7 +201,7 @@ export function ProjectionSheet({
          toque tem de ser resolvido entre dois roladores aninhados antes de
          mover um pixel, e a folha abria pesada.
 
-         `max-h-[100dvh]` derruba o teto do navegador e `overflow-hidden` tira o
+         `max-h-[calc(100dvh/var(--ui-zoom))]` derruba o teto do navegador e `overflow-hidden` tira o
          diálogo da disputa. A placa passa a ser a única que rola, e o teto dela
          desconta o recuo do diálogo em cada tamanho — 1rem no telefone (`p-2`),
          2rem daí para cima (`sm:p-4`). Antes descontava 1rem nos dois, e no
@@ -221,11 +221,11 @@ export function ProjectionSheet({
          Um fundo mais opaco lê quase igual e custa zero. A parede também para
          enquanto a folha está aberta; isso mora no index.css. */
       className={cn(
-        'w-full max-w-[900px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
+        'w-full max-w-[900px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
       )}
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-7">
+      <div className="plate relative max-h-[calc(100dvh/var(--ui-zoom)-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh/var(--ui-zoom)-2rem)] sm:p-7">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>

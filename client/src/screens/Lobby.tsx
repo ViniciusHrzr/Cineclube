@@ -513,9 +513,9 @@ function FilmPeek({
       }}
       /* Um rolador só, e o fundo sem desfoque — os dois porquês estão em
          components/film.tsx. */
-      className="w-full max-w-[720px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
+      className="w-full max-w-[720px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
+      <div className="plate relative max-h-[calc(100dvh/var(--ui-zoom)-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh/var(--ui-zoom)-2rem)] sm:p-6">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>
@@ -1779,7 +1779,7 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-        className="plate max-h-[92dvh] w-full max-w-[460px] overflow-y-auto p-5 sm:p-6"
+        className="plate max-h-[calc(92dvh/var(--ui-zoom))] w-full max-w-[460px] overflow-y-auto p-5 sm:p-6"
       >
         <h2 className="font-display text-[26px] leading-none tracking-[0.04em] text-beam">
           Fundar um clube

@@ -326,7 +326,7 @@ export function Notices() {
           aria-label="Novidades"
           /* Ancorado à direita porque o sino mora no fim da marquise: alinhado à
              esquerda, um painel de 340px sairia da tela num celular. */
-          className="plate absolute right-0 top-[38px] z-40 max-h-[min(70dvh,520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+          className="plate absolute right-0 top-[38px] z-40 max-h-[min(calc(70dvh/var(--ui-zoom)),520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
         >
           <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-white/[0.07] bg-house-seat px-4 py-3">
             <span className="legend">Novidades</span>

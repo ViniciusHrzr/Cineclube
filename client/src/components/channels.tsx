@@ -20,6 +20,7 @@ export function Channels({
   scores,
   genre,
   crew,
+  still,
   onChange,
 }: {
   criteria: Criterion[];
@@ -28,6 +29,11 @@ export function Channels({
   genre?: string;
   /** Quem assina cada critério. Vazio quando ninguém está creditado. */
   crew?: Record<string, string[]>;
+  /* Sem a entrada escalonada de cada linha. Numa PÁGINA ela é o que faz a ficha
+     se montar em vez de aparecer pronta; dentro de uma folha modal, que já entra
+     com a própria animação, são nove animações a mais correndo por cima de uma
+     — e é isso que se sente como travamento ao abrir a criteriosa. */
+  still?: boolean;
   onChange: (key: string, value: number) => void;
 }) {
   /* Agrupado pelo que o servidor declara, e não pelo peso. O peso era o atalho —
@@ -44,6 +50,7 @@ export function Channels({
       index={i++}
       value={scores[c.key] ?? 5}
       signers={crew?.[c.key]}
+      still={still}
       onChange={onChange}
     />
   );
@@ -89,47 +96,33 @@ function Channel({
   index,
   value,
   signers,
+  still,
   onChange,
 }: {
   c: Criterion;
   index: number;
   value: number;
   signers?: string[];
+  /** Sem a entrada escalonada. Ver `still` em `Channels`. */
+  still?: boolean;
   onChange: (key: string, value: number) => void;
 }) {
-  /* ── a comporta e a luz ─────────────────────────────────────────────────
-     O trecho de película exposto é a nota, e ele NÃO é animado — de propósito.
-     Uma faixa preenchida não é um objeto com massa, é o valor desenhado como
-     comprimento, e um valor que chega depois da mão que o pôs faz o controle
-     parecer quebrado. Foi uma mola aqui primeiro, subindo meio tempo atrás da
-     comporta, e lia como atraso porque era atraso.
-
-     O que é animado é o clarão na comporta — o facho florescendo enquanto a
-     película corre. A posição é exata e instantânea; só a intensidade se move,
-     movida pela velocidade da nota e apagando quando ela para.
-
-     O número fica quieto. Ele inchava numa mola, o que significa texto
-     rasterizado em escala fracionária a cada quadro — era isso que piscava, e
-     não há ajuste que conserte: tipo rasterizado a 1,06× é uma versão borrada
-     de si mesmo. */
-  const gate = useMotionValue(value);
-  useEffect(() => {
-    gate.set(value);
-  }, [value, gate]);
-
-  const rush = useVelocity(gate);
-  const flare = useSpring(useTransform(rush, [-16, 0, 16], [1, 0, 1]), {
-    stiffness: 240,
-    damping: 28,
-  });
-  const bloom = useTransform(flare, [0, 1], [0, 0.9]);
-  const spread = useTransform(flare, [0, 1], [0.9, 1.85]);
+  const Row = still ? 'div' : motion.div;
+  const entrada = still
+    ? {}
+    : {
+        initial: { opacity: 0, y: 10 },
+        animate: { opacity: 1, y: 0 },
+        transition: {
+          duration: 0.32,
+          ease: [0.16, 1, 0.3, 1] as const,
+          delay: Math.min(index, 9) * 0.026,
+        },
+      };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 9) * 0.026 }}
+    <Row
+      {...entrada}
       className="group border-t border-white/[0.06] py-4 first-of-type:border-0"
     >
       {/* Sem distintivo de peso. Ele lia ×1 ou ×2 e carregava o único fato que
@@ -155,53 +148,99 @@ function Channel({
         <p className="mt-1 text-[12px] leading-snug text-beam-dim">{signers.join(' · ')}</p>
       ) : null}
 
-      {/* Tudo o que se vê é desenhado aqui; o input é invisível e fica por cima,
-          onde continua recebendo o arrasto, as setas e o leitor de tela. Ele vem
-          primeiro no DOM para que as partes desenhadas reajam a ele como irmãs —
-          pressionado, focado — e o z-10 o devolve para cima delas no ponteiro. */}
-      <div className="relative mt-2 h-[34px]">
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.5}
-          value={value}
-          onChange={e => onChange(c.key, parseFloat(e.target.value))}
-          aria-label={c.name}
-          aria-describedby={`hint-${c.key}`}
-          className="peer film-range absolute inset-0 z-10 w-full"
-        />
-
-        {/* Recuado por metade da área de pega, para 0% e 100% caírem sob o meio
-            da comporta em vez de fora da ponta da película. */}
-        <span aria-hidden className="pointer-events-none absolute inset-x-2 top-3 h-[10px]">
-          <span className="film-strip absolute inset-0" />
-          {/* Largura, e não scaleX: escalar estica o gradiente rasterizado e o
-              brilho interno junto, e a borda borrada tremendo de quadro em
-              quadro era metade do que parecia flicker. */}
-          <span className="film-strip-lit absolute inset-y-0 left-0" style={{ width: `${value * 10}%` }} />
-          <motion.span
-            style={{ left: `${value * 10}%`, marginLeft: -13, opacity: bloom, scale: spread }}
-            className="absolute -top-[7px] h-[24px] w-[26px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,231,180,0.9),transparent_70%)] transition-[left] duration-[130ms] ease-beam"
-          />
-        </span>
-
-        {/* A comporta. Pressionada, ela cresce no quadro e queima mais forte;
-            focada pelo teclado, ela recebe o anel que o input abriu mão. */}
-        <span
-          aria-hidden
-          style={{ left: `calc(0.5rem + (100% - 1rem) * ${value / 10})` }}
-          className={cn(
-            'film-gate pointer-events-none absolute top-1 -ml-[2px] h-[26px] w-[4px]',
-            'transition-[left,transform,box-shadow] duration-[130ms] ease-beam',
-            'peer-active:scale-y-[1.16] peer-active:shadow-[0_0_0_1px_rgba(4,5,10,0.9),0_2px_10px_rgba(0,0,0,0.8),0_0_22px_rgba(255,214,150,0.7)]',
-            'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.brass),0_0_18px_rgba(255,214,150,0.5)]'
-          )}
-        />
-      </div>
+      <Gauge
+        value={value}
+        onChange={v => onChange(c.key, v)}
+        label={c.name}
+        describedBy={`hint-${c.key}`}
+        className="mt-2"
+      />
       <p id={`hint-${c.key}`} className="mt-2 max-w-[70ch] text-[12px] leading-relaxed text-ink-dim">
         {c.hint}
       </p>
-    </motion.div>
+    </Row>
+  );
+}
+
+/* ── a régua, sozinha ─────────────────────────────────────────────────────
+   Extraída de `Channel` no dia em que a nota rápida de um episódio precisou de
+   uma régua sem critério em volta. Ela saiu porque a alternativa era pior: o
+   `film-range` é um input TRANSPARENTE — tudo o que se vê são irmãos desenhados
+   ao lado dele —, então usá-lo solto produz um controle invisível. Foi
+   exatamente o que aconteceu, e o defeito não parece um defeito: a régua
+   funciona, arrasta e responde ao teclado, e simplesmente não tem corpo.
+
+   Uma peça só, então, e as duas notas do produto usam a mesma. */
+export function Gauge({
+  value,
+  onChange,
+  label,
+  describedBy,
+  className,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  label: string;
+  describedBy?: string;
+  className?: string;
+}) {
+  const gate = useMotionValue(value);
+  useEffect(() => {
+    gate.set(value);
+  }, [value, gate]);
+
+  const rush = useVelocity(gate);
+  const flare = useSpring(useTransform(rush, [-16, 0, 16], [1, 0, 1]), {
+    stiffness: 240,
+    damping: 28,
+  });
+  const bloom = useTransform(flare, [0, 1], [0, 0.9]);
+  const spread = useTransform(flare, [0, 1], [0.9, 1.85]);
+
+  return (
+    /* Tudo o que se vê é desenhado aqui; o input é invisível e fica por cima,
+       onde continua recebendo o arrasto, as setas e o leitor de tela. Ele vem
+       primeiro no DOM para que as partes desenhadas reajam a ele como irmãs —
+       pressionado, focado — e o z-10 o devolve para cima delas no ponteiro. */
+    <div className={cn('relative h-[34px]', className)}>
+      <input
+        type="range"
+        min={0}
+        max={10}
+        step={0.5}
+        value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        aria-label={label}
+        aria-describedby={describedBy}
+        className="peer film-range absolute inset-0 z-10 w-full"
+      />
+
+      {/* Recuado por metade da área de pega, para 0% e 100% caírem sob o meio da
+          comporta em vez de fora da ponta da película. */}
+      <span aria-hidden className="pointer-events-none absolute inset-x-2 top-3 h-[10px]">
+        <span className="film-strip absolute inset-0" />
+        {/* Largura, e não scaleX: escalar estica o gradiente rasterizado e o
+            brilho interno junto, e a borda borrada tremendo de quadro em quadro
+            era metade do que parecia flicker. */}
+        <span className="film-strip-lit absolute inset-y-0 left-0" style={{ width: `${value * 10}%` }} />
+        <motion.span
+          style={{ left: `${value * 10}%`, marginLeft: -13, opacity: bloom, scale: spread }}
+          className="absolute -top-[7px] h-[24px] w-[26px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,231,180,0.9),transparent_70%)] transition-[left] duration-[130ms] ease-beam"
+        />
+      </span>
+
+      {/* A comporta. Pressionada, ela cresce no quadro e queima mais forte;
+          focada pelo teclado, ela recebe o anel que o input abriu mão. */}
+      <span
+        aria-hidden
+        style={{ left: `calc(0.5rem + (100% - 1rem) * ${value / 10})` }}
+        className={cn(
+          'film-gate pointer-events-none absolute top-1 -ml-[2px] h-[26px] w-[4px]',
+          'transition-[left,transform,box-shadow] duration-[130ms] ease-beam',
+          'peer-active:scale-y-[1.16] peer-active:shadow-[0_0_0_1px_rgba(4,5,10,0.9),0_2px_10px_rgba(0,0,0,0.8),0_0_22px_rgba(255,214,150,0.7)]',
+          'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.brass),0_0_18px_rgba(255,214,150,0.5)]'
+        )}
+      />
+    </div>
   );
 }

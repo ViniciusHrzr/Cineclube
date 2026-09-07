@@ -10,9 +10,8 @@ import {
   Poster,
   SearchField,
   Skeleton,
-  Strip,
 } from '@/components/bits';
-import { Channels } from '@/components/channels';
+import { Channels, Gauge } from '@/components/channels';
 import {
   fmt,
   seriesApi,
@@ -807,9 +806,9 @@ function EpisodeSheet({
       }}
       /* Um rolador só e o fundo sem desfoque — os dois porquês estão em
          components/film.tsx. */
-      className="w-full max-w-[760px] max-h-[100dvh] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
+      className="w-full max-w-[760px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
     >
-      <div className="plate relative max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
+      <div className="plate relative max-h-[calc(100dvh/var(--ui-zoom)-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh/var(--ui-zoom)-2rem)] sm:p-6">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
         </IconKey>
@@ -883,17 +882,15 @@ function EpisodeSheet({
                 <span className="q text-[34px] font-medium leading-none text-beam">{fmt(quick)}</span>
                 <span className="q text-[12px] text-ink-faint">/10</span>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={10}
-                step={0.5}
+              {/* A MESMA régua dos critérios, e não um `input` solto: o
+                  `film-range` é transparente por desenho, então usá-lo sozinho
+                  produzia um controle invisível — funcionava e não tinha corpo. */}
+              <Gauge
                 value={quick}
-                onChange={e => setQuick(parseFloat(e.target.value))}
-                aria-label="Nota do episódio"
-                className="film-range mt-4 w-full"
+                onChange={setQuick}
+                label="Nota do episódio"
+                className="mt-4"
               />
-              <Strip value={quick} cells={20} live className="mt-3 h-3" />
               {mine?.scores ? (
                 <p className="mt-3 text-[12.5px] leading-relaxed text-dye-brass">
                   Você já avaliou este episódio pelos nove critérios. Gravar uma nota rápida
@@ -920,6 +917,9 @@ function EpisodeSheet({
                 criteria={criteria}
                 scores={scores}
                 crew={detalhe?.crew}
+                /* A folha já entra animada; nove entradas escalonadas por cima
+                   dela é o que se sentia como travamento ao abrir. */
+                still
                 onChange={(key, value) => setScores(s => ({ ...s, [key]: value }))}
               />
               <div className="mt-5 flex flex-wrap items-center gap-3">
