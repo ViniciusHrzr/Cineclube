@@ -15,6 +15,8 @@ import {
   IconKey,
   Key,
   Poster,
+  Reel,
+  ReelChip,
   SearchField,
 } from '@/components/bits';
 /* Voto, conversa e detalhamento saíram desta tela e viraram peça: o feed e o
@@ -22,7 +24,7 @@ import {
 import { Conversation, TakeVotes } from '@/components/social';
 import { Breakdown } from '@/components/take';
 import { PersonReel } from '@/components/person';
-import { cdel, fmt, runtimeOf, type Review } from '@/lib/api';
+import { cdel, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -90,15 +92,35 @@ export function ReviewsScreen() {
   }, []);
   const [query, setQuery] = useState('');
 
+  /** Qual pessoa a tela está mostrando, ou null para o clube inteiro. */
+  const [quem, setQuem] = useState<string | null>(null);
+
+  /* ── quem tem ficha aqui ────────────────────────────────────────────────
+     Contado do próprio arquivo: um retrato que leva a uma lista vazia é a tira
+     prometendo o que não tem. Na ordem do clube, para ela não se reorganizar
+     sozinha toda vez que alguém grava uma ficha. */
+  const contagem = new Map<string, number>();
+  club.reviews.forEach(r => contagem.set(r.reviewerId, (contagem.get(r.reviewerId) ?? 0) + 1));
+  const gente = club.reviewers
+    .map(p => ({ ...p, count: contagem.get(p.id) ?? 0 }))
+    .filter(p => p.count > 0);
+
+  /* Quem sai do clube, ou tem a última ficha apagada, não pode deixar a tela
+     vazia e sem explicação: o filtro cai sozinho para o arquivo inteiro. */
+  if (quem && !gente.some(p => p.id === quem)) setQuem(null);
+
   /* Filme ou pessoa, no mesmo campo: esta tela é lida das duas maneiras, e uma
      busca só de filmes responderia metade das perguntas feitas a ela. */
-  const filtering = query.trim().length > 0;
+  const searching = query.trim().length > 0;
+  /* As duas peneiras contam para a mesma pergunta — o que está à vista não é o
+     arquivo —, e é ela que decide se as cartas abrem sozinhas. */
+  const filtering = searching || quem !== null;
   const q = norm(query.trim());
-  const shown = filtering
-    ? club.reviews.filter(
-        r => named(q, r.movieTitle, r.movieOriginal, r.movieEnglish) || named(q, r.reviewerName)
-      )
-    : club.reviews;
+  const shown = club.reviews.filter(r => {
+    if (quem && r.reviewerId !== quem) return false;
+    if (!searching) return true;
+    return named(q, r.movieTitle, r.movieOriginal, r.movieEnglish) || named(q, r.reviewerName);
+  });
 
   async function remove(r: Review) {
     if (!confirm(`Excluir a avaliação de "${r.movieTitle}"? Essa ação não pode ser desfeita.`)) return;
@@ -135,8 +157,49 @@ export function ReviewsScreen() {
             value={query}
             onChange={setQuery}
             placeholder="Buscar por filme ou avaliador…"
-            hint={filtering ? 'busca no que o clube já gravou, não no TMDB' : undefined}
+            hint={searching ? 'busca no que o clube já gravou, não no TMDB' : undefined}
           />
+        </div>
+      ) : null}
+
+      {/* ── a tira de quem avaliou ───────────────────────────────────────
+          A mesma da fila de filmes: retrato, nome e quantos. O campo de busca
+          já achava um avaliador pelo nome, mas achar não é filtrar — era
+          preciso saber o nome, escrever certo, e o resultado misturava as
+          fichas dela com os filmes cujo título casasse. A tira é a pergunta
+          "o que ELA achou" com um toque, e diz de quantas fichas se trata
+          antes de alguém clicar.
+
+          Some numa sala de uma pessoa só: um filtro com uma opção é um botão
+          que não tem o que escolher. */}
+      {gente.length > 1 ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <ReelChip
+            on={quem === null}
+            onClick={() => setQuem(null)}
+            label="O clube"
+            count={club.reviews.length}
+            hint="Ver o arquivo do clube inteiro"
+          />
+          {gente.map(p => (
+            <ReelChip
+              key={p.id}
+              on={quem === p.id}
+              onClick={() => setQuem(v => (v === p.id ? null : p.id))}
+              label={p.name}
+              count={p.count}
+              hint={
+                quem === p.id
+                  ? `Mostrando as fichas de ${p.name}. Ver o arquivo inteiro`
+                  : `Ver só as fichas de ${p.name}`
+              }
+              reel={
+                <Reel color={reelColor(p.dot, p.id)} src={p.avatar ?? null} size="md">
+                  {initialsOf(p.name)}
+                </Reel>
+              }
+            />
+          ))}
         </div>
       ) : null}
 
@@ -167,10 +230,16 @@ export function ReviewsScreen() {
       </div>
 
       {filtering && !shown.length ? (
-        <Blank title="Nenhuma avaliação com esse nome">
-          A busca cobre o filme — em português, no original ou em inglês — e o nome de quem avaliou. Limpe o
-          campo para ver o registro inteiro.
-        </Blank>
+        searching ? (
+          <Blank title="Nenhuma avaliação com esse nome">
+            A busca cobre o filme — em português, no original ou em inglês — e o nome de quem avaliou. Limpe o
+            campo para ver o registro inteiro.
+          </Blank>
+        ) : (
+          <Blank title="Nenhuma avaliação dessa pessoa">
+            Escolha <span className="text-ink">O clube</span> para ver o arquivo inteiro.
+          </Blank>
+        )
       ) : view === 'reviewer' ? (
         <ByReviewer
           reviews={shown}

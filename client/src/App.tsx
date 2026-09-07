@@ -504,6 +504,11 @@ function SeriesClubApp({
 }) {
   const [club, setClubRow] = useState<ClubRow | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  /* Quem está na sala. Não é para desenhar a marquise — ela já tem `me` e o
+     clube —, é para as duas listas que filtram por pessoa: a fila sabe o id de
+     quem pôs cada série, e o acervo sabe o id de quem assinou cada ficha, e
+     nenhum dos dois carrega o retrato junto. */
+  const [roster, setRoster] = useState<Reviewer[]>([]);
   const [queue, setQueue] = useState<QueuedShow[] | null>(null);
   const [takes, setTakes] = useState<EpisodeTake[] | null>(null);
   const [criteria, setCriteria] = useState<Record<string, Criterion[]> | null>(null);
@@ -523,14 +528,16 @@ function SeriesClubApp({
     try {
       const room = await clubsApi.get(slug);
       setClubRow(room.club);
-      const [fila, gravadas, crits] = await Promise.all([
+      const [fila, gravadas, crits, gente] = await Promise.all([
         showsApi.queue(),
         showsApi.takes(),
         seriesApi.criteria(),
+        capi<{ reviewers: Reviewer[] }>('/reviewers'),
       ]);
       setQueue(fila.shows);
       setTakes(gravadas.takes);
       setCriteria(crits.criteria);
+      setRoster(gente.reviewers);
     } catch (e) {
       setBootError((e as Error).message);
     }
@@ -685,9 +692,14 @@ function SeriesClubApp({
                 fault={fault}
               />
             ) : tab === 'watchlist' ? (
-              <SeriesQueueScreen shows={queue} onOpen={goShow} onRemove={id => void dequeue(id)} />
+              <SeriesQueueScreen
+                shows={queue}
+                roster={roster}
+                onOpen={goShow}
+                onRemove={id => void dequeue(id)}
+              />
             ) : tab === 'reviews' ? (
-              <SeriesArchiveScreen takes={takes} onOpen={goShow} />
+              <SeriesArchiveScreen takes={takes} roster={roster} onOpen={goShow} />
             ) : (
               <SeriesCatalogScreen
                 queued={queued}

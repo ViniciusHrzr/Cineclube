@@ -11,6 +11,7 @@ import {
   Key,
   Poster,
   Reel,
+  ReelChip,
   SearchField,
   Skeleton,
   Strip,
@@ -33,6 +34,7 @@ import {
   type EpisodeTake,
   type LobbyTake,
   type QueuedShow,
+  type Reviewer,
   type SeasonDetail,
   type SeriesItem,
   type ShowDetail,
@@ -310,19 +312,59 @@ function SeriesCell({
   );
 }
 
+/** O balde de quem não tem dono registrado. Nunca é um id de gente. */
+const NINGUEM = '\0sem-dono';
+
 /* ── a fila do clube ──────────────────────────────────────────────────────
    O que a sala combinou de acompanhar. Cada linha carrega o progresso DO CLUBE
    — episódios distintos vistos, não linhas —, porque quem abre esta tela está
    perguntando onde a sala está, e não onde ela mesma está. */
 export function SeriesQueueScreen({
   shows,
+  roster,
   onOpen,
   onRemove,
 }: {
   shows: QueuedShow[] | null;
+  /** Quem está no clube, para a tira de quem escolheu. */
+  roster: Reviewer[];
   onOpen: (showId: number) => void;
   onRemove: (showId: number) => void;
 }) {
+  /** Qual pessoa a grade está mostrando, ou null para a fila inteira. */
+  const [quem, setQuem] = useState<string | null>(null);
+
+  /* A MESMA tira da fila de filmes, contada da própria fila e não do clube
+     inteiro: seis retratos em que quatro levam a uma grade vazia é uma tira que
+     promete o que não tem.
+
+     Um `addedBy` pode apontar para quem já saiu do clube — a coluna não tem
+     chave estrangeira —, e isso cai no mesmo balde de quem nunca teve dono. */
+  const { donos, orfas } = useMemo(() => {
+    const conta = new Map<string, number>();
+    for (const s of shows ?? []) {
+      const dono = s.addedBy && roster.some(p => p.id === s.addedBy) ? s.addedBy : NINGUEM;
+      conta.set(dono, (conta.get(dono) ?? 0) + 1);
+    }
+    return {
+      donos: roster
+        .map(p => ({ ...p, count: conta.get(p.id) ?? 0 }))
+        .filter(p => p.count > 0),
+      orfas: conta.get(NINGUEM) ?? 0,
+    };
+  }, [shows, roster]);
+
+  /* Quem sai do clube, ou tem a última série tirada da fila, não pode deixar a
+     grade vazia e sem explicação: o filtro cai sozinho para a fila inteira. */
+  if (quem && quem !== NINGUEM && !donos.some(d => d.id === quem)) setQuem(null);
+  if (quem === NINGUEM && !orfas) setQuem(null);
+
+  const naTela = (shows ?? []).filter(s => {
+    if (!quem) return true;
+    const dono = s.addedBy && roster.some(p => p.id === s.addedBy) ? s.addedBy : NINGUEM;
+    return dono === quem;
+  });
+
   if (!shows) {
     return (
       <section>
@@ -350,14 +392,74 @@ export function SeriesQueueScreen({
     <section>
       <Bill
         title="Minhas séries"
-        note={`${plural(shows.length, 'série', 'séries')} que o clube acompanha`}
+        note={
+          quem
+            ? `${naTela.length} de ${plural(shows.length, 'série', 'séries')}`
+            : `${plural(shows.length, 'série', 'séries')} que o clube acompanha`
+        }
       />
+
+      {/* ── a tira de quem escolheu ──────────────────────────────────────
+          A mesma da fila de filmes, pela mesma razão: numa sala de seis, a
+          primeira pergunta feita a uma lista comum é de quem é cada coisa.
+
+          "Todos" primeiro e sempre visível — um filtro que só se desliga
+          apertando de novo o mesmo botão é um filtro em que dá para ficar
+          preso. Apertar o retrato aceso também desliga, para quem tentar. */}
+      {donos.length > 1 || orfas ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <ReelChip
+            on={quem === null}
+            onClick={() => setQuem(null)}
+            label="Todos"
+            count={shows.length}
+            hint="Ver a lista inteira"
+          />
+          {donos.map(d => (
+            <ReelChip
+              key={d.id}
+              on={quem === d.id}
+              onClick={() => setQuem(v => (v === d.id ? null : d.id))}
+              label={d.name}
+              count={d.count}
+              hint={
+                quem === d.id
+                  ? `Mostrando o que ${d.name} pôs na lista. Ver a lista inteira`
+                  : `Ver só o que ${d.name} pôs na lista`
+              }
+              reel={
+                <Reel color={reelColor(d.dot, d.id)} src={d.avatar ?? null} size="md">
+                  {initialsOf(d.name)}
+                </Reel>
+              }
+            />
+          ))}
+          {/* Só aparece quando existe: as séries postas antes de a coluna
+              existir, e as de quem saiu do clube. */}
+          {orfas ? (
+            <ReelChip
+              on={quem === NINGUEM}
+              onClick={() => setQuem(v => (v === NINGUEM ? null : NINGUEM))}
+              label="Sem registro"
+              count={orfas}
+              hint="Ver só o que a lista não sabe de quem é"
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {!naTela.length ? (
+        <Blank title="Nada nesta lista por essa pessoa">
+          Escolha <span className="text-ink">Todos</span> para ver o que o clube inteiro acompanha.
+        </Blank>
+      ) : null}
+
       {/* A MESMA célula do catálogo, com a tesoura no lugar do marcador. É o que
           o universo de filmes já faz — a fila e o catálogo desenham o mesmo
           `FilmCell` —, e duas células parecidas para a mesma coisa divergem na
           terceira mexida. */}
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {shows.map(s => (
+        {naTela.map(s => (
           <li key={s.id}>
             <SeriesCell
               show={{
@@ -1316,9 +1418,12 @@ function EpisodeVoices({
    que existe para dizer que não tem nada dentro é uma linha a rolar. */
 export function SeriesArchiveScreen({
   takes,
+  roster,
   onOpen,
 }: {
   takes: EpisodeTake[] | null;
+  /** Quem está no clube. A ficha traz o nome e a cor, mas não o retrato. */
+  roster: Reviewer[];
   onOpen: (showId: number) => void;
 }) {
   const [quem, setQuem] = useState<string | null>(null);
@@ -1327,14 +1432,30 @@ export function SeriesArchiveScreen({
 
   /* Quem já marcou alguma coisa, na ordem em que aparece. Contado do próprio
      acervo e não do elenco do clube: uma tira com seis rostos em que quatro
-     levam a uma lista vazia é uma tira que promete o que não tem. */
+     levam a uma lista vazia é uma tira que promete o que não tem.
+
+     Com quantos episódios cada um, que é o que transforma a tira de seis botões
+     iguais numa resposta a "quem está assistindo" antes de qualquer clique. O
+     retrato vem do elenco e o resto da própria ficha: quem saiu do clube
+     continua assinando o que assinou, e perde só a foto. */
   const gente = useMemo(() => {
-    const mapa = new Map<string, string>();
+    const mapa = new Map<string, { id: string; name: string; dot: string | null; count: number }>();
     for (const t of takes ?? []) {
-      if (t.reviewerName && !mapa.has(t.reviewerId)) mapa.set(t.reviewerId, t.reviewerName);
+      const achado = mapa.get(t.reviewerId);
+      if (achado) achado.count += 1;
+      else if (t.reviewerName)
+        mapa.set(t.reviewerId, {
+          id: t.reviewerId,
+          name: t.reviewerName,
+          dot: t.reviewerDot,
+          count: 1,
+        });
     }
-    return [...mapa].map(([id, name]) => ({ id, name }));
-  }, [takes]);
+    return [...mapa.values()].map(p => ({
+      ...p,
+      avatar: roster.find(r => r.id === p.id)?.avatar ?? null,
+    }));
+  }, [takes, roster]);
 
   /* Série > temporada > episódio, montado de uma vez. As médias de cada nível
      saem dos MESMOS episódios listados embaixo dele, então nenhuma delas pode
@@ -1435,15 +1556,41 @@ export function SeriesArchiveScreen({
         note={`${plural(takes.length, 'episódio visto', 'episódios vistos')} · ${comNota} com nota`}
       />
 
+      {/* ── a tira de quem avaliou ───────────────────────────────────────
+          Eram chips de texto, e viraram a MESMA tira da fila de filmes:
+          retrato, nome e quantos. O retrato é o que faz uma sala de seis
+          pessoas ser lida sem soletrar nome nenhum, e o número é o que dá à
+          tira uma resposta antes do clique — quem está assistindo mais.
+
+          "O clube" e não "Todos", porque aqui a soma é uma leitura de verdade:
+          a média de uma temporada com o clube inteiro é o veredito da sala. */}
       {gente.length > 1 ? (
         <div className="mb-6 flex flex-wrap items-center gap-2">
-          <Chip size="sm" on={quem === null} onClick={() => setQuem(null)}>
-            O clube
-          </Chip>
+          <ReelChip
+            on={quem === null}
+            onClick={() => setQuem(null)}
+            label="O clube"
+            count={takes.length}
+            hint="Ver o acervo do clube inteiro"
+          />
           {gente.map(p => (
-            <Chip key={p.id} size="sm" on={quem === p.id} onClick={() => setQuem(p.id)}>
-              {p.name}
-            </Chip>
+            <ReelChip
+              key={p.id}
+              on={quem === p.id}
+              onClick={() => setQuem(v => (v === p.id ? null : p.id))}
+              label={p.name}
+              count={p.count}
+              hint={
+                quem === p.id
+                  ? `Mostrando o acervo de ${p.name}. Ver o do clube inteiro`
+                  : `Ver só o que ${p.name} marcou`
+              }
+              reel={
+                <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
+                  {initialsOf(p.name)}
+                </Reel>
+              }
+            />
           ))}
         </div>
       ) : null}

@@ -351,6 +351,62 @@ export function Chip({
   );
 }
 
+/* ══ a tira de gente ══════════════════════════════════════════════════════
+   Retrato, nome e quantos, numa fileira de chips. O número é o que faz a tira
+   valer o espaço: sem ele são seis botões idênticos que não dizem nada até
+   serem apertados, e com ele a tira já responde "quem está enchendo isto"
+   antes de alguém clicar em nada.
+
+   Nasceu na fila de filmes e morava lá dentro. Saiu para cá quando a terceira
+   lista do produto pediu a mesma tira — o acervo de séries, a fila de séries e
+   os avaliados de filmes filtram todos por pessoa, e quatro cópias deste
+   desenho seriam quatro chances de ele divergir.
+
+   Não é o `Chip`: aquele é uma caixa de texto com altura própria, e enfiar um
+   retrato dentro dele esticaria todos os outros chips do produto por causa
+   deste. */
+export function ReelChip({
+  on,
+  onClick,
+  label,
+  count,
+  reel,
+  hint,
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  reel?: React.ReactNode;
+  /** O que o leitor de tela ouve. Cada lista descreve o próprio filtro. */
+  hint?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      aria-label={hint ?? (on ? `Mostrando ${label}. Ver tudo` : `Ver só ${label}`)}
+      className={cn(
+        'flex items-center gap-2 rounded-cell bg-house-seat/70 py-1 pr-2.5 ring-1 transition-colors duration-150',
+        /* No dedo o alvo cresce, como toda chave do produto. O retrato dentro
+           não muda de tamanho — o que cresce é a área de acerto. */
+        'coarse:min-h-[40px]',
+        reel ? 'pl-1' : 'pl-2.5',
+        on
+          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
+          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+      )}
+    >
+      {reel}
+      <span className="font-display text-[12.5px] uppercase leading-none tracking-[0.1em]">
+        {label}
+      </span>
+      <span className="q text-[10.5px] leading-none opacity-70">{count}</span>
+    </button>
+  );
+}
+
 /* ── search ───────────────────────────────────────────────────────────────
    One field shape for both bins. `onClear` renders the escape hatch, because a
    filtered list that offers no way back reads as an empty library. */

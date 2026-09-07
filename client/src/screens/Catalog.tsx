@@ -11,7 +11,18 @@ import {
   useVelocity,
 } from 'framer-motion';
 import { GripVertical } from 'lucide-react';
-import { Bill, Blank, Chip, Fault, Key, Poster, Reel, SearchField, Skeleton } from '@/components/bits';
+import {
+  Bill,
+  Blank,
+  Chip,
+  Fault,
+  Key,
+  Poster,
+  Reel,
+  ReelChip,
+  SearchField,
+  Skeleton,
+} from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { api, del, initialsOf, reelColor, type Movie, type WatchItem } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -250,47 +261,8 @@ type Owner = {
   count: number;
 };
 
-/* O mesmo desenho do chip do resto do produto — latão quando ligado, aro
-   discreto quando não — com um retrato dentro. Não é o `Chip`: aquele é uma
-   caixa de texto com altura própria, e enfiar um retrato dentro dele esticaria
-   todos os outros chips do produto por causa deste. */
-function ReelChip({
-  on,
-  onClick,
-  label,
-  count,
-  reel,
-}: {
-  on: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-  reel?: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      aria-label={
-        on ? `Mostrando ${label}. Voltar para a fila inteira` : `Ver só o que ${label} pôs na fila`
-      }
-      className={cn(
-        'flex items-center gap-2 rounded-cell bg-house-seat/70 py-1 pr-2.5 ring-1 transition-colors duration-150',
-        reel ? 'pl-1' : 'pl-2.5',
-        on
-          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
-          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
-      )}
-    >
-      {reel}
-      <span className="font-display text-[12.5px] uppercase leading-none tracking-[0.1em]">
-        {label}
-      </span>
-      <span className="q text-[10.5px] leading-none opacity-70">{count}</span>
-    </button>
-  );
-}
+/* O chip com retrato mora em components/bits.tsx: três outras listas do produto
+   filtram por pessoa com a mesma tira. */
 
 /** O balde de quem não tem dono registrado. Nunca é um id de gente. */
 const NOBODY = ' sem-dono';
@@ -628,7 +600,13 @@ export function WatchlistScreen() {
           preso. Apertar o retrato aceso também desliga, para quem tentar. */}
       {owners.length > 1 || orphans ? (
         <div className="mb-5 flex flex-wrap items-center gap-2">
-          <ReelChip on={who === null} onClick={() => setWho(null)} label="Todos" count={club.watchlist.length} />
+          <ReelChip
+            on={who === null}
+            onClick={() => setWho(null)}
+            label="Todos"
+            count={club.watchlist.length}
+            hint="Ver a fila inteira"
+          />
           {owners.map(o => (
             <ReelChip
               key={o.id}
@@ -636,6 +614,11 @@ export function WatchlistScreen() {
               onClick={() => setWho(v => (v === o.id ? null : o.id))}
               label={o.name}
               count={o.count}
+              hint={
+                who === o.id
+                  ? `Mostrando o que ${o.name} pôs na fila. Voltar para a fila inteira`
+                  : `Ver só o que ${o.name} pôs na fila`
+              }
               reel={
                 <Reel color={reelColor(o.dot, o.id)} src={o.avatar} size="md">
                   {initialsOf(o.name)}
@@ -652,6 +635,7 @@ export function WatchlistScreen() {
               onClick={() => setWho(v => (v === NOBODY ? null : NOBODY))}
               label="Sem registro"
               count={orphans}
+              hint="Ver só o que a fila não sabe de quem é"
             />
           ) : null}
         </div>
