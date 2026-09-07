@@ -1112,7 +1112,29 @@ function ClubApp({
           tells you the lights are down before you read a single word. */}
       <HolographicWall asBackdrop />
 
-      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
+      {/* ══════════════════════════════════════════════════════════════════
+          NO TELEFONE, QUEM ROLA É O CONTEÚDO — E NÃO A PÁGINA.
+
+          A barra de baixo era `fixed`, e uma barra `fixed` num navegador de
+          celular sobe e desce durante a rolagem. Não é defeito dela: é o
+          Android recolhendo e devolvendo a própria barra de endereço, o que
+          muda a altura da janela dezenas de vezes por gesto e arrasta com ela
+          tudo que estava preso na borda de baixo.
+
+          Enquanto a PÁGINA rola, isso é inevitável. Então a página para de
+          rolar: a moldura ocupa a altura da janela e não transborda, e quem
+          rola é o `main` lá dentro. A barra de endereço não tem mais o que
+          recolher, a barra de baixo vira um item de layout comum — e um item de
+          layout não pode se mexer, porque não há nada em relação a que se mexer.
+
+          É a mesma coisa que faz um app parecer um app, e ela é de graça: já
+          havia uma coluna flex com cabeçalho, conteúdo e barra nesta ordem.
+
+          No computador nada disso vale: lá a página rola como sempre rolou, o
+          scroll do navegador é o scroll da tela, e não há barra de endereço que
+          se esconda. Daí a variante do dedo, e não um breakpoint.
+          ══════════════════════════════════════════════════════════════════ */}
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-[100dvh] coarse:min-h-0 coarse:overflow-hidden">
         <Marquee
           tab={tab}
           onTab={goTab}
@@ -1124,10 +1146,13 @@ function ClubApp({
           onOpenRequests={() => setSheetOpen(true)}
         />
 
-        {/* Espaço para a barra de baixo passar por cima sem cobrir nada: os 56px
-            dela, mais a faixa de gestos do sistema, mais um respiro. Sem isto a
-            última linha de toda tela ficaria atrás da navegação. */}
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-10">
+        {/* O único que rola no telefone. `overscroll-contain` impede o gesto de
+            continuar na página por trás quando esta lista acaba — é o que evita
+            o "puxar para atualizar" do Android disparar no fim de um acervo.
+
+            Já não precisa de espaço reservado embaixo: a barra deixou de passar
+            por cima e passou a ficar ao lado, no fluxo. */}
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10">
           {bootError ? (
             <section>
               <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">A sessão não começou</h1>
@@ -1344,11 +1369,15 @@ function SectionTabs({
       aria-label="Seções"
       className={cn(
         bar
-          ? /* Presa no rodapé e só no dedo. `env(safe-area-inset-bottom)` é a
-               faixa da barra de gestos do Android: sem ela, a última linha de
-               botões fica debaixo da barra do sistema e metade dos toques vira
-               "voltar". */
-            'fixed inset-x-0 bottom-0 z-30 hidden border-t border-white/[0.07] bg-house/95 pb-[env(safe-area-inset-bottom)] coarse:flex'
+          ? /* No FLUXO, e não `fixed`. Presa era o que a fazia subir e descer
+               com a barra de endereço do Android; como último item de uma
+               coluna que ocupa a janela inteira, ela não tem em relação a que
+               se mexer. Ver a moldura do app, onde está o porquê inteiro.
+
+               `env(safe-area-inset-bottom)` é a faixa da barra de gestos: sem
+               ela, a fileira de botões fica debaixo da barra do sistema e
+               metade dos toques vira "voltar". */
+            'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 pb-[env(safe-area-inset-bottom)] coarse:flex'
           : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
     >

@@ -78,6 +78,12 @@ const SOFTWARE =
 /** One wall, not two: on Gecko for a registration fault, here for a budget. */
 const ONE_WALL = GECKO || SOFTWARE;
 
+/* Lido uma vez, como os dois acima. Serve a uma coisa só neste arquivo: saber
+   se a altura da janela pode mudar sozinha durante uma rolagem, o que é a
+   assinatura de um navegador de celular escondendo a barra de endereço. */
+const COARSE =
+  typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
 const CELL = 46 * GAUGE;     // px — one frame, top to bottom
 const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge
 const PERF_IN = 10 * GAUGE;  // px — the sprocket column, inset from the edge
@@ -325,11 +331,32 @@ function Wall({
     const ro = new ResizeObserver(() => {
       // Same numbers, same wall: a resize observer fires more often than the box
       // actually changes, and every spurious update re-lays a hundred strips.
-      setSize(s =>
-        s.w === host.clientWidth && s.h === host.clientHeight
-          ? s
-          : { w: host.clientWidth, h: host.clientHeight }
-      );
+      setSize(s => {
+        const w = host.clientWidth;
+        const h = host.clientHeight;
+        if (s.w === w && s.h === h) return s;
+
+        /* ── a barra de endereço do celular não é um redimensionamento ────
+           No Android, rolar a página recolhe e devolve a barra de endereço, e
+           cada uma dessas vezes muda a ALTURA da janela em algumas dezenas de
+           pixels. Aqui isso chegava como um redimensionamento de verdade: a
+           parede inteira era refeita e re-rasterizada — oito faixas de
+           gradientes com sombra, do tamanho da tela — no meio de uma rolagem.
+
+           Era a explicação de dois sintomas ao mesmo tempo: o app pesado ao
+           rolar no telefone, e a barra de baixo tremendo, porque o quadro em
+           que ela deveria assentar estava sendo gasto redesenhando o fundo.
+
+           A largura continua valendo à risca — girar o aparelho é um
+           redimensionamento de verdade e tem de refazer a parede. O que ganha
+           tolerância é só a altura, e só onde existe uma barra de endereço que
+           se esconde: a parede já é transbordada em 12% e as faixas são mais
+           altas que a janela, então cem pixels a mais ou a menos não mudam
+           nada do que se vê. */
+        if (COARSE && s.w === w && Math.abs(s.h - h) < 160) return s;
+
+        return { w, h };
+      });
     });
     ro.observe(host);
     return () => ro.disconnect();
