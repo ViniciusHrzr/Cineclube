@@ -248,6 +248,80 @@ async function show(showId) {
   };
 }
 
+/* ── as fichas de UM episódio, em toda a rede ─────────────────────────────
+   O que a folha de um episódio mostra quando alguém troca de "clube" para
+   "todas". Mesmas paredes, mesma ordem por credibilidade, e a mesma regra de
+   uma ficha por pessoa — a diferença é o alcance da pergunta.
+
+   Existe separado de `show` porque é outra pergunta: aquele diz o que a rede
+   achou da SÉRIE, este diz o que ela achou daquele episódio. Filtrar o primeiro
+   no cliente daria a resposta certa por acidente e só enquanto a série coubesse
+   nas cinco fichas que ele carrega. */
+const episodeTakesStmt = db.prepare(`
+  SELECT t.id, t.final, t.scores, t.show_genre, t.comment, t.watched_at,
+         t.season, t.episode, t.episode_title,
+         r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot,
+         r.avatar_rev AS actor_avatar_rev,
+         c.name AS club_name, c.slug AS club_slug,
+         (SELECT COUNT(*) FROM episode_takes x JOIN clubs xc ON xc.id = x.club_id
+           WHERE x.reviewer_id = r.id AND x.final IS NOT NULL AND ${eligible('xc')}) AS credibility
+  FROM episode_takes t
+  JOIN reviewers r ON r.id = t.reviewer_id
+  JOIN clubs c ON c.id = t.club_id
+  WHERE ${READABLE} AND ${RATED}
+    AND t.show_id = ? AND t.season = ? AND t.episode = ?
+  ORDER BY credibility DESC, t.watched_at DESC
+  LIMIT ${TAKES * 4}
+`);
+
+const episodeVerdictStmt = db.prepare(`
+  SELECT AVG(t.final) AS average, COUNT(*) AS takes, COUNT(DISTINCT t.club_id) AS clubs
+  FROM episode_takes t
+  JOIN clubs c ON c.id = t.club_id
+  WHERE ${ELIGIBLE} AND ${RATED}
+    AND t.show_id = ? AND t.season = ? AND t.episode = ?
+`);
+
+async function episode(showId, season, number) {
+  const id = Number(showId);
+  const s = Number(season);
+  const e = Number(number);
+  if (![id, s, e].every(Number.isInteger) || id <= 0 || s < 0 || e <= 0) return null;
+
+  const [linhas, conta] = await Promise.all([
+    episodeTakesStmt.all(id, s, e),
+    episodeVerdictStmt.get(id, s, e),
+  ]);
+
+  const vistos = new Set();
+  const takes = [];
+  for (const row of linhas) {
+    if (vistos.has(row.actor_id)) continue;
+    vistos.add(row.actor_id);
+    takes.push({
+      id: row.id,
+      actor: { id: row.actor_id, name: row.actor_name, dot: row.actor_dot, avatar: avatarOf(row) },
+      club: { name: row.club_name, slug: row.club_slug },
+      season: row.season,
+      episode: row.episode,
+      episodeTitle: row.episode_title ?? null,
+      final: Number(row.final),
+      at: row.watched_at,
+      ends: endsOfEpisode(row.show_genre, row.scores),
+      excerpt: row.comment ? excerpt(row.comment, 200) : null,
+      credibility: Number(row.credibility) || 0,
+    });
+    if (takes.length >= TAKES) break;
+  }
+
+  return {
+    takes,
+    average: conta?.takes ? Number(conta.average) : null,
+    count: Number(conta?.takes) || 0,
+    clubs: Number(conta?.clubs) || 0,
+  };
+}
+
 const TTL_MS = 60_000;
 let cached = null;
 let cachedAt = 0;
@@ -346,4 +420,4 @@ async function snapshot() {
   return cached;
 }
 
-module.exports = { snapshot, show, invalidate, FLOOR, WINDOW_DAYS, TAKES };
+module.exports = { snapshot, show, episode, invalidate, FLOOR, WINDOW_DAYS, TAKES };

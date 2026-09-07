@@ -93,7 +93,10 @@ export const SERIES_TABS = [
   /* A porta de entrada aqui é o catálogo, e não o feed: neste universo o gesto
      que se repete é achar a próxima série e marcar o que se viu. */
   { id: 'catalog', label: 'Catálogo' },
-  { id: 'watchlist', label: 'Quero ver' },
+  /* "Minhas séries" e não "Quero ver": no universo de filmes a fila é o que
+     ainda não se viu, e aqui ela é o que o clube ACOMPANHA — uma série na lista
+     costuma estar meio assistida, não esperando. */
+  { id: 'watchlist', label: 'Minhas séries' },
   { id: 'reviews', label: 'Avaliados' },
   /* Uma série, com as temporadas e os episódios. Rota e não aba, pela mesma
      razão que avaliar não é aba no universo de filmes: não se escolhe "uma

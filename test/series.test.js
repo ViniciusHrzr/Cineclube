@@ -490,6 +490,51 @@ test('o pódio exige um piso de episódios avaliados', async () => {
   );
 });
 
+test('as fichas de UM episódio na rede respeitam a parede mais alta', async () => {
+  const p = await kit.signIn();
+  const fechado = await kit.makeClub({ owner: p.id, visibility: 'private' });
+  const aberto = await kit.makeClub({ owner: p.id, visibility: 'public' });
+  const s = show('Com Dois Clubes');
+  const base = { showTitle: s.title, showPoster: s.poster, genre: 'Drama' };
+
+  await req('PUT', at(fechado, `/shows/${s.id}/1/1`), { ...base, quick: 2 }, p.cookie);
+  await req('PUT', at(aberto, `/shows/${s.id}/1/1`), { ...base, quick: 10 }, p.cookie);
+  /* O fechado empresta as CONTAS mas não as fichas assinadas: ele entra na
+     média e não na lista de quem avaliou. */
+  await lend(fechado, { charts: 1, reviews: 0 });
+
+  const { status, body } = await req('GET', `/api/lobby/episode/${s.id}/1/1`);
+  assert.equal(status, 200);
+  assert.equal(body.count, 2, 'as duas notas contam na média da rede');
+  assert.equal(body.average, 6);
+  assert.equal(
+    body.takes.length, 1,
+    'só o clube que empresta as fichas assinadas aparece com nome'
+  );
+  assert.equal(body.takes[0].club.slug, aberto.slug);
+});
+
+test('o episódio da rede é outra pergunta que a série', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id, visibility: 'public' });
+  const s = show();
+  const base = { showTitle: s.title, showPoster: s.poster, genre: 'Drama' };
+
+  await req('PUT', at(club, `/shows/${s.id}/1/1`), { ...base, quick: 4 }, p.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1/2`), { ...base, quick: 10 }, p.cookie);
+
+  const serie = await req('GET', `/api/lobby/show/${s.id}`);
+  const ep = await req('GET', `/api/lobby/episode/${s.id}/1/2`);
+  assert.equal(serie.body.average, 7, 'a série é a média dos episódios');
+  assert.equal(ep.body.average, 10, 'o episódio é só ele');
+  assert.equal(ep.body.count, 1);
+});
+
+test('um episódio inválido é recusado, e não devolve lista vazia', async () => {
+  const { status } = await req('GET', '/api/lobby/episode/0/1/1');
+  assert.equal(status, 400);
+});
+
 /* ── os critérios servidos ao cliente ───────────────────────────────────── */
 
 test('a rota de critérios entrega nove por gênero', async () => {

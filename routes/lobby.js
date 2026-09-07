@@ -56,4 +56,13 @@ router.get('/show/:showId', wrap(async (req, res) => {
   res.json(out);
 }));
 
+/* Um episódio, visto pela rede. É o que a folha mostra quando alguém troca de
+   "clube" para "todas" — outra pergunta que a da série, e não um filtro dela. */
+router.get('/episode/:showId/:season/:episode', wrap(async (req, res) => {
+  const { showId, season, episode } = req.params;
+  const out = await lobbySeries.episode(showId, season, episode);
+  if (!out) return res.status(400).json({ error: 'Episódio inválido.' });
+  res.json(out);
+}));
+
 module.exports = router;

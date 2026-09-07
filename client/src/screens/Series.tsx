@@ -4,16 +4,21 @@ import {
   Bill,
   Blank,
   Chip,
+  Drawer,
   Fault,
   IconKey,
   Key,
   Poster,
+  Reel,
   SearchField,
   Skeleton,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
 import {
   fmt,
+  initialsOf,
+  lobby as lobbyApi,
+  reelColor,
   seriesApi,
   /* Renomeado porque `shows` também é o nome da fila numa das telas daqui, e
      duas coisas com o mesmo nome no mesmo arquivo é uma delas sendo lida como a
@@ -23,6 +28,7 @@ import {
   type Episode,
   type EpisodeDetail,
   type EpisodeTake,
+  type LobbyTake,
   type QueuedShow,
   type SeasonDetail,
   type SeriesItem,
@@ -241,7 +247,7 @@ export function SeriesQueueScreen({
   if (!shows) {
     return (
       <section>
-        <Bill title="Quero ver" note="carregando…" />
+        <Bill title="Minhas séries" note="carregando…" />
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {[0, 1, 2].map(i => <Skeleton key={i} className="aspect-[2/3] w-full" />)}
         </div>
@@ -252,7 +258,7 @@ export function SeriesQueueScreen({
   if (!shows.length) {
     return (
       <section>
-        <Bill title="Quero ver" />
+        <Bill title="Minhas séries" />
         <Blank title="A fila de séries está vazia">
           Ache uma série no catálogo e ponha na fila. O que o clube combinar de acompanhar
           aparece aqui, com o quanto já foi visto.
@@ -263,7 +269,10 @@ export function SeriesQueueScreen({
 
   return (
     <section>
-      <Bill title="Quero ver" note={`${plural(shows.length, 'série', 'séries')} na fila do clube`} />
+      <Bill
+        title="Minhas séries"
+        note={`${plural(shows.length, 'série', 'séries')} que o clube acompanha`}
+      />
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {shows.map(s => (
           <li key={s.id} className="group/cell relative">
@@ -540,7 +549,11 @@ export function ShowScreen({
           showPoster={show.poster}
           genre={genero}
           ep={aberto}
-          mine={(porEpisodio.get(`${aberto.season}x${aberto.episode}`) ?? []).find(t => t.reviewerId === meId) ?? null}
+          /* A folha recebe TODAS as fichas do episódio, e não só a sua: ela
+             mostra o que o clube achou logo abaixo do que você achou, e
+             descobrir isso pedia sair da folha antes. */
+          takes={porEpisodio.get(`${aberto.season}x${aberto.episode}`) ?? []}
+          meId={meId}
           criteria={criteria?.[genero] ?? null}
           onClose={() => setAberto(null)}
           onSaved={onSaved}
@@ -699,7 +712,8 @@ function EpisodeSheet({
   showPoster,
   genre,
   ep,
-  mine,
+  takes,
+  meId,
   criteria,
   onClose,
   onSaved,
@@ -710,12 +724,15 @@ function EpisodeSheet({
   showPoster: string | null;
   genre: string;
   ep: Episode;
-  mine: EpisodeTake | null;
+  /** Todas as fichas do clube neste episódio, a sua inclusive. */
+  takes: EpisodeTake[];
+  meId: string;
   criteria: Criterion[] | null;
   onClose: () => void;
   onSaved: () => void;
   fault: (msg: string) => void;
 }) {
+  const mine = takes.find(t => t.reviewerId === meId) ?? null;
   const ref = useRef<HTMLDialogElement>(null);
   const [detalhe, setDetalhe] = useState<EpisodeDetail | null>(null);
   const [modo, setModo] = useState<'rapida' | 'criteriosa'>(mine?.scores ? 'criteriosa' : 'rapida');
@@ -959,16 +976,182 @@ function EpisodeSheet({
             />
           </label>
         </div>
+
+        <EpisodeVoices
+          showId={showId}
+          season={ep.season}
+          episode={ep.episode}
+          takes={takes}
+          meId={meId}
+        />
       </div>
     </dialog>
   );
 }
 
-/* ── o acervo de séries ───────────────────────────────────────────────────
-   O que o clube gravou, do mais recente para o mais antigo. Uma lista e não uma
-   grade: a unidade aqui é o episódio, e um episódio não tem cartaz próprio — o
-   que ele tem é a série a que pertence, e vinte cartazes iguais em fila seriam
-   a mesma imagem repetida. */
+/* ══ o que os outros acharam deste episódio ═══════════════════════════════
+   Duas perguntas com uma chave entre elas.
+
+   **Clube** é quem estava na sala com você, e sai de graça: o acervo inteiro já
+   está em memória desde o boot, e a folha recebeu as fichas deste episódio por
+   prop. Não há requisição nenhuma para desenhar isto.
+
+   **Todas** é a rede, e essa custa uma chamada — que é justamente por que ela
+   não é o padrão. Ela também obedece as paredes: só aparece quem emprestou as
+   fichas assinadas, o que é a mesma regra da avaliação em destaque do saguão.
+
+   Ordenada por credibilidade do lado da rede, como todo ranking daquele lado.
+   Do lado do clube a ordem é a nota, porque numa sala de seis pessoas
+   credibilidade não separa ninguém e a pergunta real é quem gostou mais. */
+function EpisodeVoices({
+  showId,
+  season,
+  episode,
+  takes,
+  meId,
+}: {
+  showId: number;
+  season: number;
+  episode: number;
+  takes: EpisodeTake[];
+  meId: string;
+}) {
+  const [alcance, setAlcance] = useState<'clube' | 'todas'>('clube');
+  const [rede, setRede] = useState<{ takes: LobbyTake[]; average: number | null; count: number; clubs: number } | null>(null);
+  const [buscando, setBuscando] = useState(false);
+
+  useEffect(() => {
+    if (alcance !== 'todas' || rede) return;
+    let vivo = true;
+    setBuscando(true);
+    void lobbyApi
+      .episode(showId, season, episode)
+      .then(r => vivo && setRede(r))
+      .catch(() => vivo && setRede({ takes: [], average: null, count: 0, clubs: 0 }))
+      .finally(() => vivo && setBuscando(false));
+    return () => {
+      vivo = false;
+    };
+  }, [alcance, rede, showId, season, episode]);
+
+  const doClube = [...takes]
+    .filter(t => t.final != null)
+    .sort((a, b) => (b.final ?? 0) - (a.final ?? 0));
+
+  const media = doClube.length
+    ? doClube.reduce((s, t) => s + (t.final ?? 0), 0) / doClube.length
+    : null;
+
+  return (
+    <section className="mt-6 border-t border-white/[0.07] pt-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="legend mr-1">O que acharam</span>
+        <Chip size="sm" on={alcance === 'clube'} onClick={() => setAlcance('clube')}>
+          Clube
+        </Chip>
+        <Chip size="sm" on={alcance === 'todas'} onClick={() => setAlcance('todas')}>
+          Todas
+        </Chip>
+        {(alcance === 'clube' ? media : rede?.average) != null ? (
+          <span className="q ml-auto text-[13px] text-beam">
+            {fmt((alcance === 'clube' ? media : rede?.average) as number)}
+            <span className="text-ink-faint"> /10</span>
+          </span>
+        ) : null}
+      </div>
+
+      {alcance === 'clube' ? (
+        !doClube.length ? (
+          <p className="mt-4 text-[13px] leading-relaxed text-ink-dim">
+            Ninguém do clube avaliou este episódio ainda.
+          </p>
+        ) : (
+          <ul className="mt-4 flex flex-col gap-3">
+            {doClube.map(t => (
+              <li key={t.id} className="flex items-baseline gap-2.5">
+                <span
+                  className={cn(
+                    'font-display text-[13px] uppercase tracking-[0.1em]',
+                    t.reviewerId === meId ? 'text-dye-brass' : 'text-ink'
+                  )}
+                >
+                  {t.reviewerId === meId ? 'você' : t.reviewerName}
+                </span>
+                {/* A criteriosa se anuncia: as duas são notas, e a diferença
+                    entre elas é quanto se olhou. */}
+                {t.scores ? (
+                  <span className="legend text-[9px] text-beam-dim">criteriosa</span>
+                ) : null}
+                <span className="q ml-auto text-[14px] text-beam">{fmt(t.final ?? 0)}</span>
+              </li>
+            ))}
+            {doClube.map(t =>
+              t.comment ? (
+                <li key={`${t.id}-txt`} className="-mt-1 break-words text-[12.5px] italic leading-relaxed text-ink-dim">
+                  “{t.comment}” — {t.reviewerId === meId ? 'você' : t.reviewerName}
+                </li>
+              ) : null
+            )}
+          </ul>
+        )
+      ) : buscando ? (
+        <p className="mt-4 text-[13px] text-ink-dim">Perguntando à rede…</p>
+      ) : !rede?.takes.length ? (
+        <p className="mt-4 text-[13px] leading-relaxed text-ink-dim">
+          Nenhum clube que empresta as fichas avaliou este episódio ainda.
+        </p>
+      ) : (
+        <>
+          <ul className="mt-4 flex flex-col gap-3.5">
+            {rede.takes.map(t => (
+              <li key={t.id} className="flex gap-2.5">
+                <Reel color={reelColor(t.actor.dot, t.actor.id)} src={t.actor.avatar} size="sm">
+                  {initialsOf(t.actor.name)}
+                </Reel>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
+                      {t.actor.name}
+                    </span>
+                    <span className="font-display text-[10.5px] uppercase tracking-[0.12em] text-dye-brass">
+                      {t.club.name}
+                    </span>
+                    <span className="q ml-auto text-[14px] text-beam">{fmt(t.final)}</span>
+                  </span>
+                  {t.excerpt ? (
+                    <span className="mt-1 block break-words text-[12.5px] italic leading-relaxed text-ink-dim">
+                      “{t.excerpt}”
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="q mt-3 text-[10.5px] text-ink-faint">
+            {plural(rede.count, 'avaliação', 'avaliações')} em{' '}
+            {plural(rede.clubs, 'clube', 'clubes')} · ordenadas por quem mais avalia
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/* ══ o acervo, na forma da coisa ══════════════════════════════════════════
+   Uma lista corrida de episódios era a forma errada. O que o clube guarda aqui
+   não é uma pilha de fichas: é uma SÉRIE, feita de temporadas, feitas de
+   episódios — e a pergunta que se faz ao acervo ("o que a gente achou da
+   terceira?") só tem resposta se a tela tiver essa forma.
+
+   Três níveis, dois deles fechados. Uma série de sessenta episódios abriria
+   sessenta linhas para responder uma pergunta sobre uma temporada, e um acervo
+   que se lê rolando é um acervo que não se lê.
+
+   ── e o filtro é por pessoa ─────────────────────────────────────────────
+   Porque a segunda pergunta do acervo é "o que ELA achou". Filtrar por avaliador
+   recorta os três níveis de uma vez: a média da temporada passa a ser a dela, e
+   uma série em que ela não avaliou nada some em vez de ficar vazia. Uma linha
+   que existe para dizer que não tem nada dentro é uma linha a rolar. */
 export function SeriesArchiveScreen({
   takes,
   onOpen,
@@ -976,32 +1159,98 @@ export function SeriesArchiveScreen({
   takes: EpisodeTake[] | null;
   onOpen: (showId: number) => void;
 }) {
-  const [query, setQuery] = useState('');
+  const [quem, setQuem] = useState<string | null>(null);
+  const [abertas, setAbertas] = useState<ReadonlySet<number>>(() => new Set());
+  const [temporadas, setTemporadas] = useState<ReadonlySet<string>>(() => new Set());
+
+  /* Quem já marcou alguma coisa, na ordem em que aparece. Contado do próprio
+     acervo e não do elenco do clube: uma tira com seis rostos em que quatro
+     levam a uma lista vazia é uma tira que promete o que não tem. */
+  const gente = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const t of takes ?? []) {
+      if (t.reviewerName && !mapa.has(t.reviewerId)) mapa.set(t.reviewerId, t.reviewerName);
+    }
+    return [...mapa].map(([id, name]) => ({ id, name }));
+  }, [takes]);
+
+  /* Série > temporada > episódio, montado de uma vez. As médias de cada nível
+     saem dos MESMOS episódios listados embaixo dele, então nenhuma delas pode
+     contradizer o que se vê ao abrir. */
+  const arvore = useMemo(() => {
+    const vistos = (takes ?? []).filter(t => !quem || t.reviewerId === quem);
+    const series = new Map<
+      number,
+      {
+        id: number;
+        title: string;
+        poster: string | null;
+        seasons: Map<number, Map<number, { title: string | null; takes: EpisodeTake[] }>>;
+      }
+    >();
+
+    for (const t of vistos) {
+      let s = series.get(t.showId);
+      if (!s) {
+        s = { id: t.showId, title: t.showTitle, poster: t.showPoster, seasons: new Map() };
+        series.set(t.showId, s);
+      }
+      let temp = s.seasons.get(t.season);
+      if (!temp) {
+        temp = new Map();
+        s.seasons.set(t.season, temp);
+      }
+      let ep = temp.get(t.episode);
+      if (!ep) {
+        ep = { title: t.episodeTitle, takes: [] };
+        temp.set(t.episode, ep);
+      }
+      if (!ep.title && t.episodeTitle) ep.title = t.episodeTitle;
+      ep.takes.push(t);
+    }
+
+    /* Nulo e não zero quando ninguém deu nota: um episódio visto e não avaliado
+       não entra em média nenhuma, e imprimir 0,0 seria inventar um veredito. */
+    const medir = (lista: EpisodeTake[]) => {
+      const comNota = lista.filter(x => x.final != null);
+      return comNota.length
+        ? comNota.reduce((acc, x) => acc + (x.final ?? 0), 0) / comNota.length
+        : null;
+    };
+
+    return [...series.values()]
+      .map(s => {
+        const seasons = [...s.seasons.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([numero, eps]) => {
+            const episodios = [...eps.entries()]
+              .sort((a, b) => a[0] - b[0])
+              .map(([n, ep]) => ({ numero: n, ...ep, average: medir(ep.takes) }));
+            return { numero, episodios, average: medir(episodios.flatMap(e => e.takes)) };
+          });
+        const todos = seasons.flatMap(t => t.episodios.flatMap(e => e.takes));
+        return {
+          ...s,
+          seasons,
+          episodes: seasons.reduce((n, t) => n + t.episodios.length, 0),
+          average: medir(todos),
+        };
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [takes, quem]);
 
   if (!takes) {
     return (
       <section>
         <Bill title="Avaliados" note="carregando…" />
         <div className="flex flex-col gap-2">
-          {[0, 1, 2].map(i => <Skeleton key={i} className="h-[64px] w-full" />)}
+          {[0, 1, 2].map(i => (
+            <Skeleton key={i} className="h-[64px] w-full" />
+          ))}
         </div>
       </section>
     );
   }
-
-  const q = query.trim().toLowerCase();
-  const vistos = q
-    ? takes.filter(
-        t =>
-          t.showTitle.toLowerCase().includes(q) ||
-          (t.episodeTitle ?? '').toLowerCase().includes(q) ||
-          (t.reviewerName ?? '').toLowerCase().includes(q)
-      )
-    : takes;
-
-  /* Só o que tem nota conta como avaliação: o resto é o que o clube viu, e
-     misturar os dois num contador faria o número medir o gesto mais barato. */
-  const comNota = takes.filter(t => t.final != null).length;
 
   if (!takes.length) {
     return (
@@ -1015,47 +1264,145 @@ export function SeriesArchiveScreen({
     );
   }
 
+  const comNota = takes.filter(t => t.final != null).length;
+
   return (
     <section>
       <Bill
         title="Avaliados"
-        note={`${plural(takes.length, 'episódio visto', 'episódios vistos')} · ${plural(comNota, 'com nota', 'com nota')}`}
+        note={`${plural(takes.length, 'episódio visto', 'episódios vistos')} · ${comNota} com nota`}
       />
 
-      <div className="mb-5 max-w-[440px]">
-        <SearchField
-          value={query}
-          onChange={setQuery}
-          placeholder="Buscar por série, episódio ou pessoa…"
-        />
-      </div>
+      {gente.length > 1 ? (
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <Chip size="sm" on={quem === null} onClick={() => setQuem(null)}>
+            O clube
+          </Chip>
+          {gente.map(p => (
+            <Chip key={p.id} size="sm" on={quem === p.id} onClick={() => setQuem(p.id)}>
+              {p.name}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
 
-      {!vistos.length ? (
-        <Blank title="Nada com esse nome">Limpe o campo para ver o registro inteiro.</Blank>
+      {!arvore.length ? (
+        <Blank title="Nada marcado por essa pessoa ainda">
+          Escolha <span className="text-ink">O clube</span> para ver o acervo inteiro.
+        </Blank>
       ) : (
         <ul className="flex flex-col">
-          {vistos.map(t => (
-            <li key={t.id} className="border-t border-white/[0.06] first:border-t-0">
-              <button
-                type="button"
-                onClick={() => onOpen(t.showId)}
-                className="group flex w-full items-center gap-3 rounded-cell px-2 py-3 text-left transition-colors hover:bg-beam/[0.05]"
-              >
-                <Poster src={t.showPoster} className="h-[52px] w-[35px] flex-none" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] text-ink transition-colors group-hover:text-beam">
-                    {t.showTitle}
-                  </span>
-                  <span className="q block truncate text-[11px] text-ink-dim">
-                    T{t.season}E{String(t.episode).padStart(2, '0')}
-                    {t.episodeTitle ? ` · ${t.episodeTitle}` : ''}
-                    {t.reviewerName ? ` · ${t.reviewerName}` : ''}
-                  </span>
-                </span>
-                <MineMark take={t} />
-              </button>
-            </li>
-          ))}
+          {arvore.map(serie => {
+            const aberta = abertas.has(serie.id);
+            return (
+              <li key={serie.id} className="border-t border-white/[0.06] first:border-t-0">
+                <div className="flex items-center gap-3 px-2 transition-colors hover:bg-beam/[0.05]">
+                  <button
+                    type="button"
+                    aria-expanded={aberta}
+                    onClick={() =>
+                      setAbertas(prev => {
+                        const next = new Set(prev);
+                        if (next.has(serie.id)) next.delete(serie.id);
+                        else next.add(serie.id);
+                        return next;
+                      })
+                    }
+                    className="group flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+                  >
+                    <Poster src={serie.poster} className="h-[52px] w-[35px] flex-none" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14.5px] text-ink transition-colors group-hover:text-beam">
+                        {serie.title}
+                      </span>
+                      <span className="q block text-[11px] text-ink-dim">
+                        {plural(serie.seasons.length, 'temporada', 'temporadas')} ·{' '}
+                        {plural(serie.episodes, 'episódio', 'episódios')}
+                      </span>
+                    </span>
+                    {serie.average != null ? (
+                      <span className="q flex-none text-[17px] text-beam">{fmt(serie.average)}</span>
+                    ) : null}
+                  </button>
+                  {/* A porta para a série continua existindo, e fora do botão que
+                      desdobra: são duas perguntas na mesma linha, e um controle
+                      não se aninha em outro. */}
+                  <IconKey aria-label={`Abrir ${serie.title}`} onClick={() => onOpen(serie.id)}>
+                    <ChevronLeft className="h-4 w-4 rotate-180" strokeWidth={1.8} />
+                  </IconKey>
+                </div>
+
+                <Drawer open={aberta}>
+                  <ul className="flex flex-col pb-2 pl-6">
+                    {serie.seasons.map(temp => {
+                      const chave = `${serie.id}x${temp.numero}`;
+                      const abertaT = temporadas.has(chave);
+                      return (
+                        <li key={chave} className="border-t border-white/[0.05]">
+                          <button
+                            type="button"
+                            aria-expanded={abertaT}
+                            onClick={() =>
+                              setTemporadas(prev => {
+                                const next = new Set(prev);
+                                if (next.has(chave)) next.delete(chave);
+                                else next.add(chave);
+                                return next;
+                              })
+                            }
+                            className="group flex w-full items-center gap-3 py-2.5 pr-2 text-left transition-colors hover:bg-beam/[0.04]"
+                          >
+                            <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink transition-colors group-hover:text-beam">
+                              Temporada {temp.numero}
+                            </span>
+                            <span className="q text-[11px] text-ink-faint">
+                              {plural(temp.episodios.length, 'episódio', 'episódios')}
+                            </span>
+                            {temp.average != null ? (
+                              <span className="q ml-auto text-[14px] text-beam">
+                                {fmt(temp.average)}
+                              </span>
+                            ) : null}
+                          </button>
+
+                          <Drawer open={abertaT}>
+                            <ul className="flex flex-col pb-2 pl-4">
+                              {temp.episodios.map(ep => (
+                                <li
+                                  key={ep.numero}
+                                  className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-t border-white/[0.04] py-2 pr-2"
+                                >
+                                  <span className="q flex-none text-[11px] text-ink-dim">
+                                    E{String(ep.numero).padStart(2, '0')}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
+                                    {ep.title || 'sem título'}
+                                  </span>
+                                  {/* Quem deu o quê, e não só a média: a
+                                      divergência é o assunto deste produto, e
+                                      uma média esconde exatamente isso. */}
+                                  <span className="flex flex-none flex-wrap items-baseline gap-x-2.5">
+                                    {ep.takes.map(t => (
+                                      <span key={t.id} className="q text-[11px] text-ink-faint">
+                                        {t.reviewerName?.split(' ')[0] ?? '—'}{' '}
+                                        <span className={t.scores ? 'text-beam' : 'text-ink'}>
+                                          {t.final != null ? fmt(t.final) : '—'}
+                                        </span>
+                                      </span>
+                                    ))}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </Drawer>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Drawer>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

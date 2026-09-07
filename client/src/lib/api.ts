@@ -340,6 +340,13 @@ export const lobby = {
      URL só fingiria que é a mesma pergunta. */
   series: () => api<LobbySeriesSnapshot>('/api/lobby/series'),
   show: (showId: number) => api<LobbyShow>(`/api/lobby/show/${showId}`),
+  /* Um episódio na rede inteira. Outra pergunta que a da série, e não um filtro
+     dela: filtrar no cliente daria a resposta certa por acidente e só enquanto a
+     série coubesse nas cinco fichas que a outra rota carrega. */
+  episode: (showId: number, season: number, episode: number) =>
+    api<LobbyFilm & { takes: (LobbyTake & { season: number; episode: number })[] }>(
+      `/api/lobby/episode/${showId}/${season}/${episode}`
+    ),
 };
 
 /* ══ o universo de séries ═════════════════════════════════════════════════
