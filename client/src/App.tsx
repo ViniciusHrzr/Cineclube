@@ -1134,7 +1134,7 @@ function ClubApp({
           scroll do navegador é o scroll da tela, e não há barra de endereço que
           se esconda. Daí a variante do dedo, e não um breakpoint.
           ══════════════════════════════════════════════════════════════════ */}
-      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-[100dvh] coarse:min-h-0 coarse:overflow-hidden">
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
         <Marquee
           tab={tab}
           onTab={goTab}

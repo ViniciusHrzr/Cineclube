@@ -202,7 +202,7 @@ export function Lobby({
        o que mudava a altura da janela dezenas de vezes, arrastava o cabeçalho
        preso no topo e obrigava a parede de celuloide a se refazer no meio da
        rolagem. O porquê inteiro está em App.tsx. */
-    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-[100dvh] coarse:min-h-0 coarse:overflow-hidden">
+    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
       <HolographicWall asBackdrop />
 
       {/* Presa no topo, como a marquise de dentro de um clube — mesmas classes,

@@ -40,6 +40,31 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+
+  /* ── a altura da janela, medida pela própria janela ─────────────────────
+     A moldura do telefone tentou `100dvh` primeiro e sobrou um vão preto de uns
+     cento e trinta pixels entre a barra do app e os botões do Android.
+
+     `dvh` responde "quanto a janela pode chegar a ter", e o que a moldura
+     precisa saber é outra coisa: quanto ela TEM agora, com a barra de endereço
+     do navegador na tela e a barra de botões do sistema embaixo. As duas contas
+     dão números diferentes, e a diferença era exatamente o vão.
+
+     `height: 100%` encadeado do `html` até o `#root` não estima nada: ele herda
+     o viewport de layout, que é a área que o navegador de fato entregou. Se o
+     sistema tem três botões, a conta já vem sem eles; se tem barra de gestos,
+     idem; e se um dia o app rodar em tela cheia, o número muda sozinho e o
+     recuo de área segura entra por cima.
+
+     Só no dedo. No computador a página rola e a altura da janela não é a altura
+     de nada — a moldura lá é `min-height`, e limitá-la cortaria a página. */
+  @media (pointer: coarse) {
+    html,
+    body,
+    #root {
+      height: 100%;
+    }
+  }
   body {
     @apply bg-house text-ink font-sans antialiased;
     margin: 0;
