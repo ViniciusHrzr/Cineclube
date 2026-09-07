@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AnimatePresence,
-  motion,
-  useMotionValue,
-  useSpring,
-  useTransform,
-  useVelocity,
-} from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Play, Search } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip } from '@/components/bits';
+/* As réguas saíram daqui e viraram peça no dia em que um episódio ganhou ficha
+   própria: são a mesma interação sobre listas de critérios diferentes. */
+import { Channels } from '@/components/channels';
 import { MentionField } from '@/components/mention';
 import {
   api,
@@ -19,11 +15,10 @@ import {
   totalWeight,
   verdictFor,
   weightedSum,
-  type Criterion,
   type Movie,
   type Review,
 } from '@/lib/api';
-import { cn, plural } from '@/lib/utils';
+import { plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 export function RateScreen({
@@ -446,195 +441,6 @@ function MovieSearch({ onPick }: { onPick: (id: number) => void }) {
       </div>
       <p className="q mt-3 text-[10.5px] text-ink-dim">{note}</p>
     </div>
-  );
-}
-
-/* ── the criteria strips ──────────────────────────────────────────────────
-   One criterion per row: name and weight on the left, value on the right, the
-   slider full width beneath, the description under that. The description is
-   printed for everyone rather than hidden behind a hover, and the slider stays
-   a native range so the keyboard and screen readers keep working. */
-function Channels({
-  criteria,
-  scores,
-  genre,
-  crew,
-  onChange,
-}: {
-  criteria: Criterion[];
-  scores: Record<string, number>;
-  genre: string;
-  /** Who signs each criterion. Empty for a film served from the cache. */
-  crew?: Record<string, string[]>;
-  onChange: (key: string, value: number) => void;
-}) {
-  /* Agrupado pelo que o servidor declara, e não mais pelo peso. O peso era o
-     atalho — ×1 era ofício, ×2 era gênero — e no dia em que todo peso virou 1
-     esse atalho passou a juntar as onze perguntas numa lista só. O agrupamento
-     que ele representava é real e agora é explícito. */
-  const craft = criteria.filter(c => c.group === 'oficio');
-  const gen = criteria.filter(c => c.group === 'genero');
-  const personal = criteria.filter(c => c.group === 'pessoal');
-  let i = 0;
-  const row = (c: Criterion) => (
-    <Channel key={c.key} c={c} index={i++} value={scores[c.key] ?? 5} signers={crew?.[c.key]} onChange={onChange} />
-  );
-  return (
-    <div className="plate overflow-hidden px-4 pb-4 sm:px-5">
-      {/* Not "técnicos". Two genres replace a slot of these eight — animation is
-          asked about its voice cast instead of its acting, documentary about
-          access and archive instead of acting and production design — so the
-          word that used to describe the group describes it wrongly for two. */}
-      <p className="legend py-4">Como o filme é feito</p>
-      {craft.map(row)}
-
-      {/* Cyan, as the pair always was here. It never meant "worth double" — it
-          means "this part of the card is the film's own choice", which is
-          exactly what survived the weights going away. */}
-      <p className="legend mt-5 border-t border-white/[0.07] pt-5 text-dye-brass">
-        O que {genre.toLowerCase()} pede
-      </p>
-      {gen.map(row)}
-
-      {/* ── e o único que não é sobre o filme ─────────────────────────────
-          Its own region, at the end, because it is a different question and
-          reading it as the ninth thing about the film is how it stops being
-          answered honestly. Everything above asks what the film does; this asks
-          what it did to you, and you answer it after taking the film apart. */}
-      <p className="legend mt-5 border-t border-white/[0.07] pt-5">
-        E o seu
-      </p>
-      {personal.map(row)}
-    </div>
-  );
-}
-
-function Channel({
-  c,
-  index,
-  value,
-  signers,
-  onChange,
-}: {
-  c: Criterion;
-  index: number;
-  value: number;
-  /** The people credited for this criterion, if anybody is. */
-  signers?: string[];
-  onChange: (key: string, value: number) => void;
-}) {
-  /* ── the gate and the light ─────────────────────────────────────────────
-     The exposed length of film is the mark. It is not animated, and that is the
-     point: a filled track is not an object with mass, it is the value drawn as
-     a length, and a value that arrives after the hand that set it makes the
-     control feel broken. It was a spring here first, running up the strip half
-     a beat behind the gate, and it read as lag because it was lag.
-
-     What is animated is the flare at the gate — the beam blooming as film runs
-     through it. Position is exact and instant; only the intensity moves, driven
-     by how fast the mark is travelling and decaying to nothing when it stops.
-     Nothing lags, because nothing about where anything is is being animated.
-
-     The number is left alone. It used to swell on a spring, which meant text
-     redrawn at fractional scale on every frame — that is what was flickering,
-     and no amount of tuning fixes it, because rasterised type at 1.06× is
-     simply a blurred version of itself. */
-  const gate = useMotionValue(value);
-  useEffect(() => {
-    gate.set(value);
-  }, [value, gate]);
-
-  const rush = useVelocity(gate);
-  const flare = useSpring(useTransform(rush, [-16, 0, 16], [1, 0, 1]), {
-    stiffness: 240,
-    damping: 28,
-  });
-  const bloom = useTransform(flare, [0, 1], [0, 0.9]);
-  const spread = useTransform(flare, [0, 1], [0.9, 1.85]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 9) * 0.026 }}
-      className="group border-t border-white/[0.06] py-4 first-of-type:border-0"
-    >
-      {/* No weight badge. It used to read ×1 or ×2 and carried the one fact
-          that separated the two halves of the card; with every criterion at the
-          same weight it would print ×1 eleven times, which is a column of
-          nothing dressed as data. The grouping legends above say what the badge
-          was really being read for. */}
-      <div className="flex items-baseline gap-2">
-        <span className="font-display text-[15px] uppercase tracking-[0.1em] text-ink">{c.name}</span>
-        <span className="q ml-auto text-[21px] font-medium tabular-nums text-ink transition-colors duration-150 group-hover:text-beam group-focus-within:text-beam">
-          {fmt(value)}
-        </span>
-      </div>
-
-      {/* ── quem assina ──────────────────────────────────────────────────────
-          The name goes above the slider, not in the description under it,
-          because it is the thing being scored and not an explanation of the
-          scoring. Dragging Fotografia from 5 to 8 is a judgement about work
-          somebody did, and the card should say whose while the hand is on it.
-
-          Silent when nobody is credited. An animation rarely has a director of
-          photography and nobody at all signs Originalidade — an empty line
-          reading "—" would be inventing an absence that is not one. */}
-      {signers?.length ? (
-        <p className="mt-1 text-[12px] leading-snug text-beam-dim">{signers.join(' · ')}</p>
-      ) : null}
-
-      {/* Everything visible is drawn here; the input is invisible and on top,
-          where it still takes the drag, the arrow keys and the screen reader.
-          It comes first in the DOM so the drawn parts can react to it as its
-          siblings — held, focused — and z-10 puts it back over them for the
-          pointer. The mark can only land on a half point, but nothing drawn
-          here has to arrive in one frame: the light, the gate and the flare all
-          glide the 5% between two steps on the same 130ms curve. */}
-      <div className="relative mt-2 h-[34px]">
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.5}
-          value={value}
-          onChange={e => onChange(c.key, parseFloat(e.target.value))}
-          aria-label={c.name}
-          aria-describedby={`hint-${c.key}`}
-          className="peer film-range absolute inset-0 z-10 w-full"
-        />
-
-        {/* Inset by half the grab area, so 0% and 100% land under the middle of
-            the gate rather than off the end of the strip. */}
-        <span aria-hidden className="pointer-events-none absolute inset-x-2 top-3 h-[10px]">
-          <span className="film-strip absolute inset-0" />
-          {/* Width, not scaleX: scaling stretches the rasterised gradient and
-              the inner glow with it, and the smeared edge shimmering frame to
-              frame was half of what looked like flicker. */}
-          <span className="film-strip-lit absolute inset-y-0 left-0" style={{ width: `${value * 10}%` }} />
-          <motion.span
-            style={{ left: `${value * 10}%`, marginLeft: -13, opacity: bloom, scale: spread }}
-            className="absolute -top-[7px] h-[24px] w-[26px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,231,180,0.9),transparent_70%)] transition-[left] duration-[130ms] ease-beam"
-          />
-        </span>
-
-        {/* The gate. Held, it grows in the frame and burns hotter; focused by
-            keyboard, it takes the ring the input gave up. */}
-        <span
-          aria-hidden
-          style={{ left: `calc(0.5rem + (100% - 1rem) * ${value / 10})` }}
-          className={cn(
-            'film-gate pointer-events-none absolute top-1 -ml-[2px] h-[26px] w-[4px]',
-            'transition-[left,transform,box-shadow] duration-[130ms] ease-beam',
-            'peer-active:scale-y-[1.16] peer-active:shadow-[0_0_0_1px_rgba(4,5,10,0.9),0_2px_10px_rgba(0,0,0,0.8),0_0_22px_rgba(255,214,150,0.7)]',
-            'peer-focus-visible:shadow-[0_0_0_2px_theme(colors.dye.brass),0_0_18px_rgba(255,214,150,0.5)]'
-          )}
-        />
-      </div>
-      <p id={`hint-${c.key}`} className="mt-2 max-w-[70ch] text-[12px] leading-relaxed text-ink-dim">
-        {c.hint}
-      </p>
-    </motion.div>
   );
 }
 

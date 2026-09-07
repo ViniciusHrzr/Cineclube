@@ -25,6 +25,18 @@ import {
   type SessionUser,
   type WatchItem,
 } from '@/lib/api';
+import {
+  seriesApi,
+  shows as showsApi,
+  type EpisodeTake,
+  type QueuedShow,
+} from '@/lib/api';
+import {
+  SeriesArchiveScreen,
+  SeriesCatalogScreen,
+  SeriesQueueScreen,
+  ShowScreen,
+} from '@/screens/Series';
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
@@ -67,7 +79,33 @@ export const TABS = [
      Cai no próprio perfil, que é para onde ele sempre apontou. */
   { id: 'people', label: 'Avaliadores', hidden: true },
 ] as const;
-export type TabId = (typeof TABS)[number]['id'];
+
+/* ── as seções do outro universo ──────────────────────────────────────────
+   Uma tabela própria, e não `hidden` espalhado na de cima. As duas listas
+   respondem a mesma pergunta — quais seções existem — sobre mundos diferentes,
+   e misturá-las obrigaria toda leitura de rota a saber de qual das duas aquela
+   entrada é.
+
+   Sem Feed e sem Sessão, e as duas ausências são deliberadas: o feed de séries
+   precisa de um construtor de eventos que ainda não existe, e a sala de projeção
+   toca filme. Uma aba que leva a uma tela vazia é pior do que aba nenhuma. */
+export const SERIES_TABS = [
+  /* A porta de entrada aqui é o catálogo, e não o feed: neste universo o gesto
+     que se repete é achar a próxima série e marcar o que se viu. */
+  { id: 'catalog', label: 'Catálogo' },
+  { id: 'watchlist', label: 'Quero ver' },
+  { id: 'reviews', label: 'Avaliados' },
+  /* Uma série, com as temporadas e os episódios. Rota e não aba, pela mesma
+     razão que avaliar não é aba no universo de filmes: não se escolhe "uma
+     série", escolhe-se AQUELA série. */
+  { id: 'show', label: 'Série', hidden: true },
+  { id: 'perfil', label: 'Perfil', hidden: true },
+] as const;
+
+export type TabId = (typeof TABS)[number]['id'] | (typeof SERIES_TABS)[number]['id'];
+
+/** Qual tabela de seções vale nesta lente. */
+const tabsFor = (universe: Universe) => (universe === 'series' ? SERIES_TABS : TABS);
 
 type Club = {
   me: SessionUser;
@@ -167,6 +205,8 @@ type Route = {
   review: string | null;
   comment: string | null;
   person: string | null;
+  /** Qual série a rota pede, no universo de séries. */
+  show: number | null;
   /* A folha de ajustes aberta pelo endereço. Não é aba: é folha por cima da
      sala. Tem endereço porque o saguão precisa poder MANDAR alguém nela — o
      convite de emprestar o acervo à rede tem um botão "abrir os ajustes". */
@@ -179,6 +219,7 @@ const BLANK: Omit<Route, 'universe'> = {
   review: null,
   comment: null,
   person: null,
+  show: null,
   sheet: false,
 };
 
@@ -197,7 +238,13 @@ function routeFromHash(): Route {
   const club = decodeURIComponent(parts[1]);
   const [head, tail, deeper] = parts.slice(2);
 
-  const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
+  /* Contra a tabela DA LENTE: `screening` é seção no universo de filmes e não
+     existe no de séries, e reconhecê-la ali abriria uma aba que não há. */
+  const table = tabsFor(universe) as readonly { id: string }[];
+  const tab = table.some(t => t.id === head) ? (head as TabId) : null;
+  /* `show/<id>` é o endereço de uma série. Número e não texto: é um id do TMDB,
+     e um id que não é número não aponta para nada. */
+  const show = tab === 'show' && tail && /^\d+$/.test(tail) ? Number(tail) : null;
   const review = tab === 'reviews' && tail ? decodeURIComponent(tail) : null;
   /* Um quarto segmento endereça o comentário dentro da ficha: é o que faz o
      aviso levar ao texto em vez de à carta inteira. */
@@ -207,7 +254,7 @@ function routeFromHash(): Route {
   /* `ajustes` não é aba, então `tab` fica nulo e a sala abre no mural com a
      folha por cima — o mesmo que abrir os ajustes de dentro. */
   const sheet = head === 'ajustes';
-  return { universe, club, tab, review, comment, person, sheet };
+  return { universe, club, tab, review, comment, person, show, sheet };
 }
 
 /* `#confirmar/<token>` e `#senha/<token>`. Fora de `routeFromHash` de propósito:
@@ -395,37 +442,20 @@ export default function App() {
     );
   }
 
-  /* ── a lente de séries ainda não abriu dentro de um clube ────────────────
-     As abas de uma sala são de filme: catálogo, fila, avaliados, sessão. Render
-     essas telas debaixo de um endereço que começa com `series/` seria o endereço
-     mentindo — a pessoa clicaria num clube no saguão de séries e leria o acervo
-     de filmes dele sem nada avisando.
-
-     Então o endereço é honrado e a tela diz o que há. Ele já é o endereço certo
-     e definitivo; o que falta é o que mora nele. */
+  /* A lente de séries tem o próprio casco: as abas são outras, os dados são
+     outros, e não há sala de projeção. Fazer `ClubApp` bimodal infectaria os
+     quarenta ganchos dele com um `if`. */
   if (route.universe === 'series') {
     return (
-      <>
-        <HolographicWall asBackdrop />
-        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
-          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
-            As séries deste clube ainda não abriram
-          </h1>
-          <p className="mt-4 text-[13.5px] leading-relaxed text-ink-dim">
-            O saguão de séries já conta o que a rede andou vendo. O acervo de séries
-            de dentro de um clube — a fila, os episódios e a avaliação criteriosa —
-            é a próxima peça.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Key onClick={() => { location.hash = clubHash(route.club!, 'feed'); }}>
-              Abrir os filmes deste clube
-            </Key>
-            <Key tone="ghost" onClick={() => { location.hash = lensOf('series'); }}>
-              Voltar ao saguão
-            </Key>
-          </div>
-        </div>
-      </>
+      <SeriesClubApp
+        key={`series/${route.club}`}
+        slug={route.club}
+        route={route}
+        me={me}
+        onLobby={() => {
+          location.hash = lensOf('series');
+        }}
+      />
     );
   }
 
@@ -448,6 +478,240 @@ export default function App() {
         location.hash = lensOf(route.universe);
       }}
     />
+  );
+}
+
+/* ══ o clube, pela lente de séries ═════════════════════════════════════════
+   Irmão de `ClubApp` e deliberadamente separado dele. Os dois compartilham a
+   moldura, a marquise e o clube; o que muda é tudo o que está dentro — outras
+   seções, outro acervo, outra unidade avaliada.
+
+   Sem contexto próprio: são quatro telas e elas recebem por prop o que precisam.
+   Um segundo `ClubContext` seria uma segunda verdade sobre a mesma sala. */
+function SeriesClubApp({
+  slug,
+  route,
+  me,
+  onLobby,
+}: {
+  slug: string;
+  route: Route;
+  me: SessionUser;
+  onLobby: () => void;
+}) {
+  const [club, setClubRow] = useState<ClubRow | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueuedShow[] | null>(null);
+  const [takes, setTakes] = useState<EpisodeTake[] | null>(null);
+  const [criteria, setCriteria] = useState<Record<string, Criterion[]> | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>(() => route.tab ?? 'catalog');
+  const [showId, setShowId] = useState<number | null>(() => route.show);
+
+  const fault = useCallback((msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 6000);
+  }, []);
+
+  /* O clube vem antes de tudo porque decide se há o que carregar, exatamente
+     como no universo de filmes. */
+  const boot = useCallback(async () => {
+    setBootError(null);
+    try {
+      const room = await clubsApi.get(slug);
+      setClubRow(room.club);
+      const [fila, gravadas, crits] = await Promise.all([
+        showsApi.queue(),
+        showsApi.takes(),
+        seriesApi.criteria(),
+      ]);
+      setQueue(fila.shows);
+      setTakes(gravadas.takes);
+      setCriteria(crits.criteria);
+    } catch (e) {
+      setBootError((e as Error).message);
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    void boot();
+  }, [boot]);
+
+  /* Relê só o que a escrita mexeu. Marcar um episódio muda o acervo e o
+     progresso da fila, e não o clube nem os critérios. */
+  const refresh = useCallback(async () => {
+    try {
+      const [fila, gravadas] = await Promise.all([showsApi.queue(), showsApi.takes()]);
+      setQueue(fila.shows);
+      setTakes(gravadas.takes);
+    } catch {
+      /* Engolido: ninguém pediu esta releitura, ela é a consequência de uma
+         escrita que já deu certo. */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onHash = () => {
+      const r = routeFromHash();
+      if (r.universe !== 'series' || r.club !== slug) return;
+      if (r.tab) setTab(r.tab);
+      setShowId(r.show);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [slug]);
+
+  const goTab = useCallback(
+    (t: TabId) => {
+      setTab(t);
+      setShowId(null);
+      const next = clubHash(slug, t, 'series');
+      if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+    },
+    [slug]
+  );
+
+  /* Uma série tem endereço, e é o que faz "manda o link daquela série" existir
+     neste universo. */
+  const goShow = useCallback(
+    (id: number) => {
+      setTab('show');
+      setShowId(id);
+      const next = clubHash(slug, `show/${id}`, 'series');
+      if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    },
+    [slug]
+  );
+
+  const queued = useMemo(() => new Set((queue ?? []).map(s => s.id)), [queue]);
+
+  const enqueue = useCallback(
+    async (s: { id: number; title: string; year: number | null; genre: string; poster: string | null }) => {
+      try {
+        await showsApi.add(s);
+        await refresh();
+      } catch (e) {
+        fault('Não foi possível pôr na fila: ' + (e as Error).message);
+      }
+    },
+    [refresh, fault]
+  );
+
+  const dequeue = useCallback(
+    async (id: number) => {
+      try {
+        await showsApi.remove(id);
+        await refresh();
+      } catch (e) {
+        fault((e as Error).message);
+      }
+    },
+    [refresh, fault]
+  );
+
+  if (bootError && !club) {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
+          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
+            Este clube não abre
+          </h1>
+          <div className="mt-5">
+            <Fault detail={bootError}>O clube não existe, ou é privado e você não está nele.</Fault>
+          </div>
+          <div className="mt-5">
+            <Key onClick={onLobby}>Voltar ao saguão</Key>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!club) {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
+          <span className="legend animate-flicker">Acendendo o projetor</span>
+        </div>
+      </>
+    );
+  }
+
+  /* As fichas desta série, quando há uma aberta. Filtradas aqui e não na tela
+     porque o acervo inteiro já está em memória desde o boot. */
+  const doShow = showId != null ? (takes ?? []).filter(t => t.showId === showId) : [];
+
+  return (
+    <>
+      <HolographicWall asBackdrop />
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
+        <Marquee
+          tabs={SERIES_TABS}
+          tab={tab}
+          onTab={goTab}
+          /* O perfil mora na lente de filmes: ele conta o que a pessoa avaliou,
+             e hoje isso é o acervo de filmes. Mandar para lá é honesto — o
+             endereço diz `filmes` — e é melhor do que uma aba que não abre. */
+          onOpenSelf={() => {
+            location.hash = clubHash(slug, 'perfil', 'filmes');
+          }}
+          me={me}
+          club={club}
+          room={DARK}
+          onLobby={onLobby}
+          onOpenRequests={() => {
+            location.hash = clubHash(slug, 'ajustes', 'filmes');
+          }}
+        />
+
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10">
+          <div key={showId != null ? `show-${showId}` : tab} className="animate-frame-in">
+            {showId != null ? (
+              <ShowScreen
+                showId={showId}
+                takes={doShow}
+                criteria={criteria}
+                meId={me.id}
+                inQueue={queued.has(showId)}
+                onQueue={s => void enqueue(s)}
+                onBack={() => goTab('catalog')}
+                onSaved={() => void refresh()}
+                fault={fault}
+              />
+            ) : tab === 'watchlist' ? (
+              <SeriesQueueScreen shows={queue} onOpen={goShow} onRemove={id => void dequeue(id)} />
+            ) : tab === 'reviews' ? (
+              <SeriesArchiveScreen takes={takes} onOpen={goShow} />
+            ) : (
+              <SeriesCatalogScreen
+                queued={queued}
+                onQueue={s => void enqueue(s)}
+                onOpen={goShow}
+                fault={fault}
+              />
+            )}
+          </div>
+        </main>
+
+        <SectionTabs
+          variant="bar"
+          tabs={SERIES_TABS}
+          tab={tab}
+          onTab={goTab}
+          room={DARK}
+          rec={null}
+        />
+      </div>
+
+      {toast ? (
+        <div className="fixed inset-x-0 bottom-4 z-50 mx-auto w-fit max-w-[92vw] px-4">
+          <Fault>{toast}</Fault>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -1055,6 +1319,7 @@ function ClubApp({
           um breakpoint. */}
       <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
         <Marquee
+          tabs={TABS}
           tab={tab}
           onTab={goTab}
           onOpenSelf={() => goPerson()}
@@ -1133,7 +1398,7 @@ function ClubApp({
             disputando a faixa fariam a mais importante perder. Avaliar nem é
             destino desta barra — é aba escondida. */}
         {tab !== 'rate' ? (
-          <SectionTabs variant="bar" tab={tab} onTab={goTab} room={pulse} rec={recOf(pulse)} />
+          <SectionTabs variant="bar" tabs={TABS} tab={tab} onTab={goTab} room={pulse} rec={recOf(pulse)} />
         ) : null}
       </div>
 
@@ -1252,12 +1517,15 @@ const BAR_ORDER: readonly TabId[] = ['screening', 'catalog', 'feed', 'watchlist'
 
 function SectionTabs({
   variant,
+  tabs,
   tab,
   onTab,
   room,
   rec,
 }: {
   variant: 'marquee' | 'bar';
+  /** A tabela da lente. Ver `tabsFor`. */
+  tabs: readonly { id: TabId; label: string; hidden?: boolean }[];
   tab: TabId;
   onTab: (t: TabId) => void;
   room: ScreeningPulse;
@@ -1269,7 +1537,7 @@ function SectionTabs({
      sobre a ordem da marquise; `BAR_ORDER` diz só em que ordem a barra do dedo
      as desenha. O que não está nomeado lá vai para o fim em vez de sumir — uma
      seção nova não pode desaparecer do telefone por esquecimento. */
-  const shown = TABS.filter(t => !('hidden' in t && t.hidden));
+  const shown = tabs.filter(t => !t.hidden);
   const items = bar
     ? [
         ...BAR_ORDER.flatMap(id => shown.filter(t => t.id === id)),
@@ -1364,6 +1632,7 @@ function SectionTabs({
 /* O cabeçalho de um cinema é a marquise: o nome em luzes e o que está passando.
    A seção atual é a acesa. */
 function Marquee({
+  tabs,
   tab,
   onTab,
   onOpenSelf,
@@ -1373,6 +1642,7 @@ function Marquee({
   onLobby,
   onOpenRequests,
 }: {
+  tabs: readonly { id: TabId; label: string; hidden?: boolean }[];
   tab: TabId;
   onTab: (t: TabId) => void;
   onOpenSelf: () => void;
@@ -1415,7 +1685,7 @@ function Marquee({
             <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
           ) : null}
         </button>
-        <SectionTabs variant="marquee" tab={tab} onTab={onTab} room={room} rec={rec} />
+        <SectionTabs variant="marquee" tabs={tabs} tab={tab} onTab={onTab} room={room} rec={rec} />
 
         <div className="flex items-center gap-2">
           {/* Quem está batendo na porta: só para quem pode abrir, e só quando há

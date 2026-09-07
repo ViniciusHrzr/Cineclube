@@ -342,6 +342,169 @@ export const lobby = {
   show: (showId: number) => api<LobbyShow>(`/api/lobby/show/${showId}`),
 };
 
+/* ══ o universo de séries ═════════════════════════════════════════════════
+   Duas metades, e a divisão é a mesma do universo de filmes: o CATÁLOGO é do
+   TMDB e não é de clube nenhum (`/api/series`), e o que o clube fez com ele —
+   a fila e o que cada um viu — desce para `/api/c/<slug>/shows`. */
+
+export type SeriesItem = {
+  id: number;
+  title: string;
+  original: string | null;
+  year: number | null;
+  genre: string;
+  genres: string[];
+  poster: string | null;
+  crowd: { score: number; votes: number } | null;
+};
+
+export type SeriesSeason = {
+  season: number;
+  name: string;
+  episodes: number;
+  year: number | null;
+  poster: string | null;
+  overview: string | null;
+};
+
+export type ShowDetail = SeriesItem & {
+  english: string | null;
+  endedYear: number | null;
+  /** Se ainda vem episódio. Acompanhar uma série no ar é outra relação. */
+  status: string | null;
+  inProduction: boolean;
+  overview: string | null;
+  creators: string[];
+  runtime: number | null;
+  /** Null quando o TMDB não respondeu e a resposta veio do cache: "não sei". */
+  seasons: SeriesSeason[] | null;
+  totalEpisodes: number | null;
+  /** As outras ordens em que esta série existe. Ver `episode_groups` no TMDB. */
+  orders: { id: string; name: string; episodes: number; groups: number }[];
+  trailerUrl: string | null;
+  watch: { link: string | null; streaming: { id: number; name: string; logo: string | null }[] } | null;
+  stale?: boolean;
+};
+
+export type Episode = {
+  season: number;
+  episode: number;
+  title: string;
+  overview: string | null;
+  still: string | null;
+  airDate: string | null;
+  runtime: number | null;
+  crowd: { score: number; votes: number } | null;
+  /** `finale`, `mid_season` ou `standard`, do TMDB. */
+  kind: string | null;
+};
+
+/** Um episódio com quem o assina — e os nomes mudam a cada um. */
+export type EpisodeDetail = Episode & { crew: Record<string, string[]> };
+
+export type SeasonDetail = {
+  season: number;
+  name: string;
+  overview: string | null;
+  poster: string | null;
+  episodes: Episode[];
+};
+
+export const seriesApi = {
+  popular: (page = 1) =>
+    api<{ page: number; totalPages: number; results: SeriesItem[] }>(
+      `/api/series/popular?page=${page}`
+    ),
+  search: (q: string, page = 1) =>
+    api<{ page: number; totalPages: number; results: SeriesItem[] }>(
+      `/api/series/search?q=${encodeURIComponent(q)}&page=${page}`
+    ),
+  byGenre: (genre: string, page = 1) =>
+    api<{ page: number; totalPages: number; results: SeriesItem[] }>(
+      `/api/series/genre/${encodeURIComponent(genre)}?page=${page}`
+    ),
+  show: (id: number) => api<{ show: ShowDetail }>(`/api/series/${id}`),
+  season: (id: number, season: number) =>
+    api<{ season: SeasonDetail }>(`/api/series/${id}/season/${season}`),
+  episode: (id: number, season: number, episode: number) =>
+    api<{ episode: EpisodeDetail }>(`/api/series/${id}/episode/${season}/${episode}`),
+  /* Os nove por gênero, servidos pelo servidor: a fórmula e a lista de critérios
+     são dele, e o cliente só desenha. Mesma regra do universo de filmes. */
+  criteria: () =>
+    api<{ genres: string[]; criteria: Record<string, Criterion[]> }>('/api/series/criteria'),
+};
+
+/** Uma série na fila do clube, com o progresso DO CLUBE. */
+export type QueuedShow = {
+  id: number;
+  title: string;
+  original: string | null;
+  english: string | null;
+  year: number | null;
+  genre: string;
+  poster: string | null;
+  status: string | null;
+  totalEpisodes: number | null;
+  addedAt: string;
+  addedBy: string | null;
+  /** Episódios distintos que o clube já viu — não linhas. */
+  seen: number;
+  rated: number;
+  average: number | null;
+};
+
+/* ── a linha que é ao mesmo tempo "vi" e "achei" ──────────────────────────
+   Existir significa que a pessoa viu. `quick` é a nota objetiva, `scores` é a
+   criteriosa, e as duas se substituem — a última coisa dita é a que vale.
+   `final` nulo é visto e não avaliado, que é diferente de zero. */
+export type EpisodeTake = {
+  id: string;
+  showId: number;
+  showTitle: string;
+  showPoster: string | null;
+  genre: string;
+  season: number;
+  episode: number;
+  episodeTitle: string | null;
+  reviewerId: string;
+  reviewerName: string | null;
+  reviewerDot: string | null;
+  scores: Record<string, number> | null;
+  quick: number | null;
+  final: number | null;
+  comment: string | null;
+  watchedAt: string;
+  ratedAt: string | null;
+};
+
+/** O que se grava num episódio. Vazio é "só vi". */
+export type TakePatch = {
+  showTitle: string;
+  showPoster?: string | null;
+  episodeTitle?: string | null;
+  genre: string;
+  quick?: number;
+  scores?: Record<string, number>;
+  comment?: string | null;
+};
+
+export const shows = {
+  queue: () => capi<{ shows: QueuedShow[] }>('/shows'),
+  add: (show: { id: number; title: string; year: number | null; genre: string; poster: string | null }) =>
+    cpost<{ ok: true }>('/shows', { show }),
+  remove: (showId: number) => cdel(`/shows/${showId}`),
+  /** Tudo o que o clube gravou, para o acervo. */
+  takes: () => capi<{ takes: EpisodeTake[] }>('/shows/takes'),
+  takesFor: (showId: number) => capi<{ takes: EpisodeTake[] }>(`/shows/${showId}/takes`),
+  /* Marcar e avaliar são a mesma escrita porque são a mesma linha. Sem `quick`
+     nem `scores`, isto é só "vi". */
+  mark: (showId: number, season: number, episode: number, patch: TakePatch) =>
+    cput<{ take: EpisodeTake }>(`/shows/${showId}/${season}/${episode}`, patch),
+  /** Desmarcar apaga a linha inteira: a linha É o "eu vi". */
+  unmark: (showId: number, season: number, episode: number) =>
+    cdel(`/shows/${showId}/${season}/${episode}`),
+};
+
 /* Your own name, your own portrait and your own bio. The route takes no id — it
    edits whoever the session says you are, which is why there is no way to ask
    it to edit somebody else. */
@@ -675,6 +838,15 @@ export const capi = <T>(path: string, opts?: RequestInit) => api<T>(clubPath(pat
 export const cpost = <T>(path: string, body: unknown) => post<T>(clubPath(path), body);
 
 export const cdel = (path: string) => del(clubPath(path));
+
+/* PUT dentro do clube. Existe porque marcar um episódio é idempotente — o mesmo
+   pedido duas vezes tem de deixar o mesmo estado —, e POST não promete isso. */
+export const cput = <T>(path: string, body: unknown) =>
+  api<T>(clubPath(path), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
 export async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(path, opts);
