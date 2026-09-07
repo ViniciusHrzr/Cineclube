@@ -11,9 +11,8 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
-/* As mesmas peças que o acervo e o feed usam. A ficha abre nesta página agora —
-   ver a nota em `Takes` — e o que ela mostra não pode ser uma segunda versão do
-   que o acervo mostra. */
+/* As mesmas peças do acervo e do feed: a ficha abre nesta página (ver `Takes`) e
+   não pode ser uma segunda versão do que o acervo mostra. */
 import { Breakdown } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
 import {
@@ -38,73 +37,38 @@ import {
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O PERFIL
+/* ── o perfil ─────────────────────────────────────────────────────────────
+   `#perfil/<id>`, e chega-se por um rosto: o seu na marquise, o de quem avaliou
+   no feed, o de quem comentou. Substituiu a tela *Avaliadores*, que era um
+   painel de formulários com nome de seção — aquilo foi para trás de uma
+   engrenagem (ver components/settings.tsx).
 
-   A página sobre uma pessoa, e a peça que faltava para este produto ser um
-   lugar onde um clube se encontra em vez de um formulário onde ele arquiva.
+   Ele não abre com uma contagem. "45 filmes · média 7,4" qualquer produto de
+   cinema sabe escrever; o que só este clube sabe é onde a pessoa se entusiasmou,
+   onde se decepcionou, o quanto se afasta do público e com quem costuma brigar.
 
-   O que existia aqui chamava-se *Avaliadores* e era um painel de configuração
-   com nome de seção: meu nome, meu PIN, cadastrar, remover. Quatro placas de
-   formulário ocupando uma rota inteira para responder perguntas que alguém faz
-   duas vezes por ano — e ocupando exatamente o lugar da página que o produto
-   não tinha. Aquilo foi inteiro para trás de uma engrenagem (ver
-   components/settings.tsx) e isto tomou o cômodo.
+   > A ficha do gosto saiu em 30/08/2026, por decisão do dono. O cálculo foi
+   > junto (ver lib/taste.ts); o histórico tem a implementação inteira.
 
-   ── por que este perfil não é o perfil de qualquer app de filme ──────────
-   Porque ele não abre com uma contagem. "45 filmes · média 7,4" é uma frase que
-   qualquer produto de cinema sabe escrever; o que só este clube sabe é onde uma
-   pessoa se entusiasmou, onde ela se decepcionou, o quanto ela se afasta do
-   público lá fora e com quem ela costuma brigar. São todas perguntas sobre
-   relação — com um filme, com o mundo, com as outras cinco pessoas —, e é isso
-   que uma página sobre alguém deveria responder.
-
-   > **A ficha do gosto saiu em 30/08/2026, por decisão do dono.** Ela abria a
-   > página: os onze critérios com a média da pessoa na régua de células e a
-   > média do clube marcada por cima, ordenados pela distância entre as duas.
-   > Era o módulo com o argumento mais forte no papel e o dono o cortou depois
-   > de ver na tela. O cálculo foi junto — ver lib/taste.ts. Se alguém quiser
-   > ressuscitá-lo, o histórico tem a implementação inteira, e o motivo de ela
-   > ter saído não está registrado aqui porque não foi dito: bastou não gostar.
-
-   ── a página se cala quando não sabe ────────────────────────────────────
    Todo módulo aqui pode não aparecer, e essa é a decisão de desenho mais
-   importante do arquivo. Uma média tirada de duas fichas não é um gosto, é um
-   acidente com formato de dado — e desenhada com a mesma firmeza da de quem tem
-   cinquenta, ela seria indistinguível. Os pisos moram em lib/taste.ts, um por
-   pergunta, e um `null` de lá significa "esta página ainda não tem o que dizer
-   sobre isso".
-
-   O que sobra no silêncio nunca é um vazio: é o que a pessoa já fez. Um perfil
-   novo mostra as fichas que tem e diz quantas faltam para o resto acender —
-   que é um convite, e o único deste produto que se justifica.
-
-   ── é de todo mundo ─────────────────────────────────────────────────────
-   `#perfil/<id>`. Chega-se por um rosto, e todo rosto do app é um: o seu na
-   marquise, o de quem avaliou no feed, o de quem comentou na conversa. O que
-   faltava nunca foi a página — era o clube ser feito de gente clicável.
-   ══════════════════════════════════════════════════════════════════════════ */
+   importante do arquivo: uma média tirada de duas fichas não é um gosto, e
+   desenhada com a firmeza da de quem tem cinquenta seria indistinguível. Os
+   pisos moram em lib/taste.ts, um por pergunta. O que sobra no silêncio nunca é
+   vazio — é o que a pessoa já fez, com quantas faltam para o resto acender. */
 
 export function ProfileScreen() {
   const club = useClub();
 
-  /* ── qual ficha está aberta ─────────────────────────────────────────────
-     Mora aqui e não dentro da lista porque quatro lugares desta página apontam
-     para uma ficha — os extremos, a maior distância do TMDB, uma faixa da régua
-     e a própria lista — e todos os quatro têm de abrir a MESMA gaveta. Guardado
-     na lista, cada um deles teria de mandar a pessoa para outro lugar de novo,
-     que é exatamente o que esta mudança veio desfazer. */
+  /* Aqui e não dentro da lista: quatro lugares desta página apontam para uma
+     ficha — os extremos, a maior distância do TMDB, uma faixa da régua e a
+     própria lista — e os quatro têm de abrir a MESMA gaveta. */
   const [openTake, setOpenTake] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
-  /* Abre a ficha na lista e leva a página até ela. `start` e não `center`
-     porque a gaveta cresce PARA BAIXO: alinhada pelo topo, a fileira fica onde
-     parou e o conteúdo se abre embaixo dela; centrada, ela seria empurrada para
-     fora da tela pelo próprio conteúdo que acabou de abrir.
-
-     Os 60ms são o commit do React, não a animação: a fileira precisa existir no
-     DOM — a lista pode ter acabado de crescer para além das doze — antes de
-     alguém poder rolar até ela. */
+  /* `start` e não `center` porque a gaveta cresce PARA BAIXO: centrada, a fileira
+     seria empurrada para fora da tela pelo conteúdo que acabou de abrir. Os 60ms
+     são o commit do React e não a animação — a fileira precisa existir no DOM
+     antes de alguém rolar até ela. */
   const showTake = useCallback((id: string) => {
     setOpenTake(id);
     const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -125,10 +89,8 @@ export function ProfileScreen() {
     };
   }, []);
 
-  /* Trocar de pessoa fecha o que estava aberto. Sem isto, ir de um perfil a
-     outro carregaria um id que não pertence a esta lista — inofensivo, porque
-     nada casa com ele, e ainda assim um estado mentindo sobre o que está na
-     tela. */
+  /* Trocar de pessoa fecha o que estava aberto: senão o id de outra lista fica
+     no estado, mentindo sobre o que está na tela. */
   const personKey = club.personId ?? club.me.id;
   const seeded = useRef(personKey);
   if (seeded.current !== personKey) {
@@ -142,9 +104,8 @@ export function ProfileScreen() {
   const person = club.reviewers.find(p => p.id === id) ?? null;
   const mine = person?.id === club.me.id;
 
-  /* Uma pessoa que saiu do clube depois de alguém colar o link. O endereço fica,
-     a página abre, e ela diz o que sobra de honesto — não uma tela em branco e
-     não um erro, porque nada quebrou: a pessoa é que não está mais aqui. */
+  /* Alguém que saiu do clube depois de o link ser colado. Nem tela em branco nem
+     erro: nada quebrou, a pessoa é que não está mais aqui. */
   if (!person) {
     return (
       <section>
@@ -161,21 +122,12 @@ export function ProfileScreen() {
 
   return (
     <section>
-      {/* A folha mora no App agora: três lugares a abrem, e um deles é um aviso
-          do sino sobre alguém batendo na porta do clube. */}
       <Header person={person} mine={mine} onSettings={club.openClubSettings} />
 
-      {/* ── a ordem ──────────────────────────────────────────────────────
-          Primeiro o que a pessoa achou dos filmes: os extremos, o quanto ela se
-          afasta do público, como ela distribui as notas, o que quer ver, e
-          então o arquivo inteiro. Só depois disso o que ela é EM RELAÇÃO ao
-          clube — com quem concorda e em que gêneros vive.
-
-          Afinidade e gêneros vinham antes das fichas e o dono os mandou para
-          baixo. Está certo: os dois são leitura de segunda passagem. Quem abre o
-          perfil de alguém está perguntando "o que essa pessoa viu e achou", e
-          "com quem ela concorda" é uma pergunta que só ocorre depois de a
-          primeira ter sido respondida. */}
+      {/* A ordem: primeiro o que a pessoa achou dos filmes, depois o que ela é EM
+          RELAÇÃO ao clube. Afinidade e gêneros vinham antes das fichas e o dono
+          os mandou para baixo — quem abre um perfil pergunta "o que essa pessoa
+          viu e achou", e "com quem ela concorda" só ocorre depois. */}
       <div className="mt-8 flex flex-col gap-8">
         <Ends person={person} onOpenTake={showTake} />
         <Crowd person={person} mine={mine} onOpenTake={showTake} />
@@ -195,23 +147,15 @@ export function ProfileScreen() {
   );
 }
 
-/* ── uma região da página ─────────────────────────────────────────────────
-   Legenda, régua fina, conteúdo. Sem placa: sete placas empilhadas seriam sete
-   caixas do mesmo tamanho fazendo o papel de estrutura, que é o jeito preguiçoso
-   de dividir uma página — o olho lê a moldura e não o que está dentro. Cada
-   módulo aqui tem a forma do que ele diz: os extremos são dois pôsteres, a
-   régua é uma pilha de células, a comparação são duas colunas.
+/* Legenda, régua fina, conteúdo. Sem placa: sete placas empilhadas seriam sete
+   caixas iguais fazendo o papel de estrutura, e o olho leria a moldura em vez do
+   que está dentro. Cada módulo tem a forma do que diz — os extremos são dois
+   pôsteres, a régua é uma pilha de células.
 
-   Os títulos são substantivos secos — Extremos, Régua, Fichas, Gêneros — por
-   decisão do dono em 30/08/2026. Tinham artigo ("As fichas", "A régua"), e o
-   artigo é uma sílaba de cortesia em versalete tracked de 13px: ele alarga a
-   legenda sem dizer nada. Os dois títulos que continuam sendo frase — "Contra
-   o público" e "Com quem concorda" — continuam porque não são rótulos de uma
-   coisa, são a pergunta que a seção responde.
-
-   A linha ao lado do título repete o gesto do cabeçalho de seção do produto
-   (ver `Bill` em bits.tsx): a luz escorrendo da lettering e se apagando pela
-   linha. Aqui em escala menor, porque isto é uma região e não uma tela. */
+   Títulos são substantivos secos, por decisão do dono em 30/08/2026: o artigo é
+   uma sílaba de cortesia em versalete tracked de 13px. Os dois que continuam
+   sendo frase — "Contra o público", "Com quem concorda" — continuam porque são a
+   pergunta que a seção responde, não o rótulo de uma coisa. */
 function Region({
   title,
   note,
@@ -237,19 +181,13 @@ function Region({
   );
 }
 
-/* ══ o cabeçalho ══════════════════════════════════════════════════════════
-   A marquise da pessoa: os pôsteres do que ela mais gostou correndo atrás do
-   retrato dela.
+/* A marquise da pessoa: os pôsteres do que ela mais gostou atrás do retrato.
 
-   A capa é feita de conteúdo real e de nada mais. Um gradiente decorativo ali
-   seria a única coisa desta interface que não veio da sala — e havia material
-   à mão: as fichas com as maiores notas dessa pessoa são, literalmente, a
-   resposta para "o que essa pessoa gosta". Escurecidas e dissolvidas para baixo,
-   elas viram atmosfera sem deixar de ser informação, e quem reconhece um pôster
-   ali já sabe alguma coisa antes de ler uma palavra.
-
-   Sem fichas não há capa. O que fica é a parede de película que já está atrás
-   de tudo — que é melhor do que um retângulo cinza esperando conteúdo. */
+   A capa é feita de conteúdo real e nada mais. Um gradiente decorativo seria a
+   única coisa desta interface que não veio da sala, e havia material à mão — as
+   maiores notas de alguém são, literalmente, a resposta para "o que essa pessoa
+   gosta". Sem fichas não há capa: fica a parede de película, que é melhor do que
+   um retângulo cinza esperando conteúdo. */
 function Header({
   person,
   mine,
@@ -263,10 +201,9 @@ function Header({
   const takes = takesOf(club.reviews, person.id);
   const since = memberSince(person.createdAt);
 
-  /* Os de maior nota, com pôster. Catorze porque agora eles ficam na proporção
-     real — 115px de largura para os 172px de altura da faixa —, e catorze é o
-     que atravessa uma tela larga sem sobrar buraco. Quem tem menos que isso
-     ocupa o que ocupar, e a máscara da direita cuida do resto. */
+  /* Os de maior nota, com pôster. Catorze é o que atravessa uma tela larga na
+     proporção real do cartaz; quem tem menos ocupa o que ocupar, e a máscara da
+     direita cuida do resto. */
   const cover = useMemo(
     () =>
       [...takes]
@@ -282,40 +219,20 @@ function Header({
     <header className="relative">
       {cover.length ? (
         /* ── a capa ──────────────────────────────────────────────────────
-            Os pôsteres do que a pessoa mais gostou, atrás do retrato dela.
+            Nada é recortado: a altura manda e a largura segue (`h-full w-auto`),
+            então a proporção do cartaz é a de sempre. Era `flex-1` com
+            `object-cover`, o que dava uma tira horizontal do meio de cada arte
+            com os títulos cortados na metade.
 
-            ── nada é recortado ──────────────────────────────────────────
-            Cada pôster foi `flex-1` com `object-cover` por um dia, e as duas
-            coisas juntas eram o defeito: a fileira dava a cada pôster uma
-            fatia igual da largura, e o `cover` esticava um retrato 2:3 para
-            preencher uma caixa quase quadrada. O que sobrava era uma tira
-            horizontal do meio de cada arte, com os títulos cortados na
-            metade — a capa parecia uma imagem quebrada, não uma atmosfera.
+            Duas máscaras, uma por eixo. A vertical desmancha as bordas retas em
+            cima e embaixo — sem ela a faixa é uma tira colada sobre a página. A
+            horizontal mora no elemento de dentro para evitar `mask-composite`, e
+            existe para o caso de a fileira não chegar à borda: a capa se apaga em
+            vez de parar no meio do nada.
 
-            Agora a altura manda e a largura segue: `h-full w-auto` mantém a
-            proporção do pôster, então nenhum deles é cortado. Cabem menos por
-            tela, e é por isso que a lista subiu para catorze.
-
-            ── as duas máscaras, uma por eixo ────────────────────────────
-            A de baixo é a que sempre existiu: sem ela a faixa termina numa
-            borda reta, e uma borda reta no alto de uma página é uma tira
-            colada em cima do conteúdo.
-
-            A de cima é nova, e conserta a outra metade do mesmo problema: a
-            máscara começava opaca em 0%, então o topo dos pôsteres era um
-            corte reto atravessando a página inteira. Uma rampa curta de 20px
-            desmancha essa linha sem comer a arte.
-
-            A horizontal mora no elemento de dentro, e não junta com a
-            vertical na mesma declaração de propósito: máscaras compostas
-            precisam de `mask-composite`, e duas máscaras em dois elementos
-            fazem o mesmo trabalho sem depender dele. Ela existe para o caso
-            de a fileira não chegar até a borda — alguém com quatro fichas —,
-            em que a capa se apaga em vez de parar no meio do nada.
-
-            `aria-hidden` porque isto é o mesmo dado que a página inteira já
-            diz por escrito logo abaixo, e narrar catorze títulos de filme
-            antes do nome da pessoa é fazer quem ouve esperar pelo assunto. */
+            `aria-hidden` porque a página já diz o mesmo por escrito logo abaixo,
+            e narrar catorze títulos antes do nome da pessoa é fazer quem ouve
+            esperar pelo assunto. */
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-[172px] overflow-hidden rounded-plate"

@@ -1088,7 +1088,7 @@ function PosterWall({
           blocos empilhados. */}
       <div className="relative mx-auto -mt-7 w-full max-w-[1240px] px-4 sm:-mt-9 sm:px-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
-          O que a rede andou vendo
+          Avaliações populares
         </h1>
         {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
         <p className="q mt-3 text-[13px] text-ink-dim">
