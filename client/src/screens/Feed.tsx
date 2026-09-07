@@ -129,7 +129,7 @@ export function FeedScreen() {
       <section>
         <Bill title="Feed" />
         <Blank title="O clube ainda não fez nada">
-          Quando alguém avaliar um filme ou comentar uma ficha, aparece aqui — do mais recente para
+          Quando alguém avaliar um filme ou comentar uma avaliação, aparece aqui — do mais recente para
           o mais antigo.
         </Blank>
       </section>
@@ -233,7 +233,7 @@ function Rated({ e }: { e: FeedEvent }) {
         aria-label={
           review
             ? `${open ? 'Fechar' : 'Abrir'} a avaliação de ${e.movieTitle} por ${e.actor.name}`
-            : `Abrir a ficha de ${e.movieTitle}`
+            : `Abrir os detalhes de ${e.movieTitle}`
         }
         className="group flex w-full gap-4 px-4 pb-4 pt-2.5 text-left transition-colors duration-150 hover:bg-house-seat"
       >
@@ -418,7 +418,7 @@ function Aside({ e }: { e: FeedEvent }) {
             {/* Responder é outro gesto que comentar: anunciar uma resposta como
                 "comentou a ficha" faz quem chega procurar um comentário de
                 primeiro nível que não existe. */}
-            {e.parentId ? 'respondeu um comentário na ficha de ' : 'comentou a ficha de '}
+            {e.parentId ? 'respondeu um comentário na avaliação de ' : 'comentou a avaliação de '}
             <Who name={e.owner?.name} me={e.owner?.id === club.me.id} /> em{' '}
             <span className="text-ink transition-colors group-hover:text-beam">{e.movieTitle}</span>
           </span>

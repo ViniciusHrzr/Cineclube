@@ -595,7 +595,7 @@ function NotTheAdmin() {
   const club = useClub();
   const admins = club.reviewers.filter(p => p.role === 'admin').map(p => p.name);
   return (
-    <Region title="Esta sala">
+    <Region title="Este clube">
       <p className="max-w-[52ch] text-[13px] leading-relaxed text-ink-dim">
         {admins.length
           ? `Quem administra ${club.club.name} ${admins.length > 1 ? 'são' : 'é'} ${admins.join(', ')}. ` +
@@ -902,13 +902,13 @@ function ClubRoom() {
                 on={!!club.club.showReviews}
                 onToggle={() => void saveClub({ showReviews: !club.club.showReviews })}
                 title="Mostrar avaliações"
-                line="As fichas do clube, com as notas e os onze critérios."
+                line="As avaliações do clube, com as notas e os onze critérios."
               />
               <Switch
                 on={!!club.club.showComments}
                 onToggle={() => void saveClub({ showComments: !club.club.showComments })}
                 title="Mostrar comentários"
-                line="A conversa em cima das fichas, e as concordâncias."
+                line="A conversa em cima das avaliações, e as concordâncias."
               />
             </div>
             <p className="mt-3 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
@@ -938,14 +938,14 @@ function ClubRoom() {
                 on={!!club.club.showCharts}
                 onToggle={() => void saveClub({ showCharts: !club.club.showCharts })}
                 title="Entrar nas contas do saguão"
-                line="As notas daqui contam na média da rede, e a sala aparece entre as mais ativas."
+                line="As notas daqui contam na média da rede, e o clube aparece entre os mais ativos."
               />
               <p className="mt-3 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
                 {club.club.showCharts
                   ? club.club.showReviews
-                    ? 'Ligada junto de “Mostrar avaliações”, uma ficha daqui pode ser a ficha em destaque do saguão — com o nome de quem escreveu e o que escreveu.'
-                    : 'O saguão soma as notas e mostra os pôsteres, sem dizer quem deu nota nem o que escreveu. Para uma ficha daqui poder ser destaque lá, ligue também “Mostrar avaliações”.'
-                  : 'Desligada, nada deste clube existe no saguão: nem na contagem de fichas, nem num pôster, nem num filme mais bem avaliado. O nome, a foto e quantas pessoas continuam à vista — é como alguém pede para entrar.'}
+                    ? 'Ligada junto de “Mostrar avaliações”, uma avaliação daqui pode ser a avaliação em destaque do saguão — com o nome de quem escreveu e o que escreveu.'
+                    : 'O saguão soma as notas e mostra os pôsteres, sem dizer quem deu nota nem o que escreveu. Para uma avaliação daqui poder ser destaque lá, ligue também “Mostrar avaliações”.'
+                  : 'Desligada, nada deste clube existe no saguão: nem na contagem de avaliações, nem num pôster, nem num filme mais bem avaliado. O nome, a foto e quantas pessoas continuam à vista — é como alguém pede para entrar.'}
               </p>
             </div>
           </div>
@@ -1027,7 +1027,7 @@ function EndClub() {
           <p className="max-w-[54ch] text-[13px] leading-relaxed text-ink">
             Some para todo mundo, e não tem volta:{' '}
             <span className="text-dye-red-lit">
-              {plural(club.reviews.length, 'ficha', 'fichas')}
+              {plural(club.reviews.length, 'avaliação', 'avaliações')}
             </span>
             , a conversa em cima delas, os votos,{' '}
             <span className="text-dye-red-lit">

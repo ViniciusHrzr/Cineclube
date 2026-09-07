@@ -938,7 +938,7 @@ function ClubApp({
         <HolographicWall asBackdrop />
         <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
           <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
-            Esta sala não abre
+            Este clube não abre
           </h1>
           <div className="mt-5">
             <Fault detail={bootError}>

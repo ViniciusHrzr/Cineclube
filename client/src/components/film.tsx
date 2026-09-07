@@ -44,7 +44,7 @@ export const FilmCell = memo(function FilmCell({
           <button
             type="button"
             onClick={() => onOpen(movie.id)}
-            aria-label={`Ver ficha de ${movie.title}`}
+            aria-label={`Ver detalhes de ${movie.title}`}
             className="group/cell block w-full text-left"
           >
             {/* The strip is hidden by a translate, so it has to live inside a
@@ -186,7 +186,7 @@ export function ProjectionSheet({
   return (
     <dialog
       ref={ref}
-      aria-label="Ficha do filme"
+      aria-label="Detalhes do filme"
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
@@ -220,7 +220,7 @@ export function ProjectionSheet({
         </IconKey>
 
         {error ? (
-          <Fault detail={error}>Não foi possível carregar esta ficha.</Fault>
+          <Fault detail={error}>Não foi possível carregar os detalhes deste filme.</Fault>
         ) : !movie ? (
           <div className="flex flex-col gap-5 sm:flex-row">
             <Skeleton className="aspect-[2/3] w-[132px] flex-none sm:w-[190px]" />

@@ -955,11 +955,11 @@ function Takes({
 
   if (!takes.length) {
     return (
-      <Region title="Fichas">
+      <Region title="Avaliações">
         <Blank title={mine ? 'Você ainda não avaliou nada' : `${person.name.split(' ')[0]} ainda não avaliou nada`}>
           {mine
-            ? 'Escolha um filme no catálogo ou na fila e responda as onze perguntas. Da terceira ficha em diante esta página começa a ter o que dizer sobre você.'
-            : 'Quando essa pessoa gravar a primeira ficha, ela aparece aqui.'}
+            ? 'Escolha um filme no catálogo ou na fila e responda as onze perguntas. Da terceira avaliação em diante esta página começa a ter o que dizer sobre você.'
+            : 'Quando essa pessoa gravar a primeira avaliação, ela aparece aqui.'}
         </Blank>
         {mine ? (
           <Key tone="flush" onClick={() => club.goTab('catalog')}>
@@ -977,7 +977,7 @@ function Takes({
   const hidden = takes.length - shown.length;
 
   return (
-    <Region title="Fichas" note={plural(takes.length, 'avaliação', 'avaliações')}>
+    <Region title="Avaliações" note={plural(takes.length, 'avaliação', 'avaliações')}>
       <ul className="flex flex-col">
         {shown.map(r => (
           <li key={r.id} className="border-t border-white/[0.06] first:border-t-0">

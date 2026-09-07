@@ -358,7 +358,7 @@ export function Notices() {
           ) : !items.length ? (
             verify ? null : (
               <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
-                Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua ficha,
+                Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua avaliação,
                 concordar com uma nota sua, curtir um comentário seu — ou pedir para entrar num
                 clube — aparece aqui.
               </p>

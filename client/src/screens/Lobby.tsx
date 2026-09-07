@@ -243,8 +243,8 @@ export function Lobby({
         {active.length ? (
           <Region
             className="mt-16"
-            title="Salas em atividade"
-            note={`Fichas dos últimos ${net?.windowDays ?? 30} dias.`}
+            title="Clubes em atividade"
+            note={`Avaliações dos últimos ${net?.windowDays ?? 30} dias.`}
           >
             <ul className="mt-6">
               {active.map((club, i) => (
@@ -263,7 +263,7 @@ export function Lobby({
         {feature ? (
           <Region
             className="mt-16"
-            title="Ficha em destaque"
+            title="Avaliação em destaque"
             note={`A avaliação que mais moveu a rede nos últimos ${net?.windowDays ?? 30} dias.`}
           >
             <FeatureTake take={feature} onOpen={() => onEnter(feature.club.slug, `reviews/${feature.id}`)} />
@@ -415,7 +415,7 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
               </span>
               <span className="q text-[11px] text-ink-faint">/10</span>
               <span className="q text-[11px] text-ink-dim">
-                {plural(rede?.count ?? film.takes, 'ficha', 'fichas')}
+                {plural(rede?.count ?? film.takes, 'avaliação', 'avaliações')}
               </span>
             </div>
 
@@ -457,7 +457,7 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
           </section>
         ) : rede ? (
           <p className="mt-7 border-t border-white/[0.07] pt-5 text-[13px] leading-relaxed text-ink-dim">
-            Nenhuma sala que empresta o acervo avaliou este filme ainda.
+            Nenhum clube que empresta o acervo avaliou este filme ainda.
           </p>
         ) : null}
       </div>
@@ -560,7 +560,7 @@ function Rooms({
           cima seria a mesma palavra duas vezes. O `h1`/`h2` fica na aba ativa,
           que é o que um leitor de tela precisa ouvir. */}
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-        <div className="flex items-end gap-6" role="tablist" aria-label="Salas">
+        <div className="flex items-end gap-6" role="tablist" aria-label="Clubes">
           <RoomTab
             id="mine"
             on={tab === 'mine'}
@@ -568,7 +568,7 @@ function Rooms({
             count={mine?.length ?? null}
             as={tab === 'mine' ? Heading : 'span'}
           >
-            Suas salas
+            Seus clubes
           </RoomTab>
           <RoomTab
             id="open"
@@ -577,7 +577,7 @@ function Rooms({
             count={open.length}
             as={tab === 'open' ? Heading : 'span'}
           >
-            Outras salas
+            Outros clubes
           </RoomTab>
         </div>
 
@@ -607,7 +607,7 @@ function Rooms({
           <SearchField
             value={query}
             onChange={setQuery}
-            placeholder={tab === 'mine' ? 'Buscar nas suas salas' : 'Buscar uma sala'}
+            placeholder={tab === 'mine' ? 'Buscar nos seus clubes' : 'Buscar um clube'}
           />
         </div>
       ) : null}
@@ -636,19 +636,19 @@ function Rooms({
       ) : (
         <div className="mt-8">
           {/* Três vazios diferentes: uma busca sem resultado não é a mesma coisa
-              que uma rede sem salas. */}
+              que uma rede sem clubes. */}
           {q ? (
-            <Blank title="Nenhuma sala com esse nome">
+            <Blank title="Nenhum clube com esse nome">
               Tente outro pedaço do nome, ou o que o clube diz sobre si.
             </Blank>
           ) : tab === 'mine' ? (
             <Blank title="Você ainda não está em nenhum clube">
-              Funde o seu, ou veja em <span className="text-ink">Outras salas</span> os
+              Funde o seu, ou veja em <span className="text-ink">Outros clubes</span> os
               que já existem.
             </Blank>
           ) : (
-            <Blank title="Não há outras salas por enquanto">
-              Toda sala da rede é uma que alguém fundou. A próxima pode ser a sua.
+            <Blank title="Não há outros clubes por enquanto">
+              Todo clube da rede é um que alguém fundou. O próximo pode ser o seu.
             </Blank>
           )}
         </div>
@@ -729,9 +729,9 @@ function DarkNetwork({
         A rede ainda está no escuro
       </h2>
       <p className="mt-3.5 text-[13px] leading-relaxed text-ink-dim">
-        O saguão mostra a parede de cartazes, os filmes mais bem avaliados e as
-        salas em atividade a partir do que cada clube <span className="text-ink">empresta</span> —
-        e {one ? <span className="text-ink">{one.name}</span> : 'nenhuma das salas que você administra'} ainda
+        O saguão mostra a parede de cartazes, os filmes mais bem avaliados e os
+        clubes em atividade a partir do que cada clube <span className="text-ink">empresta</span> —
+        e {one ? <span className="text-ink">{one.name}</span> : 'nenhum dos clubes que você administra'} ainda
         não empresta nada.
       </p>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
@@ -763,10 +763,10 @@ const tally = (n: number, one: string, many: string) =>
    pôster está gravado em cada ficha, então a parede fica de pé com o TMDB fora.
 
    Ela anda e nunca volta, como a parede de celuloide atrás de tudo — cartaz em
-   foyer não oscila. Os cartazes ficam no escuro e acendem sob o ponteiro, que é
-   a única recompensa interativa da faixa e entrega informação de verdade. O
-   letreiro fica ABAIXO dela: título sobre imagem exigiria um véu escuro por
-   cima da coisa que a faixa existe para mostrar.
+   foyer não oscila. No ponteiro os cartazes ficam no escuro e acendem sob ele;
+   no dedo já chegam acesos, com o título à vista, porque lá não existe passar
+   por cima. O letreiro da seção fica ABAIXO da faixa: título sobre imagem
+   exigiria um véu escuro por cima da coisa que a faixa existe para mostrar.
 
    ── e a pista se pega com a mão ──────────────────────────────────────────
    Andava por animação CSS e, onde a animação não podia rodar, virava caixa de
@@ -1029,7 +1029,7 @@ function PosterWall({
                 onClick={() => setAberto(film)}
                 aria-hidden={copy > 0 || undefined}
                 tabIndex={copy > 0 ? -1 : undefined}
-                aria-label={`${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'ficha', 'fichas')}`}
+                aria-label={`${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'avaliação', 'avaliações')}`}
                 className="group relative mr-2 h-full w-[88px] flex-none overflow-hidden bg-house-deep sm:w-[117px]"
               >
                 <img
@@ -1039,14 +1039,27 @@ function PosterWall({
                   /* Sem isto, puxar a parede leva um fantasma do cartaz junto
                      do cursor. */
                   draggable={false}
-                  className="h-full w-full object-cover opacity-[0.38] saturate-[0.85] transition duration-300 ease-beam group-hover:opacity-100 group-hover:saturate-100"
+                  /* ── no dedo os cartazes já chegam acesos ─────────────────
+                     O escuro existia para o ponteiro ter o que acender: passar
+                     por cima é que revelava a arte e o título. No telefone não
+                     há por cima, então aquele estado de repouso era o estado
+                     ÚNICO — vinte e oito capas a 38% de opacidade, que é a
+                     faixa inteira parecendo apagada em vez de discreta.
+
+                     Setenta e dois por cento, e não cem: a faixa continua sendo
+                     fundo, e o letreiro que sobe para dentro dela continua
+                     ganhando do que está atrás. */
+                  className="h-full w-full object-cover opacity-[0.38] saturate-[0.85] transition duration-300 ease-beam coarse:opacity-[0.72] coarse:saturate-100 group-hover:opacity-100 group-hover:saturate-100"
                 />
-                <span className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-house-deep/95 via-house-deep/75 to-transparent px-2 pb-6 pt-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                {/* E o título fica sempre aceso no dedo, pelo mesmo motivo: sem
+                    ponteiro, `group-hover` é uma promessa que nunca vem, e o
+                    nome do filme era a única coisa que ela guardava. */}
+                <span className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-house-deep/95 via-house-deep/75 to-transparent px-2 pb-6 pt-2 opacity-0 transition-opacity duration-200 coarse:opacity-100 group-hover:opacity-100">
                   <span className="block truncate font-display text-[12px] leading-none tracking-[0.05em] text-beam">
                     {film.title}
                   </span>
                   <span className="q mt-1.5 block text-[10.5px] text-ink-dim">
-                    {fmt(film.average)} · {plural(film.takes, 'ficha', 'fichas')}
+                    {fmt(film.average)} · {plural(film.takes, 'avaliação', 'avaliações')}
                   </span>
                 </span>
               </button>
@@ -1093,8 +1106,9 @@ function PosterWall({
         </h1>
         {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
         <p className="q mt-3 text-[13px] text-ink-dim">
-          {tally(counts.reviews, 'ficha', 'fichas')} · {tally(counts.movies, 'filme', 'filmes')} ·{' '}
-          {tally(counts.clubs, 'sala', 'salas')}
+          {tally(counts.reviews, 'avaliação', 'avaliações')} ·{' '}
+          {tally(counts.movies, 'filme', 'filmes')} ·{' '}
+          {tally(counts.clubs, 'clube', 'clubes')}
         </p>
       </div>
 
@@ -1216,8 +1230,8 @@ function PodiumFilm({
         <span className="q flex-none text-[13px] font-medium text-beam">{fmt(film.average)}</span>
       </div>
       <p className="q mt-1.5 text-[10.5px] text-ink-dim">
-        {plural(film.takes, 'ficha', 'fichas')}
-        {film.clubs > 1 ? ` · ${plural(film.clubs, 'sala', 'salas')}` : ''}
+        {plural(film.takes, 'avaliação', 'avaliações')}
+        {film.clubs > 1 ? ` · ${plural(film.clubs, 'clube', 'clubes')}` : ''}
       </p>
     </motion.div>
   );
@@ -1291,7 +1305,9 @@ function ActiveClub({
         ) : null}
       </span>
       <span className="flex flex-none flex-col items-end">
-        <span className="q text-[13px] text-beam">{plural(club.recent, 'ficha', 'fichas')}</span>
+        <span className="q text-[13px] text-beam">
+          {plural(club.recent, 'avaliação', 'avaliações')}
+        </span>
         <span className="q mt-1 text-[10.5px] text-ink-dim">
           {plural(club.members, 'pessoa', 'pessoas')}
         </span>
@@ -1580,7 +1596,7 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
           Fundar um clube
         </h2>
         <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
-          Você será o ADM: é quem aprova quem entra e quem muda o que a sala é.
+          Você será o ADM: é quem aprova quem entra e quem muda o que o clube é.
         </p>
 
         <div className="mt-6 flex flex-col gap-4">
