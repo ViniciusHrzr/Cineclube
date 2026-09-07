@@ -3,18 +3,13 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { createClient } = require('@libsql/client');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The database.
+/* libSQL, um fork do SQLite: toda consulta deste app continua sendo SQLite
+   (datetime('now'), COLLATE NOCASE, PRAGMA). O que mudou contra node:sqlite é a
+   convenção de chamada — tudo aqui é async, porque em produção o banco fica do
+   outro lado de uma rede.
 
-   This is libSQL — a fork of SQLite — so every query in this app is still
-   SQLite: datetime('now'), julianday(), COLLATE NOCASE, PRAGMA. What changed
-   against node:sqlite is only the calling convention: everything here is
-   async, because in production the database sits across a network.
-
-   Without TURSO_DATABASE_URL the client opens a local file instead, which is
-   how the tests and development on this machine run — no network, no account,
-   no token.
-   ══════════════════════════════════════════════════════════════════════════ */
+   Sem TURSO_DATABASE_URL o cliente abre um arquivo local, que é como os testes
+   e o desenvolvimento rodam: sem rede, sem conta, sem token. */
 
 const remoteUrl = process.env.TURSO_DATABASE_URL;
 // CINECLUBE_DB lets the tests point at a throwaway file instead of the real one.
@@ -28,9 +23,9 @@ const client = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-/* A single object argument means named parameters (@id, @title); anything
-   else is positional. No value this app stores is an object, so the
-   distinction is never ambiguous. */
+/* Um único argumento objeto quer dizer parâmetros nomeados (@id, @title); o
+   resto é posicional. Nenhum valor guardado por este app é um objeto, então a
+   distinção nunca é ambígua. */
 function argsOf(args) {
   const [first] = args;
   if (args.length === 1 && first !== null && typeof first === 'object' && !Array.isArray(first)) {
@@ -39,9 +34,8 @@ function argsOf(args) {
   return args;
 }
 
-/* Keeps the shape node:sqlite had — prepare().get()/.all()/.run() — because
-   that is the shape the routes already speak. The difference is that every one
-   of them now returns a promise. */
+/* Mantém a forma do node:sqlite — prepare().get()/.all()/.run() —, que é a que
+   as rotas já falam. A diferença é que agora todas devolvem promessa. */
 function prepare(sql) {
   return {
     async get(...args) {
@@ -73,16 +67,11 @@ async function columnsOf(table) {
   return rows.map(c => c.name);
 }
 
-/* ── o endereço de um clube ───────────────────────────────────────────────
-   O nome é o que a pessoa escreve e vê; o slug é o que cabe numa URL e o que
-   ela cola no Discord. Sem acento, sem maiúscula, sem pontuação — `Clube do
-   Terror` vira `clube-do-terror`.
-
-   Os dois são únicos, e por motivos diferentes: o nome porque duas salas com o
-   mesmo nome no saguão são uma sala que ninguém sabe escolher, o slug porque
-   ele é um endereço. Um nome que reduz a nada (só emoji, só pontuação) recebe
-   um slug sorteado em vez de uma string vazia — o clube ainda tem nome, só não
-   tem nome escrevível em URL. */
+/* O nome é o que a pessoa escreve; o slug é o que cabe numa URL. `Clube do
+   Terror` vira `clube-do-terror`. Os dois são únicos por motivos diferentes: o
+   nome porque duas salas homônimas no saguão são uma sala que ninguém sabe
+   escolher, o slug porque é endereço. Um nome que reduz a nada (só emoji) ganha
+   um slug sorteado em vez de string vazia. */
 const HOME_CLUB = 'Cineclube';
 
 function slugify(name) {
@@ -106,17 +95,15 @@ async function freeSlug(name, exceptId = null) {
   }
 }
 
-/* O clube fundador. Existe porque este produto teve um clube antes de ter o
-   conceito de clube, e tudo que foi gravado até aqui é dele. Idempotente: é
-   chamado pela migração e outra vez pelo boot, depois das contas de exemplo
-   serem criadas — num banco vazio a migração roda antes de existir alguém. */
+/* O clube fundador: este produto teve um clube antes de ter o conceito de clube,
+   e tudo gravado até aqui é dele. Idempotente — chamado pela migração e outra
+   vez pelo boot, depois das contas de exemplo. */
 async function ensureHomeClub() {
   const found = await prepare('SELECT id FROM clubs WHERE name = ? COLLATE NOCASE').get(HOME_CLUB);
   if (found) return found.id;
   const id = 'c' + crypto.randomUUID();
-  /* Fechado. É o clube de um grupo de amigos que já existia antes de haver rede,
-     e o acervo deles não passa a ser público porque o produto cresceu. Aparece
-     na vitrine com nome e foto, como todo clube; entrar depende do ADM. */
+  /* Fechado: o acervo de um grupo de amigos não passa a ser público porque o
+     produto cresceu. Aparece na vitrine; entrar depende do ADM. */
   await prepare(
     `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'private')`
   ).run(id, HOME_CLUB, slugify(HOME_CLUB));
@@ -124,8 +111,8 @@ async function ensureHomeClub() {
 }
 
 async function migrate() {
-  // WAL and foreign_keys only mean something for a local file; on Turso the
-  // server already handles both and the PRAGMA is refused.
+  // WAL e foreign_keys só valem para arquivo local; no Turso o servidor já
+  // cuida dos dois e o PRAGMA é recusado.
   if (isLocal) {
     await exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   }
@@ -173,39 +160,28 @@ async function migrate() {
       added_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    /* ── a conversa em cima de uma avaliação ─────────────────────────────
-       The club argues on a Discord call and the argument evaporates with it.
-       This is the first thing in the product that keeps any of it: a thread
-       hanging off one person's take, so "discordo do teu 9 em fotografia" has
-       somewhere to live that is not a voice channel nobody recorded.
-
-       Pendurado na avaliação e não no filme, de propósito. A ficha de cada
-       pessoa é a coisa concreta que se discute, e a mesma escolha vale para os
-       votos abaixo — os dois respondem a um take específico.
+    /* A conversa em cima de uma avaliação. Pendurada na ficha e não no filme, de
+       propósito: a ficha de cada pessoa é a coisa concreta que se discute, e a
+       mesma escolha vale para os votos abaixo.
 
        ON DELETE CASCADE nas duas pontas: uma avaliação apagada leva a conversa
-       sobre ela, e alguém que sai do clube leva o que escreveu. */
+       sobre ela, e quem sai do clube leva o que escreveu. */
     CREATE TABLE IF NOT EXISTS review_comments (
       id TEXT PRIMARY KEY,
       review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
       body TEXT NOT NULL,
-      /* Uma resposta, e a profundidade para em um — ver a migração abaixo, que
-         é o que dá esta coluna aos bancos criados antes dela existir. */
+      /* Uma resposta, e a profundidade para em um. Ver a migração abaixo. */
       parent_id TEXT REFERENCES review_comments(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS review_comments_review ON review_comments(review_id);
 
-    /* ── e o like no comentário ───────────────────────────────────────────
-       Sem coluna de valor, ao contrário do voto em critério. Lá o par existe
-       porque se concorda ou se discorda de um número; aqui é uma pessoa
-       dizendo "isso" para o que outra escreveu, e o contrário disso, num clube
-       de amigos, não é a mesma informação com o sinal trocado — é outra coisa,
-       mais pesada, que ninguém pediu.
-
-       Então o like existe ou não existe. Tirar apaga a linha, do mesmo jeito
-       que tirar um voto apaga a dele. */
+    /* Sem coluna de valor, ao contrário do voto. Um like é uma pessoa dizendo
+       "isso" para o que outra escreveu, e o contrário disso, num clube de
+       amigos, não é a mesma informação com o sinal trocado — é outra coisa, mais
+       pesada, que ninguém pediu. Então existe ou não existe: tirar apaga a
+       linha. */
     CREATE TABLE IF NOT EXISTS comment_likes (
       comment_id TEXT NOT NULL REFERENCES review_comments(id) ON DELETE CASCADE,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
@@ -214,27 +190,18 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS comment_likes_comment ON comment_likes(comment_id);
 
-    /* ── concordar com a ficha de alguém ──────────────────────────────────
-       O voto era por critério, e o argumento era bom no papel: concordar com
-       uma pessoa inteira é raro, concordar com o 9 dela em fotografia e achar o
-       4 em roteiro absurdo é o que acontece de verdade.
+    /* Concordar com a ficha de alguém. O voto era por critério, e onze polegares
+       por ficha por pessoa não é opinião, é formulário: uma noite de discussão
+       gerava dezenas de votos sobre a mesma ficha. O que o clube fazia de
+       verdade era concordar ou discordar do TAKE.
 
-       Só que onze polegares por ficha por pessoa não é uma opinião, é um
-       formulário. Com seis membros, uma noite de discussão gerava dezenas de
-       votos sobre a mesma ficha — o mural teve de expulsá-los para não afogar a
-       avaliação que os originou — e o detalhamento virou uma grade com uma
-       coluna de controles ao lado de cada nota. O que o clube fazia de verdade
-       era concordar ou discordar do TAKE: "boa avaliação", "achei alto demais".
+       Um voto por (ficha, quem votou). A coluna value é +1 ou -1 e nunca 0 —
+       tirar apaga a linha, que é a diferença entre "não votei" e "votei neutro"
+       — e trocar de ideia é UPDATE, nunca uma segunda linha.
 
-       Então é um voto por (ficha, quem votou). A coluna value é +1 ou -1 e
-       nunca 0 — tirar o voto apaga a linha, que é a diferença entre "não votei"
-       e "votei neutro" —, e trocar de ideia é um UPDATE e nunca uma segunda
-       linha.
-
-       criterion_votes fica abaixo, sem ninguém lendo. É o fóssil do desenho
-       anterior: as linhas foram dobradas para cá na migração, e apagar a tabela
-       destruiria o único registro de quem concordou com o quê, por um espaço
-       que num banco deste tamanho não existe como problema. */
+       criterion_votes fica abaixo sem ninguém lendo: é o fóssil do desenho
+       anterior, dobrado para cá na migração. Apagar destruiria o único registro
+       de quem concordou com o quê, por um espaço que aqui não é problema. */
     CREATE TABLE IF NOT EXISTS review_votes (
       review_id TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
@@ -263,33 +230,30 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS sessions_reviewer ON sessions(reviewer_id);
   `);
 
-  // Lightweight migration: add columns that didn't exist in earlier versions
-  // of this schema, without wiping existing data.
+  // Migração leve: acrescenta colunas que não existiam em versões anteriores
+  // deste esquema, sem apagar o que já está gravado.
   const reviewCols = await columnsOf('reviews');
   if (!reviewCols.includes('comment')) {
     await exec('ALTER TABLE reviews ADD COLUMN comment TEXT');
   }
 
-  /* A credencial. Só o hash e o salt são guardados — nem o PIN de antes nem a
-     senha de agora tocam o banco, o log ou um corpo de resposta.
-
-     `pin_hash` e `pin_salt` continuam aqui, mortas, e é de propósito: tirar uma
-     coluna no SQLite é reconstruir a tabela, e reconstruir `reviewers` custaria
-     mexer nas sete chaves estrangeiras que apontam para ela. Duas colunas nulas
-     são mais baratas do que isso e não são lidas em lugar nenhum. */
+  /* A credencial: só hash e salt são guardados. `pin_hash` e `pin_salt`
+     continuam aqui, mortas, de propósito — tirar uma coluna no SQLite é
+     reconstruir a tabela, e reconstruir `reviewers` custaria mexer nas sete
+     chaves estrangeiras que apontam para ela. */
   const reviewerCols = await columnsOf('reviewers');
   const addReviewerCol = async (name, ddl) => {
     if (!reviewerCols.includes(name)) await exec(`ALTER TABLE reviewers ADD COLUMN ${ddl}`);
   };
   await addReviewerCol('pin_hash', 'pin_hash TEXT');
   await addReviewerCol('pin_salt', 'pin_salt TEXT');
-  // Admin is a column, not a name match: renaming the account would otherwise
-  // hand the power away, and a second person called Vinicius would inherit it.
+  // Admin é coluna e não casamento de nome: renomear a conta entregaria o poder,
+  // e uma segunda pessoa chamada Vinicius o herdaria.
   await addReviewerCol('is_admin', 'is_admin INTEGER NOT NULL DEFAULT 0');
   /* Entradas erradas seguidas põem a conta no gelo por um tempo crescente. A
-     coluna se chamava `pin_attempts` enquanto a credencial era um PIN; a regra
-     não mudou com a senha, só o nome do que se erra. Renomear e não criar uma
-     segunda: duas colunas contando a mesma coisa é a que ninguém zera. */
+     coluna se chamava `pin_attempts`; a regra não mudou com a senha, só o nome
+     do que se erra. Renomear e não criar outra: duas colunas contando a mesma
+     coisa é a que ninguém zera. */
   if (reviewerCols.includes('pin_attempts') && !reviewerCols.includes('auth_attempts')) {
     await exec('ALTER TABLE reviewers RENAME COLUMN pin_attempts TO auth_attempts');
   } else if (!reviewerCols.includes('auth_attempts')) {
@@ -297,200 +261,145 @@ async function migrate() {
   }
   await addReviewerCol('locked_until', 'locked_until TEXT');
 
-  /* ── the portrait ───────────────────────────────────────────────────────
-     Kept in the row, as base64, and not on disk: the machine this runs on
-     throws its filesystem away at every deploy, so a file written there is a
-     file that exists until the next push. An object store would be the answer
-     at another scale; at four members and a picture each it would be a second
-     service, a second set of credentials and a second thing to be down.
-
-     The client shrinks every image to a small square before sending, so what
-     lands here is tens of kilobytes, not the four megabytes a phone camera
-     produces. The route refuses anything larger regardless — the client is
-     convenience, not enforcement.
-
-     `avatar_rev` changes with every upload and rides in the URL, which is what
-     lets the picture be cached forever and still change the moment it does. */
-  /* A film is rated under one genre chosen from the several it carries, so the
-     cache has to remember the several. Stored as a comma-joined list because
-     none of these names contains a comma and nothing here ever queries inside
-     it — it is read whole or not at all. Rows cached before this column existed
-     have it empty, and the reader falls back to the single genre they do have. */
+  /* Um filme é avaliado sob UM gênero escolhido entre os vários que ele carrega,
+     então o cache precisa lembrar dos vários. Guardado como lista separada por
+     vírgula porque nenhum destes nomes tem vírgula e nada aqui consulta dentro
+     dela — é lida inteira ou não é lida. Linhas antigas ficam vazias, e o leitor
+     cai no gênero único que elas têm. */
   const movieCols = await columnsOf('movies_cache');
   if (!movieCols.includes('genres')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN genres TEXT');
   }
-  /* O nome com que o filme circula lá fora — TMDB's `original_title`, stored
-     only when it differs from the Portuguese one. Cached because the queue and
-     the archive read the film from here with TMDB nowhere in the request, and
-     because it is the string somebody copies to go find a copy. Rows written
-     before this column existed have it null and fill in the next time the film
-     is seen, which every list endpoint does. */
+  /* O nome com que o filme circula lá fora — o `original_title` do TMDB, gravado
+     só quando difere do português. Em cache porque a fila e o acervo leem o
+     filme daqui com o TMDB fora da requisição, e porque é a string que alguém
+     copia para ir achar uma cópia. */
   if (!movieCols.includes('original_title')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN original_title TEXT');
   }
 
-  /* E o nome em inglês, quando ele não é nenhum dos dois acima. Existe para as
-     buscas: a fila, a sessão e o acervo filtram o que está no banco, e Parasita
-     não é achável por "Parasite" sem esta coluna.
-
-     Só chega por filme, nunca por lista — TMDB carrega tradução no endpoint de
-     um filme e em nenhum outro — então é preenchido quando o filme vira algo
-     que o clube guarda: ficha aberta, entrou na fila, foi avaliado. O que já
-     estava no banco antes disso é o que `npm run backfill:ingles` cura. */
+  /* O nome em inglês, quando não é nenhum dos dois acima. Existe para as buscas:
+     Parasita não é achável por "Parasite" sem esta coluna. Só chega pelo
+     endpoint de UM filme, nunca por lista, então é preenchido quando o filme
+     vira algo que o clube guarda. O que veio antes, `npm run backfill:ingles`
+     cura. */
   if (!movieCols.includes('english_title')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN english_title TEXT');
   }
 
-  /* How long the film runs, in minutes. TMDB only reports it on the details
-     endpoint, so a row cached from a search or a popular page has it null until
-     somebody opens the film — which is exactly when the number is needed. */
+  /* Duração em minutos. O TMDB só reporta no endpoint de detalhe, então uma
+     linha vinda de busca fica nula até alguém abrir o filme — que é exatamente
+     quando o número é preciso. */
   if (!movieCols.includes('runtime')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN runtime INTEGER');
   }
 
-  /* ── o que o TMDB achou ─────────────────────────────────────────────────
-     Their average and how many people are behind it, on the same 0–10 the club
-     uses. Cached because the archive needs it: a take is read from this
-     database with TMDB nowhere in the request, and "o clube deu 6,2 e o TMDB
-     deu 8,1" has to survive that. Every list endpoint carries both fields, so
-     a film has them from the first time anybody searched for it. */
+  /* A média do TMDB e quanta gente está por trás dela, no mesmo 0–10 do clube.
+     Em cache porque o acervo é lido daqui com o TMDB fora da requisição, e "o
+     clube deu 6,2 e o TMDB deu 8,1" precisa sobreviver a isso. */
   if (!movieCols.includes('tmdb_score')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN tmdb_score REAL');
     await exec('ALTER TABLE movies_cache ADD COLUMN tmdb_votes INTEGER');
   }
 
-  /* ── onde está passando ─────────────────────────────────────────────────
-     The streaming services carrying the film, as JSON, with the moment it was
-     asked. Cached for a different reason than everything else here: not because
-     the answer is expensive — it is one small request — but because it is
-     twenty of them for one page of the catalogue, every time anybody scrolls.
+  /* Onde o filme está passando, em JSON, com a hora da pergunta. Em cache por um
+     motivo diferente do resto: não porque a resposta é cara, mas porque são
+     vinte delas por página de catálogo, toda vez que alguém rola.
 
-     The timestamp is the point. A catalogue moves: a film leaves Netflix and
-     the row here becomes a confident lie, which is worse than an empty one. It
-     is read only while it is fresh (see PROVIDERS_TTL in routes/catalog.js) and
-     refetched after that, so being wrong has a ceiling measured in days. */
+     O carimbo de hora é o ponto: um filme sai da Netflix e a linha vira uma
+     mentira confiante, pior que uma vazia. Só é lida enquanto fresca (ver
+     PROVIDERS_TTL em routes/catalog.js), então errar tem teto em dias. */
   if (!movieCols.includes('providers')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN providers TEXT');
     await exec('ALTER TABLE movies_cache ADD COLUMN providers_at TEXT');
   }
 
-  /* A take carries its own copy of the film, so the record still reads as a
-     record with TMDB unreachable. Takes recorded before this column existed
-     fall back to the cache when the archive is read. */
+  /* A ficha carrega a própria cópia do filme, para o registro continuar legível
+     com o TMDB fora do ar. Fichas antigas caem no cache quando o acervo é
+     lido. */
   if (!reviewCols.includes('movie_runtime')) {
     await exec('ALTER TABLE reviews ADD COLUMN movie_runtime INTEGER');
   }
 
-  /* ── a hora, e não só o dia ────────────────────────────────────────────
-     `date` é YYYY-MM-DD e sempre bastou: o arquivo é lido como ranking, e o dia
-     em que alguém preencheu a ficha não diz nada sobre o filme.
-
-     O mural é a primeira tela lida em ordem de tempo, e ali um dia inteiro
-     empatado é uma pilha sem ordem — quatro pessoas avaliando no mesmo domingo
-     apareceriam em ordem arbitrária, mudando a cada consulta.
+  /* A hora, e não só o dia. `date` é YYYY-MM-DD e bastava enquanto o acervo era
+     lido como ranking; o mural é lido em ordem de tempo, e ali um dia inteiro
+     empatado é uma pilha sem ordem, mudando a cada consulta.
 
      Escrito a cada gravação, inclusive numa regravação: mexer na própria nota é
-     um acontecimento, e o mural mostrar isso é mais honesto do que esconder.
-
-     As linhas antigas recebem o `date` que já tinham. Comparado como texto,
-     '2026-08-20' vem antes de '2026-08-20 10:00:00', então elas caem no começo
-     do próprio dia — que é o mais próximo da verdade que existe sem inventar
-     uma hora que ninguém registrou. */
+     um acontecimento. Linhas antigas recebem o `date` que já tinham — comparado
+     como texto, '2026-08-20' vem antes de '2026-08-20 10:00:00', então caem no
+     começo do próprio dia, sem inventar uma hora que ninguém registrou. */
   if (!reviewCols.includes('recorded_at')) {
     await exec('ALTER TABLE reviews ADD COLUMN recorded_at TEXT');
     await prepare('UPDATE reviews SET recorded_at = date WHERE recorded_at IS NULL').run();
   }
 
-  /* ── quem pôs o filme na fila ──────────────────────────────────────────
-     A fila é do clube e nunca precisou saber de quem foi a ideia. O mural
-     precisa: "alguém pôs Fréamhacha na fila" não é um acontecimento, é um
-     boletim. Linhas anteriores a esta coluna ficam sem autor e simplesmente não
-     viram evento — melhor faltar uma linha do que atribuir a escolha a
-     ninguém. */
+  /* A fila é do clube e nunca precisou saber de quem foi a ideia; o mural
+     precisa, porque "alguém pôs Fréamhacha na fila" é boletim, não
+     acontecimento. Linhas antigas ficam sem autor e não viram evento — melhor
+     faltar uma linha do que atribuir a escolha a ninguém. */
   if (!(await columnsOf('watchlist')).includes('added_by')) {
     await exec('ALTER TABLE watchlist ADD COLUMN added_by TEXT');
   }
 
-  /* ── até onde esta pessoa já viu ──────────────────────────────────────
-     A marca d'água das notificações, e a única coisa que este produto grava
-     sobre elas.
+  /* Responder um comentário: um nível, e só um. Uma árvore de respostas dentro
+     de uma gaveta dentro de uma carta é uma escada que ninguém lê numa coluna de
+     760px; uma resposta a uma resposta pertence ao mesmo fio. A rota recusa
+     pendurar resposta em resposta (ver routes/social), então a profundidade é
+     garantida na escrita e não uma regra que a tela precisa lembrar.
 
-     Não existe tabela de notificação, de propósito. Um comentário, um voto e
-     uma curtida já são linhas com autor e hora; uma segunda tabela repetindo
-     isso seria um segundo lugar onde a mesma verdade pode estar errada — e
-     apagar um comentário teria de lembrar de apagar o aviso sobre ele. O feed é
-     derivado das três tabelas que já existem, então ele nunca discorda delas e
-     um evento desfeito desaparece sozinho.
-
-     O que sobra para guardar é uma data por pessoa: tudo depois dela é novo.
-     Isso custa não ter estado por item — não dá para marcar uma notificação
-     como lida e as outras não — que é exatamente o que um contador de não-lidas
-     precisa e nada mais. */
-  /* ── responder um comentário ───────────────────────────────────────────
-     Um nível, e só um. O Instagram e o Facebook chegaram no mesmo lugar por um
-     motivo que vale aqui também: uma árvore de respostas dentro de uma gaveta
-     dentro de uma carta é uma escada que ninguém consegue ler numa coluna de
-     760px. Uma resposta a uma resposta pertence ao mesmo fio.
-
-     A rota recusa pendurar uma resposta em outra resposta (ver routes/social),
-     então a profundidade é uma propriedade garantida na escrita e não uma regra
-     que a tela precisa lembrar de respeitar ao desenhar.
-
-     CASCADE: apagar um comentário leva as respostas dele. Uma resposta órfã é
-     metade de um diálogo, e ninguém consegue ler o que ela responde. */
+     CASCADE: apagar um comentário leva as respostas. Uma resposta órfã é metade
+     de um diálogo. */
   const commentCols = await columnsOf('review_comments');
   if (!commentCols.includes('parent_id')) {
     await exec(
       'ALTER TABLE review_comments ADD COLUMN parent_id TEXT REFERENCES review_comments(id) ON DELETE CASCADE'
     );
   }
-  /* Depois da coluna existir, e nunca junto do CREATE TABLE: num banco antigo o
-     bloco lá em cima roda antes desta migração, e um índice sobre uma coluna
-     que ainda não chegou derruba o boot inteiro. */
+  /* Depois da coluna existir, nunca junto do CREATE TABLE: num banco antigo o
+     bloco lá em cima roda antes desta migração, e um índice sobre coluna que
+     ainda não chegou derruba o boot inteiro. */
   await exec('CREATE INDEX IF NOT EXISTS review_comments_parent ON review_comments(parent_id)');
 
+  /* Não existe tabela de notificação, de propósito: comentário, voto e curtida
+     já são linhas com autor e hora, e uma segunda tabela repetindo isso seria um
+     segundo lugar onde a mesma verdade pode estar errada. O feed é derivado das
+     três que já existem, então nunca discorda delas e um evento desfeito
+     desaparece sozinho. O que sobra para guardar é uma data por pessoa: tudo
+     depois dela é novo — sem estado por item, que é o que um contador de
+     não-lidas precisa e nada mais. */
   await addReviewerCol('notifications_seen_at', 'notifications_seen_at TEXT');
 
-  /* ── e até onde esta pessoa já dispensou ──────────────────────────────
-     A outra marca d'água. `seen_at` responde "o que é novo"; esta responde "o
-     que eu ainda quero ver na lista".
-
-     Limpar não apaga nada — não pode. Um aviso é a projeção de um comentário,
-     de um voto ou de uma curtida que pertencem a outra pessoa, e o botão de
-     limpar o seu sino não tem o direito de apagar o que alguém escreveu. O que
-     ele move é esta data, e o feed passa a mostrar só o que veio depois dela.
-
-     Por pessoa, então limpar o próprio sino não mexe no de ninguém. */
+  /* A outra marca d'água: `seen_at` responde "o que é novo", esta responde "o
+     que eu ainda quero ver na lista". Limpar não apaga nada e não pode — um
+     aviso é a projeção de algo que pertence a outra pessoa. O que ele move é
+     esta data. Por pessoa, então limpar o seu sino não mexe no de ninguém. */
   await addReviewerCol('notifications_cleared_at', 'notifications_cleared_at TEXT');
 
-  /* "Não é nenhuma dessas." A tela de reivindicar conta antiga é oferecida a
-     quem tem contas órfãs no clube, e quem chegou agora e nunca teve conta aqui
-     precisa poder dispensá-la PARA SEMPRE — não até o próximo F5, e não só neste
-     navegador. Por isso é uma coluna e não `localStorage`. */
+  /* "Não é nenhuma dessas." Quem chegou agora precisa poder dispensar a tela de
+     reivindicar PARA SEMPRE — não até o próximo F5, e não só neste navegador.
+     Por isso é coluna e não `localStorage`. */
   await addReviewerCol('claim_dismissed_at', 'claim_dismissed_at TEXT');
 
+  /* A foto fica na linha, em base64, e não em disco: esta máquina joga fora o
+     sistema de arquivos a cada deploy. Um object store seria a resposta em outra
+     escala; com quatro membros seria um segundo serviço para estar fora do ar.
+     O cliente encolhe a imagem antes de mandar, e a rota recusa o que passar do
+     limite de qualquer jeito. `avatar_rev` muda a cada envio e viaja na URL, que
+     é o que deixa a foto ser cacheada para sempre e ainda assim trocar. */
   await addReviewerCol('avatar', 'avatar TEXT');
   await addReviewerCol('avatar_mime', 'avatar_mime TEXT');
   await addReviewerCol('avatar_rev', 'avatar_rev TEXT');
 
-  /* ── a linha que a pessoa escreve sobre si ────────────────────────────────
-     A única coisa neste banco que uma pessoa afirma sobre si mesma. Todo o
-     resto que o perfil mostra é derivado do que ela fez — as onze médias, os
-     extremos, com quem ela concorda —, e derivado é mais honesto: ninguém
-     escreve "sou o cara da fotografia", isso se prova avaliando.
-
-     Existe mesmo assim porque há uma coisa que o histórico não sabe dizer, e é
-     o tom de voz. "Só vim pelo terror" é uma frase que nenhuma média produz.
-
-     Nula é o estado normal, não um defeito: um perfil sem bio não mostra uma
-     linha vazia, mostra o que a pessoa avaliou — que era para ser o assunto de
-     qualquer jeito. */
+  /* A única coisa neste banco que uma pessoa afirma sobre si mesma; todo o resto
+     do perfil é derivado do que ela fez, e derivado é mais honesto. Existe
+     porque há uma coisa que o histórico não diz: o tom de voz. Nula é o estado
+     normal, não defeito. */
   await addReviewerCol('bio', 'bio TEXT');
 
-  // The queue is something the club arranges, not just a bag of films, so it
-  // carries an explicit order. Existing rows are backfilled from added_at so the
-  // list people already have keeps the order they already saw.
+  // A fila é algo que o clube arruma, não um saco de filmes, então carrega ordem
+  // explícita. Linhas antigas são preenchidas por `added_at`, para a lista que
+  // as pessoas já têm manter a ordem que já viram.
   const watchCols = await columnsOf('watchlist');
   if (!watchCols.includes('position')) {
     await exec('ALTER TABLE watchlist ADD COLUMN position INTEGER');
@@ -503,21 +412,13 @@ async function migrate() {
     }
   }
 
-  /* ── os onze polegares viram um ──────────────────────────────────────────
-     O voto deixou de ser por critério e passou a ser pela ficha inteira, e o
-     que já estava gravado não pode simplesmente sumir: são as únicas
-     concordâncias que o clube já registrou.
+  /* Os onze polegares viram um. Cada pessoa é dobrada por ficha pela soma dos
+     votos dela ali: quem concordou com cinco critérios e discordou de dois
+     concordou com a ficha. Empate cai fora, e é a única perda honesta — um
+     polegar não sabe dizer "metade sim", e inventar um lado seria pior. A linha
+     continua em `criterion_votes` de qualquer forma.
 
-     Cada pessoa é dobrada por ficha pela soma dos votos dela ali. Quem
-     concordou com cinco critérios e discordou de dois concordou com a ficha;
-     quem fez o contrário, discordou. Empate cai fora, e essa é a única perda
-     honesta desta migração: um polegar não sabe dizer "metade sim, metade não",
-     e inventar um lado para quem estava dividido seria pior do que não ter o
-     voto. A linha continua em criterion_votes de qualquer forma.
-
-     Roda uma vez: com a tabela nova já tendo qualquer linha, não há o que
-     dobrar. Um clube que nunca votou em critério nenhum também não paga nada
-     por isto além de dois SELECTs no boot. */
+     Roda uma vez: com a tabela nova já tendo linha, não há o que dobrar. */
   const { n: folded } = await prepare('SELECT COUNT(*) AS n FROM review_votes').get();
   if (!folded) {
     const rolled = await prepare(`
@@ -536,85 +437,55 @@ async function migrate() {
     }
   }
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     Os clubes.
-
-     Até aqui este banco descrevia UM clube e nunca disse isso em lugar nenhum.
-     A fila era `movie_id PRIMARY KEY` — uma fila no mundo. Uma nota era única
-     por (pessoa, filme). E "o clube" era simplesmente todo mundo na tabela de
-     avaliadores. Nada disso era falso enquanto existia uma sala; tudo isso fica
+  /* ── os clubes ──────────────────────────────────────────────────────────
+     Até aqui este banco descrevia UM clube sem dizer isso: a fila era `movie_id
+     PRIMARY KEY`, uma nota era única por (pessoa, filme), e "o clube" era todo
+     mundo na tabela de avaliadores. Nada disso era falso com uma sala; tudo fica
      falso no instante em que existem duas.
 
-     ── o que ganha club_id e o que não ganha ────────────────────────────────
-     Duas tabelas, e só: `reviews` e `watchlist`. Comentário, voto de ficha,
-     voto de critério e curtida penduram numa ficha, e a ficha já sabe de que
-     clube é — dar a eles uma coluna própria seria uma segunda resposta para a
-     mesma pergunta, livre para divergir da primeira no primeiro UPDATE mal
-     escrito. É esta escolha que faz o recorte caber em duas reconstruções em
-     vez de seis.
+     Só duas tabelas ganham `club_id`: `reviews` e `watchlist`. Comentário, voto
+     e curtida penduram numa ficha, e a ficha já sabe de que clube é — uma coluna
+     própria seria uma segunda resposta para a mesma pergunta, livre para
+     divergir no primeiro UPDATE mal escrito.
 
-     `movies_cache` fica de fora de propósito: é o TMDB em cache, e o pôster de
-     Stalker é o mesmo pôster em todo clube. Por clube seria pagar a mesma
-     requisição N vezes para gravar N cópias do mesmo byte.
-
-     `reviewers` também fica: uma pessoa é uma pessoa, e é por ela ser uma só
-     que isto vira uma rede em vez de N instalações do mesmo app. Em quais
-     clubes ela está mora em `club_members`, junto com o papel dela em cada um —
-     ser ADM é um fato sobre a relação, nunca sobre a pessoa.
-     ══════════════════════════════════════════════════════════════════════════ */
+     `movies_cache` fica de fora: o pôster de Stalker é o mesmo em todo clube.
+     `reviewers` também: uma pessoa é uma pessoa, e é por ela ser uma só que isto
+     vira uma rede em vez de N instalações. Em quais clubes ela está mora em
+     `club_members`, com o papel dela em cada um — ser ADM é fato sobre a
+     relação, nunca sobre a pessoa. */
 
   await exec(`
     CREATE TABLE IF NOT EXISTS clubs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       slug TEXT NOT NULL,
-      /* Uma linha sobre o clube, do tamanho da bio de uma pessoa e pelo mesmo
-         motivo: é tom de voz na vitrine, não manifesto. */
+      /* Tom de voz na vitrine, não manifesto. */
       tagline TEXT,
       photo TEXT,
       photo_mime TEXT,
       photo_rev TEXT,
-      /* 'public' ou 'private'. Público é lido por qualquer um e a entrada
-         depende do ADM aprovar; privado não aparece para quem não é membro.
-         Privado é o padrão porque o erro caro tem um lado só: um clube que
-         nasce fechado e devia estar aberto é um menu; o contrário é o acervo
-         de um grupo de amigos exposto sem ninguém ter pedido. */
+      /* 'public' ou 'private'. Privado é o padrão porque o erro caro tem um lado
+         só: um clube que nasce fechado e devia estar aberto é um menu; o
+         contrário é o acervo de um grupo de amigos exposto sem ninguém pedir. */
       visibility TEXT NOT NULL DEFAULT 'private',
-      /* ── a política de leitura de um clube fechado ────────────────────
-         Fechado deixou de ser uma coisa só. O ADM decide, em dois interruptores,
-         o que um estranho enxerga: as avaliações, os comentários, os dois ou
-         nenhum. Com os dois ligados o clube fica fechado apenas na porta — ler é
-         livre, entrar e avaliar não.
+      /* A política de leitura de um clube fechado, em dois interruptores: o que
+         um estranho enxerga, as avaliações, os comentários, os dois ou nenhum.
+         Com os dois ligados o clube fica fechado só na porta.
 
-         Zero por padrão, e isso é deliberado: nenhum clube que já existe pode
-         mudar de comportamento porque uma coluna nova apareceu. Abrir a leitura
-         é sempre um gesto de alguém.
-
-         Dormentes enquanto o clube é aberto — lá tudo é legível de qualquer
-         jeito. Voltam a valer se ele fechar de novo, o que é a coisa certa: a
-         política que o ADM escolheu não se perde por ele ter aberto um mês. */
+         Zero por padrão: nenhum clube que já existe muda de comportamento porque
+         uma coluna nova apareceu. Dormentes enquanto o clube é aberto, e voltam
+         a valer se ele fechar — a política escolhida não se perde. */
       show_reviews INTEGER NOT NULL DEFAULT 0,
       show_comments INTEGER NOT NULL DEFAULT 0,
-      /* ── e o que a sala empresta para o saguão ────────────────────────
-         Um terceiro interruptor, e ele responde uma pergunta que os dois de
-         cima não respondem. Aqueles decidem se um estranho consegue LER esta
-         sala; este decide se o que ela avaliou entra nas contas da rede — o
-         pódio de filmes, a parede de pôsteres, as salas em atividade.
-
-         São coisas diferentes o bastante para não caberem num interruptor só.
-         Uma média de rede não diz quem deu a nota nem em que sala; ela diz que
-         alguém, em algum lugar, achou aquilo bom. Um clube pode querer emprestar
-         isso e continuar com o acervo fechado, e o contrário também: mostrar as
-         fichas para quem chega pelo link e não aparecer em ranking nenhum.
-
-         Zero por padrão, como os outros dois e pelo mesmo motivo: nenhum clube
-         que já existe muda de comportamento porque uma coluna nova apareceu.
-         Emprestar é sempre um gesto de alguém.
-
-         Dormente enquanto o clube é aberto — um clube aberto já está na rede. */
+      /* E o que a sala empresta ao saguão, que é outra pergunta: os dois de cima
+         decidem se um estranho consegue LER esta sala, este decide se o que ela
+         avaliou entra nas contas da rede. Uma média de rede não diz quem deu a
+         nota nem em que sala, então um clube pode emprestar isso e continuar com
+         o acervo fechado — e o contrário também. Zero por padrão, pelo mesmo
+         motivo dos outros dois. */
       show_charts INTEGER NOT NULL DEFAULT 0,
-      /* SET NULL e não CASCADE: quem fundou o clube pode sair dele um dia, e o
-         clube não vai junto. Quem manda é o papel em club_members. */
+      /* SET NULL e não CASCADE: quem fundou pode sair um dia, e o clube não vai
+         junto. Quem manda é o papel em club_members. */
       created_by TEXT REFERENCES reviewers(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -627,26 +498,20 @@ async function migrate() {
       /* 'admin' ou 'member'. Quem cria nasce admin. */
       role TEXT NOT NULL DEFAULT 'member',
       joined_at TEXT NOT NULL DEFAULT (datetime('now')),
-      /* ── as duas marcas d'água do sino ────────────────────────────────
-         Moravam na tabela de avaliadores, uma por pessoa, e ali estavam certas
-         enquanto existia um clube. Agora um aviso é sobre uma ficha, e uma
-         ficha é de uma sala: com a marca na pessoa, abrir o sino no clube de
-         terror marcaria como visto o que aconteceu no Cineclube — avisos que a
-         pessoa nem teve chance de ler, porque a tela em que eles aparecem era
-         outra.
-
-         Então elas descem para a relação, que é onde a pergunta "até onde esta
-         pessoa leu ESTE clube" tem resposta. Ver notifications.js. */
+      /* As duas marcas d'água do sino. Moravam na tabela de avaliadores, uma por
+         pessoa, e estavam certas enquanto existia um clube: agora, abrir o sino
+         no clube de terror marcaria como visto o que aconteceu no Cineclube.
+         Descem para a relação, que é onde "até onde esta pessoa leu ESTE clube"
+         tem resposta. Ver notifications.js. */
       notifications_seen_at TEXT,
       notifications_cleared_at TEXT,
       PRIMARY KEY (club_id, reviewer_id)
     );
     CREATE INDEX IF NOT EXISTS club_members_reviewer ON club_members(reviewer_id);
 
-    /* Um pedido de entrada, que só clube público aceita. Sem coluna de estado:
-       aprovar move a linha para club_members e apaga esta, recusar apaga esta.
-       Um estado gravado seria uma terceira verdade sobre a mesma pergunta — se
-       a pessoa está dentro — e a resposta a essa pergunta é club_members. */
+    /* Um pedido de entrada. Sem coluna de estado: aprovar move a linha para
+       club_members e apaga esta, recusar apaga esta. Um estado gravado seria uma
+       segunda verdade sobre "a pessoa está dentro", e essa é club_members. */
     CREATE TABLE IF NOT EXISTS club_join_requests (
       club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
@@ -656,11 +521,10 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS club_join_requests_club ON club_join_requests(club_id);
   `);
 
-  /* ── um lugar para dizer o que já foi feito ────────────────────────────
-     Quase toda migração deste arquivo se guarda sozinha: uma coluna que já
-     existe não é adicionada duas vezes. Uma correção de VALOR não tem essa
-     sorte — corrigir um dado e rodar de novo desfaz a escolha que a pessoa fez
-     depois. Daí esta tabela: uma linha por correção, posta quando ela roda. */
+  /* Quase toda migração daqui se guarda sozinha: uma coluna que já existe não é
+     adicionada duas vezes. Correção de VALOR não tem essa sorte — corrigir um
+     dado e rodar de novo desfaz a escolha que a pessoa fez depois. Daí esta
+     tabela: uma linha por correção, posta quando ela roda. */
   await exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
 
   const done = async key => !!(await prepare('SELECT 1 AS x FROM meta WHERE key = ?').get(key));
@@ -676,22 +540,16 @@ async function migrate() {
     await exec('ALTER TABLE clubs ADD COLUMN show_reviews INTEGER NOT NULL DEFAULT 0');
     await exec('ALTER TABLE clubs ADD COLUMN show_comments INTEGER NOT NULL DEFAULT 0');
   }
-  /* Separado dos dois de cima e não junto deles: um banco que já pegou aquela
-     migração não passaria por este bloco, e a coluna nova nunca chegaria. */
+  /* Separado dos dois de cima: um banco que já pegou aquela migração não
+     passaria por este bloco, e a coluna nova nunca chegaria. */
   if (!clubCols.includes('show_charts')) {
     await exec('ALTER TABLE clubs ADD COLUMN show_charts INTEGER NOT NULL DEFAULT 0');
   }
 
-  /* ── o clube fundador nasceu aberto, e não devia ───────────────────────
-     A primeira versão dos clubes criou o Cineclube como `public`, e naquela
-     versão `public` queria dizer "qualquer um lê o acervo". O clube de um grupo
-     de amigos que já existia antes de haver rede não vira público porque o
-     produto cresceu — e o acervo deles esteve legível para quem tivesse a URL
-     entre um deploy e o outro.
-
-     Isto conserta os bancos que pegaram aquela versão. Uma vez só, marcada na
-     tabela acima: quem decidir abrir o clube depois não pode ter essa decisão
-     desfeita no próximo reinício. */
+  /* A primeira versão dos clubes criou o Cineclube como `public`, e ali `public`
+     queria dizer "qualquer um lê o acervo". Isto conserta os bancos que pegaram
+     aquela versão. Uma vez só, marcada na tabela acima: quem decidir abrir o
+     clube depois não pode ter a decisão desfeita no próximo reinício. */
   if (!(await done('home-club-private'))) {
     const r = await prepare(
       `UPDATE clubs SET visibility = 'private'
@@ -704,10 +562,9 @@ async function migrate() {
   if (!memberCols.includes('notifications_seen_at')) {
     await exec('ALTER TABLE club_members ADD COLUMN notifications_seen_at TEXT');
     await exec('ALTER TABLE club_members ADD COLUMN notifications_cleared_at TEXT');
-    /* As marcas que a pessoa já tinha viajam para o clube fundador, que é o
-       único em que ela pode ter lido alguma coisa antes desta migração. Sem
-       isto, todo aviso de sempre voltaria a aparecer como novo no primeiro boot
-       depois dos clubes. */
+    /* As marcas que a pessoa já tinha viajam para o clube fundador, o único em
+       que ela pode ter lido algo antes desta migração. Sem isto, todo aviso de
+       sempre voltaria a aparecer como novo. */
     await exec(`
       UPDATE club_members SET
         notifications_seen_at = (SELECT notifications_seen_at FROM reviewers r WHERE r.id = club_members.reviewer_id),
@@ -715,37 +572,31 @@ async function migrate() {
     `);
   }
 
-  /* ── a conta ──────────────────────────────────────────────────────────────
-     O PIN de quatro dígitos serviu enquanto entrar era escolher o próprio rosto
-     numa lista de quatro pessoas. Numa rede essa lista é todo mundo, então a
-     identidade passa a ser o e-mail, e a credencial é uma senha.
+  /* O PIN servia enquanto entrar era escolher o próprio rosto numa lista de
+     quatro pessoas. Numa rede essa lista é todo mundo, então a identidade passa
+     a ser o e-mail e a credencial é uma senha.
 
-     `google_sub` é o identificador estável que o Google devolve. Guardado além
-     do e-mail porque e-mail é o que a pessoa digita e `sub` é o que o Google
-     garante: um endereço pode mudar de dono, o `sub` não muda nunca.
+     `google_sub` é o identificador estável que o Google devolve: e-mail é o que
+     a pessoa digita, `sub` é o que o Google garante — um endereço pode mudar de
+     dono, o `sub` não muda nunca.
 
-     Os dois índices são parciais porque as duas colunas nascem nulas em todas
-     as contas que já existem — sem o WHERE, um índice único trataria vários
-     nulos como colisão em alguns motores e nenhum em outros, e essa é uma
-     diferença que não se quer descobrir em produção. */
+     Os dois índices são parciais porque as colunas nascem nulas nas contas que
+     já existem, e um índice único trata vários nulos como colisão em alguns
+     motores e nenhum em outros. */
   await addReviewerCol('email', 'email TEXT');
   await addReviewerCol('google_sub', 'google_sub TEXT');
   await addReviewerCol('password_hash', 'password_hash TEXT');
   await addReviewerCol('password_salt', 'password_salt TEXT');
 
-  /* ── o endereço é mesmo desta pessoa? ──────────────────────────────────
-     Até aqui um e-mail era o que alguém digitou. Isso bastava enquanto ele não
-     servia para nada além de identificar a conta na hora de entrar, e deixou de
-     bastar no dia em que passou a existir "esqueci minha senha": um endereço não
-     provado é um endereço que pode ser de outra pessoa, e mandar para lá o
-     caminho de volta de uma conta seria entregar a conta.
+  /* Um e-mail era só o que alguém digitou, e isso bastava enquanto ele não
+     servia para nada além de identificar a conta. Deixou de bastar com "esqueci
+     minha senha": mandar o caminho de volta de uma conta para um endereço não
+     provado é entregar a conta.
 
-     Zero por padrão — menos para quem entrou pelo Google, e essa exceção não é
-     conveniência. `accountForGoogle` já recusa ligar qualquer coisa a um e-mail
-     que o Google não tenha marcado como verificado (ver auth.js), então toda
-     conta com `google_sub` chegou aqui com o endereço já provado por quem tem
-     como prová-lo. Marcá-las como não verificadas seria pedir de novo uma prova
-     que já foi dada, e a primeira vítima seria o dono do clube. */
+     Zero por padrão, menos para quem entrou pelo Google — `accountForGoogle` já
+     recusa ligar qualquer coisa a um e-mail não verificado (ver auth.js), então
+     toda conta com `google_sub` chegou com o endereço provado por quem tem como
+     prová-lo. */
   await addReviewerCol('email_verified', 'email_verified INTEGER NOT NULL DEFAULT 0');
   if (!(await done('google-emails-verified'))) {
     const r = await prepare(
@@ -755,22 +606,18 @@ async function migrate() {
     if (r?.rowsAffected) console.log(`[db] ${r.rowsAffected} conta(s) do Google já vêm verificadas`);
   }
 
-  /* ── o que um link de e-mail carrega ───────────────────────────────────
-     Um token para confirmar o endereço, e um para redefinir a senha. Mesma
+  /* Um token para confirmar o endereço e um para redefinir a senha, na mesma
      tabela porque são a mesma coisa com dois usos: um segredo de vida curta que
-     só chega a quem lê aquela caixa de entrada, e cuja apresentação é a prova.
+     só chega a quem lê aquela caixa, e cuja apresentação é a prova.
 
-     Guarda só o SHA-256, exatamente como as sessões. O token viaja no e-mail e
-     no endereço que a pessoa abre; o banco nunca o tem. Um vazamento de banco
-     não devolve um único link utilizável.
+     Guarda só o SHA-256, como as sessões: o token viaja no e-mail, e o banco
+     nunca o tem. Um vazamento não devolve um link utilizável.
 
      `email` fica gravado junto porque o token vale para O ENDEREÇO ao qual foi
-     mandado: se a pessoa trocar o e-mail da conta entre pedir e clicar, o link
-     antigo deixa de valer em vez de confirmar um endereço que ninguém pediu.
+     mandado: trocar o e-mail entre pedir e clicar invalida o link antigo.
 
-     Uso único, por exclusão: usar apaga a linha. Não há coluna de "já usado" —
-     ela seria uma segunda resposta, livre para discordar da primeira, para a
-     pergunta que a existência da linha já responde. */
+     Uso único por exclusão — usar apaga a linha. Não há coluna de "já usado":
+     seria uma segunda resposta para o que a existência da linha já responde. */
   await exec(`
     CREATE TABLE IF NOT EXISTS email_tokens (
       token_hash TEXT PRIMARY KEY,
@@ -789,30 +636,25 @@ async function migrate() {
       ON reviewers(google_sub) WHERE google_sub IS NOT NULL;
   `);
 
-  /* ── e a reconstrução ─────────────────────────────────────────────────────
-     A única parte destrutiva deste arquivo, e ela é obrigatória: `UNIQUE(pessoa,
-     filme)` e `PRIMARY KEY(filme)` foram declaradas dentro do CREATE TABLE, e
-     o SQLite não deixa remover nenhuma das duas — o índice que as sustenta é
-     `sqlite_autoindex_*`, e DROP INDEX o recusa. Tabela nova, cópia, troca.
+  /* A única parte destrutiva deste arquivo, e obrigatória: `UNIQUE(pessoa,
+     filme)` e `PRIMARY KEY(filme)` foram declaradas dentro do CREATE TABLE, e o
+     SQLite não deixa remover nenhuma — o índice que as sustenta é
+     `sqlite_autoindex_*`, e DROP INDEX recusa. Tabela nova, cópia, troca.
 
-     O perigo real não é a cópia, é o DROP. Comentário, voto e curtida apontam
-     para `reviews` com ON DELETE CASCADE, e um DROP com chave estrangeira
-     ligada leva os três junto. Se esse enforcement está ligado depende do
-     motor — local é um PRAGMA, no Turso é decisão do servidor — e isso não é
-     uma coisa que se descobre em produção com os dados dentro.
+     O perigo não é a cópia, é o DROP: comentário, voto e curtida apontam para
+     `reviews` com ON DELETE CASCADE, e um DROP com chave estrangeira ligada leva
+     os três junto. Se o enforcement está ligado depende do motor — local é
+     PRAGMA, no Turso é decisão do servidor.
 
-     Então as quatro tabelas filhas são lidas para a memória ANTES e reescritas
-     DEPOIS com INSERT OR IGNORE. Se o cascade levou, elas voltam; se não levou,
-     o IGNORE não faz nada. Correto nos dois mundos sem precisar saber em qual
-     se está. Cabe na memória porque cabe: é um clube de amigos, e a coisa toda
-     são dezenas de linhas. */
+     Então as quatro filhas são lidas para a memória ANTES e reescritas DEPOIS
+     com INSERT OR IGNORE: se o cascade levou, voltam; se não, o IGNORE não faz
+     nada. Correto nos dois mundos sem precisar saber em qual se está. */
   if (!reviewCols.includes('club_id')) {
     const home = await ensureHomeClub();
 
-    /* Todo mundo que existe hoje é do clube fundador, e quem já era admin da
-       instalação vira ADM dele. Roda uma vez só, junto da reconstrução, e por
-       isso não existe o risco de alguém que saiu de todos os clubes ser
-       readmitido sozinho no próximo boot. */
+    /* Todo mundo que existe hoje é do clube fundador, e quem era admin da
+       instalação vira ADM dele. Roda uma vez só, junto da reconstrução, então
+       ninguém que saiu de todos os clubes é readmitido no próximo boot. */
     const everyone = await prepare('SELECT id, is_admin FROM reviewers').all();
     if (everyone.length) {
       await batch(everyone.map(p => ({
@@ -944,14 +786,14 @@ async function migrate() {
     console.log(`[db] clubes: ${queue.length} filme(s) da fila movidos para ${HOME_CLUB}`);
   }
 
-  // Expired sessions are dead weight and a liability; clear them at boot.
+  // Sessão vencida é peso morto e risco; some no boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
   // E pelo mesmo motivo, os links de e-mail que já não abrem nada.
   await prepare("DELETE FROM email_tokens WHERE expires_at <= datetime('now')").run();
 }
 
-// Whatever needs the schema awaits this. The routes only call prepare() at
-// load time, which touches nothing, so nothing runs ahead of it.
+// Quem precisa do esquema espera isto. As rotas só chamam prepare() na carga, o
+// que não toca em nada, então nada roda na frente.
 const ready = migrate();
 
 module.exports = {

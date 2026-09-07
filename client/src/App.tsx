@@ -45,88 +45,55 @@ import { ProfileScreen } from '@/screens/Profile';
 import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
-  /* ── o feed abre a sala ─────────────────────────────────────────────────
-     Primeiro na fila e porta de entrada, e as duas coisas andam juntas: um
-     feed que não é a tela de chegada é um feed que ninguém lê. O clube avalia
-     em horas diferentes, e o que ele nunca teve foi um lugar que dissesse
-     "isto aconteceu enquanto você não estava".
-
-     Isto muda a porta de entrada, que era o catálogo desde o início. A troca é
-     de uma linha — mover esta entrada para baixo de `catalog` e trocar o
-     `?? 'feed'` logo abaixo. */
+  /* Primeiro na fila e porta de entrada: um feed que não é a tela de chegada é
+     um feed que ninguém lê. Para trocar a porta, mover esta entrada para baixo
+     de `catalog` e mudar o `?? 'feed'` adiante. */
   { id: 'feed', label: 'Feed' },
-  /* ── uma rota que não é uma aba ─────────────────────────────────────────
-     Avaliar não se escolhe: escolhe-se um filme, e avaliar é o que se faz com
-     ele. Uma aba levava a uma tela vazia com uma busca dentro, que é pedir para
-     a pessoa achar de novo um filme que ela já tinha achado.
-
-     Sai da barra, fica na tabela. `hidden` e não uma exclusão porque a rota
-     precisa continuar existindo: `rateMovie` escreve `#rate`, e um endereço que
-     a tabela não reconhece derruba o botão Voltar e o recarregar de volta para
-     o feed. Navegação e roteamento são duas listas que aqui coincidiam por
-     acidente. */
+  /* Rota, não aba: avaliar não se escolhe, escolhe-se um filme. `hidden` e não
+     exclusão porque `rateMovie` escreve `#rate`, e um endereço que a tabela não
+     reconhece derruba o Voltar e joga o recarregar no feed. */
   { id: 'rate', label: 'Avaliar', hidden: true },
   { id: 'catalog', label: 'Catálogo' },
   { id: 'watchlist', label: 'Quero ver' },
-  /* Between the queue and the reviews, because that is where it falls in an
-     evening: you pick the film, you watch it, you rate it. */
+  /* Entre a fila e os avaliados, que é a ordem de uma noite: escolhe, assiste,
+     avalia. */
   { id: 'screening', label: 'Sessão' },
   { id: 'reviews', label: 'Avaliados' },
-  /* ── o perfil ───────────────────────────────────────────────────────────
-     Chega-se por um rosto: o seu na marquise, o de qualquer pessoa em qualquer
-     lugar do app. Nunca por uma aba — uma aba "Perfil" só poderia levar ao seu,
-     e o que faz disto uma rede social é justamente ele existir para todo mundo.
-
-     `#perfil/<id>` carrega de quem é. Sem id, é o seu — que é o que o rosto na
-     marquise pede e o que um `#perfil` colado sem nada significa.
-
-     Substituiu a tela `Avaliadores`, que era um painel de formulários com o
-     nome de uma seção. O que ela fazia — nome, foto, PIN, cadastrar, remover —
-     mora agora na folha de ajustes, atrás da engrenagem do próprio perfil. */
+  /* Chega-se por um rosto, nunca por aba — uma aba "Perfil" só levaria ao seu, e
+     o que faz disto uma rede social é ele existir para todo mundo.
+     `#perfil/<id>` diz de quem é; sem id, é o seu. */
   { id: 'perfil', label: 'Perfil', hidden: true },
-  /* O endereço antigo, mantido roteável e nada mais. Alguém pode ter `#people`
-     guardado, e um endereço que a tabela não reconhece derruba o Voltar e joga
-     o recarregar no feed sem dizer por quê. Ele cai no seu próprio perfil, que
-     é o cômodo para onde a porta dele sempre apontou. */
+  /* Endereço antigo, roteável e nada mais: alguém pode ter `#people` guardado.
+     Cai no próprio perfil, que é para onde ele sempre apontou. */
   { id: 'people', label: 'Avaliadores', hidden: true },
 ] as const;
 export type TabId = (typeof TABS)[number]['id'];
 
 type Club = {
-  /** Who is signed in. The session is the authority on this, not the client. */
   me: SessionUser;
-  /** Qual sala é esta: nome, foto, visibilidade e o seu papel nela. */
   club: ClubRow;
   /** Se você administra ESTA sala — diferente de `me.isAdmin`, que é a instalação. */
   isClubAdmin: boolean;
-  /** Relê o clube depois de o ADM mexer no nome, na foto ou na visibilidade. */
   refreshClub: () => Promise<void>;
   /** Sair da sala. As suas fichas aqui continuam onde estão. */
   leaveClub: () => Promise<void>;
-  /** Voltar ao saguão sem sair de nada — depois de encerrar o clube, por exemplo. */
   goLobby: () => void;
   /* Abre a folha de ajustes — conta, senha e, para o ADM, a sala e os pedidos.
-     Mora no contexto porque três lugares a abrem: a engrenagem do próprio
-     perfil, o distintivo de pedidos na marquise e um aviso do sino. Enquanto ela
-     era estado local do perfil, um pedido de entrada não tinha como se anunciar:
-     ficava numa lista atrás de dois cliques que ninguém sabia dar. */
+     No contexto porque três lugares a abrem: a engrenagem do perfil, o
+     distintivo de pedidos na marquise e um aviso do sino. */
   openClubSettings: () => void;
   signOut: () => void;
   refreshReviewers: () => Promise<void>;
-  /** Re-reads the session after the person edits their own name or portrait. */
   refreshMe: () => Promise<void>;
-  /** The portrait of whoever signed a take, looked up by id. */
   avatarOf: (reviewerId: string) => string | null;
   reviewers: Reviewer[];
   reviews: Review[];
   watchlist: WatchItem[];
   criteria: Record<string, Criterion[]>;
   genres: string[];
-  /* ── a conversa em cima das avaliações ──────────────────────────────────
-     Carregada inteira no boot, junto com o resto do clube, e não por avaliação.
-     A tela de avaliados desenha o acervo todo: buscar por ficha seriam quarenta
-     requisições e um estado de carregando dentro de cada gaveta. Num clube de
-     quatro pessoas isto é da ordem de centenas de linhas. */
+  /* Carregada inteira no boot, não por avaliação: a tela de avaliados desenha o
+     acervo todo, e buscar por ficha seriam quarenta requisições e um "carregando"
+     dentro de cada gaveta. Num clube pequeno isto são centenas de linhas. */
   comments: ReviewComment[];
   votes: ReviewVote[];
   commentLikes: CommentLike[];
@@ -134,9 +101,8 @@ type Club = {
      `parentId` faz dele uma resposta; a profundidade para em um. */
   comment: (reviewId: string, body: string, parentId?: string | null) => Promise<void>;
   uncomment: (id: string) => Promise<void>;
-  /** Curtir e descurtir o comentário de outra pessoa. */
   likeComment: (id: string, liked: boolean) => Promise<void>;
-  /** +1, −1, ou 0 para tirar. Pressionar o voto que já está posto tira ele. */
+  /** +1, −1, ou 0 para tirar. Repetir o voto que já está posto tira ele. */
   voteOn: (reviewId: string, value: 1 | -1 | 0) => Promise<void>;
   reload: (patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => void;
   criteriaFor: (genre: string) => Criterion[];
@@ -144,29 +110,19 @@ type Club = {
   inWatchlist: (id: number) => boolean;
   toggleWatch: (m: Movie | WatchItem) => Promise<void>;
   goTab: (t: TabId) => void;
-  /* ── abrir o perfil de alguém ───────────────────────────────────────────
-     Chamado por todo rosto do app. Sem id, abre o seu.
-
-     É esta função que transforma o produto numa rede social, e ela é de uma
-     linha: o que faltava nunca foi a página, era o clube ser feito de pessoas
-     clicáveis em vez de nomes desenhados. */
+  /** Chamado por todo rosto do app. Sem id, abre o seu. */
   goPerson: (reviewerId?: string | null) => void;
-  /** De quem é o perfil aberto agora, ou null enquanto for o seu. */
+  /** De quem é o perfil aberto, ou null enquanto for o seu. */
   personId: string | null;
-  /* Abre o acervo numa avaliação específica, e escreve o endereço dela. É o que
-     o sino chama e o que "copiar link" produz. */
+  /** Abre o acervo numa ficha e escreve o endereço dela. O que o sino chama. */
   goReview: (reviewId: string, commentId?: string | null) => void;
-  /** Qual ficha o endereço está pedindo, ou null. */
   focusReview: string | null;
   /** Chamado pela tela quando ela já abriu e rolou até o alvo. */
   clearFocusReview: () => void;
-  /** E qual comentário dentro dela, quando o aviso aponta para um texto. */
   focusComment: string | null;
   clearFocusComment: () => void;
-  /* O mesmo alvo, sem a viagem. `goReview` é "vá até lá"; isto é "é este", para
-     quem já vai abrir a conversa onde está — o feed abre a ficha na própria
-     linha agora, e mandar a pessoa para o acervo só para acender um comentário
-     seria a viagem que a abertura no lugar existe para evitar. */
+  /* O mesmo alvo sem a viagem: `goReview` é "vá até lá", isto é "é este", para
+     quem já abre a conversa onde está (o feed abre a ficha na própria linha). */
   aimComment: (commentId: string) => void;
   openSheet: (id: number) => void;
   rateMovie: (id: number) => void;
@@ -180,40 +136,28 @@ export function useClub() {
   return c;
 }
 
-/* ── o endereço de uma avaliação ──────────────────────────────────────────
-   A seção sempre morou no hash; uma ficha dentro dela não morava em lugar
-   nenhum. `#reviews/r1a2b3c` é o endereço dela.
+/* ── `#c/<slug>/reviews/<id>` ─────────────────────────────────────────────
+   A chave é o id da avaliação e não o par filme+avaliador: é o id que o aviso
+   do sino carrega e o que sobrevive a uma regravação (o upsert casa por
+   avaliador+filme e não toca na coluna `id`), então um link colado no Discord
+   continua valendo depois de a pessoa ajustar a nota.
 
-   A chave é o id da avaliação e não o par filme+avaliador, porque é o id que o
-   aviso do sino carrega e é ele que sobrevive a uma regravação — o upsert casa
-   por (avaliador, filme) e não toca na coluna `id`, então um link colado no
-   Discord continua valendo depois de a pessoa ajustar a própria nota.
+   O clube vem na frente, e não guardado na sessão, porque o endereço é feito
+   para ser colado: na sessão ele significaria coisas diferentes conforme a sala
+   em que o leitor estivesse. O outro motivo é mecânico e está em clubs.js —
+   `EventSource` não manda cabeçalho.
 
-   Uma seção desconhecida cai no catálogo, como sempre caiu; um id que não
-   existe mais abre a aba e não foca nada, que é o que sobra de honesto quando
-   a coisa apontada foi apagada. */
-/* ── e agora o clube vem antes ────────────────────────────────────────────
-   `#c/<slug>/reviews/<id>` em vez de `#reviews/<id>`. O clube na frente, e não
-   guardado na sessão, porque este endereço é feito para ser colado no Discord:
-   guardado na sessão, ele significaria coisas diferentes conforme a sala em que
-   o leitor estivesse por acaso. O outro motivo é mecânico e está em clubs.js —
-   `EventSource` não manda cabeçalho, então a sala ao vivo precisa do clube na
-   URL de qualquer jeito.
-
-   Sem `c/` na frente, não há clube: é o saguão. Um endereço antigo do tempo de
-   um clube só (`#reviews/...`) cai lá também, que é o mais honesto — a ficha que
-   ele aponta existe, mas quem lê o endereço não tem como saber de qual sala. */
+   Sem `c/` na frente não há clube: é o saguão. Seção desconhecida cai no
+   catálogo; id que não existe mais abre a aba e não foca nada. */
 type Route = {
   club: string | null;
   tab: TabId | null;
   review: string | null;
   comment: string | null;
   person: string | null;
-  /* A folha de ajustes do clube, aberta pelo endereço. Não é uma aba e nunca
-     vai ser uma: é uma folha por cima da sala. Ganhou endereço porque o saguão
-     precisa poder MANDAR alguém nela — o convite de emprestar o acervo à rede
-     tem um botão que diz "abrir os ajustes", e um botão que diz isso e larga a
-     pessoa no mural é o botão mentindo. */
+  /* A folha de ajustes aberta pelo endereço. Não é aba: é folha por cima da
+     sala. Tem endereço porque o saguão precisa poder MANDAR alguém nela — o
+     convite de emprestar o acervo à rede tem um botão "abrir os ajustes". */
   sheet: boolean;
 };
 
@@ -238,27 +182,20 @@ function routeFromHash(): Route {
 
   const tab = (TABS as readonly { id: string }[]).some(t => t.id === head) ? (head as TabId) : null;
   const review = tab === 'reviews' && tail ? decodeURIComponent(tail) : null;
-  /* Um quarto segmento endereça o comentário dentro da ficha, e é o que faz
-     um aviso levar ao texto em vez de à carta inteira. Sem ele o sino abria a
-     avaliação certa e deixava a pessoa procurando qual das respostas era a que
-     ele anunciou. */
+  /* Um quarto segmento endereça o comentário dentro da ficha: é o que faz o
+     aviso levar ao texto em vez de à carta inteira. */
   const comment = review && deeper ? decodeURIComponent(deeper) : null;
-  /* De quem é o perfil. `perfil` sem id, e o endereço antigo `people`, são o
-     seu — quem escreveu qualquer um dos dois estava pedindo a própria página. */
+  /* De quem é o perfil. `perfil` sem id, e o antigo `people`, são o seu. */
   const person = tab === 'perfil' && tail ? decodeURIComponent(tail) : null;
-  /* `ajustes` não é aba, então `tab` continua nulo e a sala abre no mural com a
-     folha por cima — que é exatamente o que acontece quando se abre os ajustes
-     de dentro. Fechar a folha limpa o segmento, ou o endereço continuaria
-     dizendo que ela está aberta depois de ela ter sido fechada. */
+  /* `ajustes` não é aba, então `tab` fica nulo e a sala abre no mural com a
+     folha por cima — o mesmo que abrir os ajustes de dentro. */
   const sheet = head === 'ajustes';
   return { club, tab, review, comment, person, sheet };
 }
 
-/* ── os dois endereços que um e-mail abre ─────────────────────────────────
-   `#confirmar/<token>` e `#senha/<token>`. Ficam fora de `routeFromHash` de
-   propósito: aquele resolve o que existe DENTRO de um clube, e estes dois são
-   anteriores a haver clube, conta ou sessão. Ler aqui é uma linha; ensinar a
-   outra função a falar de um mundo que não é o dela seria emaranhar as duas. */
+/* `#confirmar/<token>` e `#senha/<token>`. Fora de `routeFromHash` de propósito:
+   aquele resolve o que existe DENTRO de um clube, e estes dois são anteriores a
+   haver clube, conta ou sessão. */
 function emailRouteFromHash(): 'confirmar' | 'senha' | null {
   const head = (location.hash || '').replace(/^#/, '').split('?')[0].split('/').filter(Boolean)[0];
   return head === 'confirmar' || head === 'senha' ? head : null;
@@ -268,37 +205,29 @@ function emailRouteFromHash(): 'confirmar' | 'senha' | null {
 const clubHash = (slug: string, rest = '') =>
   `c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O app, antes de haver uma sala.
-
-   Três perguntas em ordem, e cada uma só faz sentido depois da anterior: quem é
-   você, você já guardou uma segunda chave, e em que sala você está. Só depois
-   das três existe um clube para o resto do produto falar sobre — e é por isso
-   que este componente existe separado do de baixo: `ClubApp` pode assumir que
-   tem clube, sessão e dados, e não precisa desenhar nenhum dos estados de
-   "ainda não".
-   ══════════════════════════════════════════════════════════════════════════ */
+/* ── o app antes de haver uma sala ────────────────────────────────────────
+   Três perguntas em ordem, cada uma só fazendo sentido depois da anterior: quem
+   é você, você já guardou uma segunda chave, e em que sala você está. Separado
+   do `ClubApp` justamente por isso: lá embaixo dá para assumir que há clube,
+   sessão e dados, sem desenhar nenhum estado de "ainda não". */
 export default function App() {
   const [me, setMe] = useState<SessionUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(false);
   const [skippedPassword, setSkippedPassword] = useState(false);
-  /* As contas de antes da entrada pelo Google que ninguém reivindicou. `null`
+  /* Contas de antes da entrada pelo Google que ninguém reivindicou. `null`
      enquanto não se perguntou; a lista se esvazia sozinha conforme as pessoas
-     voltam, e no dia em que estiver vazia esta tela some para sempre. */
+     voltam, e no dia em que zerar esta tela some para sempre. */
   const [orphans, setOrphans] = useState<Orphan[] | null>(null);
   const [skippedClaim, setSkippedClaim] = useState(false);
   const [route, setRoute] = useState<Route>(() => routeFromHash());
   /* Lido junto da rota e pelo mesmo ouvinte: sair da tela de confirmação
-     reescreve o endereço, e sem isto o app continuaria mostrando a tela que o
-     endereço já não pede. */
+     reescreve o endereço, e sem isto o app mostraria a tela que ele já não pede. */
   const [emailRoute, setEmailRoute] = useState(() => emailRouteFromHash());
-  /** A folha da própria conta, aberta pelo rosto na barra do saguão. */
   const [self, setSelf] = useState(false);
 
-  /* A sessão decide se o app renderiza, então ela é perguntada primeiro e
-     sozinha: quem está deslogado tem de chegar na tela de entrada sem esperar
-     por catálogo nenhum. */
+  /* A sessão decide se o app renderiza, então é perguntada primeiro e sozinha:
+     quem está deslogado chega na tela de entrada sem esperar por catálogo. */
   const checkAuth = useCallback(async () => {
     try {
       const res = await auth.me();
@@ -315,8 +244,8 @@ export default function App() {
     void checkAuth();
   }, [checkAuth]);
 
-  /* Só depois de haver sessão, e o erro morre em silêncio: uma lista vazia e uma
-     lista que não carregou levam ao mesmo lugar — seguir sem oferecer nada. */
+  /* Só depois de haver sessão, e o erro morre em silêncio: lista vazia e lista
+     que não carregou levam ao mesmo lugar — seguir sem oferecer nada. */
   useEffect(() => {
     if (!me) return;
     void auth
@@ -334,12 +263,10 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  /* ── quem a API está falando ──────────────────────────────────────────
-     Escrito ANTES de qualquer tela do clube montar, e é isso que torna seguro
-     o slug morar num módulo em vez de descer por props até o botão de curtir
-     (ver lib/api.ts). O cano ao vivo é fechado junto: ele é de uma sala, e uma
-     conexão que sobrevive à troca continuaria trazendo — e buscando — o que
-     acontece numa sala que já saiu da tela. */
+  /* Escrito ANTES de qualquer tela do clube montar, e é isso que torna seguro o
+     slug morar num módulo em vez de descer por props até o botão de curtir (ver
+     lib/api.ts). O cano ao vivo fecha junto: ele é de uma sala, e uma conexão
+     que sobrevive à troca continua trazendo o que acontece na sala que saiu. */
   useEffect(() => {
     setClub(route.club);
     resetLive();
@@ -356,10 +283,9 @@ export default function App() {
     location.hash = '';
   }, []);
 
-  /* Entrar numa sala, e opcionalmente já num lugar dentro dela: o saguão põe uma
-     ficha inteira na tela e o clique nela tem de levar àquela ficha, não ao
-     mural do clube que a contém. Sem destino, a porta é o mural — que é onde
-     alguém que só quer entrar quer chegar. */
+  /* Entrar numa sala, e opcionalmente já num lugar dentro dela: o saguão põe
+     fichas na tela e o clique tem de levar àquela ficha, não ao mural que a
+     contém. Sem destino, a porta é o mural. */
   const enter = useCallback((slug: string, rest = 'feed') => {
     location.hash = clubHash(slug, rest);
   }, []);
@@ -375,14 +301,9 @@ export default function App() {
     );
   }
 
-  /* ── os dois endereços que chegam por e-mail ────────────────────────────
-     Antes da pergunta "quem é você", e é o ponto: quem clicou num link de
-     redefinição está fora justamente porque não consegue responder essa
-     pergunta, e quem confirma um endereço pode estar fazendo isso no celular
-     enquanto a conta está aberta no computador.
-
-     Não são abas nem seções de clube nenhum, então não passam por
-     `routeFromHash` — ele só sabe falar de endereços que começam com `c/`. */
+  /* Antes da pergunta "quem é você", e é o ponto: quem clicou num link de
+     redefinição está fora justamente porque não sabe responder, e quem confirma
+     um endereço pode estar no celular com a conta aberta no computador. */
   if (emailRoute === 'confirmar') {
     return <ConfirmEmail onDone={() => { location.hash = ''; void checkAuth(); }} />;
   }
@@ -392,10 +313,9 @@ export default function App() {
 
   if (!me) return <SignIn onSignedIn={u => { setMe(u); void checkAuth(); }} />;
 
-  /* A senha vem antes do saguão porque é sobre a conta, não sobre uma sala — e
-     porque logo depois da primeira entrada é o único momento em que a frase
-     "guarde uma segunda chave" tem contexto. Pular é permitido: um seguro
-     obrigatório na porta é um pedágio. */
+  /* Antes do saguão porque é sobre a conta, não sobre uma sala — e porque logo
+     depois da primeira entrada é o único momento em que "guarde uma segunda
+     chave" tem contexto. Pular é permitido: obrigatório na porta é pedágio. */
   if (needsPassword && !skippedPassword) {
     return (
       <SetPassword
@@ -408,32 +328,26 @@ export default function App() {
     );
   }
 
-  /* ── "você já tinha conta aqui?" ──────────────────────────────────────
-     Depois da senha e antes de tudo o mais, e só quando há o que reivindicar. A
-     lista só traz contas órfãs de um clube em que a pessoa já está (ver
-     auth.js), então esta tela naturalmente aparece DEPOIS de o ADM ter aceitado
-     a entrada dela — que é a ordem certa e é o que torna o PIN uma prova
-     suficiente.
-
-     QUANDO oferecer é decidido inteiramente no servidor: quem já reivindicou e
-     quem já disse que não é nenhuma recebem uma lista vazia. Esta tela não tem
-     opinião sobre isso, e é de propósito — a versão em que ela tinha perguntava
-     a mesma coisa a todo mundo, toda vez, para sempre. */
+  /* "Você já tinha conta aqui?" — depois da senha, e só quando há o que
+     reivindicar. A lista só traz órfãs de um clube em que a pessoa já está (ver
+     auth.js), então esta tela cai DEPOIS de o ADM ter aceitado a entrada, que é
+     o que torna o PIN prova suficiente. QUANDO oferecer é decidido no servidor:
+     quem já reivindicou e quem já recusou recebem lista vazia. */
   if (orphans && orphans.length > 0 && !skippedClaim) {
     return (
       <ClaimAccount
         accounts={orphans}
         onClaimed={() => {
-          /* A ficha, a fila e a conversa mudaram de dono, e a sessão aponta para
-             outra conta. Recarregar é mais honesto do que costurar isso a mão. */
+          /* Ficha, fila e conversa mudaram de dono, e a sessão aponta para outra
+             conta. Recarregar é mais honesto do que costurar isso a mão. */
           location.reload();
         }}
         onSkip={() => {
           setSkippedClaim(true);
           // Some agora na tela; o servidor garante que não volte amanhã.
           void auth.dismissClaim().catch(() => {
-            /* Falhou gravar: a tela some nesta sessão e a pergunta volta depois.
-               Insistir com um erro seria punir quem só disse "não sou daqui". */
+            /* Falhou gravar: some nesta sessão e a pergunta volta depois.
+               Insistir com um erro seria punir quem disse "não sou daqui". */
           });
         }}
       />
@@ -449,19 +363,16 @@ export default function App() {
           onSignOut={() => void signOut()}
           onOpenSelf={() => setSelf(true)}
         />
-        {/* A folha da conta também no saguão: uma pessoa que ainda não está em
-            clube nenhum precisa poder trocar o próprio nome e cadastrar uma
-            senha, e o único lugar em que ela está é este. */}
+        {/* Também no saguão: quem ainda não está em clube nenhum precisa poder
+            trocar o próprio nome e cadastrar senha, e só está aqui. */}
         <AccountSheet open={self} onClose={() => setSelf(false)} me={me} onChanged={checkAuth} />
       </>
     );
   }
 
   /* `key` no slug: trocar de clube desmonta o app inteiro em vez de reaproveitar
-     as telas. É deliberado e é o que mantém a promessa de isolamento também do
-     lado de cá — nenhum estado do clube anterior (fichas, fila, conversa, sala
-     de projeção) sobrevive à troca, porque o componente que os segurava deixou
-     de existir. */
+     as telas. É o isolamento do lado de cá — nenhum estado do clube anterior
+     sobrevive, porque o componente que o segurava deixou de existir. */
   return (
     <ClubApp
       key={route.club}
@@ -477,14 +388,10 @@ export default function App() {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O app dentro de uma sala.
-
-   Isto era o app inteiro. O que mudou é que ele deixou de ser o único: agora
-   recebe o clube já resolvido e pode assumir as três coisas que o componente
-   acima garantiu — há sessão, há senha resolvida, e há uma sala. Toda chamada
-   daqui para baixo passa por `capi`, que já sabe qual é (ver lib/api.ts).
-   ══════════════════════════════════════════════════════════════════════════ */
+/* ── o app dentro de uma sala ─────────────────────────────────────────────
+   Recebe o clube já resolvido e pode assumir as três coisas que o componente
+   acima garantiu: há sessão, há senha resolvida, e há uma sala. Toda chamada
+   daqui para baixo passa por `capi`, que já sabe qual é (ver lib/api.ts). */
 function ClubApp({
   slug,
   route,
@@ -500,20 +407,17 @@ function ClubApp({
   onSignOut: () => void;
   onLeaveClub: () => void;
 }) {
-  /* O feed é onde a sala abre. Era o catálogo, e o catálogo continua sendo a
-     resposta para "o que a gente vê agora" — mas essa pergunta é feita uma vez
-     por semana, e "o que aconteceu por aqui" é feita toda vez que alguém entra.
-     Um link com uma seção dentro continua ganhando do padrão. */
+  /* O feed é onde a sala abre. "O que a gente vê agora" se pergunta uma vez por
+     semana; "o que aconteceu por aqui", toda vez que alguém entra. Um link com
+     seção dentro continua ganhando do padrão. */
   const [tab, setTab] = useState<TabId>(() => route.tab ?? 'feed');
   /** A ficha que o endereço pede, até a tela abri-la. Ver `goReview`. */
   const [focusReview, setFocusReview] = useState<string | null>(() => route.review);
-  /** E o comentário dentro dela, quando o endereço vai tão fundo. */
   const [focusComment, setFocusComment] = useState<string | null>(() => route.comment);
-  /* De quem é o perfil aberto. Null significa "o meu" — e não "nenhum": a tela
-     resolve isso contra a sessão, que é a única que sabe quem é você. Guardar o
-     seu id aqui seria gravar a resposta antes de a sessão existir. */
+  /* Null significa "o meu", não "nenhum": a tela resolve contra a sessão, que é
+     a única que sabe quem é você. Guardar o seu id aqui seria gravar a resposta
+     antes de a sessão existir. */
   const [personId, setPersonId] = useState<string | null>(() => route.person);
-  /** Qual sala é esta, com a foto, a visibilidade e o seu papel nela. */
   const [club, setClubRow] = useState<ClubRow | null>(null);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -528,19 +432,17 @@ function ClubApp({
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [pendingRate, setPendingRate] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  /* Se a sala está com um filme rodando agora. Mora aqui e não na tela da
-     sessão porque a coisa toda é justamente para quem NÃO está nela. */
+  /* Se a sala está com um filme rodando. Mora aqui e não na tela da sessão
+     porque a coisa toda é justamente para quem NÃO está nela. */
   const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
-  /* A folha de ajustes, aberta por quatro lugares agora — a engrenagem do
-     próprio perfil, o distintivo de pedidos na marquise, um aviso do sino, e o
-     endereço `#c/<slug>/ajustes`, que é como o saguão manda alguém direto ao
-     interruptor de emprestar o acervo à rede. Nasce aberta quando o endereço
-     pede. Ver `openClubSettings` e `routeFromHash`. */
+  /* A folha de ajustes, aberta por quatro lugares: a engrenagem do perfil, o
+     distintivo de pedidos na marquise, um aviso do sino, e `#c/<slug>/ajustes`
+     — como o saguão manda alguém direto ao interruptor de emprestar o acervo.
+     Nasce aberta quando o endereço pede. */
   const [sheetOpen, setSheetOpen] = useState(route.sheet);
 
-  /* O endereço continua mandando enquanto ele existir: chegar em `ajustes`
-     abre, e voltar para uma seção qualquer fecha. Sem isto, o botão de voltar
-     deixaria a folha aberta sobre o mural. */
+  /* O endereço continua mandando: chegar em `ajustes` abre, voltar para uma
+     seção fecha. Sem isto o Voltar deixaria a folha aberta sobre o mural. */
   useEffect(() => {
     if (route.sheet) setSheetOpen(true);
   }, [route.sheet]);
@@ -548,18 +450,16 @@ function ClubApp({
   const refreshClub = useCallback(async () => {
     const got = await clubsApi.get(slug);
     setClubRow(got.club);
-    /* Renomear troca o endereço. Se o nome mudou nesta aba, o hash aqui aponta
-       para um slug que não existe mais — e a próxima navegação cairia num 404.
-       Reescrever agora é mais barato do que descobrir depois. */
+    /* Renomear troca o slug. Se o nome mudou nesta aba, o hash aponta para um
+       que não existe mais e a próxima navegação cai em 404. */
     if (got.club.slug !== slug) {
       location.hash = clubHash(got.club.slug, tab);
     }
   }, [slug, tab]);
 
-  /* ── carregar a sala ──────────────────────────────────────────────────
-     O clube vem antes de tudo porque ele decide se há o que carregar: um slug
-     que não existe, ou um clube privado de que você não é, respondem 404 aqui
-     e a tela diz isso em vez de disparar cinco buscas que vão todas falhar. */
+  /* O clube vem antes de tudo porque decide se há o que carregar: slug que não
+     existe, ou privado de que você não é, respondem 404 aqui — e a tela diz
+     isso em vez de disparar cinco buscas que vão todas falhar. */
   const boot = useCallback(async () => {
     setBootError(null);
     try {
@@ -591,8 +491,8 @@ function ClubApp({
     void boot();
   }, [boot]);
 
-  /* Sair da sala, não da conta: as suas fichas aqui continuam onde estão, e o
-     que você deixa é a lista de quem está dentro. */
+  /* Sair da sala, não da conta: as suas fichas continuam onde estão; o que você
+     deixa é a lista de quem está dentro. */
   const leaveClub = useCallback(async () => {
     try {
       await clubsApi.leave(slug, me.id);
@@ -608,17 +508,15 @@ function ClubApp({
     setReviewers(rv.reviewers);
   }, []);
 
-  /* A name and a portrait live in two places at once: the roster, and the
-     session that draws them in the marquee. Editing your own has to move both,
-     and the session is the one the server is authoritative about. */
+  /* Nome e foto vivem em dois lugares: a lista de gente e a sessão que os
+     desenha na marquise. Editar o seu tem de mexer nos dois. */
   const refreshMe = useCallback(async () => {
     const res = await auth.me();
     if (res.reviewer) setMe(res.reviewer);
   }, []);
 
-  /* A review carries the name and the colour of whoever gave it, but not their
-     picture — that would put a URL on every one of them for something that
-     changes per person, not per review. The roster already knows. */
+  /* A ficha carrega o nome e a cor de quem assinou, mas não a foto — seria uma
+     URL em cada uma para algo que muda por pessoa, não por ficha. */
   const avatarOf = useCallback(
     (reviewerId: string) => reviewers.find(r => r.id === reviewerId)?.avatar ?? null,
     [reviewers]
@@ -630,14 +528,13 @@ function ClubApp({
       // Outro clube (ou o saguão): quem remonta é o componente de cima.
       if (c !== slug) return;
       if (t) setTab(t);
-      /* Só quando há um id no endereço. Voltar para `#reviews` limpo não deve
+      /* Só quando há id no endereço: voltar para `#reviews` limpo não deve
          apagar o foco que a tela acabou de consumir, nem acender um antigo. */
       if (review) setFocusReview(review);
       if (within) setFocusComment(within);
-      /* O perfil é a exceção, e ela é deliberada: aqui o id NÃO é um foco que
-         se consome, é qual página está aberta. `#perfil` sem id significa "o
-         meu", então o null tem de chegar — sem isto, ir do perfil de alguém
-         para o seu pelo botão Voltar deixaria a pessoa anterior na tela. */
+      /* O perfil é a exceção: aqui o id não é foco que se consome, é qual
+         página está aberta. `#perfil` sem id é "o meu", então o null tem de
+         chegar — senão o Voltar deixaria a pessoa anterior na tela. */
       if (t === 'perfil' || t === 'people') setPersonId(person);
     };
     window.addEventListener('hashchange', onHash);
@@ -653,17 +550,12 @@ function ClubApp({
     [slug]
   );
 
-  /* ── ir ao perfil de alguém ─────────────────────────────────────────────
-     A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
-     inclusive já estando num perfil: é ele que a pessoa cola no Discord, e ir
-     de um perfil a outro tem de mexer no Voltar.
-
-     `null` explícito e não ausência: chamar sem id é o gesto de pedir o SEU
-     perfil, e ele tem de apagar quem estava aberto antes.
-
-     A rolagem volta ao topo porque isto é troca de página e não de aba: quem
-     desce até a afinidade de alguém, clica num nome de lá e continua na mesma
-     altura chega no meio de outra pessoa sem ver de quem. */
+  /* A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
+     inclusive já estando num perfil: ir de um perfil a outro tem de mexer no
+     Voltar. `null` explícito e não ausência — chamar sem id pede o SEU perfil e
+     tem de apagar quem estava aberto. A rolagem volta ao topo porque isto é
+     troca de página: quem clica num nome lá embaixo cairia no meio de outra
+     pessoa sem ver de quem. */
   const goPerson = useCallback(
     (reviewerId?: string | null) => {
       const id = reviewerId ?? null;
@@ -676,9 +568,9 @@ function ClubApp({
     [slug]
   );
 
-  /* Ir para uma ficha específica: a aba, o endereço e o alvo, de uma vez. O
-     endereço é escrito mesmo quando já se está na aba, porque é ele que a
-     pessoa copia — e porque recarregar tem de voltar para o mesmo lugar. */
+  /* A aba, o endereço e o alvo, de uma vez. O endereço é escrito mesmo já
+     estando na aba: é ele que a pessoa copia, e recarregar tem de voltar ao
+     mesmo lugar. */
   const goReview = useCallback(
     (reviewId: string, commentId?: string | null) => {
       setTab('reviews');
@@ -694,23 +586,21 @@ function ClubApp({
     [slug]
   );
 
-  /* Consumido pela tela assim que ela abre a ficha e rola até ela. Sem isto o
-     mesmo alvo voltaria a se abrir a cada redesenho, e fechar a gaveta à mão
-     seria desfeito no instante seguinte. */
+  /* Consumido pela tela assim que ela abre a ficha e rola até lá. Sem isto o
+     mesmo alvo reabriria a cada redesenho, e fechar a gaveta à mão seria
+     desfeito no instante seguinte. */
   const clearFocusReview = useCallback(() => setFocusReview(null), []);
-  /* Limpado pela conversa, e não pela tela: só ela sabe quando já abriu o
-     suficiente e rolou até o texto. */
+  /* Limpado pela conversa e não pela tela: só ela sabe quando já rolou até o
+     texto. */
   const clearFocusComment = useCallback(() => setFocusComment(null), []);
-  /* Sem tocar na aba nem no endereço: quem chama isto já está com a conversa
-     abrindo debaixo do dedo. O endereço continua sendo escrito por `goReview`,
-     que é o que o sino usa e o que "copiar link" produz. */
+  /* Sem tocar na aba nem no endereço: quem chama já está com a conversa abrindo
+     debaixo do dedo. O endereço continua sendo escrito por `goReview`. */
   const aimComment = useCallback((commentId: string) => setFocusComment(commentId), []);
 
   const fault = useCallback(
     (msg: string) => {
-      /* Uma sessão que venceu no meio do uso cai na tela de entrada em vez de
-         mostrar um erro sobre o qual não há o que fazer. Trinta dias deslizantes
-         tornam isto raro, mas raro não é nunca — e a frase é a que o servidor
+      /* Sessão vencida no meio do uso cai na tela de entrada em vez de mostrar
+         um erro sobre o qual não há o que fazer. A frase é a que o servidor
          responde em `requireSession`. */
       if (/Entre para continuar/i.test(msg)) {
         onSignOut();
@@ -722,8 +612,8 @@ function ClubApp({
     [onSignOut]
   );
 
-  /* A string, não o objeto: quem está logado é redolhado a cada refreshMe, e um
-     callback que depende do objeto inteiro se recria à toa. */
+  /* A string, não o objeto: `refreshMe` troca o objeto, e um callback que
+     depende dele inteiro se recria à toa. */
   const meId = me.id;
 
   const averages = useMemo(() => {
@@ -741,21 +631,18 @@ function ClubApp({
 
   const inWatchlist = useCallback((id: number) => watchlist.some(w => String(w.id) === String(id)), [watchlist]);
 
-  /* The queue as of now, for handlers that must not be rebuilt when it changes.
-     Every poster in the catalogue is handed `toggleWatch`, and a new function
-     each time somebody bookmarks a film is a new prop on all hundred of them. */
+  /* A fila de agora, para handlers que não podem se refazer quando ela muda:
+     `toggleWatch` é entregue a cada pôster do catálogo, e uma função nova a
+     cada marcação é uma prop nova em todos os cem. */
   const watchRef = useRef(watchlist);
   watchRef.current = watchlist;
 
-  /* O clube e quem sou eu, para o mesmo uso e pelo mesmo motivo que a fila logo
-     acima: `toggleWatch` é entregue a cada pôster do catálogo, e uma função
-     nova a cada vez que alguém entra no clube ou troca de foto é uma prop nova
-     em todos os cem. */
+  /* O clube e quem sou eu, pelo mesmo motivo. */
   const rosterRef = useRef(reviewers);
   rosterRef.current = reviewers;
   const meRef = useRef(me);
   meRef.current = me;
-  /** Se você administra ESTA sala. Mesmo motivo de ref das duas acima. */
+  /** Se você administra ESTA sala. Mesmo motivo das duas acima. */
   const adminRef = useRef(false);
   adminRef.current = club?.role === 'admin';
 
@@ -763,16 +650,11 @@ function ClubApp({
     async (m: Movie | WatchItem) => {
       const held = watchRef.current.find(w => String(w.id) === String(m.id));
       const has = !!held;
-      /* ── tirar é de quem pôs ─────────────────────────────────────────────
-         A mesma regra que o servidor aplica (ver routes/watchlist.js), dita
-         aqui para o marcador do catálogo não mandar um pedido que já se sabe
-         recusado. A recusa continua sendo do servidor: isto é o produto
-         explicando antes, não decidindo.
-
-         Na fila, a tesoura nem aparece nos filmes dos outros — lá o pôster tem
-         a marca de quem escolheu ao lado e o silêncio se explica sozinho. No
-         catálogo o marcador é um só e ele não tem essa marca, então quem
-         aperta merece uma frase. */
+      /* Tirar é de quem pôs: a mesma regra do servidor (ver routes/watchlist.js),
+         dita aqui para o marcador do catálogo não mandar um pedido que já se
+         sabe recusado. Explicar antes, não decidir. Na fila a tesoura nem
+         aparece nos filmes dos outros; no catálogo o marcador é um só e não tem
+         a marca de quem escolheu, então quem aperta merece uma frase. */
       if (held && meRef.current) {
         const me = meRef.current;
         const owner = rosterRef.current.find(p => p.id === held.addedBy) ?? null;
@@ -806,12 +688,10 @@ function ClubApp({
     [fault]
   );
 
-  /* ── escrever na conversa ────────────────────────────────────────────────
-     A resposta do servidor é a verdade e entra na lista local, então a tela se
-     atualiza sem recarregar o clube inteiro. Nada é aplicado antes da resposta:
-     um comentário que aparece e some depois é pior que um que demora meio
-     segundo para aparecer, e a mesma escolha vale para o voto — o contador é a
-     coisa que o clube vai ler como placar, e ele não pode piscar. */
+  /* A resposta do servidor é a verdade e entra na lista local, então a tela se
+     atualiza sem recarregar o clube. Nada é aplicado antes da resposta: um
+     comentário que aparece e some é pior que um que demora meio segundo. Vale
+     igual para o voto — o contador é placar, e placar não pode piscar. */
   const comment = useCallback(
     async (reviewId: string, body: string, parentId?: string | null) => {
       const saved = await social.comment(reviewId, body, parentId);
@@ -823,8 +703,8 @@ function ClubApp({
   const uncomment = useCallback(async (id: string) => {
     await social.uncomment(id);
     setComments(prev => prev.filter(c => c.id !== id));
-    // O servidor apaga as curtidas em cascata; a lista local tem de fazer o
-    // mesmo, ou um contador some junto com o comentário e volta no próximo boot.
+    // O servidor apaga as curtidas em cascata; a lista local tem de acompanhar,
+    // ou o contador some com o comentário e volta no próximo boot.
     setCommentLikes(prev => prev.filter(l => l.commentId !== id));
   }, []);
 
@@ -850,27 +730,18 @@ function ClubApp({
     [meId]
   );
 
-  /* ── a lâmpada da marquise ──────────────────────────────────────────────
-     Uma sessão começava e ninguém ficava sabendo. Quem estava no catálogo,
-     lendo o feed ou escrevendo uma nota não tinha como descobrir que o clube
-     tinha entrado na sala a não ser abrindo a aba Sessão para ver — e o custo
-     de "não estar sabendo" aqui é chegar dez minutos atrasado num filme que os
-     outros três já começaram.
-
-     Perguntar de fora, e nunca assinar o stream da sala: entrar nele é entrar
-     na sala. O porquê está inteiro em lib/screening.ts.
-
-     O erro morre em silêncio pelo mesmo motivo de `applyLive` logo abaixo:
-     ninguém pediu esta pergunta. Uma lâmpada apagada é uma falha honesta —
-     o pior que acontece é a pessoa abrir a aba para conferir, que é o que ela
-     fazia antes de a lâmpada existir. */
+  /* A lâmpada da marquise: sem ela, uma sessão começava e quem estava no
+     catálogo só descobria abrindo a aba Sessão — e o custo é chegar dez minutos
+     atrasado. Pergunta de fora e nunca assina o stream da sala: entrar nele é
+     entrar na sala (o porquê está em lib/screening.ts). O erro morre em
+     silêncio, como em `applyLive`: ninguém pediu esta pergunta, e uma lâmpada
+     apagada é uma falha honesta. */
   const readRoom = useCallback(async () => {
     try {
       const next = await readPulse();
-      /* Só quando mudou de verdade. Isto roda a cada minuto e meio numa aba
-         que fica aberta a noite inteira, e um objeto novo a cada volta
-         redesenharia o app inteiro — a marquise, a tela aberta e todo pôster
-         dentro dela — para concluir que a sala continua escura. */
+      /* Só quando mudou de verdade. Roda a cada minuto e meio numa aba que fica
+         aberta a noite toda, e um objeto novo a cada volta redesenharia o app
+         inteiro para concluir que a sala continua escura. */
       setPulse(prev => (samePulse(prev, next) ? prev : next));
     } catch {
       /* engolido: ver acima */
@@ -878,11 +749,9 @@ function ClubApp({
   }, []);
 
   /* Ao vivo é o caminho rápido, não o único: o EventSource desiste depois de
-     algumas recusas seguidas (ver lib/live.ts), e uma marquise que ficasse
-     dizendo "ao vivo" duas horas depois de a sessão acabar seria uma mentira
-     acesa no alto de toda tela. A pergunta periódica é o que garante que a
-     lâmpada é verdade mesmo quando o cano cai. Um minuto e meio, o mesmo do
-     sino, e parada enquanto a aba está escondida. */
+     algumas recusas (ver lib/live.ts), e uma marquise dizendo "ao vivo" duas
+     horas depois do fim seria mentira acesa no alto de toda tela. Um minuto e
+     meio, o mesmo do sino, e parada com a aba escondida. */
   useEffect(() => {
     if (!booted) return;
     void readRoom();
@@ -897,23 +766,16 @@ function ClubApp({
     };
   }, [booted, readRoom]);
 
-  /* ── o clube ao vivo ────────────────────────────────────────────────────
-     Tudo aqui em cima era uma fotografia tirada no boot. O clube conversa em
-     horas diferentes, com a página aberta ao lado do Discord por horas, e uma
-     aba aberta às oito da noite mostrava às onze exatamente o que mostrava às
-     oito: o comentário que alguém escreveu no meio disso existia no banco e não
-     na tela de mais ninguém até um F5.
+  /* O clube ao vivo. Tudo acima era uma fotografia tirada no boot: uma aba
+     aberta às oito mostrava às onze o mesmo de oito.
 
-     O servidor agora avisa (ver live.js), e o aviso diz só QUAL coleção mudou.
-     Buscar de novo, e não aplicar um delta que veio junto, é a decisão de
-     desenho inteira: existe uma única forma de cada coleção chegar — a rota — e
-     por isso não há como a tela ao vivo divergir da tela recarregada.
+     O servidor avisa (ver live.js), e o aviso diz só QUAL coleção mudou. Buscar
+     de novo em vez de aplicar um delta é a decisão inteira: há uma única forma
+     de cada coleção chegar — a rota —, então a tela ao vivo não tem como
+     divergir da recarregada.
 
-     Um erro aqui morre em silêncio de propósito. Ninguém pediu esta busca; ela
-     é a consequência de outra pessoa ter feito alguma coisa, e um toast
-     vermelho por cima da tela de quem não pediu nada seria o produto reclamando
-     de um trabalho que ele mesmo inventou. O que se perde é uma rodada, e a
-     próxima — ou a pergunta periódica do sino e do feed — recupera. */
+     Erro morre em silêncio: ninguém pediu esta busca, ela é consequência de
+     outra pessoa ter feito algo. Perde-se uma rodada; a próxima recupera. */
   const applyLive = useCallback((kinds: ReadonlySet<LiveKind>) => {
     const quiet = () => {
       /* engolido: ver acima */
@@ -943,21 +805,19 @@ function ClubApp({
         .then(r => setReviewers(r.reviewers))
         .catch(quiet);
     }
-    /* A sala abriu, fechou, ou alguém apertou play ou pause. É o único aviso
-       daqui que não é uma coleção — é um cômodo — e por isso não busca uma
-       lista, busca o pulso. Ver `readRoom` acima. */
+    /* A sala abriu, fechou, ou alguém deu play. Único aviso daqui que não é uma
+       coleção — é um cômodo —, então busca o pulso e não uma lista. */
     if (kinds.has('screening')) void readRoom();
-    /* E o clube em si: alguém entrou, saiu, virou ADM, ou o ADM trocou a foto.
-       Duas coisas mudaram — quem está dentro e o que a sala é —, então as duas
-       são relidas. */
+    /* O clube em si: alguém entrou, saiu, virou ADM, ou trocou a foto. Mudaram
+       quem está dentro e o que a sala é, então os dois são relidos. */
     if (kinds.has('club')) {
       void refreshClub().catch(quiet);
       void refreshReviewers().catch(quiet);
     }
   }, [readRoom, refreshClub, refreshReviewers]);
 
-  /* Só depois de a sala ter carregado: antes disso não há clube na URL da API
-     para o cano assinar, e insistir gastaria as tentativas do fluxo à toa. */
+  /* Só depois de a sala carregar: antes não há clube na URL da API para o cano
+     assinar, e insistir gastaria as tentativas do fluxo à toa. */
   useLive(applyLive, booted);
 
   const reload = useCallback((patch: Partial<Pick<Club, 'reviewers' | 'reviews' | 'watchlist'>>) => {
@@ -980,10 +840,9 @@ function ClubApp({
     [goTab]
   );
 
-  /* One object for the whole club, rebuilt only when something in it actually
-     changed. It used to be a fresh object on every render of this component,
-     which meant opening a film's sheet, or a toast appearing for six seconds,
-     re-rendered every screen and every card that reads from it. */
+  /* Um objeto para o clube inteiro, refeito só quando algo dentro dele muda.
+     Era um objeto novo a cada render: abrir a folha de um filme, ou um toast de
+     seis segundos, redesenhava toda tela e todo cartão que lê daqui. */
   const ctx = useMemo<Club | null>(
     () =>
       club
@@ -1070,10 +929,9 @@ function ClubApp({
     ]
   );
 
-  /* ── a sala não abriu ─────────────────────────────────────────────────
-     Um endereço que aponta para um clube que não existe, ou para um privado de
-     que você não é, chega aqui. A saída é o saguão e não a tela de entrada: o
-     problema não é quem você é, é onde você tentou entrar. */
+  /* Endereço apontando para clube que não existe, ou privado de que você não é.
+     A saída é o saguão e não a tela de entrada: o problema não é quem você é, é
+     onde você tentou entrar. */
   if (bootError && !club) {
     return (
       <>
@@ -1108,32 +966,24 @@ function ClubApp({
 
   return (
     <ClubContext.Provider value={ctx}>
-      {/* The wall behind everything. It is the room, not decoration: it is what
-          tells you the lights are down before you read a single word. */}
+      {/* A parede atrás de tudo. É a sala, não decoração: é ela que diz que as
+          luzes estão baixas antes de qualquer palavra ser lida. */}
       <HolographicWall asBackdrop />
 
-      {/* ══════════════════════════════════════════════════════════════════
-          NO TELEFONE, QUEM ROLA É O CONTEÚDO — E NÃO A PÁGINA.
-
-          A barra de baixo era `fixed`, e uma barra `fixed` num navegador de
-          celular sobe e desce durante a rolagem. Não é defeito dela: é o
-          Android recolhendo e devolvendo a própria barra de endereço, o que
-          muda a altura da janela dezenas de vezes por gesto e arrasta com ela
-          tudo que estava preso na borda de baixo.
+      {/* ── no telefone, quem rola é o conteúdo, não a página ──────────────
+          A barra de baixo era `fixed`, e barra `fixed` em navegador de celular
+          sobe e desce durante a rolagem — é o Android recolhendo a própria
+          barra de endereço, o que muda a altura da janela dezenas de vezes por
+          gesto e arrasta junto tudo que está preso na borda.
 
           Enquanto a PÁGINA rola, isso é inevitável. Então a página para de
-          rolar: a moldura ocupa a altura da janela e não transborda, e quem
-          rola é o `main` lá dentro. A barra de endereço não tem mais o que
-          recolher, a barra de baixo vira um item de layout comum — e um item de
-          layout não pode se mexer, porque não há nada em relação a que se mexer.
+          rolar: a moldura ocupa a janela e não transborda, e quem rola é o
+          `main` lá dentro. A barra de endereço não tem mais o que recolher, e a
+          barra de baixo vira item de layout comum — que não tem em relação a
+          que se mexer.
 
-          É a mesma coisa que faz um app parecer um app, e ela é de graça: já
-          havia uma coluna flex com cabeçalho, conteúdo e barra nesta ordem.
-
-          No computador nada disso vale: lá a página rola como sempre rolou, o
-          scroll do navegador é o scroll da tela, e não há barra de endereço que
-          se esconda. Daí a variante do dedo, e não um breakpoint.
-          ══════════════════════════════════════════════════════════════════ */}
+          No computador nada disso vale, e por isso a variante é do dedo e não
+          um breakpoint. */}
       <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
         <Marquee
           tab={tab}
@@ -1147,11 +997,8 @@ function ClubApp({
         />
 
         {/* O único que rola no telefone. `overscroll-contain` impede o gesto de
-            continuar na página por trás quando esta lista acaba — é o que evita
-            o "puxar para atualizar" do Android disparar no fim de um acervo.
-
-            Já não precisa de espaço reservado embaixo: a barra deixou de passar
-            por cima e passou a ficar ao lado, no fluxo. */}
+            vazar para a página de trás no fim da lista — é o que evita o "puxar
+            para atualizar" do Android disparar no fim de um acervo. */}
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10">
           {bootError ? (
             <section>
@@ -1182,51 +1029,43 @@ function ClubApp({
               )}
               {tab === 'catalog' && <CatalogScreen />}
               {tab === 'watchlist' && <WatchlistScreen />}
-              {/* Mounted only while the tab is open, and that is deliberate: the
-                  screen holds an SSE connection and, in torrent mode, a swarm.
-                  Neither should outlive somebody's interest in watching. */}
+              {/* Montada só enquanto a aba está aberta, de propósito: a tela
+                  segura uma conexão SSE e, em modo torrent, um enxame. Nenhum
+                  dos dois deve sobreviver ao interesse de assistir. */}
               {tab === 'screening' && <ScreeningScreen />}
               {tab === 'reviews' && <ReviewsScreen />}
-              {/* Uma tela para as duas rotas. `#people` é o endereço antigo e
-                  não tem página própria: ele sempre quis dizer "a minha", e
-                  agora diz isso levando ao perfil sem id. */}
+              {/* Uma tela para as duas rotas: `#people` é o endereço antigo e
+                  sempre quis dizer "a minha". */}
               {(tab === 'perfil' || tab === 'people') && <ProfileScreen />}
             </div>
           )}
         </main>
 
-        {/* ── a navegação, na zona do polegar ────────────────────────────────
-            Só no dedo (`coarse:flex` mora dentro dela), e não na tela de
-            avaliar: lá a nota final e a chave de gravar já são um cartão preso
-            na borda de baixo, e duas barras disputando a mesma faixa fariam a
-            mais importante das duas perder.
-
-            Avaliar não é um destino desta barra de qualquer forma — é uma aba
-            escondida, à qual se chega escolhendo um filme —, então não há para
-            onde a pessoa olhar e não achar. */}
+        {/* A navegação, na zona do polegar. Só no dedo (`coarse:flex` mora
+            dentro dela), e não na tela de avaliar: lá a nota final e a chave de
+            gravar já são um cartão preso na borda de baixo, e duas barras
+            disputando a faixa fariam a mais importante perder. Avaliar nem é
+            destino desta barra — é aba escondida. */}
         {tab !== 'rate' ? (
           <SectionTabs variant="bar" tab={tab} onTab={goTab} room={pulse} rec={recOf(pulse)} />
         ) : null}
       </div>
 
-      {/* A folha de ajustes vive aqui e não na tela de perfil: ela é aberta por
-          três lugares, e o pedido de entrada precisava de um deles. */}
+      {/* Aqui e não na tela de perfil: é aberta por três lugares, e o pedido de
+          entrada precisava de um deles. */}
       <SettingsSheet
         open={sheetOpen}
         focus={route.sheet ? 'clube' : undefined}
         onClose={() => {
           setSheetOpen(false);
-          /* Se a folha foi aberta PELO endereço, fechá-la tem de tirar o
-             endereço junto: senão um F5 a reabre e o botão de voltar aponta
-             para a folha que a pessoa acabou de fechar. `replace` e não uma
-             navegação nova, porque abrir e fechar uma folha não é um lugar
-             onde alguém queira voltar. */
+          /* Aberta PELO endereço, fechá-la tem de tirar o endereço junto: senão
+             um F5 reabre e o Voltar aponta para a folha que acabou de fechar.
+             `replace` porque abrir e fechar folha não é lugar de voltar. */
           if (route.sheet) {
             history.replaceState(null, '', '#' + clubHash(slug, 'feed'));
-            /* `replaceState` não dispara `hashchange`, e são dois ouvintes de
-               `hashchange` — o desta tela e o do app inteiro — que mantêm a
-               rota viva. Sem o evento, os dois ficariam achando que a folha
-               ainda está aberta enquanto o endereço já diz que não. */
+            /* `replaceState` não dispara `hashchange`, e são dois ouvintes dele
+               — o desta tela e o do app — que mantêm a rota viva. Sem o evento,
+               os dois continuariam achando que a folha está aberta. */
             window.dispatchEvent(new HashChangeEvent('hashchange'));
           }
         }}
@@ -1252,28 +1091,19 @@ function ClubApp({
 }
 
 /* ── a lâmpada de gravação ────────────────────────────────────────────────
-   A marquise de um cinema diz duas coisas: o nome em luzes e o que está
-   passando. A segunda faltava. Agora tem uma lâmpada, e ela é literalmente a
-   mesma que o produto já usa para "isto está rodando" — o ponto de seis pixels
-   com o brilho vermelho, a única coisa redonda deste sistema.
+   O mesmo ponto de seis pixels que o produto já usa para "isto está rodando".
 
-   ── por que ela nunca é uma superfície ─────────────────────────────────────
-   A tentação era um distintivo vermelho preenchido escrito REC. Vermelho cheio
-   nesta sala é a chave de gravar, uma por tela, e um retângulo vermelho no alto
-   de TODA tela competiria com ela em todas elas — o mesmo argumento que fez o
-   distintivo do sino ser de latão. O que passa é a luz: a lâmpada, e a palavra
-   Sessão em vermelho como texto. A superfície continua sendo do botão.
+   Nunca é uma superfície: vermelho cheio nesta sala é a chave de gravar, uma
+   por tela, e um retângulo vermelho no alto de TODA tela competiria com ela —
+   o mesmo argumento que fez o distintivo do sino ser de latão. Passa a luz, e a
+   palavra Sessão em vermelho como texto.
 
-   ── e por que ela não empurra nada ─────────────────────────────────────────
-   Uma lâmpada que aparece do nada alarga a aba e joga Avaliados, o sino e o
-   rosto de todo mundo para a direita de um quadro para o outro. Aqui ela está
-   sempre montada e ABRE: de zero à largura dela, na curva do produto, e a barra
-   se acomoda junto. O salto vira o gesto — a marquise acendendo porque a sala
-   acendeu.
+   E não empurra nada: aparecer do nada jogaria Avaliados, o sino e os rostos
+   para a direita de um quadro para o outro. Está sempre montada e ABRE, de zero
+   à largura dela, na curva do produto.
 
-   Respira enquanto o filme roda e fica parada quando alguém pausou. Duas
-   informações pelo preço de nenhuma pergunta a mais, e a diferença é visível
-   pelo canto do olho, que é de onde esta lâmpada vai ser vista. */
+   Respira com o filme rodando e fica parada em pausa: duas informações pelo
+   preço de nenhuma pergunta a mais, visíveis pelo canto do olho. */
 function Lamp({
   on,
   playing,
@@ -1281,10 +1111,9 @@ function Lamp({
 }: {
   on: boolean;
   playing: boolean;
-  /* A margem à direita serve à marquise, onde a lâmpada fica ANTES da palavra
-     na mesma linha. Na barra de baixo ela fica acima e centrada, e ali a mesma
-     margem a empurraria para fora do meio. Vem por fora porque quem sabe disso
-     é quem monta a fileira, não a lâmpada. */
+  /* A margem à direita serve à marquise, onde a lâmpada vem ANTES da palavra na
+     mesma linha; na barra ela fica acima e centrada, e a margem a tiraria do
+     meio. Vem por fora porque quem sabe disso é quem monta a fileira. */
   className?: string;
 }) {
   return (
@@ -1293,9 +1122,9 @@ function Lamp({
       className={cn(
         'block h-1.5 flex-none rounded-full bg-dye-red-lit transition-[width,margin,opacity] duration-[420ms] ease-beam',
         on ? 'mr-2 w-1.5 opacity-100 shadow-[0_0_10px_rgba(242,86,74,0.85)]' : 'mr-0 w-0 opacity-0',
-        /* O brilho também está na classe acima, e não só no laço: sob
+        /* O brilho está na classe acima e não só no laço: sob
            `prefers-reduced-motion` o index.css corta o laço em uma volta, e o
-           repouso depois dela tem de ser a lâmpada acesa — não a apagada. */
+           repouso depois dela tem de ser a lâmpada acesa. */
         on && playing && 'animate-lamp',
         className
       )}
@@ -1303,41 +1132,24 @@ function Lamp({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   AS CINCO SEÇÕES, EM DOIS LUGARES.
+/* ── as cinco seções, em dois lugares ─────────────────────────────────────
+   No computador na marquise; no telefone numa barra no rodapé, onde o polegar
+   já está. Um componente só de propósito: escrever a fileira duas vezes seria
+   manter duas verdades sobre quais seções existem e qual está acesa, e na
+   terceira mexida elas divergiriam. O `variant` decide moldura e tamanho.
 
-   No computador elas moram na marquise, no alto, onde um cursor chega em
-   qualquer lugar com o mesmo esforço. No telefone elas descem para uma barra
-   presa no rodapé, que é onde o polegar já está — a diferença entre um site em
-   tela cheia e um app.
+   As duas são montadas e uma fica em `display: none` conforme o ponteiro — isso
+   tira a escondida da árvore de acessibilidade, então não há duas paradas de
+   tabulação para a mesma seção.
 
-   ── uma lista, duas roupas ────────────────────────────────────────────────
-   O componente é um só de propósito. Escrever a fileira duas vezes seria manter
-   duas verdades sobre quais seções existem, qual está acesa e qual tem a
-   lâmpada da sessão queimando — e a terceira vez que alguém mexesse numa, elas
-   divergiriam. O que muda entre as duas é a moldura e o tamanho, e é só isso
-   que o `variant` decide.
+   O traço vermelho troca de lado: embaixo da palavra em cima, em cima dela
+   embaixo. Nos dois casos é a borda voltada PARA O CONTEÚDO; mantê-lo embaixo
+   na barra o encostaria na borda da tela, onde não separa nada. */
 
-   As duas são montadas e uma delas fica em `display: none` conforme o ponteiro.
-   Isso tira a escondida da árvore de acessibilidade junto, então não há duas
-   paradas de tabulação para a mesma seção.
-
-   ── e o vermelho troca de lado ────────────────────────────────────────────
-   Em cima, o traço da seção atual fica embaixo da palavra. Embaixo, fica em
-   cima dela. Nos dois casos ele é a borda voltada PARA O CONTEÚDO — é a luz da
-   seção em que se está caindo sobre o que ela mostra, e não uma decoração que
-   por acaso ficou de um lado. Virar a barra e manter o traço embaixo o deixaria
-   encostado na borda da tela, onde ele não separa nada de nada.
-   ══════════════════════════════════════════════════════════════════════════ */
-/* ── o que a lâmpada diz quando alguém pergunta ───────────────────────────
-   Um ponto vermelho sozinho diz "alguma coisa"; o clube quer saber O QUÊ, e
-   quer saber antes de trocar de seção. Vai no `title` para o mouse e no
-   `aria-label` para quem não vê o ponto — o `aria-label` é o que substitui
-   "Sessão" na leitura, então ele carrega a palavra também.
-
-   Fora dos componentes porque as duas fileiras precisam dele, e a frase é uma
-   só: a barra de baixo e a marquise não podem contar a mesma sessão com
-   palavras diferentes. */
+/* Um ponto vermelho sozinho diz "alguma coisa"; o clube quer saber o quê antes
+   de trocar de seção. Vai no `title` e no `aria-label` — este substitui a
+   palavra "Sessão" na leitura, então carrega ela também. Fora dos componentes
+   porque a barra e a marquise não podem contar a mesma sessão diferente. */
 function recOf(room: ScreeningPulse) {
   if (!room.open) return null;
   return [
@@ -1369,31 +1181,22 @@ function SectionTabs({
       aria-label="Seções"
       className={cn(
         bar
-          ? /* No FLUXO, e não `fixed`. Presa era o que a fazia subir e descer
-               com a barra de endereço do Android; como último item de uma
-               coluna que ocupa a janela inteira, ela não tem em relação a que
-               se mexer. Ver a moldura do app, onde está o porquê inteiro.
+          ? /* No FLUXO, e não `fixed`: presa era o que a fazia subir e descer
+               com a barra de endereço do Android. Ver a moldura do app.
 
-               ── e SEM recuo de área segura ──────────────────────────────
-               Ele esteve aqui e engordava a barra, somando o espaço do sistema
-               uma segunda vez. `env(safe-area-inset-bottom)` existe para
-               devolver o que `viewport-fit=cover` toma — e sem `cover`, que
-               saiu no commit anterior, o navegador nunca chegou a tomar: a
-               janela já termina onde os botões começam.
-
-               Somar os dois é pagar duas vezes pela mesma faixa. Se um dia
-               isto rodar de ponta a ponta da tela, o recuo volta junto com o
-               `cover` que o justifica — os dois são um par, e um sozinho é
-               sempre o erro de um dos dois lados. */
+               E sem recuo de área segura. `env(safe-area-inset-bottom)` devolve
+               o que `viewport-fit=cover` toma, e sem `cover` o navegador nunca
+               tomou — a janela já termina onde os botões começam. Somar os dois
+               engordava a barra. Os dois são um par: se um dia isto for de
+               ponta a ponta, o recuo volta junto com o `cover`. */
             'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 coarse:flex'
           : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
     >
       {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
         const on = tab === t.id;
-        /* A lâmpada é da Sessão e de mais nada. É a única aba que corresponde a
-           um cômodo em vez de a uma prateleira, e a única em que "está
-           acontecendo agora" é uma frase com sentido. */
+        /* A lâmpada é da Sessão e de mais nada: é a única aba que corresponde a
+           um cômodo em vez de a uma prateleira. */
         const lit = t.id === 'screening' && room.open;
         return (
           <button
@@ -1406,24 +1209,17 @@ function SectionTabs({
             className={cn(
               'relative flex items-center font-display uppercase leading-none transition-colors duration-150',
               bar
-                ? /* Cinco colunas iguais que dividem a largura: um alvo por
-                     seção, do tamanho da tela dividido por cinco, e nenhum
-                     deles perto de outro o bastante para ser tocado por
-                     engano.
-
-                     Quarenta e oito e não os cinquenta e seis de uma barra do
-                     Android: aquela medida pressupõe um ícone acima da palavra,
-                     e esta é só palavra — a altura extra viraria ar. Ainda
-                     passa do piso de toque, e o alvo é a coluna inteira, que
-                     tem um quinto da tela de largura. */
+                ? /* Cinco colunas iguais: um alvo por seção, com um quinto da
+                     tela de largura cada. Quarenta e oito e não os cinquenta e
+                     seis de uma barra do Android — aquela medida pressupõe um
+                     ícone acima da palavra, e esta é só palavra. Ainda passa do
+                     piso de toque. */
                   'min-h-[48px] flex-1 flex-col justify-center gap-1 px-1 text-[11px] tracking-[0.1em]'
                 : 'flex-none rounded-cell px-3 py-2 text-[14px] tracking-[0.12em]',
-              /* Acesa, a palavra vira vermelha — mas nunca por cima do creme da
-                 aba atual. Estar aberto e estar acontecendo são duas informações
-                 diferentes e a barra mostra as duas: a atual continua sendo a de
-                 creme, e a lâmpada queima do mesmo jeito nela. Vermelho como
-                 TEXTO, e não como preenchimento: a regra da lâmpada guarda a
-                 superfície vermelha para a chave de gravar. */
+              /* Acesa, a palavra vira vermelha — nunca por cima do creme da aba
+                 atual: estar aberto e estar acontecendo são informações
+                 diferentes, e a barra mostra as duas. Vermelho como TEXTO, que
+                 a superfície vermelha é da chave de gravar. */
               on
                 ? 'text-beam'
                 : lit
@@ -1431,18 +1227,11 @@ function SectionTabs({
                   : 'text-ink-dim hover:text-ink'
             )}
           >
-            {/* ── a lâmpada, e o alinhamento das cinco palavras ─────────────
-                Na marquise ela vem antes da palavra, na mesma linha, e colapsa
-                para largura zero quando apagada — a fileira não se mexe.
-
-                Na barra de baixo ela fica ACIMA, e aí só a Sessão tinha esse
-                elemento: as outras quatro palavras ficavam centradas na altura
-                e a dela descia doze pixels. Cinco rótulos de navegação em duas
-                alturas diferentes é a barra parecendo quebrada, e era.
-
-                Então a fatia existe em TODAS, e só uma a preenche. Vazia ela
-                mede seis pixels e não desenha nada, que é o preço certo por as
-                cinco palavras assentarem na mesma linha. */}
+            {/* Na marquise a lâmpada vem antes da palavra e colapsa para largura
+                zero quando apagada. Na barra ela fica ACIMA, e aí só a Sessão
+                tinha o elemento: a palavra dela descia doze pixels em relação às
+                outras quatro. Então a fatia existe em TODAS e só uma a preenche
+                — vazia mede seis pixels e não desenha nada. */}
             {bar ? (
               <span aria-hidden className="flex h-1.5 items-center justify-center">
                 {t.id === 'screening' ? (
@@ -1453,11 +1242,9 @@ function SectionTabs({
               <Lamp on={lit} playing={room.status === 'playing'} />
             ) : null}
             {t.label}
-            {/* Em cima o traço sublinha a palavra; embaixo ele a cobre. Nos dois
-                casos é a borda voltada para o conteúdo. Na marquise ele começa
-                depois da lâmpada — um sublinhado que atravessa o ponto vermelho
-                é o traço reclamando a lâmpada para si —, e vai junto com o abrir
-                dela, na mesma curva. */}
+            {/* Na marquise o traço começa depois da lâmpada, e abre junto com
+                ela na mesma curva: um sublinhado atravessando o ponto vermelho
+                reclamaria a lâmpada para si. */}
             <span
               className={cn(
                 'absolute h-[2px] transition-[opacity,left] [transition-duration:150ms,420ms] ease-beam',
@@ -1474,9 +1261,8 @@ function SectionTabs({
   );
 }
 
-/* ── the marquee ──────────────────────────────────────────────────────────
-   The header of a cinema is its marquee: the name in lights and what is
-   playing. The current section is the lit one. */
+/* O cabeçalho de um cinema é a marquise: o nome em luzes e o que está passando.
+   A seção atual é a acesa. */
 function Marquee({
   tab,
   onTab,
@@ -1489,36 +1275,26 @@ function Marquee({
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
-  /** O seu próprio rosto, que é a porta do seu perfil. */
   onOpenSelf: () => void;
   me: SessionUser;
-  /** Em que sala você está. O nome dela substituiu o do produto na marquise. */
   club: ClubRow;
-  /** O que a sala está fazendo agora. É isto que acende a lâmpada da Sessão. */
+  /** O que a sala está fazendo. É isto que acende a lâmpada da Sessão. */
   room: ScreeningPulse;
-  /** A porta de volta ao saguão. Era "Sair"; sair da conta ficou nos ajustes. */
   onLobby: () => void;
-  /** Abre os ajustes do clube, onde os pedidos de entrada são respondidos. */
   onOpenRequests: () => void;
 }) {
   const rec = recOf(room);
 
   return (
-    /* No backdrop blur. It sat over the wall, and the wall never stops moving —
-       so the browser was re-blurring a full-width strip of a live background on
-       every single frame, on every device, whether or not anyone was scrolling.
-       A more opaque bar reads almost the same and costs nothing. */
+    /* Sem `backdrop-blur`: ele fica sobre a parede, e a parede nunca para de se
+       mexer — o navegador reborrava uma faixa de fundo vivo em todo quadro, em
+       todo aparelho. Uma barra mais opaca lê quase igual e custa zero. */
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        {/* ── a marquise agora diz o nome DA SALA ───────────────────────────
-            E não o do produto. Uma pessoa em três clubes precisa saber em qual
-            está antes de ler qualquer outra coisa da tela, e o lugar onde ela já
-            olha é este. O produto se chama Cineclube em todo lugar que importa —
-            o saguão, a aba do navegador, a tela de entrada.
-
-            A foto vem junto quando existe, pequena: é o que torna a troca de
-            sala reconhecível de relance, sem ler. E o conjunto é a porta de
-            volta ao saguão, que é para onde um nome de lugar deve levar. */}
+        {/* O nome DA SALA e não o do produto: quem está em três clubes precisa
+            saber em qual está antes de ler o resto da tela. A foto vem junto
+            quando existe — é o que torna a troca reconhecível sem ler. O
+            conjunto é a porta de volta ao saguão. */}
         <button
           type="button"
           onClick={onLobby}
@@ -1542,15 +1318,11 @@ function Marquee({
         <SectionTabs variant="marquee" tab={tab} onTab={onTab} room={room} rec={rec} />
 
         <div className="flex items-center gap-2">
-          {/* ── quem está batendo na porta ─────────────────────────────────
-              Só para quem pode abrir, e só quando há alguém. Um pedido de
-              entrada vivia numa lista atrás de perfil → engrenagem → Ajustes, e
-              nada em lugar nenhum dizia que ele estava lá: alguém pedia e
-              esperava indefinidamente.
-
-              Latão e não vermelho, pela mesma regra do distintivo do sino: ter
-              pedido pendente é um estado, e o vermelho desta sala é da gravação
-              e da lâmpada da sessão. */}
+          {/* Quem está batendo na porta: só para quem pode abrir, e só quando há
+              alguém. O pedido vivia numa lista atrás de perfil, engrenagem e
+              Ajustes, sem nada anunciando que estava lá. Latão e não vermelho,
+              pela mesma regra do sino: ter pedido pendente é um estado, e o
+              vermelho aqui é da gravação. */}
           {club.role === 'admin' && (club.pending ?? 0) > 0 ? (
             <button
               type="button"
@@ -1564,12 +1336,9 @@ function Marquee({
             </button>
           ) : null}
           {/* Sem props: o sino é da rede, junta todas as salas da pessoa e
-              carrega o clube em cada linha, então ele mesmo sabe para onde
-              levar. Ele é o mesmo componente do saguão. */}
+              carrega o clube em cada linha, então sabe sozinho para onde levar.
+              É o mesmo componente do saguão. */}
           <Notices />
-          {/* O seu rosto é a porta do seu perfil — e é o mesmo gesto que abre o
-              de qualquer outra pessoa em qualquer lugar do app. Levava à sala
-              de formulários chamada Avaliadores; agora leva à sua página. */}
           <button
             type="button"
             onClick={onOpenSelf}
@@ -1582,9 +1351,8 @@ function Marquee({
             </Reel>
             <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
           </button>
-          {/* Era "Sair" e deslogava. Agora sair da conta é uma coisa rara que
-              mora nos ajustes, e o que uma pessoa faz o tempo todo é trocar de
-              sala — então é essa a porta que fica na barra. */}
+          {/* Era "Sair". Sair da conta é raro e mora nos ajustes; o que se faz o
+              tempo todo é trocar de sala, então é essa a porta que fica aqui. */}
           <button
             type="button"
             onClick={onLobby}

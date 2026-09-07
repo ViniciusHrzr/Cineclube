@@ -26,49 +26,24 @@ import {
 } from '@/lib/api';
 import { cn, named, norm, plural, useFinePointer, whenOf } from '@/lib/utils';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O saguão.
+/* ── o saguão ─────────────────────────────────────────────────────────────
+   A primeira tela da rede, a que responde "onde eu vou". Duas listas de clubes
+   que respondem perguntas diferentes — `mine` é o chaveiro de quem já chegou,
+   `open` a vitrine de quem está olhando —, mais uma parede de cartazes, um
+   trilho de sessões ao vivo, o pódio da rede, as salas em atividade e uma ficha
+   em destaque.
 
-   Um cinema tem mais de uma sala, e até agora este produto tinha uma. O saguão é
-   o lugar de onde se vê o que está passando em cada uma antes de entrar — e é a
-   primeira tela da rede, a que responde "onde eu vou".
+   A parede é uma FAIXA e não uma tela cheia: quem volta todo dia continua vendo
+   o próprio chaveiro sem rolar a página.
 
-   ── o que ele era, e por que não bastava ──────────────────────────────────
-   Duas grades de retângulos iguais: `mine`, o chaveiro de quem já chegou, e
-   `open`, a vitrine de quem está olhando. As duas listas continuam aqui e
-   continuam respondendo perguntas diferentes — um clube em que você já está
-   nunca aparece nas duas, porque uma sala listada duas vezes na mesma tela é a
-   tela dizendo que não sabe quem você é.
+   Toda seção se cala sozinha quando não tem o que dizer. Mesma regra da
+   contagem de votos numa ficha — um zero não é um dado —, em escala de seção:
+   seis rankings vazios leem como estádio vazio. */
 
-   O que faltava não era mais uma lista. Era o produto: este app guarda centenas
-   de pôsteres, milhares de notas e salas assistindo juntas neste segundo, e a
-   porta de entrada não mostrava nenhuma delas. Um app sobre imagem em movimento
-   abria sem uma única imagem.
-
-   Então o saguão passou a ter uma parede de cartazes — os filmes que a rede
-   avaliou, andando devagar como cartaz em foyer anda: nunca de volta —, um
-   trilho de sessões acontecendo agora, o pódio da rede, as salas em atividade e
-   uma ficha inteira em destaque.
-
-   ── a ordem é uma decisão ─────────────────────────────────────────────────
-   A parede é uma FAIXA e não uma tela cheia. Quem chega pela primeira vez tem a
-   chegada cinematográfica; quem volta todo dia continua vendo o próprio chaveiro
-   sem rolar a página. Um saguão que cobra um rolar de quem só quer entrar na
-   própria sala está cobrando pedágio pela decoração.
-
-   ── e tudo aqui pode não existir ──────────────────────────────────────────
-   Toda seção desta tela se cala sozinha quando não tem o que dizer. É a mesma
-   regra que a contagem de votos segue na ficha — um zero não é um dado —, em
-   escala de seção: uma rede com dois clubes e quarenta fichas debaixo de seis
-   rankings lê como estádio vazio, e um estádio vazio é pior que um saguão
-   simples.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* De quanto em quanto tempo o saguão relê. Mais lento que o sino (90s) e igual
-   ao mural: o que muda aqui é o que a REDE fez, e chegar dois minutos atrasado
-   numa parede não custa nada. Pausa com a aba escondida — este app fica aberto
-   do lado do Discord por horas, e um cronômetro batendo numa aba esquecida é
-   trabalho constante contra uma instância que dorme por falta dele. */
+/* Mais lento que o sino (90s): o que muda aqui é o que a REDE fez, e chegar
+   dois minutos atrasado numa parede não custa nada. Pausa com a aba escondida —
+   este app fica aberto por horas, e um cronômetro numa aba esquecida é trabalho
+   constante contra uma instância que dorme por falta dele. */
 const POLL_MS = 120_000;
 
 export function Lobby({
@@ -89,10 +64,9 @@ export function Lobby({
   const [error, setError] = useState<string | null>(null);
   const [founding, setFounding] = useState(false);
 
-  /* As duas leituras vão juntas e falham separadas. A lista de clubes é o que
-     sustenta a tela: sem ela não há saguão, e o erro é dito. O que a rede andou
-     fazendo é enfeite caro — se ele não vier, a tela é a de antes e ninguém
-     precisa saber por quê. */
+  /* Vão juntas e falham separadas. A lista de clubes sustenta a tela: sem ela
+     não há saguão, e o erro é dito. O que a rede andou fazendo é enfeite caro —
+     se não vier, a tela é a de antes e ninguém precisa saber por quê. */
   const load = useCallback(async () => {
     const [salas, rede] = await Promise.allSettled([clubs.all(), lobbyApi.get()]);
     if (salas.status === 'fulfilled') {
@@ -110,10 +84,9 @@ export function Lobby({
     void load();
   }, [load]);
 
-  /* O trilho de "em cartaz" é a única coisa desta tela que envelhece rápido: uma
-     sessão termina e a linha continua anunciando um filme que ninguém está mais
-     assistindo. Volta a ler ao reaparecer, e não só no próximo intervalo — quem
-     acabou de trocar de aba está olhando agora. */
+  /* "Em cartaz" é o que envelhece rápido aqui: a sessão termina e a linha
+     continua anunciando um filme que ninguém assiste. Relê ao reaparecer, e não
+     só no próximo intervalo — quem trocou de aba está olhando agora. */
   useEffect(() => {
     const tick = () => {
       if (!document.hidden) void load();
@@ -126,10 +99,9 @@ export function Lobby({
     };
   }, [load]);
 
-  /* Em quais salas você já está — pelo slug, que é o que as linhas da rede
-     carregam. Decide se uma sessão ao vivo ou uma sala em atividade é uma porta
-     ou só uma notícia: um clube fechado de que você não é abre 403, e oferecer o
-     clique é oferecer um erro. */
+  /* Em quais salas você já está, pelo slug. Decide se uma sessão ao vivo é uma
+     porta ou só uma notícia: um clube fechado de que você não é abre 403, e
+     oferecer o clique é oferecer um erro. */
   const held = useMemo(() => new Set((mine ?? []).map(c => c.slug)), [mine]);
   const canEnter = useCallback(
     (club: { slug: string; visibility: 'public' | 'private' }) =>
@@ -142,37 +114,27 @@ export function Lobby({
   const podium = net?.podium ?? [];
   const active = net?.active ?? [];
   const feature = net?.feature ?? null;
-  /* Abaixo de quatro cartazes não existe parede: existem três filmes numa faixa
-     larga, e a faixa passa a parecer uma coisa que não terminou de carregar. A
-     rede que ainda não viu quatro filmes não tem uma parede para mostrar, e a
-     tela volta a ser a de antes — que é o certo, e não um estado degradado. */
+  /* Abaixo de quatro cartazes não há parede: há três filmes numa faixa larga,
+     que passa a parecer coisa que não terminou de carregar. */
   const hasWall = wall.length >= 4;
 
-  /* ── quando a rede inteira está no escuro ──────────────────────────────
-     Toda seção desta tela se cala quando não tem o que dizer, e há um caso em
-     que essa regra produz uma tela que MENTE: uma rede em que os clubes existem
-     e avaliam, e nenhum deles emprestou nada. O saguão fica idêntico ao de
-     antes, e quem administra a sala não tem como saber que existe um
-     interruptor — muito menos que ele é a razão de a tela estar vazia.
+  /* A regra de se calar produz um caso em que a tela MENTE: clubes existem e
+     avaliam, e nenhum emprestou nada. O saguão fica idêntico ao de antes, e
+     quem administra não tem como saber que existe um interruptor — muito menos
+     que ele é a razão da tela vazia. Então, sem NADA da rede e administrando
+     uma sala fechada que não empresta, a tela diz isso e aponta o caminho.
 
-     Um estado vazio que não diz por que está vazio é um defeito, e este é
-     especialmente caro porque a pessoa que pode consertá-lo é exatamente a que
-     está olhando para ele. Então: se não há NADA da rede e você administra uma
-     sala fechada que não empresta, a tela diz isso e aponta o caminho.
-
-     Só para o ADM, e só sobre as salas dele: emprestar o acervo é uma decisão
-     de quem manda na sala, e cutucar um membro comum sobre uma escolha que ele
-     não pode tomar seria pedir que ele fosse cobrar de outra pessoa. */
+     Só para o ADM: emprestar o acervo é decisão de quem manda na sala, e
+     cutucar um membro comum seria pedir que ele fosse cobrar de outra pessoa. */
   const darkNetwork =
     net !== null && !hasWall && !podium.length && !active.length && !live.length && !feature;
   const lendable = (mine ?? []).filter(
     c => c.role === 'admin' && c.visibility === 'private' && !c.showCharts
   );
 
-  /* Uma ação, dois desfechos, e quem decide qual é a porta do clube: num clube
-     aberto você entra e a tela vai junto; num fechado vira um pedido e você
-     continua no saguão. O servidor diz qual aconteceu — a tela não adivinha
-     pela visibilidade, porque ela pode ter mudado entre a lista e o clique. */
+  /* Uma ação, dois desfechos: num clube aberto você entra, num fechado vira
+     pedido. O servidor diz qual aconteceu — a tela não adivinha pela
+     visibilidade, que pode ter mudado entre a lista e o clique. */
   async function ask(slug: string) {
     try {
       const out = await clubs.join(slug);
@@ -196,34 +158,24 @@ export function Lobby({
   }
 
   return (
-    /* A mesma moldura do app dentro de um clube, e pelo mesmo motivo: no
-       telefone a página não rola, quem rola é o conteúdo. Enquanto a página
-       rolava, o Android recolhia e devolvia a barra de endereço a cada gesto —
-       o que mudava a altura da janela dezenas de vezes, arrastava o cabeçalho
-       preso no topo e obrigava a parede de celuloide a se refazer no meio da
-       rolagem. O porquê inteiro está em App.tsx. */
+    /* A mesma moldura do app dentro de um clube: no telefone a página não rola,
+       quem rola é o conteúdo. Com a página rolando, o Android recolhia a barra
+       de endereço a cada gesto, arrastava o cabeçalho preso no topo e obrigava
+       a parede de celuloide a se refazer. O porquê inteiro está em App.tsx. */
     <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
       <HolographicWall asBackdrop />
 
-      {/* Presa no topo, como a marquise de dentro de um clube — mesmas classes,
-          e é a mesma coisa: a barra é a porta de saída (o rosto, o sino, sair) e
-          uma porta que sobe com a página é uma porta que se perde justamente
-          quando alguém rolou longe o bastante para querer usá-la.
-
-          Sem desfoque de fundo, pela razão escrita na marquise: a barra fica
-          sobre a parede de celuloide, que nunca para de andar — desfocar uma
-          faixa de largura inteira sobre um fundo vivo é refazer o borrão a cada
-          quadro, rolando ou não. Uma barra mais opaca lê quase igual e custa
-          zero. */}
+      {/* Presa no topo, como a marquise de dentro de um clube: a barra é a porta
+          de saída, e uma porta que sobe com a página se perde justamente quando
+          alguém rolou longe o bastante para querer usá-la. Sem desfoque de
+          fundo, pela razão escrita na marquise. */}
       <header className="sticky top-0 z-30 flex-none border-b border-white/[0.07] bg-house/95">
         <div className="mx-auto flex max-w-[1240px] items-center gap-x-6 px-4 py-3 sm:px-6">
           <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
             CINECLUBE
           </span>
-          {/* O mesmo sino da marquise de dentro do clube, e é o ponto: ele é da
-              REDE. Junta as salas todas e diz de qual veio cada linha, o que faz
-              desta tela — a primeira depois de entrar — o lugar onde "o que
-              aconteceu enquanto eu não estava?" tem resposta. */}
+          {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta todas
+              as salas e diz de qual veio cada linha. */}
           <Notices />
           <button
             type="button"
@@ -246,17 +198,10 @@ export function Lobby({
         </div>
       </header>
 
-      {/* ── o envelope que rola ────────────────────────────────────────────
-          Aqui ele precisa existir, e no clube não precisava: lá tudo que rola
-          já morava dentro do `main`. No saguão a parede de cartazes e o trilho
-          de "em cartaz" ficam FORA dele, entre o cabeçalho e o conteúdo — e
-          deixar o `main` ser o único a rolar prenderia a parede no alto para
-          sempre, comendo um terço da tela de um telefone com uma faixa que
-          ninguém pediu para fixar.
-
-          Então quem rola é tudo abaixo do cabeçalho. No computador esta camada
-          não faz nada: sem `overflow`, ela é uma coluna comum e a página rola
-          como sempre rolou. */}
+      {/* O envelope que rola. No clube não era preciso — lá tudo que rola já
+          mora no `main`. Aqui a parede e o trilho ficam FORA dele, e deixar só o
+          `main` rolar prenderia a parede no alto para sempre, comendo um terço
+          da tela. No computador esta camada não faz nada. */}
       <div className="flex flex-1 flex-col coarse:min-h-0 coarse:overflow-y-auto coarse:overscroll-contain">
         {hasWall ? <PosterWall films={wall} counts={net!.counts} /> : null}
         {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={onEnter} /> : null}
@@ -340,15 +285,11 @@ export function Lobby({
   );
 }
 
-/* ── uma região do saguão ─────────────────────────────────────────────────
-   Título, uma linha explicando o que a lista é, e o fio de luz correndo do
-   lettering até a beirada do deck — o mesmo desenho do cabeçalho das cinco
-   telas de dentro de um clube (ver `Bill`), num corpo menor porque aqui são
-   seis regiões numa página e não uma tela inteira.
+/* Título, uma linha explicando a lista, e o fio de luz — o mesmo desenho do
+   cabeçalho das telas de dentro de um clube (ver `Bill`), em corpo menor.
 
-   Sempre `h2`: o `h1` desta tela é o da parede de cartazes, e quando ela não
-   existe — rede sem nenhuma ficha — quem assume é o seletor de salas, que é a
-   primeira coisa da página. Nenhuma destas regiões é a primeira. */
+   Sempre `h2`: o `h1` desta tela é o da parede de cartazes, e sem ela quem
+   assume é o seletor de salas. Nenhuma destas regiões é a primeira. */
 function Region({
   title,
   note,
@@ -383,32 +324,19 @@ function Region({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A FOLHA DE UM FILME, VISTO PELA REDE.
+/* ── a folha de um filme, visto pela rede ─────────────────────────────────
+   Abre ao clicar num cartaz da parede, e é MENOR que a folha de projeção de
+   dentro de um clube de propósito: lá ela é a sala de espera antes de avaliar,
+   aqui a pergunta é curta — "que filme é esse, e o que acharam?". Três coisas:
+   o que o filme é, o que a rede achou, e quem achou.
 
-   Abre ao clicar num cartaz da parede, e é deliberadamente MENOR que a folha de
-   projeção de dentro de um clube. Lá a folha é uma sala de espera antes de
-   avaliar: elenco, equipe, onde assistir, o botão de gravar. Aqui não há sala,
-   não há o que gravar, e quem clicou num cartaz de uma parede que anda fez uma
-   pergunta curta — "que filme é esse, e o que acharam?".
+   Sinopse e trailer vêm do TMDB pela rota do catálogo (pública, com cache); as
+   fichas por `/api/lobby/film/:id`. Duas chamadas em paralelo e não uma no
+   servidor: juntá-las lá pagaria o TMDB de novo, do lado errado do cache.
 
-   Então são três coisas: o que o filme é (sinopse e trailer), o que a rede
-   achou (a média), e quem achou (as cinco fichas).
-
-   ── de onde vem cada metade ───────────────────────────────────────────────
-   Sinopse e trailer são do TMDB, pela rota do catálogo, que é pública e tem
-   cache. As fichas são nossas, por `/api/lobby/film/:id`. Duas chamadas em
-   paralelo e não uma no servidor: juntá-las lá seria pagar a requisição ao TMDB
-   de novo, do lado errado do cache do navegador.
-
-   ── e a folha abre com o que já se sabe ───────────────────────────────────
-   Título, ano, cartaz e nota vêm do cartaz que foi clicado — a parede já os
-   tinha. A folha nasce completa naquilo e preenche o resto quando chega, em vez
-   de mostrar um esqueleto do que já estava na tela um segundo atrás.
-
-   Um `<dialog>` nativo, como a folha de projeção, e pelo mesmo motivo: a
-   plataforma dá a armadilha de foco, o Escape e a inércia do fundo de graça.
-   ══════════════════════════════════════════════════════════════════════════ */
+   A folha abre com o que já se sabe — título, ano, cartaz e nota vêm do cartaz
+   clicado — e preenche o resto quando chega, em vez de mostrar um esqueleto do
+   que já estava na tela. `<dialog>` nativo pela armadilha de foco e o Escape. */
 function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [detalhe, setDetalhe] = useState<Movie | null>(null);
@@ -477,8 +405,8 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
               {[film.year ?? '—', detalhe?.genre].filter(Boolean).join(' · ')}
             </p>
 
-            {/* A conta da rede, na régua de sempre — uma nota é reconhecível
-                como nota antes de ser lida. */}
+            {/* Na régua de sempre: uma nota é reconhecível como nota antes de
+                ser lida. */}
             <div className="mt-4 flex items-center gap-3">
               <Strip value={rede?.average ?? film.average} cells={10} className="h-[6px] w-[120px] flex-none" />
               <span className="q text-[15px] font-medium text-beam">
@@ -512,10 +440,9 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
           </div>
         </div>
 
-        {/* ── quem já viu ──────────────────────────────────────────────────
-            A legenda diz a regra da ordem. Um ranking cuja regra não está à
-            vista parece arbitrário, e este tem uma boa: quem enfrentou os onze
-            critérios mais vezes carrega uma régua mais aferida. */}
+        {/* A legenda diz a regra da ordem: um ranking cuja regra não está à
+            vista parece arbitrário. Quem enfrentou os onze critérios mais vezes
+            carrega uma régua mais aferida. */}
         {rede?.takes.length ? (
           <section className="mt-7 border-t border-white/[0.07] pt-5">
             <span className="legend">
@@ -579,32 +506,17 @@ function PeekTake({ take }: { take: LobbyTake }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   AS SALAS, NUM LUGAR SÓ.
+/* ── as salas, num lugar só ───────────────────────────────────────────────
+   Eram duas seções empilhadas, e a vitrine vivia depois de um pódio, de uma
+   lista de atividade e de uma ficha inteira. As duas são A MESMA COISA — uma
+   lista de clubes —, e a pergunta que as separa ("já sou de lá?") é uma
+   escolha, não uma posição na página. Escolha é o que um seletor faz.
 
-   Eram duas seções empilhadas, e a de baixo — a vitrine — vivia depois de um
-   pódio, de uma lista de atividade e de uma ficha inteira. Quem quisesse
-   procurar um clube para entrar rolava a página inteira até achar, e quem já
-   tinha salas nunca via que existiam outras.
+   Sublinhado vermelho pela regra do DESIGN.md: vermelho marca ONDE VOCÊ ESTÁ,
+   latão marca o que você escolheu. Isto é seção, não filtro.
 
-   As duas respondem perguntas diferentes e continuam respondendo: `Suas salas` é
-   o chaveiro de quem já chegou, `Outras salas` é a vitrine de quem está
-   olhando. Mas as duas são A MESMA COISA — uma lista de clubes — e a pergunta
-   que separa as duas ("já sou de lá?") é uma escolha, não uma posição na
-   página. Escolha é o que um seletor faz.
-
-   ── o sublinhado vermelho ─────────────────────────────────────────────────
-   O mesmo tratamento da marquise de dentro de um clube, e pela mesma regra
-   escrita no DESIGN.md: vermelho marca ONDE VOCÊ ESTÁ, latão marca o que você
-   escolheu. Isto é uma seção em que se está, não um filtro que se liga, então é
-   vermelho — e é o que faz o seletor ser reconhecível como navegação antes de
-   ser lido, porque o produto já usa essa forma na barra de cima.
-
-   ── a contagem ao lado do nome ────────────────────────────────────────────
-   Existe para a aba fechada não ser uma caixa preta. Sem o número, "Outras
-   salas" é um convite a clicar para descobrir se há algo lá; com ele, a pessoa
-   decide sem trocar de aba — e num saguão com uma sala só, decide não clicar.
-   ══════════════════════════════════════════════════════════════════════════ */
+   A contagem ao lado do nome existe para a aba fechada não ser caixa preta: com
+   o número, decide-se sem trocar de aba. */
 
 /** A partir de quantas salas uma busca deixa de ser mobília e vira ferramenta. */
 const SEARCH_FROM = 5;
@@ -629,25 +541,23 @@ function Rooms({
   const [query, setQuery] = useState('');
 
   const lista = tab === 'mine' ? (mine ?? []) : open;
-  /* Filtra por nome e pela linha de descrição, sem acento e sem caixa — ver
-     `norm` e `named`. Buscar só pelo nome erraria "os que gostam de terror",
-     que é exatamente o tipo de coisa que faz alguém querer entrar numa sala. */
+  /* Nome e linha de descrição, sem acento e sem caixa (ver `norm` e `named`).
+     Só pelo nome erraria "os que gostam de terror", que é o tipo de coisa que
+     faz alguém querer entrar numa sala. */
   const q = norm(query.trim());
   const vistos = q ? lista.filter(c => named(q, c.name, c.tagline)) : lista;
 
-  /* A busca aparece pelo total das duas listas, e não pela da aba aberta:
-     medida por aba, ela apareceria e sumiria ao alternar, o que faz a linha
-     inteira pular debaixo do cursor. */
+  /* Pelo total das duas listas e não pela aba aberta: medida por aba, a busca
+     apareceria e sumiria ao alternar, fazendo a linha pular sob o cursor. */
   const buscavel = (mine?.length ?? 0) + open.length >= SEARCH_FROM;
 
   const Heading = level === 1 ? 'h1' : 'h2';
 
   return (
     <section>
-      {/* O título da região não é desenhado: os nomes das duas abas SÃO o
-          título, e um "Salas" por cima deles seria a mesma palavra duas vezes
-          em dois tamanhos. O `h1`/`h2` fica na aba ativa, que é o que um leitor
-          de tela precisa ouvir para saber onde está. */}
+      {/* Sem título de região: os nomes das abas SÃO o título, e um "Salas" por
+          cima seria a mesma palavra duas vezes. O `h1`/`h2` fica na aba ativa,
+          que é o que um leitor de tela precisa ouvir. */}
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="flex items-end gap-6" role="tablist" aria-label="Salas">
           <RoomTab
@@ -681,9 +591,8 @@ function Rooms({
         className="mt-4 block h-px w-full bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
       />
 
-      {/* A frase da vitrine só existe na vitrine: ela explica a diferença entre
-          aberta e fechada, que é uma pergunta que ninguém faz sobre uma sala em
-          que já está. */}
+      {/* Só na vitrine: explica a diferença entre aberta e fechada, pergunta que
+          ninguém faz sobre uma sala em que já está. */}
       {tab === 'open' ? (
         <p className="mt-4 max-w-[68ch] text-[13px] leading-relaxed text-ink-dim">
           Nas <span className="text-ink">abertas</span> você entra e já pode
@@ -708,9 +617,8 @@ function Rooms({
         <div
           role="tabpanel"
           id="salas-painel"
-          /* Apontado para a aba ativa. Um `tabpanel` sem dono é a metade da
-             promessa que `role="tab"` faz: o leitor de tela anuncia a região e
-             não sabe dizer de qual das duas abas ela é. */
+          /* Apontado para a aba ativa: um `tabpanel` sem dono faz o leitor de
+             tela anunciar a região sem saber de qual das duas abas ela é. */
           aria-labelledby={`salas-${tab}`}
           className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
         >
@@ -726,9 +634,8 @@ function Rooms({
         </div>
       ) : (
         <div className="mt-8">
-          {/* Três vazios diferentes, e dizer a mesma frase nos três seria a tela
-              não saber o que aconteceu. Uma busca sem resultado não é a mesma
-              coisa que uma rede sem salas. */}
+          {/* Três vazios diferentes: uma busca sem resultado não é a mesma coisa
+              que uma rede sem salas. */}
           {q ? (
             <Blank title="Nenhuma sala com esse nome">
               Tente outro pedaço do nome, ou o que o clube diz sobre si.
@@ -788,9 +695,8 @@ function RoomTab({
           </span>
         ) : null}
       </As>
-      {/* Pregado na borda de baixo do botão, como na marquise. Sempre montado e
-          só trocando de opacidade: aparecer e sumir do fluxo mudaria a altura da
-          linha a cada troca de aba. */}
+      {/* Sempre montado, só trocando de opacidade: aparecer e sumir do fluxo
+          mudaria a altura da linha a cada troca de aba. */}
       <span
         aria-hidden
         className={cn(
@@ -802,18 +708,12 @@ function RoomTab({
   );
 }
 
-/* ── a rede no escuro ─────────────────────────────────────────────────────
-   O convite que aparece quando o saguão não tem nada da rede para mostrar e
-   quem está olhando é a pessoa que pode mudar isso.
+/* O convite que aparece quando o saguão não tem nada da rede e quem olha é quem
+   pode mudar isso. Não é aviso de erro nem usa a chapa vermelha: nada quebrou, e
+   ficar fechado é uma escolha legítima.
 
-   Não é um aviso de erro e não usa a chapa vermelha: nada quebrou, e o clube
-   estar fechado para a rede é uma escolha legítima que pode continuar sendo a
-   escolha. É um texto e uma porta, do tamanho de um estado vazio — porque é
-   isso que ele é.
-
-   Diz o que se ganha e o que NÃO se dá, nesta ordem, porque a segunda metade é
-   a que decide: emprestar uma média não é publicar o que alguém escreveu, e a
-   pessoa precisa saber disso antes de apertar e não depois. */
+   Diz o que se ganha e o que NÃO se dá, nesta ordem: emprestar uma média não é
+   publicar o que alguém escreveu, e isso se sabe antes de apertar. */
 function DarkNetwork({
   clubs,
   onOpen,
@@ -857,61 +757,29 @@ function DarkNetwork({
 const tally = (n: number, one: string, many: string) =>
   `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`;
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A PAREDE DE CARTAZES
+/* ── a parede de cartazes ─────────────────────────────────────────────────
+   As caixas de cartaz do foyer com o que a rede andou vendo. Não custa nada: o
+   pôster está gravado em cada ficha, então a parede fica de pé com o TMDB fora.
 
-   As caixas de cartaz do foyer, com o que a rede andou vendo dentro delas. É a
-   única imagem de filme que a porta de entrada deste produto já teve, e ela não
-   custou nada: o pôster de cada ficha está gravado na própria ficha desde
-   sempre, então a parede continua de pé com o TMDB fora do ar.
+   Ela anda e nunca volta, como a parede de celuloide atrás de tudo — cartaz em
+   foyer não oscila. Os cartazes ficam no escuro e acendem sob o ponteiro, que é
+   a única recompensa interativa da faixa e entrega informação de verdade. O
+   letreiro fica ABAIXO dela: título sobre imagem exigiria um véu escuro por
+   cima da coisa que a faixa existe para mostrar.
 
-   Três decisões:
+   ── e a pista se pega com a mão ──────────────────────────────────────────
+   Andava por animação CSS e, onde a animação não podia rodar, virava caixa de
+   rolagem com barra — a única peça de interface daqui que ninguém desenhou.
+   Agora deriva sozinha, e a mão pega, arrasta e ARREMESSA, com o arremesso
+   desacelerando de volta para a deriva.
 
-   1. **Ela anda, e nunca volta.** Mesmo princípio da parede de celuloide atrás
-      de tudo: cartaz em foyer não oscila. A pista carrega a lista duas vezes e
-      viaja metade dela, então a emenda cai sobre a cópia — ver poster-rail no
-      index.css, onde está por que a folga é `margin` e não `gap`.
+   Rolagem e não `transform` porque arrastar é rolar: `scrollLeft` já traz o
+   limite e o toque prontos, e no telefone o navegador dá inércia melhor do que
+   qualquer laço escrito aqui — lá este arquivo não faz nada.
 
-   2. **Os cartazes estão no escuro, e acendem sob o ponteiro.** As luzes da
-      casa estão baixas, que é o estado deste produto inteiro; o que o ponteiro
-      faz é chegar perto de uma caixa e ler o que tem nela. É a única recompensa
-      interativa desta faixa, e ela entrega informação de verdade — o nome do
-      filme e o que a rede deu.
-
-   3. **O lettering fica ABAIXO da parede, não em cima dela.** Título sobre
-      imagem exige um véu escuro por baixo, e um véu sobre a coisa que a faixa
-      existe para mostrar é a faixa se anulando. Neste sistema só uma coisa
-      escreve sobre foto — o nome do clube no painel dele —, e lá é necessário.
-
-   A faixa é `aria-hidden`: são até 56 imagens sem ação nenhuma, e o que elas
-   dizem em texto está logo abaixo, na contagem, e mais adiante no pódio, que
-   nomeia os filmes por escrito. Uma parede de cartazes é para ser vista.
-   ══════════════════════════════════════════════════════════════════════════ */
-/* ══════════════════════════════════════════════════════════════════════════
-   A PAREDE QUE SE PEGA COM A MÃO.
-
-   A faixa andava por uma animação CSS e, onde a animação não podia rodar, virava
-   uma caixa de rolagem com barra — e uma barra de rolagem cinza atravessada
-   debaixo dos cartazes é a única peça de interface deste produto que não foi
-   desenhada por ninguém.
-
-   Agora é um modelo só, e ele é melhor do que os dois que substitui: a pista
-   deriva sozinha, a mão pega, arrasta e ARREMESSA, e o arremesso desacelera de
-   volta para a deriva. É a mesma coisa que um cartaz preso num trilho faz quando
-   alguém o empurra.
-
-   ── por que a rolagem e não um transform ──────────────────────────────────
-   Porque arrastar é rolar. Um `translateX` guardado em estado obrigaria a
-   reimplementar a captura do ponteiro, o limite e o toque; `scrollLeft` já é
-   tudo isso, e no telefone o dedo continua sendo o dedo — o navegador dá inércia
-   melhor do que qualquer laço escrito aqui, então lá este arquivo não faz nada.
-
-   ── uma fórmula, dois comportamentos ──────────────────────────────────────
-   A velocidade persegue um alvo, e o alvo é a deriva. Com deriva, um arremesso
-   desacelera até virar o passo de repouso; sem ela (movimento reduzido), o alvo
-   é zero e a mesma linha vira inércia que para. Não há dois caminhos no código
-   porque não há duas ideias.
-   ══════════════════════════════════════════════════════════════════════════ */
+   A velocidade persegue um alvo, e o alvo é a deriva. Sem deriva (movimento
+   reduzido) o alvo é zero e a mesma linha vira inércia que para: uma fórmula,
+   dois comportamentos, um caminho só no código. */
 
 /** px de rolagem por quadro em repouso. ~27px/s: um passo de quem passeia. */
 const DRIFT = 0.45;
@@ -920,28 +788,21 @@ const SETTLE = 0.045;
 /** Abaixo disto a diferença não se vê: encosta no alvo e para de calcular. */
 const SNAP = 0.02;
 /* Teto do arremesso. Um mouse pode reportar um salto de centenas de pixels num
-   quadro — uma janela que perdeu o foco e voltou, um evento coalescido — e sem
-   isto a parede sairia em disparada por um movimento que ninguém fez. */
+   quadro — janela que perdeu o foco e voltou, evento coalescido — e sem isto a
+   parede sairia em disparada por um movimento que ninguém fez. */
 const MAX_THROW = 42;
 
-/* ── a última linha do cartaz não pode ser uma linha ──────────────────────
-   Esta máscara tem um trabalho pequeno e um só: tirar o corte reto da borda de
-   baixo. Quem escurece o pé da faixa é o véu de sombra, mais abaixo; aqui o
-   assunto é só a aresta.
+/* Tira o corte reto da borda de baixo, e nada além disso — quem escurece o pé da
+   faixa é o véu de sombra, mais abaixo. Chegou a dissolver um terço da altura e
+   era demais: os cartazes sumiam em vez de terminarem.
 
-   Foi uma dissolução de um terço da altura por um dia, e era demais — os
-   cartazes sumiam em vez de terminarem. O tamanho certo é o de uma borda: os
-   últimos vinte e quatro pixels, e nada antes disso.
-
-   Em PIXELS e não em porcentagem, e é a diferença que faz a coisa parecer a
-   mesma nos dois tamanhos: a faixa tem 132px no telefone e 176px no computador,
-   e uma borda de 15% seria vinte pixels lá e vinte e seis aqui — a mesma
-   intenção com duas espessuras. Uma aresta suave tem uma espessura só. */
+   Em PIXELS e não em porcentagem: a faixa tem 132px no telefone e 176px no
+   computador, e 15% seriam vinte pixels lá e vinte e seis aqui. Uma aresta suave
+   tem uma espessura só. */
 const POSTER_FADE = 'linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%)';
 
-/* Lido uma vez, como o `data-render` da parede de celuloide. O que esta
-   preferência desliga é o movimento que começa SOZINHO; arrastar continua,
-   porque é resposta a um gesto e não uma performance. */
+/* Lido uma vez, como o `data-render` da parede de celuloide. Desliga o movimento
+   que começa SOZINHO; arrastar continua, que é resposta a um gesto. */
 const REDUCED =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -951,9 +812,8 @@ function usePosterRail(live: boolean) {
 
   useEffect(() => {
     const el = ref.current;
-    /* No telefone este laço não existe: o dedo já rola, e o navegador dá uma
-       inércia melhor do que a daqui. Duas fontes escrevendo `scrollLeft` no
-       mesmo elemento brigariam entre si a cada quadro. */
+    /* No telefone este laço não existe: duas fontes escrevendo `scrollLeft` no
+       mesmo elemento brigariam a cada quadro. */
     if (!el || !live) return;
 
     const target = REDUCED ? 0 : DRIFT;
@@ -963,10 +823,10 @@ function usePosterRail(live: boolean) {
     let lastT = 0;
     let raf = 0;
 
-    /* A página inteira tem `zoom`, então o pixel do ponteiro e o pixel do
-       layout são unidades diferentes. Medido aqui e não dentro do `move`: um
-       rect e um offsetWidth são dois layouts forçados, e um mouse dispara
-       centenas de eventos por segundo. Ver a mesma nota em holographic-wall. */
+    /* A página tem `zoom`, então o pixel do ponteiro e o do layout são unidades
+       diferentes. Medido aqui e não dentro do `move`: um rect e um offsetWidth
+       são dois layouts forçados, e o mouse dispara centenas de eventos por
+       segundo. Mesma nota em holographic-wall. */
     let k = 1;
     const measure = () => {
       k = el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1;
@@ -975,11 +835,9 @@ function usePosterRail(live: boolean) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
 
-    /* ── o laço, sem começo e sem fim ───────────────────────────────────
-       A pista carrega a lista um número PAR de vezes, então metade dela é um
-       conjunto inteiro de cópias: recuar meia pista cai exatamente sobre a
-       mesma imagem. O salto é dado ANTES de a rolagem chegar na borda, porque
-       o navegador prende `scrollLeft` em zero — deixar ele bater é o que
+    /* A pista carrega a lista um número PAR de vezes, então recuar meia pista
+       cai exatamente sobre a mesma imagem. O salto é dado ANTES de a rolagem
+       chegar na borda: o navegador prende `scrollLeft` em zero, e deixar bater
        transformaria a volta num tranco. */
     const step = (dx: number) => {
       const half = el.scrollWidth / 2;
@@ -998,44 +856,31 @@ function usePosterRail(live: boolean) {
       if (velocity) step(velocity);
     };
 
-    /* ── puxar não é clicar ─────────────────────────────────────────────
-       Cada cartaz abre uma folha, e a mesma superfície é o que se agarra para
-       arrastar a parede. Sem isto, todo arremesso terminaria abrindo o filme
-       que estava debaixo do dedo quando a mão soltou.
-
-       A distância percorrida é o que separa os dois gestos, e o corte é baixo:
-       quatro pixels é mais do que o tremor de uma mão parada e menos do que
-       qualquer intenção de puxar. */
+    /* Puxar não é clicar: cada cartaz abre uma folha, e a mesma superfície é o
+       que se agarra para arrastar. Sem isto, todo arremesso terminaria abrindo
+       o filme que estava sob o dedo. Quatro pixels é mais que o tremor de uma
+       mão parada e menos que qualquer intenção de puxar. */
     const SLOP = 4;
     let travel = 0;
 
-    /* ── nem captura de ponteiro, nem preventDefault ────────────────────
-       As duas coisas estavam aqui e as duas matavam o clique nos cartazes.
+    /* Nem `setPointerCapture`, nem `preventDefault`: as duas coisas estavam aqui
+       e as duas matavam o clique nos cartazes.
 
        `preventDefault` num `pointerdown` cancela os eventos de mouse de
-       compatibilidade que vêm depois — e o `click` é um deles. Ele estava aqui
-       para impedir o arrasto nativo da imagem, trabalho que o `draggable={false}`
-       de cada cartaz já faz, e que o `dragstart` abaixo garante.
+       compatibilidade que vêm depois, e o `click` é um deles — o arrasto nativo
+       da imagem já é impedido pelo `draggable={false}` e pelo `dragstart`.
 
-       `setPointerCapture` redireciona os eventos para o elemento que capturou,
-       e o `click` vai junto: ele passava a nascer na FAIXA em vez de no cartaz,
-       então o botão nunca era avisado. A captura existia para não perder o
-       ponteiro ao sair da faixa no meio de um arrasto — e ouvir no `window`
-       resolve isso sem retarget nenhum.
-
-       O preço é lembrar de tirar os dois ouvintes do window ao soltar, o que a
-       limpeza abaixo faz. */
+       `setPointerCapture` retarget os eventos para quem capturou, e o `click`
+       vai junto: ele nascia na FAIXA em vez de no cartaz. A captura existia para
+       não perder o ponteiro ao sair da faixa, e ouvir no `window` resolve isso
+       sem retarget — ao preço de tirar os ouvintes ao soltar. */
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      /* ── uma recusa que sobrou ────────────────────────────────────────
-         A recusa de clique é armada com `once`, e `once` só desarma quando o
-         evento chega. Um arrasto que termina FORA da faixa não gera clique
-         nenhum — e a recusa ficava lá, esperando, para engolir o próximo
-         clique de verdade.
-
-         Aqui é o lugar de limpar: um clique sempre vem logo depois do
-         `pointerup` do mesmo gesto, então qualquer recusa que ainda exista
-         quando um gesto NOVO começa é de um gesto que já acabou. */
+      /* A recusa de clique é armada com `once`, e `once` só desarma quando o
+         evento chega — um arrasto que termina FORA da faixa não gera clique, e a
+         recusa ficava esperando para engolir o próximo clique de verdade. Um
+         clique sempre vem logo depois do `pointerup` do mesmo gesto, então
+         qualquer recusa viva quando um gesto NOVO começa é de um gesto morto. */
       el.removeEventListener('click', swallow, { capture: true });
       dragging = true;
       travel = 0;
@@ -1059,14 +904,13 @@ function usePosterRail(live: boolean) {
       lastT = e.timeStamp;
       travel += Math.abs(dx);
       step(-dx);
-      /* Em px por quadro, e suavizado: um único evento com um salto grande não
-         pode virar sozinho um arremesso que a mão não deu. */
+      /* Em px por quadro e suavizado: um evento com salto grande não pode virar
+         sozinho um arremesso que a mão não deu. */
       velocity = velocity * 0.7 + ((-dx * 16.7) / dt) * 0.3;
     };
 
-    /* Engolido na CAPTURA, antes de chegar ao cartaz. Um clique só nasce depois
-       do `pointerup`, então basta armar a recusa aqui e desarmá-la sozinha —
-       `once` — para que o clique seguinte, o de verdade, passe. */
+    /* Engolido na CAPTURA, antes de chegar ao cartaz. `once` desarma sozinho,
+       para que o clique seguinte — o de verdade — passe. */
     const swallow = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1086,11 +930,8 @@ function usePosterRail(live: boolean) {
     el.addEventListener('pointerdown', down);
     el.addEventListener('dragstart', noDrag);
 
-    /* ── e nada roda com a parede fora da tela ───────────────────────────
-       Um laço perpétuo por uma faixa que já saiu de vista é trabalho contra
-       uma instância que dorme por falta dele. O `requestAnimationFrame` já
-       para com a aba escondida; isto cuida do outro caso, que é a pessoa ter
-       rolado a página para baixo. */
+    /* O `requestAnimationFrame` já para com a aba escondida; isto cuida do outro
+       caso, que é a pessoa ter rolado a página para baixo. */
     const io = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !raf) raf = requestAnimationFrame(frame);
@@ -1110,8 +951,8 @@ function usePosterRail(live: boolean) {
       el.removeEventListener('pointerdown', down);
       el.removeEventListener('dragstart', noDrag);
       el.removeEventListener('click', swallow, { capture: true });
-      /* Desmontar no meio de um arrasto deixaria dois ouvintes no window
-         mexendo num elemento que já saiu da árvore. */
+      /* Desmontar no meio de um arrasto deixaria ouvintes no window mexendo num
+         elemento que já saiu da árvore. */
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
@@ -1128,17 +969,13 @@ function PosterWall({
   films: LobbyMovie[];
   counts: LobbySnapshot['counts'];
 }) {
-  /* Qual cartaz está aberto. Guardado aqui e não no saguão inteiro porque a
-     folha é da parede: nada mais nesta tela abre um filme. */
+  /* Aqui e não no saguão inteiro porque a folha é da parede: nada mais nesta
+     tela abre um filme. */
   const [aberto, setAberto] = useState<LobbyMovie | null>(null);
-  /* ── quantas vezes a lista se repete ───────────────────────────────────
-     A metade da pista precisa ser mais larga que qualquer tela, ou o laço mostra
-     o fim da fileira e volta com um pulo. Com vinte e oito cartazes uma cópia já
-     passa disso; com seis, não — e aí a lista se repete até passar.
-
-     O número de cópias é sempre PAR, e isso não é estética: a pista viaja
-     exatamente metade de si mesma, então a emenda só cai sobre uma cópia inteira
-     se houver o mesmo tanto dos dois lados. */
+  /* A metade da pista precisa ser mais larga que qualquer tela, ou o laço mostra
+     o fim da fileira e volta com um pulo. O número de cópias é sempre PAR: a
+     pista viaja metade de si mesma, e a emenda só cai sobre uma cópia inteira se
+     houver o mesmo tanto dos dois lados. */
   const CASE_PX = 125;
   const HALF_PX = 1800;
   const copies = Math.max(2, 2 * Math.ceil(HALF_PX / CASE_PX / films.length));
@@ -1149,50 +986,26 @@ function PosterWall({
 
   return (
     <section className="relative">
-      {/* ══════════════════════════════════════════════════════════════════
-          A MOLDURA, e por que ela existe.
+      {/* ── a moldura ──────────────────────────────────────────────────────
+          Os véus moravam dentro da faixa, e funcionava enquanto ela era
+          `overflow: hidden`. Virou caixa de ROLAGEM e parou: um elemento
+          absoluto dentro de um container que rola faz parte do conteúdo rolável
+          dele, então os véus saíram deslizando junto com os cartazes. Duas
+          camadas agora — esta moldura, que não rola e segura os véus, e a faixa
+          lá dentro, que rola.
 
-          Os véus — as duas pontas e a dissolução de baixo — moravam dentro da
-          faixa. Enquanto ela era `overflow: hidden` isso funcionava; no dia em
-          que virou uma caixa de ROLAGEM, parou, e de um jeito que só aparece
-          esperando: um elemento absoluto dentro de um container que rola faz
-          parte do conteúdo rolável dele. Os véus foram desenhados na posição
-          zero e saíram deslizando junto com os cartazes. Depois de alguns
-          segundos a parede não tinha véu nenhum.
+          Sem borda embaixo: uma linha dura fazia a parede TERMINAR e o letreiro
+          começar do zero num bloco separado. O que liga os dois é a dissolução.
 
-          Então há duas camadas agora: esta moldura, que não rola e segura os
-          véus, e a faixa lá dentro, que rola. Os véus ficam parados porque o
-          pai deles ficou parado.
+          E ela é de duas naturezas. O véu escuro (mais abaixo) faz o percurso
+          longo: pinta a cor da sala sobre o cartaz e abre espaço para o
+          letreiro. A máscara é alfa e só tira o corte reto da borda — onde ela
+          apaga, aparece a parede de celuloide atrás, que é a diferença entre um
+          cartaz que termina contra um fundo e um que termina na sala.
 
-          Sem borda embaixo: uma linha dura ali fazia a parede TERMINAR, e o
-          letreiro começava do zero num bloco separado. O que os liga é a
-          dissolução — os cartazes viram sala, e o texto fica dentro disso.
-
-          ── e a dissolução é de DUAS naturezas ─────────────────────────────
-          Uma escurece e a outra apaga, e cada uma tem um tamanho de trabalho
-          bem diferente.
-
-          O véu escuro (mais abaixo) faz o percurso longo: pinta a cor da sala
-          por cima do cartaz ao longo do pé inteiro da faixa. É ele que apaga a
-          imagem e abre espaço para o letreiro.
-
-          A máscara é alfa e tem um trabalho pequeno: tirar o corte reto da
-          borda de baixo, e nada além disso. Ela chegou a dissolver um terço da
-          altura e era demais — os cartazes sumiam em vez de terminarem. O que
-          ela faz agora é o que uma aresta suave faz, na espessura de uma
-          aresta.
-
-          Onde ela apaga, quem aparece é o que estava atrás — a parede de
-          celuloide, com o feixe correndo nela. É a diferença entre um cartaz
-          que termina contra um fundo e um que termina na sala.
-
-          Na moldura e não na faixa, de propósito. Uma máscara na caixa que rola
-          seria pintada no espaço dela e ficaria parada — funciona —, mas aqui
-          ela precisa alcançar também os véus das pontas, que são irmãos da
-          faixa e não filhos dela. Aplicada no pai, alcança tudo de uma vez.
-
-          `-webkit-` junto: o Safari ainda pede o prefixo, e sem ele a faixa
-          termina num corte reto em metade dos telefones. */}
+          Na moldura e não na faixa porque precisa alcançar também os véus das
+          pontas, que são irmãos da faixa e não filhos dela. `-webkit-` junto: o
+          Safari ainda pede o prefixo. */}
       <div
         className="relative h-[132px] sm:h-[176px]"
         style={{
@@ -1200,17 +1013,11 @@ function PosterWall({
           WebkitMaskImage: POSTER_FADE,
         }}
       >
-      {/* ── a faixa deixou de ser só imagem ────────────────────────────────
-          Cada cartaz abre a folha do filme, então ela não pode mais ser
-          `aria-hidden`: esconder do leitor de tela uma região que contém
-          botões é escondê-los de quem depende dele.
-
-          Só que a lista é REPETIDA — é o que faz o laço não ter emenda — e
-          cinquenta e seis botões para vinte e oito filmes seriam cinquenta e
-          seis paradas de tabulação para vinte e oito destinos. Então a primeira
-          cópia é a de verdade e as outras são decoração: `aria-hidden` e fora
-          da ordem de foco, uma por uma. Quem enxerga vê uma parede contínua;
-          quem tabula percorre cada filme uma vez. */}
+      {/* Cada cartaz abre a folha do filme, então a faixa não pode ser
+          `aria-hidden`. Mas a lista é REPETIDA — é o que faz o laço não ter
+          emenda —, e isso seriam duas paradas de tabulação por destino. Então a
+          primeira cópia é a de verdade e as outras são decoração: `aria-hidden`
+          e fora da ordem de foco, uma por uma. */}
       <div ref={rail} className="poster-rail absolute inset-0 bg-house-deep/40">
         <div className="flex h-full w-max">
           {Array.from({ length: copies }).flatMap((_, copy) =>
@@ -1228,8 +1035,8 @@ function PosterWall({
                   src={film.poster ?? undefined}
                   alt=""
                   loading="lazy"
-                  /* O arrasto nativo de imagem sai: sem isto, puxar a parede
-                     leva um fantasma do cartaz junto do cursor. */
+                  /* Sem isto, puxar a parede leva um fantasma do cartaz junto
+                     do cursor. */
                   draggable={false}
                   className="h-full w-full object-cover opacity-[0.38] saturate-[0.85] transition duration-300 ease-beam group-hover:opacity-100 group-hover:saturate-100"
                 />
@@ -1258,53 +1065,40 @@ function PosterWall({
           className="pointer-events-none absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-house to-transparent sm:w-28"
         />
 
-        {/* ── a parede se apaga para baixo ────────────────────────────────
-            Os cartazes escurecem até a cor da sala, então a faixa não tem fim —
-            ela vira sala. É o que permite o letreiro subir para dentro dela sem
-            disputar legibilidade com imagem nenhuma.
+        {/* Os cartazes escurecem até a cor da sala, então a faixa não tem fim:
+            ela vira sala, e o letreiro sobe para dentro dela sem disputar
+            legibilidade com imagem nenhuma. Começa cedo e quase invisível, o
+            que faz ler como apagar e não como tampa; o que importa é o fim, que
+            é onde o topo do título encosta.
 
-            Começa cedo e quase invisível: aos 40% da queda ainda são 20% de
-            escuro, e é isso que faz ler como um apagar e não como uma tampa. O
-            trecho que importa é o fim — sólido aos 88%, porque os últimos trinta
-            e poucos pixels são onde o topo do título encosta, e ali não pode
-            haver cartaz brigando com a palavra.
-
-            As paradas são 40% e 90% porque a escala de posição do Tailwind anda
-            de cinco em cinco: `to-88%` não existe, não vira classe nenhuma, e
-            sai da folha em silêncio — o véu terminaria só no fim do próprio
-            corpo, que é justamente onde ele não pode terminar. */}
+            As paradas são 40% e 90% porque a escala do Tailwind anda de cinco em
+            cinco: `to-88%` não vira classe nenhuma e sai da folha em silêncio. */}
         <span
           aria-hidden
           className="pointer-events-none absolute inset-x-0 bottom-0 h-[70%] bg-gradient-to-b from-transparent via-house/20 via-40% to-house to-90%"
         />
       </div>
 
-      {/* Houve aqui uma mancha de luz — a claridade que uma vitrine acesa jogaria
-          no chão à frente dela. Foi construída, vista e removida pelo dono: numa
-          tela escura, uma nuvem larga e clara não lê como luz, lê como uma
-          mancha. Registrado para não voltar. O que amarra a parede ao letreiro é
-          a dissolução acima e a sobreposição abaixo, e as duas bastam. */}
+      {/* Houve aqui uma mancha de luz, a claridade que uma vitrine jogaria no
+          chão. Construída, vista e removida pelo dono: numa tela escura, uma
+          nuvem larga e clara não lê como luz, lê como mancha. */}
 
       {/* Sobe para DENTRO da faixa: o topo do letreiro fica onde os cartazes já
           se apagaram, e é isso que faz um referenciar o outro em vez de dois
-          blocos empilhados. Sem o negativo havia trinta e seis pixels de nada
-          entre a parede e o que ela é. */}
+          blocos empilhados. */}
       <div className="relative mx-auto -mt-7 w-full max-w-[1240px] px-4 sm:-mt-9 sm:px-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
           O que a rede andou vendo
         </h1>
-        {/* Três números medidos, e não três cartões de estatística: é uma frase,
-            e ela é a legenda da parede acima. */}
+        {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
         <p className="q mt-3 text-[13px] text-ink-dim">
           {tally(counts.reviews, 'ficha', 'fichas')} · {tally(counts.movies, 'filme', 'filmes')} ·{' '}
           {tally(counts.clubs, 'sala', 'salas')}
         </p>
       </div>
 
-      {/* Montada só quando há filme aberto: um `<dialog>` fechado no ar ainda é
-          um nó com um `showModal` esperando, e a folha busca duas coisas ao
-          nascer. Remontar por filme também é o que garante que ela nunca mostre
-          a sinopse do cartaz anterior por um quadro. */}
+      {/* Montada só quando há filme aberto, e remontada por filme: garante que
+          ela nunca mostre a sinopse do cartaz anterior por um quadro. */}
       {aberto ? (
         <FilmPeek key={aberto.id} film={aberto} onClose={() => setAberto(null)} />
       ) : null}
@@ -1312,23 +1106,16 @@ function PosterWall({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   EM CARTAZ AGORA
+/* ── em cartaz agora ──────────────────────────────────────────────────────
+   As sessões acontecendo neste segundo. O produto sabe disso sem consultar
+   nada: a sala ao vivo mora em memória.
 
-   O trilho embaixo da marquise, que num cinema é onde ficam as sessões do dia. A
-   diferença é que estas estão acontecendo neste segundo: uma sala aberta com um
-   filme dentro é gente assistindo junto agora, e este produto sabe disso sem
-   consultar nada — a sala ao vivo mora em memória.
-
-   É a coisa mais urgente que esta tela pode dizer, e é a mais rara: quase sempre
-   não há nenhuma, e aí ela não existe. Por isso é uma FAIXA FINA e não uma
-   seção — quando aparece, empurra o chaveiro alguns pixels para baixo, e não
-   uma tela inteira.
+   É a coisa mais urgente que esta tela diz e a mais rara — quase sempre não há
+   nenhuma. Por isso é uma FAIXA FINA e não uma seção: quando aparece, empurra o
+   chaveiro alguns pixels, não uma tela inteira.
 
    Só é porta quando dá para atravessá-la: um clube fechado de que você não é
-   responde 403, e um clique que leva a um erro é a tela prometendo o que não
-   pode cumprir. Sem porta, continua sendo notícia — que é o que ela é.
-   ══════════════════════════════════════════════════════════════════════════ */
+   responde 403. Sem porta, continua sendo notícia. */
 function NowPlaying({
   sessions,
   canEnter,
@@ -1342,8 +1129,7 @@ function NowPlaying({
     <div className="relative border-b border-white/[0.06] bg-house-deep/70">
       <div className="mx-auto flex max-w-[1240px] items-center gap-4 px-4 py-2.5 sm:px-6">
         <span className="flex flex-none items-center gap-2">
-          {/* A lâmpada de gravação, que neste produto é o que quer dizer "está
-              acontecendo". Respira; nunca apaga. */}
+          {/* A lâmpada de gravação, que aqui quer dizer "está acontecendo". */}
           <span
             aria-hidden
             className="h-1.5 w-1.5 animate-lamp rounded-full bg-dye-red-lit shadow-[0_0_10px_rgba(242,86,74,0.85)]"
@@ -1393,15 +1179,13 @@ function NowPlaying({
   );
 }
 
-/* ── o pódio ──────────────────────────────────────────────────────────────
-   O cartaz, o lugar, o nome, a régua e a média — e o número de fichas, sempre,
-   porque uma média sem o tamanho da amostra é meia informação. O piso de três
-   está escrito na linha da região; ele é o que impede o pódio de ser a lista de
-   quem foi avaliado uma vez por alguém entusiasmado.
+/* O número de fichas vem sempre: média sem tamanho da amostra é meia informação.
+   O piso de três impede o pódio de ser a lista de quem foi avaliado uma vez por
+   alguém entusiasmado.
 
-   A posição é um número que se lê, então ela é Poppins com `.q` e não display:
-   a face de letreiro não tem algarismo tabular, e uma coluna de posições que se
-   desloca é uma coluna quebrada. É a mesma regra que vale para toda nota. */
+   A posição é Poppins com `.q` e não display: a face de letreiro não tem
+   algarismo tabular, e uma coluna de posições que se desloca é uma coluna
+   quebrada. Mesma regra de toda nota. */
 function PodiumFilm({
   film,
   rank,
@@ -1470,16 +1254,13 @@ function ClubMark({
   );
 }
 
-/* ── uma sala em atividade ────────────────────────────────────────────────
-   Uma LINHA, e não mais um cartão. A tela já tem duas grades de painéis de
-   clube, e uma terceira grade da mesma coisa em outra ordem seria a página
-   repetindo o formato até ele parar de significar. A pergunta aqui é outra —
-   onde está acontecendo alguma coisa — e o formato responde: uma lista curta,
-   ordenada, com o número que a ordenou impresso na ponta.
+/* Uma LINHA e não um cartão: a tela já tem duas grades de painéis de clube, e
+   uma terceira em outra ordem seria a página repetindo o formato até ele parar
+   de significar. A pergunta aqui é outra — onde está acontecendo alguma coisa —
+   e uma lista ordenada com o número na ponta responde.
 
-   Uma sala fechada de que você não é aparece na lista e não é porta: ela é
-   informação sobre a rede, e a maneira de entrar nela está na vitrine, embaixo,
-   onde o botão diz o que vai acontecer. */
+   Sala fechada de que você não é aparece e não é porta: é informação sobre a
+   rede, e a maneira de entrar está na vitrine, onde o botão diz o que faz. */
 function ActiveClub({
   club,
   rank,
@@ -1534,19 +1315,16 @@ function ActiveClub({
   );
 }
 
-/* ── a ficha em destaque ──────────────────────────────────────────────────
-   A única coisa deste saguão com voz humana. Todo o resto é cartaz e número; se
-   a tela parasse aí, ela seria um painel de estatística sobre um produto cujo
-   assunto é o que as pessoas acharam.
+/* A única coisa deste saguão com voz humana: todo o resto é cartaz e número, e
+   sem ela a tela seria um painel de estatística sobre um produto cujo assunto é
+   o que as pessoas acharam.
 
-   É a mesma placa do mural de dentro de um clube, de propósito: quem já usou o
-   app reconhece a forma antes de ler, e o par alto/baixo é o que separa isto do
-   feed de qualquer app de filme — onze critérios dizem onde a pessoa se
-   entusiasmou e onde se decepcionou, e "fulano avaliou Parasita — 8,5" não diz.
+   Mesma placa do mural de dentro de um clube, de propósito. O par alto/baixo é
+   o que separa isto do feed de qualquer app de filme: onze critérios dizem onde
+   a pessoa se entusiasmou e onde se decepcionou.
 
-   A placa inteira é o botão. Um título clicável dentro de um cartão inerte faz
-   a pessoa mirar em quatro palavras quando a superfície toda quer dizer a mesma
-   coisa. E ela leva à ficha, não ao clube: quem clica está buscando um texto. */
+   A placa inteira é o botão, e leva à ficha e não ao clube: quem clica está
+   buscando um texto. */
 function FeatureTake({ take, onOpen }: { take: LobbyFeature; onOpen: () => void }) {
   const reactions = take.replies + take.agrees + take.disagrees;
   return (
@@ -1609,9 +1387,8 @@ function FeatureTake({ take, onOpen }: { take: LobbyFeature; onOpen: () => void 
           ) : null}
 
           {/* Cada contagem se cala em zero, e concordância e discordância nunca
-              viram um número só: uma ficha com três discordâncias anunciando
-              "3" debaixo de um polegar para cima é a contagem tomando partido
-              pelos dois lados. */}
+              viram um número só: três discordâncias anunciadas debaixo de um
+              polegar para cima é a contagem tomando partido pelos dois lados. */}
           {reactions ? (
             <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
               {take.replies ? (
@@ -1640,14 +1417,9 @@ function FeatureTake({ take, onOpen }: { take: LobbyFeature; onOpen: () => void 
   );
 }
 
-/* ── um painel de marquise ────────────────────────────────────────────────
-   A foto do clube atrás do vidro, o nome em Bebas, e embaixo o que ele é. A
-   proporção é a de um cartaz na entrada de uma sala, não a de um cartão de
-   dashboard: retrato, e não a fileira de retângulos iguais que toda grade de
-   cards vira.
-
-   Sem foto, o painel não fica vazio — fica com a inicial do nome em corpo
-   grande sobre a cor do clube. Um lugar sem cartaz ainda é um lugar. */
+/* A proporção é a de um cartaz na entrada de uma sala, não a de um cartão de
+   dashboard. Sem foto, o painel fica com a inicial em corpo grande sobre a cor
+   do clube: um lugar sem cartaz ainda é um lugar. */
 function ClubPanel({
   club,
   index,
@@ -1686,8 +1458,8 @@ function ClubPanel({
             {initialsOf(club.name)}
           </span>
         )}
-        {/* O nome sobre a foto, com a sala escurecendo por baixo dele: um título
-            branco sobre uma imagem qualquer é ilegível em metade das imagens. */}
+        {/* Com a sala escurecendo por baixo: título branco sobre imagem qualquer
+            é ilegível em metade das imagens. */}
         <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-house-deep via-house-deep/80 to-transparent px-4 pb-3 pt-10">
           <span className="block font-display text-[22px] leading-none tracking-[0.06em] text-beam">
             {club.name}
@@ -1727,9 +1499,8 @@ function ClubPanel({
               </Key>
             </span>
           ) : club.requested ? (
-            /* "Pedido enviado" é um estado, não uma confirmação que some: quem
-               volta ao saguão amanhã precisa ver que já pediu, e o mesmo botão
-               desfaz — desistir de um pedido não merece uma segunda tela. */
+            /* Um estado e não uma confirmação que some: quem volta amanhã
+               precisa ver que já pediu. O mesmo botão desfaz. */
             <button
               type="button"
               onClick={onAsk}
@@ -1740,10 +1511,8 @@ function ClubPanel({
               Pedido enviado
             </button>
           ) : (
-            /* O rótulo diz o que vai acontecer, e não o que a sala é: numa
-               aberta o clique põe você dentro, numa fechada ele começa uma
-               espera. Um botão só que faz duas coisas diferentes com o mesmo
-               nome é o botão mentindo para metade das pessoas. */
+            /* O rótulo diz o que vai acontecer e não o que a sala é: numa aberta
+               o clique põe você dentro, numa fechada começa uma espera. */
             <Key onClick={onAsk}>
               {club.visibility === 'public' ? 'Entrar' : 'Pedir para entrar'}
             </Key>
@@ -1754,12 +1523,8 @@ function ClubPanel({
   );
 }
 
-/* ── fundar ───────────────────────────────────────────────────────────────
-   Quem cria é ADM, e isso não é uma opção em lugar nenhum: uma sala sem ninguém
-   que possa aprovar uma entrada nasce trancada.
-
-   Nasce privada quando não se diz nada, e a folha diz isso em vez de esconder
-   num padrão: o erro caro tem um lado só. */
+/* Quem cria é ADM, e isso não é opção: uma sala sem ninguém que possa aprovar
+   uma entrada nasce trancada. */
 function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (slug: string) => void }) {
   const [name, setName] = useState('');
   const [tagline, setTagline] = useState('');
@@ -1867,9 +1632,8 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
             </div>
           </div>
 
-          {/* A escolha é sobre a PORTA, não sobre a fachada: os dois aparecem no
-              saguão com nome e foto. O que muda é como se entra, e é isso que as
-              duas frases dizem. */}
+          {/* A escolha é sobre a PORTA e não sobre a fachada: os dois aparecem no
+              saguão com nome e foto. */}
           <fieldset className="flex flex-col gap-2">
             <span className="legend text-[10px]">Como se entra</span>
             <div className="flex gap-2">
