@@ -375,8 +375,55 @@ function answeredIn(genre, scores) {
   return critsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }
 
+/* ══ a avaliação criteriosa de um episódio ═══════════════════════════════
+   Os nove de `BASE` e nada mais: os oito de ofício e o Aproveitamento. Os dois
+   que o gênero traz ficam de fora, e a razão não é de tamanho.
+
+   Um gênero é uma promessa que uma OBRA faz. "Atmosfera" é a pergunta certa
+   para um filme de terror porque o filme inteiro se propôs a sustentar um
+   clima; o quinto episódio de uma série de terror pode ser o de tribunal.
+   Perguntar dos dois do gênero por episódio seria cobrar de cada um a promessa
+   da série toda, e a nota diria mais sobre o rótulo do que sobre o episódio.
+
+   O gênero ainda entra, mas só pelo `BASE_SWAP`, que é outra coisa: ele não
+   acrescenta pergunta, troca o OBJETO de uma que já existe. Numa série animada
+   ninguém atuou diante de uma câmera — o que existe é elenco de voz —, e num
+   documentário não houve roteiro, houve forma. Um episódio herda o vocabulário
+   da série a que pertence, que é o correto: quem dubla o episódio 5 dubla a
+   série.
+
+   Nove critérios e nenhum peso novo. A fórmula é a mesma, o divisor continua
+   sendo contado, e uma ficha de episódio cai na mesma régua 0–10 da de um
+   filme sem conversão nenhuma. */
+function episodeCritsFor(genre) {
+  const base = baseFor(GENRE_CRIT[genre] ? genre : 'Drama');
+  return base
+    .filter(t => t[0] !== PERSONAL_KEY)
+    .map(t => spell(t, CRAFT))
+    .concat(base.filter(t => t[0] === PERSONAL_KEY).map(t => spell(t, PERSONAL)));
+}
+
+/** A nota da criteriosa. Mesma média contada de `finalOf`, sobre os nove. */
+function episodeFinalOf(genre, scores) {
+  let sum = 0;
+  let weight = 0;
+  for (const c of episodeCritsFor(genre)) {
+    const value = scores?.[c.key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    sum += value * c.w;
+    weight += c.w;
+  }
+  return weight ? sum / weight : 0;
+}
+
+/** O que a ficha de um episódio respondeu, na ordem em que foi perguntado. */
+function episodeAnsweredIn(genre, scores) {
+  return episodeCritsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
+}
+
 module.exports = {
   BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB,
   CRAFT, GENRE, PERSONAL, PERSONAL_KEY,
-  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn
+  genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn,
+  episodeCritsFor, episodeFinalOf, episodeAnsweredIn
 };

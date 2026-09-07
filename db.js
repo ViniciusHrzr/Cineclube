@@ -786,6 +786,130 @@ async function migrate() {
     console.log(`[db] clubes: ${queue.length} filme(s) da fila movidos para ${HOME_CLUB}`);
   }
 
+  /* ══ o universo de séries ═══════════════════════════════════════════════
+     Um clube é UM clube: mesmo nome, mesma gente, mesmo ADM, mesmas paredes de
+     privacidade. Não existe coluna de universo na tabela clubs, e isso é a
+     decisão inteira — o universo é uma LENTE sobre o clube, escolhida no saguão
+     e carregada no endereço, não uma propriedade dele.
+
+     O que se separa é o acervo: estas tabelas são o lado de séries do que
+     reviews e watchlist são do lado de filmes. Nada aqui referencia aquelas, e
+     nada lá referencia estas.
+
+     Sem crase nenhuma daqui para baixo: isto é um template literal, e uma crase
+     fecha a string no meio do SQL. */
+  await exec(`
+    CREATE TABLE IF NOT EXISTS shows_cache (
+      tmdb_id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL,
+      original_title TEXT,
+      english_title TEXT,
+      year INTEGER,
+      genre TEXT NOT NULL,
+      genres TEXT,
+      poster TEXT,
+      /* Se ainda vem episódio. Acompanhar uma série no ar é outra relação. */
+      status TEXT,
+      seasons INTEGER,
+      episodes INTEGER,
+      runtime INTEGER,
+      tmdb_score REAL,
+      tmdb_votes INTEGER,
+      providers TEXT,
+      providers_at TEXT,
+      cached_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    /* Um episódio, em cache pelo mesmo motivo que um filme: o acervo é lido com
+       o TMDB fora da requisição, e "S02E05 — Ozymandias" tem de sobreviver a
+       isso. A chave é (série, temporada, número), que é como um episódio é
+       nomeado por gente. */
+    CREATE TABLE IF NOT EXISTS episodes_cache (
+      show_id INTEGER NOT NULL,
+      season INTEGER NOT NULL,
+      episode INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      overview TEXT,
+      still TEXT,
+      air_date TEXT,
+      runtime INTEGER,
+      kind TEXT,
+      cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (show_id, season, episode)
+    );
+
+    /* A fila de séries do clube. Gêmea de watchlist e separada dela: o que se
+       põe na fila aqui é uma SÉRIE, e uma série não tem nota — ela tem
+       episódios que têm. */
+    CREATE TABLE IF NOT EXISTS show_queue (
+      club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      show_id INTEGER NOT NULL,
+      show_title TEXT NOT NULL,
+      show_year INTEGER,
+      show_genre TEXT NOT NULL,
+      show_poster TEXT,
+      added_at TEXT NOT NULL DEFAULT (datetime('now')),
+      added_by TEXT,
+      position INTEGER,
+      PRIMARY KEY (club_id, show_id)
+    );
+
+    /* ── a linha que é ao mesmo tempo "vi" e "achei" ────────────────────
+       A tabela central do universo de séries, e a forma dela é a decisão de
+       desenho principal: **a linha existir significa que a pessoa viu**.
+
+       Não há tabela de "assistido" ao lado desta. Ter uma seria um segundo
+       lugar onde a mesma verdade pode estar errada — a mesma razão pela qual
+       este banco não tem tabela de notificação e o pedido de entrada não tem
+       coluna de estado. Marcar visto insere a linha; avaliar preenche o resto
+       dela.
+
+       Três estados, e os três são o mesmo registro:
+       · scores e quick nulos — visto, sem nota. É o tracking puro.
+       · quick preenchido — a nota objetiva de 0 a 10, num gesto.
+       · scores preenchido — a avaliação criteriosa, os nove critérios de ofício
+         (BASE, em criteria.js), sem os dois de gênero: um episódio não escolhe
+         gênero.
+
+       A criteriosa SUBSTITUI a rápida, e é por isso que as duas colunas
+       convivem em vez de uma só: quick guarda o que foi dito à mão, final
+       guarda o que vale. Gravar a criteriosa zera quick — senão a linha
+       carregaria duas respostas para a mesma pergunta.
+
+       A coluna final é nula enquanto ninguém deu nota, e nulo é diferente de
+       zero: um episódio visto e não avaliado não entra em média nenhuma.
+
+       O id próprio, com a unicidade num índice à parte, é o mesmo arranjo de
+       reviews: é o id que um endereço aponta e o que sobrevive a uma
+       regravação, porque o upsert casa pela chave natural e não toca nele. */
+    CREATE TABLE IF NOT EXISTS episode_takes (
+      id TEXT PRIMARY KEY,
+      club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      show_id INTEGER NOT NULL,
+      show_title TEXT NOT NULL,
+      show_poster TEXT,
+      /* O gênero com que a ficha foi preenchida, gravado na linha como
+         reviews.movie_genre já é. Ele não acrescenta pergunta nenhuma — decide
+         só o vocabulário dos nove (vozes numa animação, estrutura num
+         documentário) —, e sem ele uma ficha antiga seria relida com as chaves
+         erradas e perderia critérios em silêncio. */
+      show_genre TEXT NOT NULL DEFAULT 'Drama',
+      season INTEGER NOT NULL,
+      episode INTEGER NOT NULL,
+      episode_title TEXT,
+      scores TEXT,
+      quick REAL,
+      final REAL,
+      comment TEXT,
+      watched_at TEXT NOT NULL DEFAULT (datetime('now')),
+      rated_at TEXT,
+      UNIQUE(club_id, reviewer_id, show_id, season, episode)
+    );
+    CREATE INDEX IF NOT EXISTS episode_takes_club ON episode_takes(club_id, show_id);
+    CREATE INDEX IF NOT EXISTS episode_takes_reviewer ON episode_takes(reviewer_id);
+  `);
+
   // Sessão vencida é peso morto e risco; some no boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
   // E pelo mesmo motivo, os links de e-mail que já não abrem nada.

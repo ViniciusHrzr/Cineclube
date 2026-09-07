@@ -121,6 +121,11 @@ const reviewerRoutes = require('./routes/reviewers');
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
+/* O catálogo do outro universo. Fora do escopo de clube pelo mesmo motivo que o
+   de filmes: o TMDB não é de sala nenhuma, e o cache de uma série é o mesmo em
+   toda a rede. O que é do clube — a fila e o que cada um viu — desce para
+   /api/c/<slug>/shows. */
+app.use('/api/series', require('./routes/series'));
 app.use('/api/clubs', clubRoutes.index);
 /* O que a rede está fazendo, acima da linha do clube: a única leitura do produto
    que atravessa salas, e ela só enxerga o que cada uma emprestou. Ver lobby.js. */
@@ -136,6 +141,7 @@ const scoped = express.Router({ mergeParams: true });
 scoped.use('/reviewers', reviewerRoutes.scoped);
 scoped.use('/reviews', require('./routes/reviews'));
 scoped.use('/watchlist', require('./routes/watchlist'));
+scoped.use('/shows', require('./routes/shows'));
 scoped.use('/screening', require('./routes/screening'));
 scoped.use('/social', require('./routes/social'));
 scoped.use('/notifications', require('./routes/notifications'));

@@ -58,7 +58,10 @@ const PING_MS = 20_000;
    clube, uma palavra aqui: "a sala mudou". A marquise ouve, busca `/api/
    screening` uma vez e acende a lâmpada. É a mesma regra de sempre — o aviso
    diz qual coleção mudou, e a rota continua sendo a única verdade. */
-const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers', 'screening', 'club']);
+/* `shows` é o universo de séries inteiro numa palavra: a fila e o que cada um
+   viu. Um aviso só por episódio marcado seria um por toque numa maratona, e o
+   que a outra tela precisa saber é "isto mudou", não o quê. */
+const KINDS = new Set(['social', 'reviews', 'watchlist', 'reviewers', 'screening', 'club', 'shows']);
 
 const streams = new Set();
 
