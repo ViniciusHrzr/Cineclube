@@ -204,6 +204,17 @@ export function Key({
       type="button"
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-cell px-4 py-2.5',
+        /* ── e no dedo, o piso de toque ─────────────────────────────────
+           Trinta e três pixels de altura, que é o que estas medidas dão, é
+           confortável sob um cursor de um pixel e pequeno demais para uma
+           ponta de dedo — o piso reconhecido é 44. E a diferença era ao
+           contrário do que deveria: com o zoom da interface, esta chave media
+           41px no computador e 33px no telefone, ou seja o aparelho com dedos
+           recebia o alvo menor.
+
+           Uma linha aqui conserta todo botão do produto de uma vez, que é a
+           razão de existir um componente de chave. */
+        'coarse:min-h-[44px] coarse:px-5 coarse:text-[14px]',
         'font-display text-[13px] uppercase tracking-[0.14em] leading-none',
         'transition-[background-color,color,border-color,transform] duration-150 active:translate-y-px',
         'disabled:cursor-not-allowed disabled:opacity-40',
@@ -248,6 +259,9 @@ export function IconKey({
            row of controls, and one of them floating on the wall while the other
            sits on a plate would read as two different kinds of thing. */
         'inline-flex h-[38px] w-[38px] flex-none items-center justify-center rounded-cell',
+        /* Quadrado de 44 no dedo — o ícone dentro não muda, só a área que ele
+           oferece para ser acertado. */
+        'coarse:h-11 coarse:w-11',
         'bg-house-seat/70 ring-1 ring-house-rail',
         'transition-colors duration-150 active:translate-y-px',
         active ? 'text-dye-red-lit' : 'text-ink-dim hover:text-beam',
@@ -290,9 +304,20 @@ export function IconKey({
    it is attached to: the genre a take is being rated as, sitting on the slate
    next to the film's own name. The state, the surface and the dye are shared;
    only the size is not. */
+/* ── e as duas crescem no dedo ────────────────────────────────────────────
+   Estas eram as piores medidas do produto para uma mão: a `md` dava 24px de
+   altura e a `sm`, 15. Uma fileira de gêneros no catálogo é a coisa que mais se
+   toca no telefone depois das notas, e ela era uma fileira de alvos de quinze
+   pixels encostados uns nos outros — errar o gênero ao lado não era descuido de
+   ninguém, era a única coisa que dava para fazer.
+
+   A `sm` não vai a 44: ela existe justamente para não pesar mais do que aquilo
+   a que está colada, e um alvo de 44px ao lado do nome de um filme inverteria a
+   hierarquia que ela existe para manter. Vai a 34 e ganha ar em volta, que é o
+   que a torna acertável sem virar outra coisa. */
 const CHIP_SIZE = {
-  sm: 'rounded-[1px] px-2 py-0.5 text-[11px] tracking-[0.14em]',
-  md: 'rounded-cell px-3 py-1.5 text-[12.5px] tracking-[0.12em]',
+  sm: 'rounded-[1px] px-2 py-0.5 text-[11px] tracking-[0.14em] coarse:min-h-[34px] coarse:px-3 coarse:text-[12px]',
+  md: 'rounded-cell px-3 py-1.5 text-[12.5px] tracking-[0.12em] coarse:min-h-[40px] coarse:px-4 coarse:text-[13.5px]',
 } as const;
 
 export function Chip({
@@ -312,7 +337,7 @@ export function Chip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        'bg-house-seat/70 font-display uppercase',
+        'inline-flex items-center justify-center bg-house-seat/70 font-display uppercase',
         CHIP_SIZE[size],
         'ring-1 transition-colors duration-150',
         on

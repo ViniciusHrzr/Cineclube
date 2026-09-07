@@ -282,7 +282,11 @@ export function Notices() {
           unread ? `Novidades: ${plural(unread, 'aviso novo', 'avisos novos')}` : 'Novidades'
         }
         className={cn(
-          'relative flex h-[30px] w-[30px] items-center justify-center rounded-cell transition-colors duration-150',
+          /* Trinta pixels era o menor alvo permanente do produto, e ele fica na
+             barra de cima — a faixa mais difícil de acertar num telefone que se
+             segura com uma mão. O sino desenhado continua com 18px; o que cresce
+             é o quadrado que ele oferece ao dedo. */
+          'relative flex h-[30px] w-[30px] coarse:h-11 coarse:w-11 items-center justify-center rounded-cell transition-colors duration-150',
           open || unread ? 'text-dye-brass' : 'text-ink-dim hover:text-ink'
         )}
       >

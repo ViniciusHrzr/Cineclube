@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
 
 /* ══════════════════════════════════════════════════════════════════════════
    SALA DE PROJEÇÃO — the design system.
@@ -178,5 +179,28 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    /* ══════════════════════════════════════════════════════════════════════
+       `coarse:` — o dedo, e não a largura da tela.
+
+       Todo o resto deste arquivo escala por BREAKPOINT, que é sobre quanto
+       espaço existe. Isto é sobre outra coisa: o tamanho de quem aponta. Um
+       notebook com tela sensível ao toque tem 1400px de largura e um dedo; um
+       telefone deitado tem 800px e o mesmo dedo. Medir a mão pela janela erra
+       nos dois.
+
+       Existe porque a interface tinha um defeito sistêmico que só se enxerga
+       somando: ela é desenhada com `zoom: 1.25` no computador e `zoom: 1` no
+       telefone (ver index.css). O aparelho com dedos recebia todo controle 25%
+       MENOR — a chave de 41px virava 33px, o teto de toque é 44px, e isso valia
+       para todo botão do produto de uma vez.
+
+       Escrito como variante e não como uma folha de exceções: assim o tamanho
+       de toque de um controle mora na linha que define o controle, à vista de
+       quem o edita, em vez de numa media query no fim de outro arquivo. */
+    plugin(({ addVariant }) => {
+      addVariant('coarse', '@media (pointer: coarse)');
+      addVariant('fine', '@media (hover: hover) and (pointer: fine)');
+    }),
+  ],
 } satisfies Config;

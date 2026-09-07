@@ -3,7 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <title>Cineclube — sala de projeção</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `viewport-fit=cover` deixa a página ocupar a tela inteira, entalhe e
+         cantos arredondados inclusive — e é o que faz `env(safe-area-inset-*)`
+         valer alguma coisa. Sem ele o Android reserva as faixas sozinho e o app
+         fica com duas bordas pretas que não são desenho de ninguém; com ele, a
+         sala escura vai até a borda e quem recua do entalhe é o conteúdo, onde
+         a régua está escrita (ver index.css). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#07090e" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

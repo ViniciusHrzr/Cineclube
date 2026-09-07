@@ -1124,7 +1124,10 @@ function ClubApp({
           onOpenRequests={() => setSheetOpen(true)}
         />
 
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 sm:px-6 sm:pt-10">
+        {/* Espaço para a barra de baixo passar por cima sem cobrir nada: os 56px
+            dela, mais a faixa de gestos do sistema, mais um respiro. Sem isto a
+            última linha de toda tela ficaria atrás da navegação. */}
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-10">
           {bootError ? (
             <section>
               <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">A sessão não começou</h1>
@@ -1166,6 +1169,19 @@ function ClubApp({
             </div>
           )}
         </main>
+
+        {/* ── a navegação, na zona do polegar ────────────────────────────────
+            Só no dedo (`coarse:flex` mora dentro dela), e não na tela de
+            avaliar: lá a nota final e a chave de gravar já são um cartão preso
+            na borda de baixo, e duas barras disputando a mesma faixa fariam a
+            mais importante das duas perder.
+
+            Avaliar não é um destino desta barra de qualquer forma — é uma aba
+            escondida, à qual se chega escolhendo um filme —, então não há para
+            onde a pessoa olhar e não achar. */}
+        {tab !== 'rate' ? (
+          <SectionTabs variant="bar" tab={tab} onTab={goTab} room={pulse} rec={recOf(pulse)} />
+        ) : null}
       </div>
 
       {/* A folha de ajustes vive aqui e não na tela de perfil: ela é aberta por
@@ -1249,6 +1265,141 @@ function Lamp({ on, playing }: { on: boolean; playing: boolean }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AS CINCO SEÇÕES, EM DOIS LUGARES.
+
+   No computador elas moram na marquise, no alto, onde um cursor chega em
+   qualquer lugar com o mesmo esforço. No telefone elas descem para uma barra
+   presa no rodapé, que é onde o polegar já está — a diferença entre um site em
+   tela cheia e um app.
+
+   ── uma lista, duas roupas ────────────────────────────────────────────────
+   O componente é um só de propósito. Escrever a fileira duas vezes seria manter
+   duas verdades sobre quais seções existem, qual está acesa e qual tem a
+   lâmpada da sessão queimando — e a terceira vez que alguém mexesse numa, elas
+   divergiriam. O que muda entre as duas é a moldura e o tamanho, e é só isso
+   que o `variant` decide.
+
+   As duas são montadas e uma delas fica em `display: none` conforme o ponteiro.
+   Isso tira a escondida da árvore de acessibilidade junto, então não há duas
+   paradas de tabulação para a mesma seção.
+
+   ── e o vermelho troca de lado ────────────────────────────────────────────
+   Em cima, o traço da seção atual fica embaixo da palavra. Embaixo, fica em
+   cima dela. Nos dois casos ele é a borda voltada PARA O CONTEÚDO — é a luz da
+   seção em que se está caindo sobre o que ela mostra, e não uma decoração que
+   por acaso ficou de um lado. Virar a barra e manter o traço embaixo o deixaria
+   encostado na borda da tela, onde ele não separa nada de nada.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* ── o que a lâmpada diz quando alguém pergunta ───────────────────────────
+   Um ponto vermelho sozinho diz "alguma coisa"; o clube quer saber O QUÊ, e
+   quer saber antes de trocar de seção. Vai no `title` para o mouse e no
+   `aria-label` para quem não vê o ponto — o `aria-label` é o que substitui
+   "Sessão" na leitura, então ele carrega a palavra também.
+
+   Fora dos componentes porque as duas fileiras precisam dele, e a frase é uma
+   só: a barra de baixo e a marquise não podem contar a mesma sessão com
+   palavras diferentes. */
+function recOf(room: ScreeningPulse) {
+  if (!room.open) return null;
+  return [
+    room.status === 'playing' ? 'ao vivo' : 'em pausa',
+    room.title,
+    room.viewers ? plural(room.viewers, 'pessoa na sala', 'pessoas na sala') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function SectionTabs({
+  variant,
+  tab,
+  onTab,
+  room,
+  rec,
+}: {
+  variant: 'marquee' | 'bar';
+  tab: TabId;
+  onTab: (t: TabId) => void;
+  room: ScreeningPulse;
+  /** O que a sala está fazendo, em palavras, para o `title` e o rótulo. */
+  rec: string | null;
+}) {
+  const bar = variant === 'bar';
+  return (
+    <nav
+      aria-label="Seções"
+      className={cn(
+        bar
+          ? /* Presa no rodapé e só no dedo. `env(safe-area-inset-bottom)` é a
+               faixa da barra de gestos do Android: sem ela, a última linha de
+               botões fica debaixo da barra do sistema e metade dos toques vira
+               "voltar". */
+            'fixed inset-x-0 bottom-0 z-30 hidden border-t border-white/[0.07] bg-house/95 pb-[env(safe-area-inset-bottom)] coarse:flex'
+          : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
+      )}
+    >
+      {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
+        const on = tab === t.id;
+        /* A lâmpada é da Sessão e de mais nada. É a única aba que corresponde a
+           um cômodo em vez de a uma prateleira, e a única em que "está
+           acontecendo agora" é uma frase com sentido. */
+        const lit = t.id === 'screening' && room.open;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            aria-current={on ? 'page' : undefined}
+            aria-label={rec && t.id === 'screening' ? `Sessão — ${rec}` : undefined}
+            title={rec && t.id === 'screening' ? rec[0].toUpperCase() + rec.slice(1) : undefined}
+            onClick={() => onTab(t.id)}
+            className={cn(
+              'relative flex items-center font-display uppercase leading-none transition-colors duration-150',
+              bar
+                ? /* Cinco colunas iguais que dividem a largura: um alvo por
+                     seção, do tamanho da tela dividido por cinco, e nenhum
+                     deles perto de outro o bastante para ser tocado por
+                     engano. Cinquenta e seis pixels de altura passam do piso de
+                     toque com folga, que aqui é o mínimo — esta é a barra que a
+                     mão encosta sem olhar. */
+                  'min-h-[56px] flex-1 flex-col justify-center gap-1.5 px-1 text-[11px] tracking-[0.1em]'
+                : 'flex-none rounded-cell px-3 py-2 text-[14px] tracking-[0.12em]',
+              /* Acesa, a palavra vira vermelha — mas nunca por cima do creme da
+                 aba atual. Estar aberto e estar acontecendo são duas informações
+                 diferentes e a barra mostra as duas: a atual continua sendo a de
+                 creme, e a lâmpada queima do mesmo jeito nela. Vermelho como
+                 TEXTO, e não como preenchimento: a regra da lâmpada guarda a
+                 superfície vermelha para a chave de gravar. */
+              on
+                ? 'text-beam'
+                : lit
+                  ? 'text-dye-red-lit hover:text-dye-red-glow'
+                  : 'text-ink-dim hover:text-ink'
+            )}
+          >
+            {t.id === 'screening' ? <Lamp on={lit} playing={room.status === 'playing'} /> : null}
+            {t.label}
+            {/* Em cima o traço sublinha a palavra; embaixo ele a cobre. Nos dois
+                casos é a borda voltada para o conteúdo. Na marquise ele começa
+                depois da lâmpada — um sublinhado que atravessa o ponto vermelho
+                é o traço reclamando a lâmpada para si —, e vai junto com o abrir
+                dela, na mesma curva. */}
+            <span
+              className={cn(
+                'absolute h-[2px] transition-[opacity,left] [transition-duration:150ms,420ms] ease-beam',
+                bar
+                  ? 'inset-x-0 top-0'
+                  : cn('-bottom-[1px] right-2', lit ? 'left-[22px]' : 'left-2'),
+                on ? 'bg-dye-red opacity-100' : 'opacity-0'
+              )}
+            />
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 /* ── the marquee ──────────────────────────────────────────────────────────
    The header of a cinema is its marquee: the name in lights and what is
    playing. The current section is the lit one. */
@@ -1276,20 +1427,7 @@ function Marquee({
   /** Abre os ajustes do clube, onde os pedidos de entrada são respondidos. */
   onOpenRequests: () => void;
 }) {
-  /* ── o que a lâmpada diz quando alguém pergunta ─────────────────────────
-     Um ponto vermelho na marquise sozinho diz "alguma coisa"; o clube quer
-     saber O QUÊ, e quer saber antes de trocar de aba. Vai no `title` para o
-     mouse e no `aria-label` para quem não vê o ponto — o `aria-label` é o que
-     substitui "Sessão" na leitura, então ele carrega a palavra também. */
-  const rec = room.open
-    ? [
-        room.status === 'playing' ? 'ao vivo' : 'em pausa',
-        room.title,
-        room.viewers ? plural(room.viewers, 'pessoa na sala', 'pessoas na sala') : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : null;
+  const rec = recOf(room);
 
   return (
     /* No backdrop blur. It sat over the wall, and the wall never stops moving —
@@ -1327,55 +1465,7 @@ function Marquee({
             <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
           ) : null}
         </button>
-        <nav aria-label="Seções" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.filter(t => !('hidden' in t && t.hidden)).map(t => {
-            const on = tab === t.id;
-            /* A lâmpada é da Sessão e de mais nada. É a única aba que
-               corresponde a um cômodo em vez de a uma prateleira, e a única
-               em que "está acontecendo agora" é uma frase com sentido. */
-            const lit = t.id === 'screening' && room.open;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                aria-current={on ? 'page' : undefined}
-                aria-label={rec && t.id === 'screening' ? `Sessão — ${rec}` : undefined}
-                title={rec && t.id === 'screening' ? rec[0].toUpperCase() + rec.slice(1) : undefined}
-                onClick={() => onTab(t.id)}
-                className={cn(
-                  'relative flex flex-none items-center rounded-cell px-3 py-2 font-display text-[14px] uppercase leading-none tracking-[0.12em] transition-colors duration-150',
-                  /* Acesa, a palavra vira vermelha — mas nunca por cima do
-                     creme da aba atual. Estar aberto e estar acontecendo são
-                     duas informações diferentes e a marquise mostra as duas:
-                     a atual continua sendo a de creme, e a lâmpada queima do
-                     mesmo jeito nela. Vermelho como TEXTO, e não como
-                     preenchimento: a regra da lâmpada guarda a superfície
-                     vermelha para a chave de gravar. */
-                  on
-                    ? 'text-beam'
-                    : lit
-                      ? 'text-dye-red-lit hover:text-dye-red-glow'
-                      : 'text-ink-dim hover:text-ink'
-                )}
-              >
-                {t.id === 'screening' ? <Lamp on={lit} playing={room.status === 'playing'} /> : null}
-                {t.label}
-                {/* O traço da aba atual começa depois da lâmpada, e não debaixo
-                    dela: ele sublinha a palavra, e um sublinhado que atravessa
-                    o ponto vermelho é o traço reclamando a lâmpada para si. Vai
-                    junto com o abrir dela, na mesma curva, para a Sessão acesa e
-                    aberta ser um movimento só. */}
-                <span
-                  className={cn(
-                    'absolute -bottom-[1px] right-2 h-[2px] transition-[opacity,left] [transition-duration:150ms,420ms] ease-beam',
-                    lit ? 'left-[22px]' : 'left-2',
-                    on ? 'bg-dye-red opacity-100' : 'opacity-0'
-                  )}
-                />
-              </button>
-            );
-          })}
-        </nav>
+        <SectionTabs variant="marquee" tab={tab} onTab={onTab} room={room} rec={rec} />
 
         <div className="flex items-center gap-2">
           {/* ── quem está batendo na porta ─────────────────────────────────

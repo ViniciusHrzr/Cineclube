@@ -118,6 +118,30 @@
     cursor: pointer;
     display: block;
   }
+  /* ── a faixa de agarrar, no dedo ──────────────────────────────────────
+     Onze destes é a tela mais usada do produto e a razão de ele existir no
+     telefone. Trinta e quatro pixels de altura é uma faixa confortável para um
+     cursor e apertada para um polegar, e errar por dois pixels aqui não é errar
+     um controle — é lançar a nota errada num critério.
+
+     A altura cresce; o desenho não. O que se vê é a mesma película com a mesma
+     porta, porque o que muda é a área invisível que o dedo pode acertar. */
+  @media (pointer: coarse) {
+    .film-range {
+      height: 46px;
+    }
+    /* A porta acompanha, ou ela vira uma marca fina no meio de uma faixa
+       larga — e o que se agarra deixa de ser o que se vê. */
+    .film-range::-webkit-slider-thumb {
+      width: 28px;
+      height: 42px;
+      margin-top: -16px;
+    }
+    .film-range::-moz-range-thumb {
+      width: 28px;
+      height: 42px;
+    }
+  }
   /* The track is drawn behind the control now, not by it — a pseudo-element
      cannot be animated from JS, and the light running up the strip has to be.
      What stays native is the part that matters: the thumb, the arrow keys, the
