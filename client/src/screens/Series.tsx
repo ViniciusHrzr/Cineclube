@@ -992,20 +992,6 @@ function EpisodeSheet({
     [salvando, showId, ep.season, ep.episode, ep.title, showTitle, showPoster, genre, onSaved, fault]
   );
 
-  const desmarcar = useCallback(async () => {
-    if (salvando) return;
-    setSalvando(true);
-    try {
-      await showsApi.unmark(showId, ep.season, ep.episode);
-      onSaved();
-      onClose();
-    } catch (e) {
-      fault('Não foi possível desmarcar: ' + (e as Error).message);
-    } finally {
-      setSalvando(false);
-    }
-  }, [salvando, showId, ep.season, ep.episode, onSaved, onClose, fault]);
-
   const media = criteria?.length
     ? criteria.reduce((s, c) => s + (scores[c.key] ?? 5), 0) / criteria.length
     : 0;
@@ -1049,30 +1035,11 @@ function EpisodeSheet({
           <p className="mt-3 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">{ep.overview}</p>
         ) : null}
 
-        {/* ── o gesto barato, primeiro ────────────────────────────────────
-            Marcar visto é o que mais se faz neste universo, e ele não pode
-            estar depois de nove réguas. */}
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-5">
-          <Key
-            tone={mine ? 'ghost' : 'commit'}
-            disabled={salvando}
-            onClick={() => (mine ? void desmarcar() : void gravar({}))}
-          >
-            <Check className="h-4 w-4" strokeWidth={2.2} />
-            {mine ? 'Desmarcar' : 'Marcar como visto'}
-          </Key>
-          {mine ? (
-            <span className="q text-[11.5px] text-ink-faint">
-              {mine.final == null
-                ? 'visto, sem nota'
-                : mine.scores
-                  ? `criteriosa · ${fmt(mine.final)}`
-                  : `nota rápida · ${fmt(mine.final)}`}
-            </span>
-          ) : null}
-        </div>
+        {/* ── a nota ──────────────────────────────────────────────────────
+            E só a nota: marcar e desmarcar são o check da linha, e repetir o
+            gesto aqui dentro era o mesmo estado com dois donos — a folha tinha
+            de ser aberta para desfazer o que um toque na lista já desfaz.
 
-        {/* ── e a nota ────────────────────────────────────────────────────
             Dois modos, e a criteriosa não é oferecida como "avançado": ela é o
             que este produto faz de diferente, então tem o mesmo peso visual que
             a rápida. O que decide o padrão é o que a pessoa já disse. */}
