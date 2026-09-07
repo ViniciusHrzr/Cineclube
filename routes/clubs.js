@@ -4,6 +4,7 @@ const db = require('../db');
 const auth = require('../auth');
 const clubs = require('../clubs');
 const lobby = require('../lobby');
+const lobbySeries = require('../lobbySeries');
 const throttle = require('../throttle');
 const live = require('../live');
 const wrap = require('../wrap');
@@ -339,8 +340,14 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
   /* Abrir a sala, fechá-la ou mexer no que ela empresta muda o que o saguão
      deve contar. O cache dele tem um minuto de vida, e um minuto é tempo demais
      para o ADM que acabou de desligar o interruptor continuar vendo o clube na
-     vitrine — o que ele leria como o botão não ter funcionado. */
+     vitrine — o que ele leria como o botão não ter funcionado.
+
+     Os DOIS saguões, porque as paredes de privacidade são do clube e valem nos
+     dois universos. Uma lente nova é um cache novo a invalidar aqui, e esquecer
+     disso não quebra nada: o clube só continua aparecendo por mais um minuto na
+     tela que ele acabou de sair. */
   lobby.invalidate();
+  lobbySeries.invalidate();
   live.emit('club', req.session.reviewer_id, req.club.id);
   res.json({
     club: toDTO(row, {
@@ -381,6 +388,7 @@ scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
 
   await db.prepare('DELETE FROM clubs WHERE id = ?').run(req.club.id);
   lobby.invalidate();
+  lobbySeries.invalidate();
   res.status(204).end();
 }));
 

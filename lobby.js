@@ -423,4 +423,11 @@ async function snapshot() {
   return { ...base, live };
 }
 
-module.exports = { snapshot, film, invalidate, FLOOR, WINDOW_DAYS, TAKES };
+module.exports = {
+  snapshot, film, invalidate, FLOOR, WINDOW_DAYS, TAKES,
+  /* As duas paredes saem daqui para o saguão de séries usar as MESMAS. Uma
+     segunda definição da regra de privacidade é a que fica para trás quando um
+     interruptor novo aparecer, e o modo de falhar dela é o pior deste produto:
+     nada quebra, um clube fechado só passa a aparecer numa parede bonita. */
+  eligible, readable, clubDTO, photoUrl,
+};

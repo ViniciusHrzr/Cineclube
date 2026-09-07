@@ -302,11 +302,44 @@ export type LobbyFilm = {
   clubs: number;
 };
 
+/* ── o universo, que é uma lente e não um lugar ───────────────────────────
+   Um clube é um clube: mesmo nome, mesma gente, mesmo ADM. O universo decide o
+   que se olha DENTRO dele — o acervo de filmes ou o de séries —, e por isso
+   mora no endereço e não na sessão. A regra é a mesma que já vale para o clube:
+   um link colado no Discord não pode significar coisas diferentes conforme o
+   que o leitor escolheu antes de abri-lo. */
+export type Universe = 'filmes' | 'series';
+
+/* A lente de séries devolve a MESMA forma, com outro acervo dentro. É o que
+   deixa uma tela só desenhar os dois — `movies` conta séries aqui, e o rótulo é
+   da tela. Os campos a mais são o que só este universo sabe dizer. */
+export type LobbySeriesSnapshot = LobbySnapshot & {
+  counts: { reviews: number; movies: number; episodes: number; clubs: number };
+  podium: (LobbyPodiumMovie & { episodes: number })[];
+  feature: (LobbyFeature & {
+    showId: number;
+    season: number;
+    episode: number;
+    episodeTitle: string | null;
+  }) | null;
+};
+
+/** Uma série vista pela rede: as fichas, a conta, e a curva por temporada. */
+export type LobbyShow = LobbyFilm & {
+  episodes: number;
+  seasons: { season: number; average: number; episodes: number }[];
+  takes: (LobbyTake & { season: number; episode: number; episodeTitle: string | null })[];
+};
+
 export const lobby = {
   get: () => api<LobbySnapshot>('/api/lobby'),
   /* O que a REDE sabe sobre um filme. Sinopse e trailer não vêm daqui: são do
      TMDB, e a rota do catálogo já os serve com cache. */
   film: (movieId: number) => api<LobbyFilm>(`/api/lobby/film/${movieId}`),
+  /* Duas rotas e não um parâmetro: são duas consultas sobre duas tabelas, e uma
+     URL só fingiria que é a mesma pergunta. */
+  series: () => api<LobbySeriesSnapshot>('/api/lobby/series'),
+  show: (showId: number) => api<LobbyShow>(`/api/lobby/show/${showId}`),
 };
 
 /* Your own name, your own portrait and your own bio. The route takes no id — it

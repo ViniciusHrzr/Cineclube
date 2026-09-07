@@ -19,10 +19,12 @@ import {
   type LobbyLive,
   type LobbyMovie,
   type LobbyPodiumMovie,
+  type LobbyShow,
   type LobbySnapshot,
   type LobbyTake,
   type Movie,
   type SessionUser,
+  type Universe,
 } from '@/lib/api';
 import { cn, named, norm, plural, useFinePointer, whenOf } from '@/lib/utils';
 
@@ -48,13 +50,20 @@ const POLL_MS = 120_000;
 
 export function Lobby({
   me,
+  universe,
+  onUniverse,
   onEnter,
   onSignOut,
   onOpenSelf,
 }: {
   me: SessionUser;
+  /* Qual acervo esta tela está contando. Os CLUBES são os mesmos nos dois: um
+     clube é um clube, com a mesma gente e o mesmo ADM. O que a lente troca é o
+     que a rede fez — a parede, o pódio, a atividade, o destaque. */
+  universe: Universe;
+  onUniverse: (u: Universe) => void;
   /** Entrar numa sala, e opcionalmente num lugar dentro dela (`reviews/<id>`). */
-  onEnter: (slug: string, rest?: string) => void;
+  onEnter: (slug: string, rest?: string, universe?: Universe) => void;
   onSignOut: () => void;
   onOpenSelf: () => void;
 }) {
@@ -68,7 +77,10 @@ export function Lobby({
      não há saguão, e o erro é dito. O que a rede andou fazendo é enfeite caro —
      se não vier, a tela é a de antes e ninguém precisa saber por quê. */
   const load = useCallback(async () => {
-    const [salas, rede] = await Promise.allSettled([clubs.all(), lobbyApi.get()]);
+    const [salas, rede] = await Promise.allSettled([
+      clubs.all(),
+      universe === 'series' ? lobbyApi.series() : lobbyApi.get(),
+    ]);
     if (salas.status === 'fulfilled') {
       setMine(salas.value.mine);
       setOpen(salas.value.open);
@@ -78,7 +90,15 @@ export function Lobby({
       setMine(current => current ?? []);
     }
     if (rede.status === 'fulfilled') setNet(rede.value);
-  }, []);
+  }, [universe]);
+
+  /* Trocar de lente joga fora o que a outra tinha contado, e isso é diferente de
+     a busca falhar: uma falha mantém a tela de antes (ver acima), uma troca não
+     pode — o pódio de filmes ficaria na tela até a resposta de séries chegar, e
+     por um instante o saguão de séries anunciaria um filme. */
+  useEffect(() => {
+    setNet(null);
+  }, [universe]);
 
   useEffect(() => {
     void load();
@@ -107,6 +127,15 @@ export function Lobby({
     (club: { slug: string; visibility: 'public' | 'private' }) =>
       club.visibility === 'public' || held.has(club.slug),
     [held]
+  );
+
+  /* Toda porta desta tela leva para a lente em que se está. Um embrulho, e não o
+     `onEnter` cru em oito lugares: um deles esqueceria o argumento, e o defeito
+     seria silencioso — a pessoa clica no saguão de séries e cai no acervo de
+     filmes do mesmo clube. */
+  const go = useCallback(
+    (slug: string, rest?: string) => onEnter(slug, rest, universe),
+    [onEnter, universe]
   );
 
   const wall = net?.wall ?? [];
@@ -139,7 +168,7 @@ export function Lobby({
     try {
       const out = await clubs.join(slug);
       if (out.joined) {
-        onEnter(slug);
+        go(slug);
         return;
       }
       setOpen(list => list.map(c => (c.slug === slug ? { ...c, requested: true } : c)));
@@ -171,9 +200,12 @@ export function Lobby({
           fundo, pela razão escrita na marquise. */}
       <header className="sticky top-0 z-30 flex-none border-b border-white/[0.07] bg-house/95">
         <div className="mx-auto flex max-w-[1240px] items-center gap-x-6 px-4 py-3 sm:px-6">
-          <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
-            CINECLUBE
-          </span>
+          <div className="mr-auto flex min-w-0 items-center gap-x-3 sm:gap-x-5">
+            <span className="flex-none font-display text-[26px] leading-none tracking-[0.14em] text-beam">
+              CINECLUBE
+            </span>
+            <Lens on={universe} onPick={onUniverse} />
+          </div>
           {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta todas
               as salas e diz de qual veio cada linha. */}
           <Notices />
@@ -203,8 +235,8 @@ export function Lobby({
           `main` rolar prenderia a parede no alto para sempre, comendo um terço
           da tela. No computador esta camada não faz nada. */}
       <div className="flex flex-1 flex-col coarse:min-h-0 coarse:overflow-y-auto coarse:overscroll-contain">
-        {hasWall ? <PosterWall films={wall} counts={net!.counts} /> : null}
-        {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={onEnter} /> : null}
+        {hasWall ? <PosterWall films={wall} counts={net!.counts} universe={universe} /> : null}
+        {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={go} /> : null}
 
         <main className="relative mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
         {error ? (
@@ -217,13 +249,13 @@ export function Lobby({
           level={hasWall ? 2 : 1}
           mine={mine}
           open={open}
-          onEnter={onEnter}
+          onEnter={go}
           onFound={() => setFounding(true)}
           onAsk={c => (c.requested ? void unask(c.slug) : void ask(c.slug))}
         />
 
         {darkNetwork && lendable.length ? (
-          <DarkNetwork clubs={lendable} onOpen={slug => onEnter(slug, 'ajustes')} />
+          <DarkNetwork clubs={lendable} onOpen={slug => go(slug, 'ajustes')} />
         ) : null}
 
         {podium.length ? (
@@ -244,7 +276,14 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Clubes em atividade"
-            note={`Avaliações dos últimos ${net?.windowDays ?? 30} dias.`}
+            /* No universo de séries a atividade conta EPISÓDIO mexido — visto ou
+               avaliado —, porque acompanhar é a atividade principal ali e um
+               clube que assistiu uma temporada inteira sem avaliar está vivo. */
+            note={
+              universe === 'series'
+                ? `Episódios dos últimos ${net?.windowDays ?? 30} dias.`
+                : `Avaliações dos últimos ${net?.windowDays ?? 30} dias.`
+            }
           >
             <ul className="mt-6">
               {active.map((club, i) => (
@@ -253,7 +292,7 @@ export function Lobby({
                   club={club}
                   rank={i + 1}
                   enterable={canEnter(club)}
-                  onOpen={() => onEnter(club.slug)}
+                  onOpen={() => go(club.slug)}
                 />
               ))}
             </ul>
@@ -264,9 +303,27 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Avaliação em destaque"
-            note={`A avaliação que mais moveu a rede nos últimos ${net?.windowDays ?? 30} dias.`}
+            /* A ordem é por reação, e no universo de séries ainda não existe
+               reação sobre um episódio — a conversa é uma fatia que não foi
+               construída. Dizer "a que mais moveu a rede" ali seria a legenda
+               prometendo um critério que não está sendo aplicado. */
+            note={
+              universe === 'series'
+                ? `Um episódio dos últimos ${net?.windowDays ?? 30} dias, com o que a pessoa escreveu.`
+                : `A avaliação que mais moveu a rede nos últimos ${net?.windowDays ?? 30} dias.`
+            }
           >
-            <FeatureTake take={feature} onOpen={() => onEnter(feature.club.slug, `reviews/${feature.id}`)} />
+            <FeatureTake
+              take={feature}
+              /* No universo de séries a ficha ainda não tem endereço próprio: as
+                 abas do clube são de filme. Até elas existirem, a porta leva ao
+                 clube e não a uma tela que não está lá. */
+              onOpen={() =>
+                universe === 'series'
+                  ? go(feature.club.slug)
+                  : go(feature.club.slug, `reviews/${feature.id}`)
+              }
+            />
           </Region>
         ) : null}
         </main>
@@ -277,10 +334,58 @@ export function Lobby({
           onClose={() => setFounding(false)}
           onFounded={slug => {
             setFounding(false);
-            onEnter(slug);
+            go(slug);
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/* ── a lente ──────────────────────────────────────────────────────────────
+   A escolha mais externa do produto, e por isso a mais alta na tela: ela vem
+   antes do clube, e o clube já é o segundo nível.
+
+   Sublinhado vermelho e não uma chapa de latão. Pela regra do DESIGN.md,
+   vermelho marca ONDE VOCÊ ESTÁ e latão marca o que você escolheu — e isto é um
+   lugar em que se está, igual às seções da marquise e ao seletor de salas logo
+   abaixo. Usar outra forma aqui daria ao produto dois jeitos de dizer "aqui". */
+const LENSES: { id: Universe; label: string }[] = [
+  { id: 'filmes', label: 'Filmes' },
+  { id: 'series', label: 'Séries' },
+];
+
+function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => void }) {
+  return (
+    <div className="flex items-center gap-0.5" role="tablist" aria-label="Universo">
+      {LENSES.map(o => {
+        const here = on === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={here}
+            onClick={() => onPick(o.id)}
+            className={cn(
+              'relative px-2 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none',
+              'tracking-[0.12em] transition-colors duration-150 coarse:min-h-[38px]',
+              here ? 'text-beam' : 'text-ink-dim hover:text-ink'
+            )}
+          >
+            {o.label}
+            {/* Sempre montado, só trocando de opacidade: aparecer e sumir do
+                fluxo mudaria a altura da barra a cada troca. */}
+            <span
+              aria-hidden
+              className={cn(
+                'absolute inset-x-1 bottom-0 h-[2px] bg-dye-red transition-opacity duration-150',
+                here ? 'opacity-100' : 'opacity-0'
+              )}
+            />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -337,11 +442,30 @@ function Region({
    A folha abre com o que já se sabe — título, ano, cartaz e nota vêm do cartaz
    clicado — e preenche o resto quando chega, em vez de mostrar um esqueleto do
    que já estava na tela. `<dialog>` nativo pela armadilha de foco e o Escape. */
-function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) {
+/* Uma folha para os dois universos, e não duas. O que muda são as duas rotas
+   que ela chama e uma seção a mais na de séries — a curva por temporada, que é
+   a leitura que só aquele universo tem. Tudo o resto é a mesma pergunta com o
+   mesmo desenho, e duas cópias divergiriam na terceira mexida. */
+type PeekDetail = {
+  genre?: string;
+  overview?: string | null;
+  trailerUrl?: string | null;
+};
+
+function FilmPeek({
+  film,
+  universe,
+  onClose,
+}: {
+  film: LobbyMovie;
+  universe: Universe;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [detalhe, setDetalhe] = useState<Movie | null>(null);
-  const [rede, setRede] = useState<LobbyFilm | null>(null);
+  const [detalhe, setDetalhe] = useState<PeekDetail | null>(null);
+  const [rede, setRede] = useState<LobbyFilm | LobbyShow | null>(null);
   const [faltou, setFaltou] = useState(false);
+  const serie = universe === 'series';
 
   useEffect(() => {
     ref.current?.showModal();
@@ -363,8 +487,12 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
   useEffect(() => {
     let vivo = true;
     void Promise.allSettled([
-      api<Movie>(`/api/catalog/movie/${film.id}`),
-      lobbyApi.film(film.id),
+      serie
+        /* O detalhe de uma série vem embrulhado em `{ show }`, e o de um filme
+           vem cru. Desembrulhado aqui para o resto da folha ler um objeto só. */
+        ? api<{ show: PeekDetail }>(`/api/series/${film.id}`).then(r => r.show)
+        : api<Movie>(`/api/catalog/movie/${film.id}`),
+      serie ? lobbyApi.show(film.id) : lobbyApi.film(film.id),
     ]).then(([tmdb, nossas]) => {
       if (!vivo) return;
       if (tmdb.status === 'fulfilled') setDetalhe(tmdb.value);
@@ -374,7 +502,7 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
     return () => {
       vivo = false;
     };
-  }, [film.id]);
+  }, [film.id, serie]);
 
   return (
     <dialog
@@ -442,8 +570,34 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
           </div>
         </div>
 
+        {/* ── a curva por temporada ────────────────────────────────────────
+            Só no universo de séries, porque só ele tem a leitura: uma série não
+            é uma nota, é uma curva. Derivada dos mesmos episódios que produzem
+            a média lá em cima, então as duas nunca se contradizem. */}
+        {serie && (rede as LobbyShow | null)?.seasons?.length ? (
+          <section className="mt-7 border-t border-white/[0.07] pt-5">
+            <span className="legend">Por temporada</span>
+            <ul className="mt-4 flex flex-col gap-2.5">
+              {(rede as LobbyShow).seasons.map(s => (
+                <li key={s.season} className="flex items-center gap-3">
+                  <span className="q w-[52px] flex-none text-[11.5px] text-ink-dim">
+                    T{s.season}
+                  </span>
+                  <Strip value={s.average} cells={10} className="h-[5px] min-w-0 flex-1" />
+                  <span className="q w-[34px] flex-none text-right text-[13px] text-beam">
+                    {fmt(s.average)}
+                  </span>
+                  <span className="q w-[66px] flex-none text-right text-[10.5px] text-ink-faint">
+                    {plural(s.episodes, 'episódio', 'episódios')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {/* A legenda diz a regra da ordem: um ranking cuja regra não está à
-            vista parece arbitrário. Quem enfrentou os onze critérios mais vezes
+            vista parece arbitrário. Quem enfrentou os critérios mais vezes
             carrega uma régua mais aferida. */}
         {rede?.takes.length ? (
           <section className="mt-7 border-t border-white/[0.07] pt-5">
@@ -458,7 +612,9 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
           </section>
         ) : rede ? (
           <p className="mt-7 border-t border-white/[0.07] pt-5 text-[13px] leading-relaxed text-ink-dim">
-            Nenhum clube que empresta o acervo avaliou este filme ainda.
+            {serie
+              ? 'Nenhum clube que empresta o acervo avaliou um episódio desta série ainda.'
+              : 'Nenhum clube que empresta o acervo avaliou este filme ainda.'}
           </p>
         ) : null}
       </div>
@@ -466,7 +622,19 @@ function FilmPeek({ film, onClose }: { film: LobbyMovie; onClose: () => void }) 
   );
 }
 
-function PeekTake({ take }: { take: LobbyTake }) {
+function PeekTake({
+  take,
+}: {
+  take: LobbyTake & { season?: number; episode?: number; episodeTitle?: string | null };
+}) {
+  /* Numa série a ficha é de um EPISÓDIO, e sem dizer qual a linha vira uma nota
+     sem objeto: cinco pessoas "avaliaram a série" com números diferentes que na
+     verdade são sobre cinco episódios diferentes. */
+  const onde =
+    take.season != null && take.episode != null
+      ? `T${take.season}E${String(take.episode).padStart(2, '0')}`
+      : null;
+
   return (
     <li className="flex gap-3">
       <Reel color={reelColor(take.actor.dot, take.actor.id)} src={take.actor.avatar} size="md">
@@ -477,6 +645,12 @@ function PeekTake({ take }: { take: LobbyTake }) {
           <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
             {take.actor.name}
           </span>
+          {onde ? (
+            <span className="q text-[11px] text-ink-dim">
+              {onde}
+              {take.episodeTitle ? ` · ${take.episodeTitle}` : ''}
+            </span>
+          ) : null}
           <span className="font-display text-[10.5px] uppercase tracking-[0.12em] text-dye-brass">
             {take.club.name}
           </span>
@@ -967,9 +1141,11 @@ function usePosterRail(live: boolean) {
 function PosterWall({
   films,
   counts,
+  universe,
 }: {
   films: LobbyMovie[];
-  counts: LobbySnapshot['counts'];
+  counts: LobbySnapshot['counts'] & { episodes?: number };
+  universe: Universe;
 }) {
   /* Aqui e não no saguão inteiro porque a folha é da parede: nada mais nesta
      tela abre um filme. */
@@ -1103,20 +1279,26 @@ function PosterWall({
           blocos empilhados. */}
       <div className="relative mx-auto -mt-7 w-full max-w-[1240px] px-4 sm:-mt-9 sm:px-6">
         <h1 className="font-display text-[38px] leading-none tracking-[0.04em] text-beam sm:text-[46px]">
-          Filmes populares
+          {universe === 'series' ? 'Séries populares' : 'Filmes populares'}
         </h1>
         {/* Uma frase e não três cartões de estatística: é a legenda da parede. */}
         <p className="q mt-3 text-[13px] text-ink-dim">
           {tally(counts.reviews, 'avaliação', 'avaliações')} ·{' '}
-          {tally(counts.movies, 'filme', 'filmes')} ·{' '}
-          {tally(counts.clubs, 'clube', 'clubes')}
+          {universe === 'series'
+            ? `${tally(counts.movies, 'série', 'séries')} · ${tally(counts.episodes ?? 0, 'episódio', 'episódios')}`
+            : `${tally(counts.movies, 'filme', 'filmes')} · ${tally(counts.clubs, 'clube', 'clubes')}`}
         </p>
       </div>
 
       {/* Montada só quando há filme aberto, e remontada por filme: garante que
           ela nunca mostre a sinopse do cartaz anterior por um quadro. */}
       {aberto ? (
-        <FilmPeek key={aberto.id} film={aberto} onClose={() => setAberto(null)} />
+        <FilmPeek
+          key={aberto.id}
+          film={aberto}
+          universe={universe}
+          onClose={() => setAberto(null)}
+        />
       ) : null}
     </section>
   );

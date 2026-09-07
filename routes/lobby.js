@@ -1,5 +1,6 @@
 const express = require('express');
 const lobby = require('../lobby');
+const lobbySeries = require('../lobbySeries');
 const wrap = require('../wrap');
 
 const router = express.Router();
@@ -34,6 +35,24 @@ router.get('/', wrap(async (_req, res) => {
 router.get('/film/:movieId', wrap(async (req, res) => {
   const out = await lobby.film(req.params.movieId);
   if (!out) return res.status(400).json({ error: 'Filme inválido.' });
+  res.json(out);
+}));
+
+/* ── o mesmo saguão, pela outra lente ─────────────────────────────────────
+   Mesma forma de resposta, outro acervo. Uma rota separada e não um parâmetro
+   `?universo=`: são duas consultas diferentes sobre duas tabelas diferentes, e
+   um `if` na entrada esconderia isso atrás de uma URL que finge ser uma só.
+
+   Os clubes não se dividem entre as duas — um clube é um clube. O que estas
+   duas rotas devolvem diferente é o que a rede FEZ em cada universo. */
+router.get('/series', wrap(async (_req, res) => {
+  res.json(await lobbySeries.snapshot());
+}));
+
+/** Uma série, vista pela rede. O par de `/film/:movieId`. */
+router.get('/show/:showId', wrap(async (req, res) => {
+  const out = await lobbySeries.show(req.params.showId);
+  if (!out) return res.status(400).json({ error: 'Série inválida.' });
   res.json(out);
 }));
 

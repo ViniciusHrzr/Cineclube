@@ -149,7 +149,19 @@ export function useClub() {
 
    Sem `c/` na frente não há clube: é o saguão. Seção desconhecida cai no
    catálogo; id que não existe mais abre a aba e não foca nada. */
+/* ── e o universo vem antes de tudo ───────────────────────────────────────
+   `#series/c/<slug>/feed` contra `#c/<slug>/feed`. O prefixo é o universo, e
+   ele mora no endereço pela mesmíssima razão que o clube mora: um link colado
+   no Discord não pode significar coisas diferentes conforme o que o leitor
+   escolheu no saguão antes de abri-lo.
+
+   Filmes é a ausência de prefixo, e isso não é preguiça — é o que faz todo
+   endereço que já existe continuar valendo. Uma ficha compartilhada mês passado
+   abre no mesmo lugar depois de o universo de séries existir. */
+type Universe = 'filmes' | 'series';
+
 type Route = {
+  universe: Universe;
   club: string | null;
   tab: TabId | null;
   review: string | null;
@@ -161,7 +173,7 @@ type Route = {
   sheet: boolean;
 };
 
-const BLANK: Route = {
+const BLANK: Omit<Route, 'universe'> = {
   club: null,
   tab: null,
   review: null,
@@ -174,9 +186,14 @@ function routeFromHash(): Route {
   const raw = (location.hash || '').replace(/^#/, '');
   // O que vier depois de `?` é recado da volta do Google, não caminho.
   const clean = raw.split('?')[0];
-  const parts = clean.split('/').filter(Boolean);
+  const all = clean.split('/').filter(Boolean);
 
-  if (parts[0] !== 'c' || !parts[1]) return BLANK;
+  /* O prefixo é consumido antes de qualquer outra leitura, então tudo daqui
+     para baixo continua sendo exatamente o parser que já existia. */
+  const universe: Universe = all[0] === 'series' ? 'series' : 'filmes';
+  const parts = universe === 'series' ? all.slice(1) : all;
+
+  if (parts[0] !== 'c' || !parts[1]) return { ...BLANK, universe };
   const club = decodeURIComponent(parts[1]);
   const [head, tail, deeper] = parts.slice(2);
 
@@ -190,7 +207,7 @@ function routeFromHash(): Route {
   /* `ajustes` não é aba, então `tab` fica nulo e a sala abre no mural com a
      folha por cima — o mesmo que abrir os ajustes de dentro. */
   const sheet = head === 'ajustes';
-  return { club, tab, review, comment, person, sheet };
+  return { universe, club, tab, review, comment, person, sheet };
 }
 
 /* `#confirmar/<token>` e `#senha/<token>`. Fora de `routeFromHash` de propósito:
@@ -201,9 +218,12 @@ function emailRouteFromHash(): 'confirmar' | 'senha' | null {
   return head === 'confirmar' || head === 'senha' ? head : null;
 }
 
+/** O prefixo do universo. Filmes não tem nenhum — ver a nota em `Route`. */
+const lensOf = (universe: Universe) => (universe === 'series' ? 'series/' : '');
+
 /** O endereço de uma seção dentro de um clube. Um lugar só que monta isto. */
-const clubHash = (slug: string, rest = '') =>
-  `c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
+const clubHash = (slug: string, rest = '', universe: Universe = 'filmes') =>
+  `${lensOf(universe)}c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
 
 /* ── o app antes de haver uma sala ────────────────────────────────────────
    Três perguntas em ordem, cada uma só fazendo sentido depois da anterior: quem
@@ -286,8 +306,8 @@ export default function App() {
   /* Entrar numa sala, e opcionalmente já num lugar dentro dela: o saguão põe
      fichas na tela e o clique tem de levar àquela ficha, não ao mural que a
      contém. Sem destino, a porta é o mural. */
-  const enter = useCallback((slug: string, rest = 'feed') => {
-    location.hash = clubHash(slug, rest);
+  const enter = useCallback((slug: string, rest = 'feed', universe: Universe = 'filmes') => {
+    location.hash = clubHash(slug, rest, universe);
   }, []);
 
   if (!authChecked) {
@@ -359,6 +379,11 @@ export default function App() {
       <>
         <Lobby
           me={me}
+          universe={route.universe}
+          /* Trocar de lente é trocar de endereço, e não de estado: o saguão de
+             séries tem de poder ser colado num link como qualquer outra tela
+             deste app. */
+          onUniverse={u => { location.hash = lensOf(u); }}
           onEnter={enter}
           onSignOut={() => void signOut()}
           onOpenSelf={() => setSelf(true)}
@@ -370,19 +395,57 @@ export default function App() {
     );
   }
 
-  /* `key` no slug: trocar de clube desmonta o app inteiro em vez de reaproveitar
-     as telas. É o isolamento do lado de cá — nenhum estado do clube anterior
-     sobrevive, porque o componente que o segurava deixou de existir. */
+  /* ── a lente de séries ainda não abriu dentro de um clube ────────────────
+     As abas de uma sala são de filme: catálogo, fila, avaliados, sessão. Render
+     essas telas debaixo de um endereço que começa com `series/` seria o endereço
+     mentindo — a pessoa clicaria num clube no saguão de séries e leria o acervo
+     de filmes dele sem nada avisando.
+
+     Então o endereço é honrado e a tela diz o que há. Ele já é o endereço certo
+     e definitivo; o que falta é o que mora nele. */
+  if (route.universe === 'series') {
+    return (
+      <>
+        <HolographicWall asBackdrop />
+        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
+          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
+            As séries deste clube ainda não abriram
+          </h1>
+          <p className="mt-4 text-[13.5px] leading-relaxed text-ink-dim">
+            O saguão de séries já conta o que a rede andou vendo. O acervo de séries
+            de dentro de um clube — a fila, os episódios e a avaliação criteriosa —
+            é a próxima peça.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Key onClick={() => { location.hash = clubHash(route.club!, 'feed'); }}>
+              Abrir os filmes deste clube
+            </Key>
+            <Key tone="ghost" onClick={() => { location.hash = lensOf('series'); }}>
+              Voltar ao saguão
+            </Key>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* `key` no slug E na lente: trocar de clube desmonta o app inteiro em vez de
+     reaproveitar as telas, e é o isolamento do lado de cá — nenhum estado do
+     clube anterior sobrevive porque o componente que o segurava deixou de
+     existir. A lente entra na chave pela mesma razão: o acervo de séries de um
+     clube não é o de filmes dele, e reaproveitar as telas entre os dois seria
+     mostrar uma fila carregada com a coisa errada até a busca voltar. */
   return (
     <ClubApp
-      key={route.club}
+      key={`${route.universe}/${route.club}`}
       slug={route.club}
       route={route}
       me={me}
       setMe={setMe}
       onSignOut={() => void signOut()}
       onLeaveClub={() => {
-        location.hash = '';
+        // De volta ao saguão da lente em que se estava, e não sempre ao de filmes.
+        location.hash = lensOf(route.universe);
       }}
     />
   );
@@ -407,6 +470,11 @@ function ClubApp({
   onSignOut: () => void;
   onLeaveClub: () => void;
 }) {
+  /* A lente com que este clube está sendo olhado. Sai da rota e vai de volta
+     para ela em todo endereço que este componente escreve: navegar dentro de um
+     clube não pode trocar de universo por omissão. */
+  const lens = route.universe;
+
   /* O feed é onde a sala abre. "O que a gente vê agora" se pergunta uma vez por
      semana; "o que aconteceu por aqui", toda vez que alguém entra. Um link com
      seção dentro continua ganhando do padrão. */
@@ -453,9 +521,9 @@ function ClubApp({
     /* Renomear troca o slug. Se o nome mudou nesta aba, o hash aponta para um
        que não existe mais e a próxima navegação cai em 404. */
     if (got.club.slug !== slug) {
-      location.hash = clubHash(got.club.slug, tab);
+      location.hash = clubHash(got.club.slug, tab, lens);
     }
-  }, [slug, tab]);
+  }, [slug, tab, lens]);
 
   /* O clube vem antes de tudo porque decide se há o que carregar: slug que não
      existe, ou privado de que você não é, respondem 404 aqui — e a tela diz
@@ -544,10 +612,10 @@ function ClubApp({
   const goTab = useCallback(
     (t: TabId) => {
       setTab(t);
-      const next = clubHash(slug, t);
+      const next = clubHash(slug, t, lens);
       if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
     },
-    [slug]
+    [slug, lens]
   );
 
   /* A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
@@ -561,11 +629,11 @@ function ClubApp({
       const id = reviewerId ?? null;
       setTab('perfil');
       setPersonId(id);
-      const next = clubHash(slug, 'perfil' + (id ? `/${encodeURIComponent(id)}` : ''));
+      const next = clubHash(slug, 'perfil' + (id ? `/${encodeURIComponent(id)}` : ''), lens);
       if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
       window.scrollTo({ top: 0, behavior: 'auto' });
     },
-    [slug]
+    [slug, lens]
   );
 
   /* A aba, o endereço e o alvo, de uma vez. O endereço é escrito mesmo já
@@ -579,11 +647,12 @@ function ClubApp({
       const next = clubHash(
         slug,
         `reviews/${encodeURIComponent(reviewId)}` +
-          (commentId ? `/${encodeURIComponent(commentId)}` : '')
+          (commentId ? `/${encodeURIComponent(commentId)}` : ''),
+        lens
       );
       if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
     },
-    [slug]
+    [slug, lens]
   );
 
   /* Consumido pela tela assim que ela abre a ficha e rola até lá. Sem isto o
@@ -1079,7 +1148,7 @@ function ClubApp({
              um F5 reabre e o Voltar aponta para a folha que acabou de fechar.
              `replace` porque abrir e fechar folha não é lugar de voltar. */
           if (route.sheet) {
-            history.replaceState(null, '', '#' + clubHash(slug, 'feed'));
+            history.replaceState(null, '', '#' + clubHash(slug, 'feed', lens));
             /* `replaceState` não dispara `hashchange`, e são dois ouvintes dele
                — o desta tela e o do app — que mantêm a rota viva. Sem o evento,
                os dois continuariam achando que a folha está aberta. */
