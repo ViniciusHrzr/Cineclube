@@ -1139,7 +1139,8 @@ function NowPlaying({
 }: {
   sessions: LobbyLive[];
   canEnter: (club: { slug: string; visibility: 'public' | 'private' }) => boolean;
-  onEnter: (slug: string) => void;
+  /** Com destino: daqui a porta é a sala de projeção, não o mural. */
+  onEnter: (slug: string, rest?: string) => void;
 }) {
   return (
     <div className="relative border-b border-white/[0.06] bg-house-deep/70">
@@ -1178,7 +1179,10 @@ function NowPlaying({
                 {canEnter(session.club) ? (
                   <button
                     type="button"
-                    onClick={() => onEnter(session.club.slug)}
+                    /* Direto na Sessão. Esta linha anuncia um filme rodando
+                       agora, e largar quem clicou no mural é fazer a pessoa
+                       procurar de novo o que ela acabou de apontar. */
+                    onClick={() => onEnter(session.club.slug, 'screening')}
                     className="group flex items-center gap-2.5 text-left"
                   >
                     {inner}
