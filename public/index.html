@@ -3,13 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <title>Cineclube — sala de projeção</title>
-    <!-- `viewport-fit=cover` deixa a página ocupar a tela inteira, entalhe e
-         cantos arredondados inclusive — e é o que faz `env(safe-area-inset-*)`
-         valer alguma coisa. Sem ele o Android reserva as faixas sozinho e o app
-         fica com duas bordas pretas que não são desenho de ninguém; com ele, a
-         sala escura vai até a borda e quem recua do entalhe é o conteúdo, onde
-         a régua está escrita (ver index.css). -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- ── e NÃO `viewport-fit=cover` ────────────────────────────────────
+         Ele esteve aqui por um dia, pela razão de sempre: deixar a sala escura
+         ir até a borda, entalhe incluído. Custou caro e foi visto na hora — a
+         barra de navegação do app foi parar ATRÁS dos botões do Android.
+
+         O motivo é uma meia promessa da plataforma. `viewport-fit=cover` faz a
+         janela se estender por baixo das barras do sistema, e quem devolve o
+         espaço é `env(safe-area-inset-bottom)`. Só que numa ABA do Chrome, e
+         não num app em tela cheia, o Android estende a janela e reporta o
+         recuo como ZERO. A página fica maior que a área visível e não tem como
+         saber de quanto.
+
+         Sem ele, a janela termina onde os botões começam, que é o que se quer:
+         `100dvh` passa a ser a altura visível de verdade e a barra de baixo
+         assenta acima do sistema. O recuo de área segura continua sendo
+         aplicado onde importa — vale zero aqui e passa a valer no dia em que o
+         app rodar em tela cheia, e nesse dia funciona sozinho. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#07090e" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -100,7 +111,7 @@
         if (software) document.documentElement.setAttribute('data-render', 'software');
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-Ch6g482H.js"></script>
+    <script type="module" crossorigin src="/assets/index-DN0Q2myV.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-ftjD-Mz5.css">
   </head>
   <body>

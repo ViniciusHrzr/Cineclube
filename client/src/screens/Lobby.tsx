@@ -196,7 +196,13 @@ export function Lobby({
   }
 
   return (
-    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col">
+    /* A mesma moldura do app dentro de um clube, e pelo mesmo motivo: no
+       telefone a página não rola, quem rola é o conteúdo. Enquanto a página
+       rolava, o Android recolhia e devolvia a barra de endereço a cada gesto —
+       o que mudava a altura da janela dezenas de vezes, arrastava o cabeçalho
+       preso no topo e obrigava a parede de celuloide a se refazer no meio da
+       rolagem. O porquê inteiro está em App.tsx. */
+    <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-[100dvh] coarse:min-h-0 coarse:overflow-hidden">
       <HolographicWall asBackdrop />
 
       {/* Presa no topo, como a marquise de dentro de um clube — mesmas classes,
@@ -209,7 +215,7 @@ export function Lobby({
           faixa de largura inteira sobre um fundo vivo é refazer o borrão a cada
           quadro, rolando ou não. Uma barra mais opaca lê quase igual e custa
           zero. */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
+      <header className="sticky top-0 z-30 flex-none border-b border-white/[0.07] bg-house/95">
         <div className="mx-auto flex max-w-[1240px] items-center gap-x-6 px-4 py-3 sm:px-6">
           <span className="mr-auto font-display text-[26px] leading-none tracking-[0.14em] text-beam">
             CINECLUBE
@@ -240,10 +246,22 @@ export function Lobby({
         </div>
       </header>
 
-      {hasWall ? <PosterWall films={wall} counts={net!.counts} /> : null}
-      {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={onEnter} /> : null}
+      {/* ── o envelope que rola ────────────────────────────────────────────
+          Aqui ele precisa existir, e no clube não precisava: lá tudo que rola
+          já morava dentro do `main`. No saguão a parede de cartazes e o trilho
+          de "em cartaz" ficam FORA dele, entre o cabeçalho e o conteúdo — e
+          deixar o `main` ser o único a rolar prenderia a parede no alto para
+          sempre, comendo um terço da tela de um telefone com uma faixa que
+          ninguém pediu para fixar.
 
-      <main className="relative mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
+          Então quem rola é tudo abaixo do cabeçalho. No computador esta camada
+          não faz nada: sem `overflow`, ela é uma coluna comum e a página rola
+          como sempre rolou. */}
+      <div className="flex flex-1 flex-col coarse:min-h-0 coarse:overflow-y-auto coarse:overscroll-contain">
+        {hasWall ? <PosterWall films={wall} counts={net!.counts} /> : null}
+        {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={onEnter} /> : null}
+
+        <main className="relative mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
         {error ? (
           <div className="mb-6 max-w-[60ch]">
             <Fault>{error}</Fault>
@@ -306,8 +324,8 @@ export function Lobby({
             <FeatureTake take={feature} onOpen={() => onEnter(feature.club.slug, `reviews/${feature.id}`)} />
           </Region>
         ) : null}
-
-      </main>
+        </main>
+      </div>
 
       {founding ? (
         <FoundClub
