@@ -122,6 +122,65 @@ async function episodeById(clubId, showId, season, episode) {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PASSAR AO SEGUINTE É TER VISTO O ANTERIOR.
+
+   Não é chegar: quem abre um episódio ainda não o viu, e marcar na chegada
+   daria visto a quem abriu, olhou dois minutos e desistiu. O que prova que o
+   clube viu o primeiro é ele pedir o segundo — então a marca acontece na
+   virada, sobre o episódio que SAI.
+
+   Para todo mundo que estava na sala naquele instante, e não só para quem
+   apertou: as quatro pessoas viram o mesmo episódio junto, e três delas terem
+   de ir marcar o mesmo na tela da série depois é o dever de casa que ninguém
+   fazia — o progresso do clube mentia para baixo justamente nas noites em que
+   ele mais viu.
+
+   `DO NOTHING` é o que torna isto seguro de escrever no nome dos outros: a
+   linha de alguém é onde a nota dela mora, e uma marca automática não pode ser
+   o caminho por onde uma nota se perde. O que já existe fica exatamente como
+   está.
+
+   Encerrar a sessão não marca nada, pela mesma razão que chegar não marca:
+   fechar a sala no meio é uma noite que acabou, não um episódio que terminou.
+   ══════════════════════════════════════════════════════════════════════════ */
+const seenStmt = db.prepare(`
+  INSERT INTO episode_takes
+    (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
+     season, episode, episode_title, watched_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  ON CONFLICT(club_id, reviewer_id, show_id, season, episode) DO NOTHING
+`);
+
+/** Fecha o episódio que a sala está deixando para trás. Nada, se não é um. */
+async function closeEpisode(room) {
+  const leaving = room.movie;
+  if (!room.open || leaving?.kind !== 'episode' || !room.viewers.size) return false;
+
+  const genre = GENRES.includes(leaving.genre) ? leaving.genre : 'Drama';
+  for (const reviewerId of room.viewers.keys()) {
+    try {
+      await seenStmt.run(
+        'e' + crypto.randomUUID(),
+        room.clubId,
+        reviewerId,
+        leaving.id,
+        leaving.title,
+        leaving.poster ?? null,
+        genre,
+        leaving.season,
+        leaving.episode,
+        leaving.episodeTitle ?? null
+      );
+    } catch (e) {
+      /* Uma pessoa que não gravou não pode custar as outras três, nem impedir o
+         episódio seguinte de abrir: a sala é o assunto, isto é a consequência. */
+      console.warn('[screening] falha ao marcar visto de', reviewerId, e.message);
+    }
+  }
+  return true;
+}
+
 router.get('/', wrap(async (req, res) => {
   res.json(screening.snapshot(roomOf(req)));
 }));
@@ -209,6 +268,10 @@ router.post('/open', wrap(async (req, res) => {
     });
   }
 
+  /* Antes de trocar, e nunca depois: quem estava vendo o episódio que sai
+     acabou de terminá-lo. Depois de `open` a sala já não sabe qual era. */
+  const fechou = await closeEpisode(room);
+
   /* Quem abre é o dono da sessão. Não há tela para escolher outro: o clube são
      quatro pessoas combinando no Discord, e um seletor de dono seria uma
      pergunta a mais para uma resposta que já está dada por quem clicou. */
@@ -222,6 +285,8 @@ router.post('/open', wrap(async (req, res) => {
      `open` e nunca antes: um aviso emitido antes da mudança manda o clube
      buscar um estado que ainda não existe. */
   live.emit('screening', req.session.reviewer_id, req.club.id);
+  // O acervo de séries mudou para todo mundo que estava na sala.
+  if (fechou) live.emit('shows', req.session.reviewer_id, req.club.id);
   res.status(201).json(screening.snapshot(roomOf(req)));
 }));
 
@@ -391,56 +456,6 @@ router.get('/ice', (req, res) => {
     relayed: turn.hasTurn(),
   });
 });
-
-/* ══════════════════════════════════════════════════════════════════════════
-   ESTAR NA SALA É TER VISTO.
-
-   Um episódio assistido junto é um episódio assistido, e até agora cada pessoa
-   tinha de ir marcar o mesmo na tela da série depois. O clube não fazia — então
-   o progresso da sala mentia para baixo justamente nas noites em que ela mais
-   viu.
-
-   Cada tela marca a SUA linha e nunca a dos outros, e isso não é economia: a
-   linha de outra pessoa é onde a nota dela mora, e um servidor marcando por
-   todo mundo de uma vez é uma escrita em massa passando por cima de fichas que
-   ninguém mandou tocar.
-
-   `DO NOTHING` pela mesma razão: quem já avaliou este episódio já o viu, e a
-   marca automática não pode ser o caminho por onde uma nota se perde.
-
-   O episódio vem da SALA e não do corpo do pedido. É o que impede esta rota de
-   virar "marque qualquer episódio como visto sem abrir nada".
-   ══════════════════════════════════════════════════════════════════════════ */
-const seenStmt = db.prepare(`
-  INSERT INTO episode_takes
-    (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
-     season, episode, episode_title, watched_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  ON CONFLICT(club_id, reviewer_id, show_id, season, episode) DO NOTHING
-`);
-
-router.post('/seen', wrap(async (req, res) => {
-  const room = roomOf(req);
-  const playing = room.movie;
-  if (!room.open || playing?.kind !== 'episode') {
-    return res.status(409).json({ error: 'A sessão não está num episódio.' });
-  }
-
-  await seenStmt.run(
-    'e' + crypto.randomUUID(),
-    req.club.id,
-    req.session.reviewer_id,
-    playing.id,
-    playing.title,
-    playing.poster ?? null,
-    GENRES.includes(playing.genre) ? playing.genre : 'Drama',
-    playing.season,
-    playing.episode,
-    playing.episodeTitle ?? null
-  );
-  live.emit('shows', req.session.reviewer_id, req.club.id);
-  res.status(204).end();
-}));
 
 /* Whether this member can play right now, and what they are playing. The
    source tag is how the club finds out somebody opened a different file before

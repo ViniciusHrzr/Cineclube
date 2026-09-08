@@ -829,8 +829,9 @@ function SeriesClubApp({
                          a chave que a abre está na sessão daquela lente. */
                       (location.hash = clubHash(slug, 'screening', 'filmes'))
                 }
-                /* A sala marcou o episódio no seu nome; o acervo desta casca é
-                   quem desenha o progresso, e ele acabou de ficar velho. */
+                /* A sala fechou o episódio anterior para todo mundo que estava
+                   dentro; o acervo desta casca é quem desenha o progresso, e
+                   ele acabou de ficar velho. */
                 onSeen={() => void refresh()}
               />
             ) : (

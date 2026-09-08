@@ -234,8 +234,8 @@ export function ScreeningScreen({
   shows?: QueuedShow[];
   /** O passo seguinte a assistir, que cada lente resolve na tela dela. */
   onRate: (movie: ScreeningMovie) => void;
-  /* A sala acabou de marcar um episódio como visto no seu nome. Quem chamou
-     esta tela guarda o acervo e é quem sabe relê-lo. */
+  /* A sala deixou um episódio para trás e o marcou como visto para quem estava
+     dentro. Quem chamou esta tela guarda o acervo e é quem sabe relê-lo. */
   onSeen?: () => void;
 }) {
   const club = useWorld();
@@ -306,28 +306,18 @@ export function ScreeningScreen({
   /** When this member's own picture became available; the grace runs from it. */
   const feedingSince = useRef<number | null>(null);
 
-  /* ── estar na sala é ter visto ───────────────────────────────────────────
-     Quem senta para ver um episódio junto viu aquele episódio, e ir marcar o
-     mesmo na tela da série depois era um dever de casa que o clube não fazia —
-     então o progresso da sala mentia para baixo justamente nas noites em que
-     ela mais viu.
+  /* ── passar ao seguinte marcou o anterior ────────────────────────────────
+     A sala fez isso no servidor, no instante da virada e para todo mundo que
+     estava dentro (ver a rota `/open`). Aqui só se relê: o acervo desta lente
+     desenha o progresso, e ele acabou de ficar velho.
 
-     Toda tela presente marca a SUA linha, e é isso que faz "todo mundo que
-     estava lá" acontecer sem o servidor escrever por ninguém. Vale ao chegar e
-     a cada episódio, porque `workKey` muda nos dois casos — quem entra no meio
-     da noite marca o que está tocando, e não o que a sala abriu primeiro. */
-  const { markSeen } = screening;
-  const isEpisode = state.movie?.kind === 'episode';
+     Sobre o que SAIU e não sobre o que entrou — por isso a comparação é com o
+     que esta tela tinha antes. Chegar numa sessão não marca nada. */
+  const wasEpisode = useRef(false);
   useEffect(() => {
-    if (!isEpisode || !workKey) return;
-    let alive = true;
-    void markSeen().then(marcou => {
-      if (marcou && alive) onSeen?.();
-    });
-    return () => {
-      alive = false;
-    };
-  }, [workKey, isEpisode, markSeen, onSeen]);
+    if (wasEpisode.current) onSeen?.();
+    wasEpisode.current = state.movie?.kind === 'episode';
+  }, [workKey, state.movie?.kind, onSeen]);
 
   /* A different film is a different evening: the source, the receiver, the
      subtitles and the credits all belong to the last one. */

@@ -234,12 +234,16 @@ async function cachedEpisode(overrides) {
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(showId, show.title, show.year, show.genre, show.genre, show.poster, 22);
-  await db
-    .prepare(
-      `INSERT INTO episodes_cache (show_id, season, episode, title, runtime, cached_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))`
-    )
-    .run(showId, 2, 5, 'O Episódio', 47);
+  /* Dois: o T2E05 é o que os testes abrem, e o T2E06 existe para haver para
+     onde virar — passar ao seguinte é o gesto que marca o anterior. */
+  for (const [numero, nome] of [[5, 'O Episódio'], [6, 'O Seguinte']]) {
+    await db
+      .prepare(
+        `INSERT INTO episodes_cache (show_id, season, episode, title, runtime, cached_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))`
+      )
+      .run(showId, 2, numero, nome, 47);
+  }
   return { showId, ...show };
 }
 
@@ -298,11 +302,13 @@ test('um episódio que ninguém abriu ainda não é uma sessão', async () => {
   }
 });
 
-/* Estar na sala é ter visto: cada tela presente marca a própria linha, e o que
-   já estava gravado não é tocado — é por ali que uma nota se perderia. */
-test('a sessão marca o episódio como visto, sem passar por cima de uma nota', async () => {
+/* Passar ao seguinte é ter visto o anterior — para todo mundo que estava na
+   sala, e sem tocar no que já estava gravado, que é por onde uma nota se
+   perderia. Chegar não marca: quem abre um episódio ainda não o viu. */
+test('a virada de episódio marca o anterior para quem estava na sala', async () => {
   const ana = await newMember('Ana da Série');
   const bruno = await newMember('Bruno da Série');
+  const deFora = await newMember('Longe da Série');
   const serie = await cachedEpisode({ title: 'A Vista Junto' });
   /* O acervo é do CLUBE e vem com as fichas de todo mundo, então a pergunta
      tem de dizer de quem: sem isto, "uma linha" conta a do outro membro junto. */
@@ -311,7 +317,7 @@ test('a sessão marca o episódio como visto, sem passar por cima de uma nota', 
       t => t.showId === serie.showId && t.reviewerId === who.id
     );
 
-  // O Bruno já tinha avaliado este episódio antes da sessão.
+  // O Bruno já tinha avaliado o T2E05 antes desta noite.
   assert.equal(
     (
       await req(
@@ -324,29 +330,38 @@ test('a sessão marca o episódio como visto, sem passar por cima de uma nota', 
     201
   );
 
+  const dela = await listen(ana.cookie);
+  const dele = await listen(bruno.cookie);
+  await dela.next(f => f.type === 'state');
+  await dele.next(f => f.type === 'state');
+
   await req('POST', at('/screening/open'), { showId: serie.showId, season: 2, episode: 5 }, ana.cookie);
+  assert.equal((await vistos(ana)).length, 0, 'chegar num episódio não é tê-lo visto');
 
-  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 204);
-  assert.equal((await req('POST', at('/screening/seen'), {}, bruno.cookie)).status, 204);
-  // Duas vezes é uma vez: a segunda tela da mesma pessoa não duplica a linha.
-  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 204);
+  // A virada. O T2E05 sai, o T2E06 entra.
+  assert.equal(
+    (await req('POST', at('/screening/open'), { showId: serie.showId, season: 2, episode: 6 }, ana.cookie))
+      .status,
+    201
+  );
 
-  const dela = await vistos(ana);
-  assert.equal(dela.length, 1, 'uma linha por pessoa por episódio');
-  assert.equal(dela[0].season, 2);
-  assert.equal(dela[0].episode, 5);
-  assert.equal(dela[0].final, null, 'visto não é avaliado');
+  const daAna = await vistos(ana);
+  assert.equal(daAna.length, 1, 'só o episódio que saiu, e uma vez');
+  assert.equal(daAna[0].season, 2);
+  assert.equal(daAna[0].episode, 5);
+  assert.equal(daAna[0].final, null, 'visto não é avaliado');
 
-  const dele = await vistos(bruno);
-  assert.equal(dele.length, 1);
-  assert.equal(dele[0].final, 8, 'a nota de quem já tinha avaliado continua lá');
+  const doBruno = await vistos(bruno);
+  assert.equal(doBruno.length, 1, 'quem estava na sala e não apertou nada também viu');
+  assert.equal(doBruno[0].final, 8, 'e a nota de quem já tinha avaliado continua lá');
 
-  // Num filme não há episódio para marcar, e a rota diz isso em vez de inventar.
-  const film = await queuedFilm();
-  await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie);
-  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 409);
+  assert.equal((await vistos(deFora)).length, 0, 'quem não estava na sala não viu nada');
 
+  await dela.close();
+  await dele.close();
   await req('POST', at('/screening/close'), {}, ana.cookie);
+  // Encerrar não marca: fechar a sala no meio é uma noite que acabou.
+  assert.equal((await vistos(ana)).length, 1);
 });
 
 /* ── commands ─────────────────────────────────────────────────────────────── */
