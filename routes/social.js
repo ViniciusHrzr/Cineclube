@@ -144,6 +144,12 @@ function toCommentDTO(row) {
   return {
     id: row.id,
     reviewId: row.review_id,
+    /* O mesmo id com o nome que os dois universos compartilham. A conversa e o
+       voto são desenhados pelas MESMAS peças nos dois lados (ver
+       components/social.tsx), e a ficha de um episódio não é uma `review` — o
+       nome comum das duas é o que o produto sempre chamou de ficha, take.
+       `reviewId` continua porque endereços e telas antigas o leem. */
+    takeId: row.review_id,
     reviewerId: row.reviewer_id,
     reviewerName: row.reviewer_name,
     reviewerDot: row.reviewer_dot,
@@ -157,6 +163,7 @@ function toCommentDTO(row) {
 function toVoteDTO(row) {
   return {
     reviewId: row.review_id,
+    takeId: row.review_id,
     reviewerId: row.reviewer_id,
     value: Number(row.value)
   };
@@ -305,7 +312,7 @@ router.put('/reviews/:reviewId/vote', auth.requireSession, clubs.requireMember, 
   }
   await castVoteStmt.run(review.id, voter, value);
   live.emit('social', voter, req.club.id);
-  res.json({ vote: { reviewId: review.id, reviewerId: voter, value } });
+  res.json({ vote: { reviewId: review.id, takeId: review.id, reviewerId: voter, value } });
 }));
 
 module.exports = router;

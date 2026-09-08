@@ -908,6 +908,50 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS episode_takes_club ON episode_takes(club_id, show_id);
     CREATE INDEX IF NOT EXISTS episode_takes_reviewer ON episode_takes(reviewer_id);
+
+    /* ── e a conversa em cima dela ──────────────────────────────────────
+       As três tabelas sociais do universo de filmes, de novo, penduradas na
+       ficha de episódio em vez de na de filme. São cópias na FORMA e não no
+       código: um comentário, um voto e uma curtida têm exatamente as mesmas
+       regras nos dois lados — profundidade um, um voto por pessoa por ficha,
+       curtida que existe ou não existe —, e as regras moram uma vez só, em
+       routes/showsSocial.js, que é o irmão de routes/social.js.
+
+       Separadas de review_comments e review_votes, e não uma coluna a mais
+       nelas apontando para dois tipos de alvo: uma chave estrangeira que às
+       vezes aponta para reviews e às vezes para episode_takes não é uma
+       chave estrangeira, e o banco deixaria de garantir a única coisa que
+       essas tabelas precisam garantir — que a conversa morre com a ficha.
+
+       ON DELETE CASCADE nas duas pontas, como lá: desmarcar um episódio apaga
+       a linha, e a linha é onde a conversa pendura. */
+    CREATE TABLE IF NOT EXISTS take_comments (
+      id TEXT PRIMARY KEY,
+      take_id TEXT NOT NULL REFERENCES episode_takes(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      parent_id TEXT REFERENCES take_comments(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS take_comments_take ON take_comments(take_id);
+    CREATE INDEX IF NOT EXISTS take_comments_parent ON take_comments(parent_id);
+
+    CREATE TABLE IF NOT EXISTS take_votes (
+      take_id TEXT NOT NULL REFERENCES episode_takes(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      value INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (take_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS take_votes_take ON take_votes(take_id);
+
+    CREATE TABLE IF NOT EXISTS take_comment_likes (
+      comment_id TEXT NOT NULL REFERENCES take_comments(id) ON DELETE CASCADE,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (comment_id, reviewer_id)
+    );
+    CREATE INDEX IF NOT EXISTS take_comment_likes_comment ON take_comment_likes(comment_id);
   `);
 
   // Sessão vencida é peso morto e risco; some no boot.

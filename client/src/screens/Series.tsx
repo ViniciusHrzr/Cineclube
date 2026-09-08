@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronLeft, Layers, Plus, Star, Trash2, X } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  Layers,
+  MessageSquare,
+  Plus,
+  Star,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
 import {
   Bill,
@@ -18,6 +32,12 @@ import {
   TrailerKey,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
+/* As mesmas peças do universo de filmes: o voto na ficha, a conversa, o
+   detalhamento dos critérios, o retrato clicável. Elas leem a sala pelo
+   `useWorld`, e a raiz de séries entrega uma — ver lib/world.tsx. */
+import { Conversation, TakeVotes } from '@/components/social';
+import { Breakdown } from '@/components/take';
+import { PersonName, PersonReel } from '@/components/person';
 import {
   fmt,
   initialsOf,
@@ -38,9 +58,13 @@ import {
   type SeasonDetail,
   type SeriesItem,
   type ShowDetail,
+  type ShowFeedEvent,
+  showsSocial,
   type TakePatch,
 } from '@/lib/api';
-import { cn, plural } from '@/lib/utils';
+import { useLive } from '@/lib/live';
+import { cn, clockOf, dayOf, plural, whenOf } from '@/lib/utils';
+import { useWorld } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
    O UNIVERSO DE SÉRIES, DENTRO DE UM CLUBE.
@@ -1677,30 +1701,12 @@ export function SeriesArchiveScreen({
                           <Drawer open={abertaT}>
                             <ul className="flex flex-col pb-2 pl-4">
                               {temp.episodios.map(ep => (
-                                <li
+                                <ArchiveEpisode
                                   key={ep.numero}
-                                  className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-t border-white/[0.04] py-2 pr-2"
-                                >
-                                  <span className="q flex-none text-[11px] text-ink-dim">
-                                    E{String(ep.numero).padStart(2, '0')}
-                                  </span>
-                                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
-                                    {ep.title || 'sem título'}
-                                  </span>
-                                  {/* Quem deu o quê, e não só a média: a
-                                      divergência é o assunto deste produto, e
-                                      uma média esconde exatamente isso. */}
-                                  <span className="flex flex-none flex-wrap items-baseline gap-x-2.5">
-                                    {ep.takes.map(t => (
-                                      <span key={t.id} className="q text-[11px] text-ink-faint">
-                                        {t.reviewerName?.split(' ')[0] ?? '—'}{' '}
-                                        <span className={t.scores ? 'text-beam' : 'text-ink'}>
-                                          {t.final != null ? fmt(t.final) : '—'}
-                                        </span>
-                                      </span>
-                                    ))}
-                                  </span>
-                                </li>
+                                  numero={ep.numero}
+                                  title={ep.title}
+                                  takes={ep.takes}
+                                />
                               ))}
                             </ul>
                           </Drawer>
@@ -1715,5 +1721,621 @@ export function SeriesArchiveScreen({
         </ul>
       )}
     </section>
+  );
+}
+
+/* ── um episódio no acervo ────────────────────────────────────────────────
+   Era uma linha morta: número, título, e "Vinicius —" repetido em cada
+   episódio que alguém tinha marcado sem avaliar. Duas coisas estavam erradas
+   nisso, e as duas eram a mesma: a linha dizia o NOME de quem não tinha dito
+   nada, e não dizia nada de quem tinha.
+
+   Agora ela diz as duas coisas com dois desenhos:
+
+   · **quem só viu** aparece como retrato, sem número e sem nome escrito —
+     "estas pessoas viram" é a informação inteira, e um traço ao lado de um
+     nome fingia que havia uma nota ausente ali.
+   · **quem avaliou** vira uma pastilha com a nota, e ela ABRE: dentro estão os
+     nove critérios, o que a pessoa escreveu, o voto do clube e a conversa. São
+     as mesmas peças do acervo de filmes, e a razão de elas serem componentes.
+
+   A pastilha é o gesto, e não a linha inteira: numa sala de seis, um episódio
+   tem seis fichas, e abrir "o episódio" abriria as seis de uma vez. */
+function ArchiveEpisode({
+  numero,
+  title,
+  takes,
+}: {
+  numero: number;
+  title: string | null;
+  takes: EpisodeTake[];
+}) {
+  const world = useWorld();
+  /** Qual ficha está aberta. Uma de cada vez: são fichas do MESMO episódio. */
+  const [aberta, setAberta] = useState<string | null>(null);
+  /* Montada só depois de pedida e nunca desmontada — o mesmo par de gavetas do
+     feed: desmontar ao fechar faria a gaveta recolher de altura zero. */
+  const [tocada, setTocada] = useState(false);
+
+  const comNota = takes.filter(t => t.final != null);
+  const soVistos = takes.filter(t => t.final == null);
+
+  return (
+    <li className="border-t border-white/[0.04]">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 py-2 pr-2">
+        <span className="q flex-none text-[11px] text-ink-dim">
+          E{String(numero).padStart(2, '0')}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
+          {title || 'sem título'}
+        </span>
+
+        {/* Quem viu e não disse nada. Retratos e mais nada: o nome escrito ao
+            lado de um traço era o produto anunciando uma nota que ninguém deu. */}
+        {soVistos.length ? (
+          <span
+            className="flex flex-none items-center gap-1 opacity-60"
+            title={`Visto por ${soVistos.map(t => t.reviewerName ?? 'alguém').join(', ')}, sem nota`}
+          >
+            <Check className="h-3.5 w-3.5 flex-none text-ink-faint" strokeWidth={2} aria-hidden />
+            {soVistos.map(t => (
+              <Reel key={t.id} color={reelColor(t.reviewerDot, t.reviewerId)} src={world.avatarOf(t.reviewerId)} size="sm">
+                {initialsOf(t.reviewerName ?? '?')}
+              </Reel>
+            ))}
+          </span>
+        ) : null}
+
+        {/* E quem avaliou. A divergência é o assunto deste produto, então é
+            uma pastilha por pessoa e não uma média. */}
+        {comNota.map(t => {
+          const on = aberta === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-expanded={on}
+              aria-label={`${on ? 'Fechar' : 'Abrir'} a ficha de ${t.reviewerName ?? 'alguém'} — nota ${fmt(t.final ?? 0)}`}
+              onClick={() => {
+                setAberta(v => (v === t.id ? null : t.id));
+                setTocada(true);
+              }}
+              className={cn(
+                'flex flex-none items-center gap-1.5 rounded-cell px-1.5 py-1 ring-1 transition-colors duration-150',
+                on
+                  ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
+                  : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
+              )}
+            >
+              <Reel color={reelColor(t.reviewerDot, t.reviewerId)} src={world.avatarOf(t.reviewerId)} size="sm">
+                {initialsOf(t.reviewerName ?? '?')}
+              </Reel>
+              {/* Creme na criteriosa e tinta na rápida: as duas são notas, e a
+                  diferença entre elas é quanto se olhou. */}
+              <span className={cn('q text-[12.5px] font-medium', t.scores ? 'text-beam' : undefined)}>
+                {fmt(t.final ?? 0)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <Drawer open={aberta !== null}>
+        {tocada ? (
+          <div className="pb-3 pr-2">
+            {comNota
+              .filter(t => t.id === aberta)
+              .map(t => (
+                <TakeCard key={t.id} take={t} />
+              ))}
+          </div>
+        ) : null}
+      </Drawer>
+    </li>
+  );
+}
+
+/* ══ o mural do universo de séries ═════════════════════════════════════════
+   O irmão de screens/Feed.tsx, e ele desenha as MESMAS peças: a placa, a barra
+   de ação com o polegar e o balão, as duas gavetas — os nove critérios de um
+   lado, a conversa do outro. O que muda é o que este universo tem para contar.
+
+   Três tipos de linha, e o peso de cada uma é o peso do que ela conta:
+
+   · **avaliado** ganha placa, porque é o assunto. Carrega onde a pessoa se
+     entusiasmou e onde se decepcionou, que é o que dá conversa.
+   · **visto** é uma linha, e vem agrupado do servidor: "viu 6 episódios de
+     Fringe" e não seis linhas. Uma maratona é um acontecimento.
+   · **comentado** é uma linha também, e abre a ficha embaixo de si com o texto
+     anunciado já aceso.
+
+   O relógio de dois minutos é o mesmo do outro mural, e pela mesma razão: um
+   aviso é sobre você e um mural é sobre todo mundo. */
+const FEED_POLL_MS = 120_000;
+
+export function SeriesFeedScreen({
+  takes,
+  onOpenShow,
+  onAimComment,
+}: {
+  /** O acervo que o clube já tem em memória: é dele que sai a ficha de cada linha. */
+  takes: EpisodeTake[] | null;
+  onOpenShow: (showId: number) => void;
+  onAimComment: (commentId: string) => void;
+}) {
+  const [items, setItems] = useState<ShowFeedEvent[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const got = await showsSocial.feed();
+      setItems(got.items);
+      setErro(null);
+    } catch (e) {
+      setErro((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const tick = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    const id = window.setInterval(tick, FEED_POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [load]);
+
+  /* A linha nasce na tela de todo mundo no instante em que alguém marca ou
+     escreve. O relógio acima é a rede de baixo, para quando a conexão ao vivo
+     cair. */
+  useLive(kinds => {
+    if (kinds.has('shows') || kinds.has('social')) void load();
+  });
+
+  if (erro && !items) {
+    return (
+      <section>
+        <Bill title="Feed" />
+        <div className="max-w-[60ch]">
+          <Fault detail={erro}>Não foi possível carregar o feed.</Fault>
+        </div>
+      </section>
+    );
+  }
+
+  if (!items) {
+    return (
+      <section>
+        <Bill title="Feed" note="carregando…" />
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="plate flex gap-4 p-4">
+              <Skeleton className="aspect-[2/3] w-[54px] flex-none" />
+              <div className="flex-1 space-y-2.5 pt-1">
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-4 w-3/5" />
+                <Skeleton className="h-2.5 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <section>
+        <Bill title="Feed" />
+        <Blank title="O clube ainda não fez nada">
+          Quando alguém marcar um episódio, der uma nota ou comentar uma ficha, aparece aqui — do
+          mais recente para o mais antigo.
+        </Blank>
+      </section>
+    );
+  }
+
+  /* Agrupado na renderização e não no estado: guardado, este valor fica velho à
+     meia-noite. */
+  let ultimoDia = '';
+
+  return (
+    <section>
+      <Bill
+        title="Feed"
+        note={`${plural(items.length, 'acontecimento', 'acontecimentos')} no clube`}
+      />
+
+      <div className="max-w-[760px]">
+        {items.map(e => {
+          const dia = dayOf(e.at);
+          const abreDia = dia !== ultimoDia;
+          ultimoDia = dia;
+          return (
+            <div key={e.id}>
+              {abreDia ? <p className="legend mb-3 mt-7 first:mt-0">{dia}</p> : null}
+              {e.kind === 'take' ? (
+                <FeedRated e={e} takes={takes} onOpenShow={onOpenShow} />
+              ) : e.kind === 'seen' ? (
+                <FeedSeen e={e} onOpenShow={onOpenShow} />
+              ) : (
+                <FeedAside e={e} takes={takes} onAimComment={onAimComment} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** `T1E05` sem o zero perdido, que é como um episódio é chamado por gente. */
+const epTag = (season?: number, episode?: number) =>
+  `T${season ?? 0}E${String(episode ?? 0).padStart(2, '0')}`;
+
+/* A placa: o mesmo empilhamento do mural de filmes — corpo que desdobra,
+   detalhamento, barra de ação, conversa. Um `<button>` dentro de outro não é
+   coisa que o navegador monte, e é por isso que a barra é irmã do corpo e não
+   filha dele. */
+function FeedRated({
+  e,
+  takes,
+  onOpenShow,
+}: {
+  e: ShowFeedEvent;
+  takes: EpisodeTake[] | null;
+  onOpenShow: (showId: number) => void;
+}) {
+  const world = useWorld();
+  /* Do acervo que já está em memória — nada é buscado. Nula só entre alguém
+     desmarcar um episódio e o mural recarregar; aí a barra some, porque
+     oferecer um polegar para uma ficha morta é prometer um 404. */
+  const take = takes?.find(t => t.id === e.takeId) ?? null;
+  const quem = take
+    ? { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' }
+    : null;
+  const conversa = world.comments.filter(c => c.takeId === e.takeId).length;
+  const hora = clockOf(e.at);
+
+  const [conversando, setConversando] = useState(false);
+  const [tocada, setTocada] = useState(false);
+  const [aberta, setAberta] = useState(false);
+  const [desdobrada, setDesdobrada] = useState(false);
+
+  /* A placa já mostra o que a pessoa escreveu, cortado em 120 caracteres. O
+     detalhamento recebe o texto exatamente quando o resumo não é ele — senão é
+     a mesma frase duas vezes. */
+  const escrito = take?.comment?.replace(/\s+/g, ' ').trim() ?? '';
+  const cortado = !!escrito && escrito !== (e.excerpt ?? '');
+
+  return (
+    <div className="plate mb-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4">
+        <PersonReel person={e.actor} size="sm" />
+        <PersonName
+          person={e.actor}
+          className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
+        />
+        <span className="text-[12.5px] text-ink-dim">avaliou</span>
+        {hora ? <span className="q ml-auto text-[10.5px] text-ink-faint">{hora}</span> : null}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (!take) {
+            onOpenShow(e.showId);
+            return;
+          }
+          setAberta(v => !v);
+          setDesdobrada(true);
+        }}
+        aria-expanded={take ? aberta : undefined}
+        aria-label={
+          take
+            ? `${aberta ? 'Fechar' : 'Abrir'} a ficha de ${epTag(e.season, e.episode)} de ${e.showTitle} por ${e.actor.name}`
+            : `Abrir ${e.showTitle}`
+        }
+        className="group flex w-full gap-4 px-4 pb-4 pt-2.5 text-left transition-colors duration-150 hover:bg-house-seat"
+      >
+        <Poster src={e.showPoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
+
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-baseline gap-x-3">
+            <span className="font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
+              {e.showTitle}
+            </span>
+            <span className="q text-[11.5px] text-ink-dim">{epTag(e.season, e.episode)}</span>
+          </span>
+          {/* O nome do episódio embaixo do da série: é dele que a ficha fala, e
+              "T1E05" sozinho não é o nome de nada. */}
+          {e.episodeTitle ? (
+            <span className="mt-1 block truncate text-[13px] text-ink-dim">{e.episodeTitle}</span>
+          ) : null}
+
+          <span className="mt-2.5 flex items-center gap-3">
+            <Strip value={e.final ?? 0} cells={10} className="h-[6px] w-[120px] flex-none" />
+            <span className="q text-[15px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
+            <span className="q text-[11px] text-ink-faint">/10</span>
+          </span>
+
+          {/* Ausente numa nota rápida e numa ficha sem distância entre o alto e
+              o baixo: apontar extremos ali seria inventar uma opinião. */}
+          {e.ends ? (
+            <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+              <span className="flex items-center gap-1.5 text-ink-dim">
+                <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                {e.ends.high.name}
+                <span className="q text-beam">{fmt(e.ends.high.value)}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-ink-dim">
+                <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                {e.ends.low.name}
+                <span className="q text-ink">{fmt(e.ends.low.value)}</span>
+              </span>
+            </span>
+          ) : null}
+
+          {e.excerpt ? (
+            <span className="mt-2.5 block break-words text-[13px] italic leading-relaxed text-ink-dim">
+              “{e.excerpt}”
+            </span>
+          ) : null}
+        </span>
+
+        {take ? (
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              'mt-1 h-4 w-4 flex-none text-ink-faint transition-transform duration-200 group-hover:text-ink-dim',
+              aberta && 'rotate-180'
+            )}
+            strokeWidth={1.7}
+          />
+        ) : null}
+      </button>
+
+      <Drawer open={aberta}>
+        {desdobrada && take ? (
+          <div className="px-4 pb-4">
+            <Breakdown r={take} comment={cortado ? take.comment ?? undefined : undefined} />
+          </div>
+        ) : null}
+      </Drawer>
+
+      {quem ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] px-4 py-2.5">
+          <TakeVotes take={quem} labelled />
+
+          <button
+            type="button"
+            aria-expanded={conversando}
+            aria-label={
+              `${conversando ? 'Fechar' : 'Abrir'} a conversa da ficha de ${e.actor.name}` +
+              (conversa ? `, ${plural(conversa, 'resposta', 'respostas')}` : '')
+            }
+            title={conversando ? 'Fechar a conversa' : 'Comentar esta ficha'}
+            onClick={() => {
+              setConversando(v => !v);
+              setTocada(true);
+            }}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-cell px-2.5 ring-1 transition-colors duration-150',
+              conversando
+                ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
+                : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
+            )}
+          >
+            <MessageSquare className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
+            <span className="hidden font-display text-[11px] uppercase leading-none tracking-[0.12em] sm:inline">
+              {conversando ? 'Fechar' : 'Comentar'}
+            </span>
+            {conversa ? (
+              <span className="q text-[10.5px] leading-none opacity-80">{conversa}</span>
+            ) : null}
+          </button>
+
+          {/* A série como escolha, no fim da barra: lá o episódio aparece entre
+              os outros da temporada, que é a única coisa que o mural não mostra. */}
+          <button
+            type="button"
+            onClick={() => onOpenShow(e.showId)}
+            title="Abrir a série, na lista de episódios"
+            aria-label={`Abrir ${e.showTitle}`}
+            className="ml-auto flex h-7 items-center rounded-cell px-1.5 text-ink-faint transition-colors duration-150 hover:text-beam"
+          >
+            <ArrowUpRight className="h-4 w-4 flex-none" strokeWidth={1.8} aria-hidden />
+          </button>
+        </div>
+      ) : null}
+
+      <Drawer open={conversando}>
+        {tocada && quem ? (
+          <div className="px-4 pb-4">
+            <Conversation take={quem} ruled={false} />
+          </div>
+        ) : null}
+      </Drawer>
+    </div>
+  );
+}
+
+/* ── uma sessão de sofá ───────────────────────────────────────────────────
+   A linha que o outro universo não tem. Sem placa e sem gaveta: marcar visto é
+   o gesto barato deste mundo, e dar a ele a mesma superfície de uma ficha faria
+   o mural inteiro pesar igual — que é o mesmo argumento que tirou o voto em
+   critério do mural de filmes.
+
+   O agrupamento vem do servidor (ver routes/showsFeed.js). Aqui só se lê: um
+   episódio é chamado pelo nome, seis são chamados de trecho. */
+function FeedSeen({ e, onOpenShow }: { e: ShowFeedEvent; onOpenShow: (showId: number) => void }) {
+  const hora = clockOf(e.at);
+  const varios = (e.count ?? 1) > 1;
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => onOpenShow(e.showId)}
+        className="group flex w-full items-start gap-3 rounded-cell px-3 py-2.5 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
+      >
+        <Check className="mt-[3px] h-3.5 w-3.5 flex-none text-ink-faint" strokeWidth={2} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] leading-snug text-ink-dim">
+            <span className="font-display uppercase tracking-[0.08em] text-ink">{e.actor.name}</span>{' '}
+            {varios ? (
+              <>
+                viu {plural(e.count ?? 0, 'episódio', 'episódios')} de{' '}
+                <span className="text-ink transition-colors group-hover:text-beam">{e.showTitle}</span>
+                {e.from && e.to ? (
+                  <span className="q text-ink-faint">
+                    {' '}
+                    · {epTag(e.from.season, e.from.episode)} a {epTag(e.to.season, e.to.episode)}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <>
+                viu <span className="q text-ink-faint">{epTag(e.to?.season, e.to?.episode)}</span> de{' '}
+                <span className="text-ink transition-colors group-hover:text-beam">{e.showTitle}</span>
+                {e.to?.title ? <span className="text-ink-faint"> — {e.to.title}</span> : null}
+              </>
+            )}
+          </span>
+        </span>
+        {hora ? <span className="q mt-0.5 flex-none text-[10.5px] text-ink-faint">{hora}</span> : null}
+      </button>
+    </div>
+  );
+}
+
+/* A linha de conversa, e ela abre a ficha embaixo de si com o texto anunciado
+   já aceso — `onAimComment` diz qual é, e a conversa cresce até ele, rola e o
+   acende. Mesmo mecanismo do mural de filmes. */
+function FeedAside({
+  e,
+  takes,
+  onAimComment,
+}: {
+  e: ShowFeedEvent;
+  takes: EpisodeTake[] | null;
+  onAimComment: (commentId: string) => void;
+}) {
+  const world = useWorld();
+  const hora = clockOf(e.at);
+  const take = takes?.find(t => t.id === e.takeId) ?? null;
+  const [aberta, setAberta] = useState(false);
+  const [desdobrada, setDesdobrada] = useState(false);
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => {
+          if (!take) return;
+          const proximo = !aberta;
+          setAberta(proximo);
+          setDesdobrada(true);
+          /* Só ao ABRIR: reapontar ao fechar faria a conversa rolar atrás de um
+             texto que acabou de sair da tela. */
+          if (proximo && e.commentId) onAimComment(e.commentId);
+        }}
+        aria-expanded={take ? aberta : undefined}
+        className="group flex w-full items-start gap-3 rounded-cell px-3 py-2.5 text-left transition-colors duration-150 hover:bg-beam/[0.05]"
+      >
+        <MessageSquare
+          className="mt-[3px] h-3.5 w-3.5 flex-none text-ink-faint"
+          strokeWidth={1.9}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] leading-snug text-ink-dim">
+            <span className="font-display uppercase tracking-[0.08em] text-ink">{e.actor.name}</span>{' '}
+            {e.parentId ? 'respondeu um comentário na ficha de ' : 'comentou a ficha de '}
+            {e.owner?.id === world.me.id ? (
+              <span className="text-dye-brass">você</span>
+            ) : (
+              <span className="text-ink">{e.owner?.name ?? 'alguém'}</span>
+            )}{' '}
+            em{' '}
+            <span className="text-ink transition-colors group-hover:text-beam">
+              {e.showTitle} {epTag(e.season, e.episode)}
+            </span>
+          </span>
+          {e.excerpt ? (
+            <span className="mt-0.5 block break-words text-[12px] italic leading-snug text-ink-faint">
+              “{e.excerpt}”
+            </span>
+          ) : null}
+        </span>
+        {hora ? <span className="q mt-0.5 flex-none text-[10.5px] text-ink-faint">{hora}</span> : null}
+        {take ? (
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              'mt-[1px] h-3.5 w-3.5 flex-none text-ink-faint transition-transform duration-200',
+              aberta && 'rotate-180'
+            )}
+            strokeWidth={1.7}
+          />
+        ) : null}
+      </button>
+
+      {/* Sobre uma superfície própria: a linha não tem placa, e sem uma caixa em
+          volta a ficha flutuaria solta entre duas linhas sem dizer de qual é. */}
+      <Drawer open={aberta}>
+        {desdobrada && take ? (
+          <div className="mb-2 ml-6 mr-1 mt-1">
+            <TakeCard take={take} />
+          </div>
+        ) : null}
+      </Drawer>
+    </div>
+  );
+}
+
+/* ── a ficha de um episódio, aberta ───────────────────────────────────────
+   Os nove critérios, o que a pessoa escreveu, o voto do clube e a conversa —
+   nesta ordem, que é a do acervo de filmes: primeiro o que a ficha DIZ, depois
+   o que se faz com ela.
+
+   Nenhuma destas peças é daqui. `Breakdown`, `TakeVotes` e `Conversation` são
+   as mesmas do outro universo, com as mesmas regras: não se vota na própria
+   ficha, o contador cala no zero, a resposta tem profundidade um. Ver
+   components/social.tsx — o dia em que uma delas mudar, muda nos dois. */
+function TakeCard({ take }: { take: EpisodeTake }) {
+  const quem = { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' };
+  return (
+    <div className="rounded-cell bg-house-seat/55 p-3 ring-1 ring-inset ring-white/[0.06]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <PersonReel
+          person={{ id: take.reviewerId, name: take.reviewerName ?? 'alguém', dot: take.reviewerDot }}
+          size="sm"
+        />
+        <PersonName
+          person={{ id: take.reviewerId, name: take.reviewerName ?? 'alguém', dot: take.reviewerDot }}
+          className="font-display text-[12.5px] uppercase tracking-[0.1em] text-ink"
+        />
+        <span className="q text-[10.5px] text-ink-faint" title={take.ratedAt ?? take.watchedAt}>
+          {whenOf(take.ratedAt ?? take.watchedAt)}
+        </span>
+        <span className="ml-auto flex items-center gap-2.5">
+          <Strip value={take.final ?? 0} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />
+          <span className="q text-[16px] font-medium leading-none text-beam">{fmt(take.final ?? 0)}</span>
+        </span>
+        <TakeVotes take={quem} />
+      </div>
+
+      {/* A nota rápida não tem carta: ela é um número e mais nada, e o
+          `Breakdown` cala sozinho quando não há critério nem texto. */}
+      <div className="mt-3">
+        <Breakdown r={take} comment={take.comment ?? undefined} />
+      </div>
+
+      <Conversation take={quem} />
+    </div>
   );
 }

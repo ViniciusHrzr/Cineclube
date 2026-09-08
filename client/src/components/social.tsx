@@ -3,9 +3,9 @@ import { ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { Key } from '@/components/bits';
 import { MentionField, WithMentions } from '@/components/mention';
 import { PersonName, PersonReel } from '@/components/person';
-import { type Review, type ReviewComment } from '@/lib/api';
+import { type TakeComment } from '@/lib/api';
 import { cn, plural, whenOf } from '@/lib/utils';
-import { useClub } from '@/App';
+import { useWorld, type TakeRef } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A REAÇÃO A UMA FICHA
@@ -24,6 +24,13 @@ import { useClub } from '@/App';
    zero, latão para o que é seu, profundidade um na resposta —, e regras
    escritas duas vezes são regras que divergem na terceira. Então elas mudaram
    de casa em vez de se multiplicar, e as duas telas leem daqui.
+
+   ── e desde 07/09/2026, os dois UNIVERSOS ────────────────────────────────
+   O mesmo argumento levado até o fim. A ficha de um episódio recebe conversa e
+   voto com as mesmas regras da ficha de um filme, e estas peças passaram a ler
+   de `useWorld` em vez de `useClub`: o que elas precisam da sala é a pessoa, as
+   três coleções e as quatro escritas, e as duas lentes sabem entregar isso.
+   Elas não sabem em qual universo estão desenhando, que é o ponto.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** O mesmo teto que routes/social.js aplica. Espelhado, nunca decidido aqui. */
@@ -64,7 +71,7 @@ export const MAX_COMMENT = 1000;
      concordância do clube. O servidor recusa de qualquer jeito; o que a tela
      faz é não oferecer o que vai ser negado. */
 export function TakeVotes({
-  review,
+  take,
   className,
   /* No feed o par ganha o rótulo escrito que o acervo não tem espaço para dar.
      Lá a fileira já carrega pôster, título, ficha técnica, nota e o TMDB numa
@@ -74,18 +81,18 @@ export function TakeVotes({
      é o que faz o polegar ser notado por quem não veio procurá-lo. */
   labelled = false,
 }: {
-  review: Review;
+  take: TakeRef;
   className?: string;
   labelled?: boolean;
 }) {
-  const club = useClub();
+  const club = useWorld();
   const [busy, setBusy] = useState(false);
 
-  const cast = club.votes.filter(v => v.reviewId === review.id);
+  const cast = club.votes.filter(v => v.takeId === take.id);
   const up = cast.filter(v => v.value === 1).length;
   const down = cast.filter(v => v.value === -1).length;
   const mine = cast.find(v => v.reviewerId === club.me.id)?.value ?? 0;
-  const own = review.reviewerId === club.me.id;
+  const own = take.reviewerId === club.me.id;
 
   async function press(value: 1 | -1) {
     if (busy) return;
@@ -93,7 +100,7 @@ export function TakeVotes({
     try {
       // Pressing the vote you already cast takes it back — the same key does
       // both, which is the only way a toggle can be undone without a second one.
-      await club.voteOn(review.id, mine === value ? 0 : value);
+      await club.voteOn(take.id, mine === value ? 0 : value);
     } catch (e) {
       club.fault('Não foi possível registrar o voto: ' + (e as Error).message);
     } finally {
@@ -140,7 +147,7 @@ export function TakeVotes({
         disabled={busy}
         aria-pressed={on}
         aria-label={
-          `${on ? 'Tirar seu voto: ' : ''}${word} com a avaliação de ${review.reviewerName}` +
+          `${on ? 'Tirar seu voto: ' : ''}${word} com a avaliação de ${take.reviewerName}` +
           (n ? `, ${n} até agora` : '')
         }
         title={on ? `${word} — clique para tirar seu voto` : word}
@@ -188,8 +195,8 @@ export function TakeVotes({
    Segue as mesmas regras do voto na ficha, porque é o mesmo tipo de gesto:
    latão quando é seu, contador só quando existe, e no que você mesmo escreveu
    sobra o placar sem o botão. */
-export function CommentLikes({ comment }: { comment: ReviewComment }) {
-  const club = useClub();
+export function CommentLikes({ comment }: { comment: TakeComment }) {
+  const club = useWorld();
   const [busy, setBusy] = useState(false);
 
   const likes = club.commentLikes.filter(l => l.commentId === comment.id);
@@ -262,14 +269,14 @@ const FIRST_PAGE = 3;
 function Comment({
   c,
   replies,
-  review,
+  take,
   lit,
   arrived,
   onRemove,
 }: {
-  c: ReviewComment;
-  replies: ReviewComment[];
-  review: Review;
+  c: TakeComment;
+  replies: TakeComment[];
+  take: TakeRef;
   /** O texto que um aviso apontou, aceso por alguns segundos. */
   lit: string | null;
   /* O mesmo texto, no valor que NÃO apaga. É ele que abre as respostas, e a
@@ -279,7 +286,7 @@ function Comment({
   arrived: string | null;
   onRemove: (id: string) => void;
 }) {
-  const club = useClub();
+  const club = useWorld();
   /* ── recolhidas ao folhear, abertas ao chegar por link ──────────────────
      Recolhido é o padrão certo para quem está lendo o acervo: as respostas de
      um fio pertencem a ele, não à varredura, e abri-las todas empurra os outros
@@ -306,7 +313,7 @@ function Comment({
     if (!body || sending) return;
     setSending(true);
     try {
-      await club.comment(review.id, body, c.id);
+      await club.comment(take.id, body, c.id);
       setDraft('');
       setWriting(false);
       // Responder é querer ver: a resposta recém-escrita não pode nascer
@@ -477,17 +484,17 @@ function Comment({
    superfície vermelha por tela, e uma tela pode ter seis conversas abertas ao
    mesmo tempo. */
 export function Conversation({
-  review,
+  take,
   /* O acervo abre a conversa dentro de uma gaveta que já tem o detalhamento em
      cima, e a régua separa os dois. No feed a conversa é a única coisa que a
      gaveta contém, e uma linha no topo dela desenharia a borda de uma caixa
      que não existe. */
   ruled = true,
 }: {
-  review: Review;
+  take: TakeRef;
   ruled?: boolean;
 }) {
-  const club = useClub();
+  const club = useWorld();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   /* Quantos comentários a lista está mostrando. Cresce de três em três e nunca
@@ -498,9 +505,9 @@ export function Conversation({
      você está comentando. O campo e a chave dizem o mesmo verbo — um botão que
      diz "Comentar" embaixo de um campo que diz "Responder" faz a pessoa parar
      para conferir se são duas coisas. */
-  const own = review.reviewerId === club.me.id;
+  const own = take.reviewerId === club.me.id;
 
-  const here = club.comments.filter(c => c.reviewId === review.id);
+  const here = club.comments.filter(c => c.takeId === take.id);
   /* Só os de primeiro nível entram na paginação; uma resposta pertence ao pai e
      conta dentro dele. Contar respostas aqui faria "carregar mais" aparecer numa
      conversa de dois comentários só porque um deles rendeu. */
@@ -573,7 +580,7 @@ export function Conversation({
     if (!body || sending) return;
     setSending(true);
     try {
-      await club.comment(review.id, body);
+      await club.comment(take.id, body);
       setDraft('');
     } catch (e) {
       club.fault('Não foi possível comentar: ' + (e as Error).message);
@@ -620,7 +627,7 @@ export function Conversation({
               key={c.id}
               c={c}
               replies={repliesOf(c.id)}
-              review={review}
+              take={take}
               lit={flash}
               arrived={arrived}
               onRemove={remove}
@@ -632,7 +639,7 @@ export function Conversation({
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <MentionField
           className="min-w-[16ch] flex-1"
-          label={`Comentar a avaliação de ${review.reviewerName}`}
+          label={`Comentar a avaliação de ${take.reviewerName}`}
           value={draft}
           onChange={setDraft}
           onSubmit={() => void send()}

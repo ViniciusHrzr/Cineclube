@@ -8,7 +8,7 @@ import { Breakdown } from '@/components/take';
 import { PersonName, PersonReel } from '@/components/person';
 import { capi, fmt, type FeedEvent, type Review } from '@/lib/api';
 import { useLive } from '@/lib/live';
-import { cn, plural } from '@/lib/utils';
+import { clockOf, cn, dayOf, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ── o feed ───────────────────────────────────────────────────────────────
@@ -33,30 +33,8 @@ import { useClub } from '@/App';
    mundo. Só com a aba à vista: isto fica aberto por horas. */
 const POLL_MS = 120_000;
 
-/* Sem quebra de dia o feed é uma coluna de horas soltas. O ano só quando não é
-   este — um clube com dois anos de arquivo precisa da diferença. */
-function dayOf(iso: string) {
-  const at = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(at.getTime())) return '—';
-  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((midnight(new Date()) - midnight(at)) / 86400000);
-  if (days <= 0) return 'Hoje';
-  if (days === 1) return 'Ontem';
-  return at.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: 'long',
-    year: at.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
-  });
-}
-
-function clockOf(iso: string) {
-  const at = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(at.getTime())) return '';
-  // Ficha antiga só tem a data, sem hora (ver `recorded_at` em db.js): a hora
-  // seria meia-noite inventada.
-  if (!/\d\d:\d\d/.test(iso)) return '';
-  return at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
+/* A quebra por dia e o relógio da linha moram em lib/utils.ts: o mural do outro
+   universo lê o tempo do mesmo jeito, e duas cópias divergem na terceira. */
 
 export function FeedScreen() {
   const [items, setItems] = useState<FeedEvent[] | null>(null);
@@ -306,7 +284,7 @@ function Rated({ e }: { e: FeedEvent }) {
           junto com a ficha, senão a régua ficaria com nada embaixo. */}
       {review ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] px-4 py-2.5">
-          <TakeVotes review={review} labelled />
+          <TakeVotes take={review} labelled />
 
           <button
             type="button"
@@ -357,7 +335,7 @@ function Rated({ e }: { e: FeedEvent }) {
           /* Sem régua e sem título: a gaveta não contém mais nada além dela. No
              acervo a régua separa os onze números do que se disse deles. */
           <div className="px-4 pb-4">
-            <Conversation review={review} ruled={false} />
+            <Conversation take={review} ruled={false} />
           </div>
         ) : null}
       </Drawer>
@@ -453,7 +431,7 @@ function Aside({ e }: { e: FeedEvent }) {
             <div className="mt-3">
               <Breakdown r={review} comment={review.comment} />
             </div>
-            <Conversation review={review} />
+            <Conversation take={review} />
           </div>
         ) : null}
       </Drawer>
@@ -487,7 +465,7 @@ function TakeHead({ review }: { review: Review }) {
         <Strip value={review.final} cells={10} className="hidden h-[6px] w-[90px] flex-none sm:block" />
         <span className="q font-display text-[20px] leading-none text-beam">{fmt(review.final)}</span>
       </span>
-      <TakeVotes review={review} />
+      <TakeVotes take={review} />
     </div>
   );
 }

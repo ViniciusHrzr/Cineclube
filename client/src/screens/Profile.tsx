@@ -1085,7 +1085,7 @@ function TakeLine({
           <div id={`ficha-corpo-${review.id}`} className="px-2 pb-4 pt-1">
             <Breakdown r={review} comment={review.comment} />
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <TakeVotes review={review} labelled />
+              <TakeVotes take={review} labelled />
               {/* O caminho para o acervo continua existindo, como uma saída e
                   não como o gesto principal: lá a ficha aparece ao lado das dos
                   outros sobre o mesmo filme, que é a única coisa que esta
@@ -1098,7 +1098,7 @@ function TakeLine({
                 Ver no acervo
               </button>
             </div>
-            <Conversation review={review} />
+            <Conversation take={review} />
           </div>
         ) : null}
       </Drawer>

@@ -6,7 +6,7 @@ const clubs = require('../clubs');
 const wrap = require('../wrap');
 const throttle = require('../throttle');
 const live = require('../live');
-const { GENRES, episodeCritsFor, episodeFinalOf } = require('../criteria');
+const { GENRES, episodeCritsFor, episodeFinalOf, episodeAnsweredIn } = require('../criteria');
 const { cleanShow, cleanEpisodeRef, text, MAX_EPISODE_TITLE } = require('../show');
 
 const router = express.Router({ mergeParams: true });
@@ -142,6 +142,24 @@ function queueDTO(row, progress) {
 }
 
 function takeDTO(row) {
+  const genre = GENRES.includes(row.show_genre) ? row.show_genre : 'Drama';
+  const scores = row.scores ? JSON.parse(row.scores) : null;
+  /* ── os nove, abertos ────────────────────────────────────────────────────
+     A mesma coisa que a ficha de um filme manda, e pelo mesmo motivo: é o que
+     o produto tem de próprio. Sem isto, "T1E05 — 7,4" é a linha de qualquer
+     app, e a tela não tinha como abrir a ficha porque ela nunca chegou aberta.
+
+     Só o que ESTA ficha respondeu — ver `episodeAnsweredIn`: uma ficha antiga
+     tem as chaves que existiam quando foi escrita, e imprimir um critério
+     ausente como 0,0 é pôr uma opinião na boca de alguém.
+
+     Vazio quando a ficha é só "vi" ou é nota rápida: as duas não têm critério
+     nenhum por dentro, e a tela desenha o que houver. */
+  const breakdown = scores
+    ? episodeAnsweredIn(genre, scores).map(c => ({
+        key: c.key, name: c.name, w: c.w, group: c.group, value: scores[c.key],
+      }))
+    : [];
   return {
     id: row.id,
     showId: row.show_id,
@@ -156,12 +174,13 @@ function takeDTO(row) {
     reviewerDot: row.reviewer_dot,
     /* Os três estados desta linha, ditos por extenso para a tela não ter de
        deduzi-los de dois nulos. */
-    scores: row.scores ? JSON.parse(row.scores) : null,
+    scores,
     quick: row.quick ?? null,
     final: row.final ?? null,
     comment: row.comment ?? null,
     watchedAt: row.watched_at,
     ratedAt: row.rated_at ?? null,
+    breakdown,
   };
 }
 

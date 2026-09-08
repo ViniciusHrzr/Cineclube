@@ -1,6 +1,6 @@
 import { Strip } from '@/components/bits';
 import { WithMentions } from '@/components/mention';
-import { fmt, type Review } from '@/lib/api';
+import { fmt, type BreakdownRow } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -20,8 +20,16 @@ import { cn } from '@/lib/utils';
    numa delas.
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function Breakdown({ r, comment }: { r: Review; comment?: string }) {
+/* `r` é qualquer ficha que já chegue aberta: a de um filme, com os onze
+   critérios, e a de um episódio, com os nove. As duas trazem `breakdown` pronto
+   do servidor — é ele que decide o vocabulário do gênero e o que a ficha de
+   fato respondeu —, e daqui para dentro não há diferença nenhuma entre elas. */
+export function Breakdown({ r, comment }: { r: { breakdown: BreakdownRow[] }; comment?: string }) {
   const rows = r.breakdown;
+  /* Uma ficha sem critério nenhum e sem texto não tem carta: é o caso da nota
+     rápida de um episódio, que é um número e mais nada. Desenhar a placa vazia
+     seria uma caixa anunciando conteúdo que ela não tem. */
+  if (!rows.length && !comment) return null;
   return (
     /* The ring is inset. A Tailwind ring is a shadow cast outside the box, and
        this plate opens inside a container that clips its overflow to animate the
@@ -42,7 +50,7 @@ export function Breakdown({ r, comment }: { r: Review; comment?: string }) {
           Every row measures the same — a capped name, a fixed strip, a fixed
           number — so centring them in equal columns keeps them in register with
           each other and the block centred on the plate. */}
-      <div
+      {rows.length ? <div
         style={
           {
             '--rows-1': rows.length,
@@ -78,11 +86,16 @@ export function Breakdown({ r, comment }: { r: Review; comment?: string }) {
             <span className="q text-right text-[12.5px]">{fmt(b.value)}</span>
           </div>
         ))}
-      </div>
+      </div> : null}
       {/* O comentário da própria ficha também chama gente pelo nome: é o outro
-          lugar do produto onde se escreve. */}
+          lugar do produto onde se escreve. Sem régua quando não há critério
+          acima dele: uma linha separando o texto de nada seria a borda de uma
+          metade que não existe. */}
       {comment ? (
-        <p className="mt-2 border-t border-white/[0.06] pt-2.5 text-[13px] italic leading-relaxed text-ink-dim">
+        <p className={cn(
+          'text-[13px] italic leading-relaxed text-ink-dim',
+          rows.length && 'mt-2 border-t border-white/[0.06] pt-2.5'
+        )}>
           “<WithMentions text={comment} />”
         </p>
       ) : null}

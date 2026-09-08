@@ -142,6 +142,11 @@ scoped.use('/reviewers', reviewerRoutes.scoped);
 scoped.use('/reviews', require('./routes/reviews'));
 scoped.use('/watchlist', require('./routes/watchlist'));
 scoped.use('/shows', require('./routes/shows'));
+/* A conversa e o mural do outro universo. Caminhos próprios e não um parâmetro
+   em `/social` e `/feed`: são outras tabelas, outra unidade avaliada e outras
+   consultas — uma URL só fingiria que é a mesma pergunta. */
+scoped.use('/shows-social', require('./routes/showsSocial'));
+scoped.use('/shows-feed', require('./routes/showsFeed'));
 scoped.use('/screening', require('./routes/screening'));
 scoped.use('/social', require('./routes/social'));
 scoped.use('/notifications', require('./routes/notifications'));

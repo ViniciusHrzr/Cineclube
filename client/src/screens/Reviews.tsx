@@ -396,13 +396,13 @@ function Take({
             <CrowdNote crowd={r.crowd} />
           </span>
         </button>
-        <TakeVotes review={r} />
+        <TakeVotes take={r} />
         <DrawerArrow open={open} onToggle={onToggle} />
       </div>
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
-          <Conversation review={r} />
+          <Conversation take={r} />
           <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
       </Drawer>
@@ -791,13 +791,13 @@ function ByMovie({
                         <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
                         <span className="q flex-none text-[17px]">{fmt(r.final)}</span>
                       </button>
-                      <TakeVotes review={r} />
+                      <TakeVotes take={r} />
                       <DrawerArrow open={openIds.has(r.id)} onToggle={() => onToggle(r.id)} />
                     </div>
                     <Drawer open={openIds.has(r.id)}>
                       <div className="px-3 pb-4 pt-1">
                         <Breakdown r={r} comment={r.comment} />
-                        <Conversation review={r} />
+                        <Conversation take={r} />
                         <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
                       </div>
                     </Drawer>

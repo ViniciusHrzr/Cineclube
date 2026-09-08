@@ -1,7 +1,7 @@
 import { Reel } from '@/components/bits';
 import { initialsOf, reelColor } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useClub } from '@/App';
+import { useWorld } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
    O ROSTO É UMA PORTA
@@ -83,7 +83,7 @@ export function PersonReel({
   /** Marque quando este retrato for o único caminho até o perfil. */
   solo?: boolean;
 } & Leaves) {
-  const club = useClub();
+  const club = useWorld();
   /* A parada é o ponto. Estes retratos ficam dentro de fileiras que abrem outra
      coisa — uma ficha, um comentário —, e sem isto o clique faria as duas: iria
      ao perfil e abriria a gaveta atrás dele. */
@@ -133,7 +133,7 @@ export function PersonName({
   person: Person;
   className?: string;
 } & Leaves) {
-  const club = useClub();
+  const club = useWorld();
   return (
     <button
       type="button"

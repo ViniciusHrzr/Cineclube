@@ -363,6 +363,15 @@ export type SeriesItem = {
   genres: string[];
   poster: string | null;
   crowd: { score: number; votes: number } | null;
+  /* Onde ela está passando. Os três estados de sempre: ausente é "ninguém
+     perguntou" (a série veio do cache), `null` é "perguntamos e não passa em
+     lugar nenhum aqui", e a lista é a resposta. Ver `fillProviders` em
+     routes/series.js — e vale mais aqui do que num filme: uma série ou está
+     incluída numa assinatura que alguém já paga, ou o clube não maratona. */
+  watch?: {
+    link: string | null;
+    streaming: Provider[];
+  } | null;
 };
 
 export type SeriesSeason = {
@@ -389,7 +398,8 @@ export type ShowDetail = SeriesItem & {
   /** As outras ordens em que esta série existe. Ver `episode_groups` no TMDB. */
   orders: { id: string; name: string; episodes: number; groups: number }[];
   trailerUrl: string | null;
-  watch: { link: string | null; streaming: { id: number; name: string; logo: string | null }[] } | null;
+  /* `watch` vem de `SeriesItem`: o detalhe e a grade respondem a mesma pergunta
+     com a mesma forma, e declará-la duas vezes era ela poder divergir. */
   stale?: boolean;
 };
 
@@ -482,6 +492,73 @@ export type EpisodeTake = {
   comment: string | null;
   watchedAt: string;
   ratedAt: string | null;
+  /* Os nove critérios abertos, como a ficha de um filme já manda os onze. Vazio
+     na ficha que é só "vi" e na de nota rápida: as duas não têm critério por
+     dentro. Ver `takeDTO` em routes/shows.js. */
+  breakdown: BreakdownRow[];
+};
+
+/* ── a conversa em cima de uma ficha de episódio ──────────────────────────
+   Os mesmos três tipos do lado de filmes, com `takeId` no lugar de `reviewId`.
+   As peças que os desenham são as mesmas — ver components/social.tsx —, e é por
+   isso que os nomes dos campos são os mesmos até onde podem ser. */
+export type TakeComment = {
+  id: string;
+  takeId: string;
+  reviewerId: string;
+  reviewerName: string;
+  reviewerDot: string;
+  body: string;
+  parentId?: string | null;
+  createdAt: string;
+};
+
+export type TakeVote = { takeId: string; reviewerId: string; value: 1 | -1 };
+
+/* ── o mural do universo de séries ────────────────────────────────────────
+   Três tipos de linha, e o terceiro é o que este universo tem e o outro não:
+   `seen` é marcar sem avaliar, e vem AGRUPADO por pessoa, série e dia. Uma
+   maratona é um acontecimento, não treze. Ver routes/showsFeed.js. */
+export type ShowFeedEvent = {
+  id: string;
+  kind: 'take' | 'seen' | 'comment';
+  at: string;
+  actor: { id: string; name: string; dot: string };
+  showId: number;
+  showTitle: string;
+  showPoster: string | null;
+  genre?: string;
+  /** Em `take` e `comment`: o episódio de que a linha fala. */
+  season?: number;
+  episode?: number;
+  episodeTitle?: string | null;
+  takeId?: string;
+  final?: number;
+  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  excerpt?: string | null;
+  /** Só em comentário. */
+  commentId?: string;
+  parentId?: string | null;
+  owner?: { id: string; name: string };
+  /** Só em `seen`: quantos episódios a sessão juntou, e de onde até onde. */
+  count?: number;
+  from?: { season: number; episode: number };
+  to?: { season: number; episode: number; title: string | null };
+};
+
+export const showsSocial = {
+  all: () =>
+    capi<{ comments: TakeComment[]; votes: TakeVote[]; commentLikes: CommentLike[] }>(
+      '/shows-social'
+    ),
+  comment: (takeId: string, body: string, parentId?: string | null) =>
+    cpost<TakeComment>(`/shows-social/takes/${takeId}/comments`, { body, parentId: parentId ?? null }),
+  uncomment: (id: string) => cdel(`/shows-social/comments/${id}`),
+  likeComment: (id: string, liked: boolean) =>
+    cput<{ liked: boolean }>(`/shows-social/comments/${id}/like`, { liked }),
+  vote: (takeId: string, value: 1 | -1 | 0) =>
+    cput<{ vote: TakeVote | null }>(`/shows-social/takes/${takeId}/vote`, { value }),
+  feed: () => capi<{ items: ShowFeedEvent[] }>('/shows-feed'),
 };
 
 /** O que se grava num episódio. Vazio é "só vi". */
@@ -551,6 +628,10 @@ export type BreakdownRow = {
 export type ReviewComment = {
   id: string;
   reviewId: string;
+  /* O mesmo id, com o nome que os dois universos compartilham: a conversa é
+     desenhada pelas mesmas peças em cima de uma ficha de filme e de uma de
+     episódio, e "take" é como o produto chama as duas. Ver components/social. */
+  takeId: string;
   reviewerId: string;
   reviewerName: string;
   reviewerDot: string;
@@ -568,6 +649,8 @@ export type ReviewComment = {
    pessoa não é uma opinião, é um formulário — ver a nota em db.js. */
 export type ReviewVote = {
   reviewId: string;
+  /** O mesmo id sob o nome comum aos dois universos. Ver `ReviewComment`. */
+  takeId: string;
   reviewerId: string;
   value: 1 | -1;
 };

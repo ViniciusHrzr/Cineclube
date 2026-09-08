@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Reel } from '@/components/bits';
 import { initialsOf, reelColor, type Reviewer } from '@/lib/api';
 import { cn, norm } from '@/lib/utils';
-import { useClub } from '@/App';
+import { useWorld } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Chamar alguém pelo nome.
@@ -59,7 +59,7 @@ export function MentionField({
   label: string;
   className?: string;
 }) {
-  const club = useClub();
+  const club = useWorld();
   const box = useRef<HTMLTextAreaElement>(null);
   const [open, setOpen] = useState<{ at: number; typed: string } | null>(null);
   const [pick, setPick] = useState(0);
@@ -201,7 +201,7 @@ export function MentionField({
    Em latão, que é a cor de estado desta sala: uma menção é uma pessoa apontada,
    não uma ação nem um destaque. */
 export function WithMentions({ text }: { text: string }) {
-  const club = useClub();
+  const club = useWorld();
   const handles = useMemo(
     () =>
       club.reviewers

@@ -28,12 +28,17 @@ import {
 import {
   seriesApi,
   shows as showsApi,
+  showsSocial,
   type EpisodeTake,
   type QueuedShow,
+  type TakeComment,
+  type TakeVote,
 } from '@/lib/api';
+import { WorldProvider, type World } from '@/lib/world';
 import {
   SeriesArchiveScreen,
   SeriesCatalogScreen,
+  SeriesFeedScreen,
   SeriesQueueScreen,
   ShowScreen,
 } from '@/screens/Series';
@@ -86,12 +91,19 @@ export const TABS = [
    e misturá-las obrigaria toda leitura de rota a saber de qual das duas aquela
    entrada é.
 
-   Sem Feed e sem Sessão, e as duas ausências são deliberadas: o feed de séries
-   precisa de um construtor de eventos que ainda não existe, e a sala de projeção
-   toca filme. Uma aba que leva a uma tela vazia é pior do que aba nenhuma. */
+   Sem Sessão, e a ausência é deliberada: a sala de projeção toca filme. Uma aba
+   que leva a uma tela vazia é pior do que aba nenhuma.
+
+   O Feed faltava pelo mesmo tipo de razão e deixou de faltar em 07/09/2026: o
+   construtor de eventos existe agora (routes/showsFeed.js), e com ele o mural
+   deste universo conta três coisas — episódio avaliado, episódio visto e
+   comentário — em vez das duas do outro. */
 export const SERIES_TABS = [
-  /* A porta de entrada aqui é o catálogo, e não o feed: neste universo o gesto
-     que se repete é achar a próxima série e marcar o que se viu. */
+  /* O feed primeiro, como no universo de filmes: um mural que não é a tela de
+     chegada é um mural que ninguém lê. */
+  { id: 'feed', label: 'Feed' },
+  /* E o catálogo logo atrás: neste universo o gesto que se repete é achar a
+     próxima série e marcar o que se viu. */
   { id: 'catalog', label: 'Catálogo' },
   /* "Minhas séries" e não "Quero ver": no universo de filmes a fila é o que
      ainda não se viu, e aqui ela é o que o clube ACOMPANHA — uma série na lista
@@ -512,8 +524,19 @@ function SeriesClubApp({
   const [queue, setQueue] = useState<QueuedShow[] | null>(null);
   const [takes, setTakes] = useState<EpisodeTake[] | null>(null);
   const [criteria, setCriteria] = useState<Record<string, Criterion[]> | null>(null);
+  /* A conversa do clube em cima das fichas de episódio: comentários, votos e
+     curtidas, os três carregados inteiros no boot pelo mesmo motivo do outro
+     universo — o acervo desenha dezenas de fichas, e buscar por ficha seria uma
+     tela feita de "carregando" dentro de cada gaveta. */
+  const [comments, setComments] = useState<TakeComment[]>([]);
+  const [votes, setVotes] = useState<TakeVote[]>([]);
+  const [commentLikes, setCommentLikes] = useState<CommentLike[]>([]);
+  /** O comentário que o mural quer acender ao abrir uma ficha na própria linha. */
+  const [focusComment, setFocusComment] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>(() => route.tab ?? 'catalog');
+  /* A porta é o mural, como no outro universo: "o que aconteceu por aqui" se
+     pergunta toda vez que alguém entra, e "qual série a gente começa" não. */
+  const [tab, setTab] = useState<TabId>(() => route.tab ?? 'feed');
   const [showId, setShowId] = useState<number | null>(() => route.show);
 
   const fault = useCallback((msg: string) => {
@@ -528,16 +551,20 @@ function SeriesClubApp({
     try {
       const room = await clubsApi.get(slug);
       setClubRow(room.club);
-      const [fila, gravadas, crits, gente] = await Promise.all([
+      const [fila, gravadas, crits, gente, conversa] = await Promise.all([
         showsApi.queue(),
         showsApi.takes(),
         seriesApi.criteria(),
         capi<{ reviewers: Reviewer[] }>('/reviewers'),
+        showsSocial.all(),
       ]);
       setQueue(fila.shows);
       setTakes(gravadas.takes);
       setCriteria(crits.criteria);
       setRoster(gente.reviewers);
+      setComments(conversa.comments);
+      setVotes(conversa.votes);
+      setCommentLikes(conversa.commentLikes);
     } catch (e) {
       setBootError((e as Error).message);
     }
@@ -559,6 +586,65 @@ function SeriesClubApp({
          escrita que já deu certo. */
     }
   }, []);
+
+  /* ── a conversa, e as quatro escritas dela ─────────────────────────────
+     As mesmas quatro do universo de filmes, e a estratégia é a mesma: escrever
+     e reler a coleção inteira. Num clube pequeno ela são centenas de linhas, e
+     costurar a resposta na lista à mão seria uma segunda cópia da regra de
+     ordenação — a que o servidor já aplica. */
+  const relerConversa = useCallback(async () => {
+    const got = await showsSocial.all();
+    setComments(got.comments);
+    setVotes(got.votes);
+    setCommentLikes(got.commentLikes);
+  }, []);
+
+  const comment = useCallback(
+    async (takeId: string, body: string, parentId?: string | null) => {
+      await showsSocial.comment(takeId, body, parentId ?? null);
+      await relerConversa();
+    },
+    [relerConversa]
+  );
+
+  const uncomment = useCallback(
+    async (id: string) => {
+      await showsSocial.uncomment(id);
+      await relerConversa();
+    },
+    [relerConversa]
+  );
+
+  const likeComment = useCallback(
+    async (id: string, liked: boolean) => {
+      await showsSocial.likeComment(id, liked);
+      await relerConversa();
+    },
+    [relerConversa]
+  );
+
+  const voteOn = useCallback(
+    async (takeId: string, value: 1 | -1 | 0) => {
+      await showsSocial.vote(takeId, value);
+      await relerConversa();
+    },
+    [relerConversa]
+  );
+
+  /* O perfil mora na lente de filmes — ele conta o que a pessoa avaliou, e hoje
+     isso é o acervo de filmes. Mandar para lá é honesto, o endereço diz
+     `filmes`, e é melhor do que um rosto que não abre nada. */
+  const goPerson = useCallback(
+    (reviewerId?: string | null) => {
+      location.hash = clubHash(slug, reviewerId ? `perfil/${reviewerId}` : 'perfil', 'filmes');
+    },
+    [slug]
+  );
+
+  const avatarOf = useCallback(
+    (reviewerId: string) => roster.find(r => r.id === reviewerId)?.avatar ?? null,
+    [roster]
+  );
 
   useEffect(() => {
     const onHash = () => {
@@ -620,6 +706,45 @@ function SeriesClubApp({
     [refresh, fault]
   );
 
+  /* O pedaço da sala que as peças sociais leem. O outro universo entrega uma
+     vista do contexto grande dele; aqui é montado a partir do que estas telas
+     já carregam. As duas entregas satisfazem o mesmo contrato, e é por isso que
+     o voto, a conversa, o retrato e a menção são as MESMAS peças nos dois
+     lados. Ver lib/world.tsx. */
+  const world = useMemo<World>(
+    () => ({
+      me,
+      reviewers: roster,
+      comments,
+      votes,
+      commentLikes,
+      comment,
+      uncomment,
+      likeComment,
+      voteOn,
+      avatarOf,
+      goPerson,
+      focusComment,
+      clearFocusComment: () => setFocusComment(null),
+      fault,
+    }),
+    [
+      me,
+      roster,
+      comments,
+      votes,
+      commentLikes,
+      comment,
+      uncomment,
+      likeComment,
+      voteOn,
+      avatarOf,
+      goPerson,
+      focusComment,
+      fault,
+    ]
+  );
+
   if (bootError && !club) {
     return (
       <>
@@ -655,7 +780,7 @@ function SeriesClubApp({
   const doShow = showId != null ? (takes ?? []).filter(t => t.showId === showId) : [];
 
   return (
-    <>
+    <WorldProvider value={world}>
       <HolographicWall asBackdrop />
       <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] flex-col coarse:h-full coarse:min-h-0 coarse:overflow-hidden">
         <Marquee
@@ -700,12 +825,18 @@ function SeriesClubApp({
               />
             ) : tab === 'reviews' ? (
               <SeriesArchiveScreen takes={takes} roster={roster} onOpen={goShow} />
-            ) : (
+            ) : tab === 'catalog' ? (
               <SeriesCatalogScreen
                 queued={queued}
                 onQueue={s => void enqueue(s)}
                 onOpen={goShow}
                 fault={fault}
+              />
+            ) : (
+              <SeriesFeedScreen
+                takes={takes}
+                onOpenShow={goShow}
+                onAimComment={setFocusComment}
               />
             )}
           </div>
@@ -726,7 +857,7 @@ function SeriesClubApp({
           <Fault>{toast}</Fault>
         </div>
       ) : null}
-    </>
+    </WorldProvider>
   );
 }
 
@@ -1277,6 +1408,37 @@ function ClubApp({
     ]
   );
 
+  /* ── a vista que as peças sociais leem ─────────────────────────────────
+     O contexto acima é grande e é deste universo. As peças que desenham voto,
+     conversa, retrato e menção precisam de um pedaço dele, e o universo de
+     séries sabe entregar o mesmo pedaço — é isso que as deixa ser as MESMAS
+     peças nos dois lados em vez de duas cópias. Ver lib/world.tsx.
+
+     `takeId` e não `reviewId`: o servidor manda os dois nomes, e daqui para
+     dentro do componente só existe o que serve para as duas fichas. */
+  const world = useMemo<World | null>(
+    () =>
+      ctx
+        ? {
+            me: ctx.me,
+            reviewers: ctx.reviewers,
+            comments: ctx.comments,
+            votes: ctx.votes,
+            commentLikes: ctx.commentLikes,
+            comment: ctx.comment,
+            uncomment: ctx.uncomment,
+            likeComment: ctx.likeComment,
+            voteOn: ctx.voteOn,
+            avatarOf: ctx.avatarOf,
+            goPerson: ctx.goPerson,
+            focusComment: ctx.focusComment,
+            clearFocusComment: ctx.clearFocusComment,
+            fault: ctx.fault,
+          }
+        : null,
+    [ctx]
+  );
+
   /* Endereço apontando para clube que não existe, ou privado de que você não é.
      A saída é o saguão e não a tela de entrada: o problema não é quem você é, é
      onde você tentou entrar. */
@@ -1314,6 +1476,7 @@ function ClubApp({
 
   return (
     <ClubContext.Provider value={ctx}>
+    <WorldProvider value={world}>
       {/* A parede atrás de tudo. É a sala, não decoração: é ela que diz que as
           luzes estão baixas antes de qualquer palavra ser lida. */}
       <HolographicWall asBackdrop />
@@ -1452,6 +1615,7 @@ function ClubApp({
           <Fault>{toast}</Fault>
         </div>
       ) : null}
+    </WorldProvider>
     </ClubContext.Provider>
   );
 }

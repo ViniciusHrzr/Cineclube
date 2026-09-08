@@ -28,7 +28,14 @@ import { clubPath, hasClub } from '@/lib/api';
    é a diferença entre uma tela atrasada e uma tela quebrada.
    ══════════════════════════════════════════════════════════════════════════ */
 
-export type LiveKind = 'social' | 'reviews' | 'watchlist' | 'reviewers' | 'screening' | 'club';
+export type LiveKind =
+  | 'social'
+  | 'reviews'
+  | 'watchlist'
+  | 'reviewers'
+  | 'screening'
+  | 'club'
+  | 'shows';
 
 const KINDS: readonly string[] = [
   'social',
@@ -38,6 +45,9 @@ const KINDS: readonly string[] = [
   'screening',
   /* A sala em si: alguém entrou, saiu, virou ADM, ou o ADM trocou a foto. */
   'club',
+  /* O universo de séries inteiro numa palavra: a fila e o que cada um viu. Um
+     aviso por episódio marcado seria um por toque numa maratona. Ver live.js. */
+  'shows',
 ];
 
 type Frame = { kind: LiveKind | 'hello'; by: string | null; at: number };

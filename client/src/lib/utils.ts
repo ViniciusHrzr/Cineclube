@@ -94,3 +94,35 @@ export function whenOf(iso: string) {
   if (days === 1) return `ontem, ${clock}`;
   return at.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
+
+/* ── o relógio de um mural ────────────────────────────────────────────────
+   As duas peças que quebram um feed em dias. Moravam dentro do feed de filmes e
+   saíram quando o de séries passou a existir: são a mesma leitura de tempo, e
+   uma segunda cópia diverge na primeira vez que alguém mexe em uma delas.
+
+   A mesma armadilha de fuso do `whenOf` acima: sem o `Z`, o navegador lê o que
+   o servidor gravou em UTC como hora local. */
+const dateOf = (iso: string) => new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+
+/** "Hoje", "Ontem", ou a data por extenso. O ano só quando não é este. */
+export function dayOf(iso: string) {
+  const at = dateOf(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(new Date()) - midnight(at)) / 86400000);
+  if (days <= 0) return 'Hoje';
+  if (days === 1) return 'Ontem';
+  return at.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: at.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  });
+}
+
+/** A hora, ou nada: uma ficha antiga só tem a data, e meia-noite seria inventada. */
+export function clockOf(iso: string) {
+  const at = dateOf(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  if (!/\d\d:\d\d/.test(iso)) return '';
+  return at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}

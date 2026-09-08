@@ -1,4 +1,4 @@
-const { critsFor, GENRES } = require('./criteria');
+const { critsFor, episodeCritsFor, GENRES } = require('./criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
    O que se lê de uma ficha sem abri-la.
@@ -28,14 +28,14 @@ function excerpt(body, max = 120) {
    critério. Só quando há distância entre eles: uma ficha de onze notas iguais
    não tem alto nem baixo, tem uma nota, e apontar dois critérios ali seria
    inventar uma opinião que a pessoa não teve. */
-function endsOf(genre, raw) {
+function endsWith(crits, genre, raw) {
   let scores;
   try {
     scores = JSON.parse(raw) || {};
   } catch {
     return null;
   }
-  const marked = critsFor(GENRES.includes(genre) ? genre : 'Drama')
+  const marked = crits(GENRES.includes(genre) ? genre : 'Drama')
     .map(c => ({ name: c.name, value: scores[c.key] }))
     .filter(c => typeof c.value === 'number');
   if (marked.length < 3) return null;
@@ -46,4 +46,12 @@ function endsOf(genre, raw) {
   return { high, low };
 }
 
-module.exports = { SPREAD, excerpt, endsOf };
+const endsOf = (genre, raw) => endsWith(critsFor, genre, raw);
+
+/* O mesmo alto e baixo, sobre os nove critérios de um episódio em vez dos onze
+   de um filme. A regra é uma só e mora acima; o que muda é o vocabulário que o
+   gênero abre — e ler uma ficha de episódio com as onze chaves faria os dois
+   critérios que ela não tem sumirem em silêncio. */
+const episodeEndsOf = (genre, raw) => endsWith(episodeCritsFor, genre, raw);
+
+module.exports = { SPREAD, excerpt, endsOf, episodeEndsOf };
