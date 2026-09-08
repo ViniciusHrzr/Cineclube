@@ -1,30 +1,20 @@
 const db = require('./db');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   De qual clube é este pedido.
+   De qual clube é este pedido: `/api/c/<slug>/...`.
 
-   ── por que o clube mora na URL ────────────────────────────────────────────
-   Havia três lugares possíveis e dois deles estão errados.
+   Na SESSÃO seria mais barato, e quebra duas coisas: o endereço de uma ficha
+   deixaria de ser um endereço (o mesmo link significaria coisas diferentes
+   conforme a sala em que o leitor está por acaso), e a mesma pessoa não poderia
+   ter dois clubes abertos em duas abas.
 
-   Na SESSÃO seria o mais barato de escrever: uma coluna, e toda rota já saberia
-   sem mudar de assinatura. Mas aí o endereço de uma ficha deixa de ser um
-   endereço — `#reviews/r1a2b3` passa a significar coisas diferentes conforme o
-   clube em que o leitor está por acaso, e este produto tem como hábito colar
-   link de ficha no Discord. Também impediria duas abas em dois clubes.
+   Num CABEÇALHO seria invisível e morre num detalhe: `EventSource` não manda
+   cabeçalho nenhum, e a sala ao vivo e o cano de avisos são justamente as duas
+   coisas mais importantes de separar por clube.
 
-   Num CABEÇALHO seria invisível e limpo, e morre num detalhe: `EventSource` não
-   manda cabeçalho nenhum. A sala ao vivo e o cano de avisos são as duas coisas
-   mais importantes para separar por clube, e são exatamente as duas que um
-   cabeçalho não alcança.
-
-   Sobra a URL, que é onde ele devia estar desde o começo: `/api/c/<slug>/...`.
-   O endereço diz de que sala ele fala, o SSE funciona, e a mesma pessoa pode ter
-   dois clubes abertos em duas abas.
-
-   ── o que NÃO passa por aqui ──────────────────────────────────────────────
-   `/api/auth` (quem é você não depende de sala), `/api/catalog` (o TMDB é o
-   mesmo mundo para todo mundo), `/api/clubs` (a lista de salas não pode exigir
-   estar dentro de uma) e o retrato de uma pessoa, que é dela e não do clube.
+   NÃO passam por aqui: `/api/auth` (quem é você não depende de sala),
+   `/api/catalog` (o TMDB é o mesmo mundo para todos), `/api/clubs` (a lista de
+   salas não pode exigir estar dentro de uma) e o retrato de uma pessoa.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const bySlug = db.prepare('SELECT * FROM clubs WHERE slug = ?');
@@ -33,11 +23,8 @@ const membership = db.prepare(
   'SELECT role FROM club_members WHERE club_id = ? AND reviewer_id = ?'
 );
 
-/* Aceita o slug ou o id. O slug é o que a URL carrega e o que a pessoa vê; o id
-   é o que o próprio cliente usa logo depois de criar um clube, antes de ter
-   recarregado qualquer coisa. Os dois são únicos e não colidem — um id começa
-   com `c` seguido de um UUID, e um slug com esse formato exigiria alguém
-   nomear um clube exatamente assim. */
+/* Aceita o slug ou o id: o slug é o que a URL carrega, o id é o que o cliente
+   usa logo depois de criar um clube. Não colidem — um id é `c` mais um UUID. */
 async function findClub(key) {
   if (!key) return null;
   return (await bySlug.get(key)) || (await byId.get(key)) || null;

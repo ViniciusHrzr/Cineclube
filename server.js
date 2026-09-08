@@ -10,42 +10,25 @@ const throttle = require('./throttle');
 
 const app = express();
 
-/* ── um proxy, e exatamente um ────────────────────────────────────────────
-   O Render termina o TLS na frente do app, então `req.ip` sem isto é o endereço
-   do proxy — o MESMO para todo mundo no mundo. Um limite por IP montado sobre
-   esse valor não é um limite por pessoa: é um limite global, e a primeira coisa
-   que ele derruba é o clube.
+/* O Render termina o TLS na frente do app: sem isto, `req.ip` é o endereço do
+   proxy — o MESMO para todo mundo —, e um limite por IP vira um limite global.
 
-   `1` e não `true`. Com `true` o Express acredita no `X-Forwarded-For` inteiro,
-   e esse cabeçalho é escrito por quem faz a requisição — quem quisesse burlar o
-   limite bastava mandar um endereço inventado a cada chamada. Com `1` ele lê
-   apenas o salto que o nosso próprio proxy acrescentou, que é o único pedaço
-   dessa lista em que dá para confiar. */
+   `1` e não `true`: com `true` o Express acredita no `X-Forwarded-For` inteiro,
+   que é escrito por quem faz a requisição. Com `1` ele lê só o salto que o
+   nosso próprio proxy acrescentou. */
 app.set('trust proxy', 1);
 
 /* ── três cabeçalhos ──────────────────────────────────────────────────────
-   Não é um pacote de segurança; são três linhas cujo motivo dá para escrever.
+   **nosniff** é o que importa, por causa de uma coisa que este app faz: ele
+   serve ARQUIVO DE GENTE do próprio domínio. O tipo é conferido na entrada
+   (image.js aceita três), mas sem `nosniff` o navegador pode adivinhar pelo
+   conteúdo — e uma adivinhação que dê "HTML" transforma um upload em página do
+   nosso domínio, com acesso ao cookie de sessão.
 
-   **nosniff** é o que importa aqui, e é por causa de uma coisa que este app faz:
-   ele serve ARQUIVO DE GENTE do próprio domínio — o retrato de uma pessoa e a
-   foto de um clube saem de `/api/...` como bytes. O tipo é conferido na entrada
-   (image.js aceita três, e só três), mas sem `nosniff` o navegador tem
-   permissão para desconfiar do que dizemos e adivinhar pelo conteúdo. Uma
-   adivinhação que dê "HTML" transforma um upload em página do nosso domínio, com
-   acesso ao cookie de sessão. Com o cabeçalho, o tipo declarado é o que vale.
+   **DENY** porque um app que pode ser emoldurado pode ter os cliques roubados.
 
-   **DENY** porque nada neste produto é para ser aberto dentro do site de outra
-   pessoa, e um app que pode ser emoldurado pode ter os cliques roubados.
-
-   **Referrer-Policy** para o endereço de uma ficha não viajar dentro do
-   cabeçalho `Referer` quando alguém clica num link de trailer para fora.
-
-   O que falta e não é uma linha: uma **CSP**. Ela é a defesa de verdade contra
-   script injetado, e não entra aqui de improviso — esta página carrega fonte do
-   Google, imagem do TMDB, `blob:` para o vídeo e um worker do WebTorrent, e uma
-   política escrita sem enumerar tudo isso quebra o app em produção de um jeito
-   que só aparece no navegador de outra pessoa. É trabalho de uma passada
-   própria, com o app aberto na frente. */
+   **Referrer-Policy** para o endereço de uma ficha não viajar no `Referer`
+   quando alguém clica num link de trailer para fora. */
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -53,42 +36,32 @@ app.use((_req, res, next) => {
   next();
 });
 
-/* E a política de conteúdo, que é a defesa contra script injetado e a única que
-   continua valendo depois de todas as outras falharem. Levantada do que os
-   arquivos publicados de fato referenciam — ver csp.js, onde cada permissão diz
-   de onde veio. Nasce em modo AVISO: ela é conferida no navegador das pessoas,
-   e `CINECLUBE_CSP=enforce` a liga sem tocar em código. */
+/* A política de conteúdo — ver csp.js, onde cada permissão diz de onde veio.
+   Nasce em modo AVISO: ela é conferida no navegador das pessoas, e
+   `CINECLUBE_CSP=enforce` a liga sem tocar em código. */
 app.use(require('./csp').middleware());
 app.use('/api/csp-report', require('./routes/csp'));
 
-/* A megabyte, where the default is a tenth of that. The one thing this app
-   accepts that is not a handful of fields is a profile picture, which arrives
-   as base64 — already shrunk to a small square by the browser, but base64 costs
-   a third more than the bytes it carries, and a member on a phone deserves some
-   slack. The picture route enforces its own, much lower, ceiling. */
+/* A megabyte, where the default is a tenth of that: a profile picture arrives
+   as base64, which costs a third more than the bytes it carries. The picture
+   route enforces its own, much lower, ceiling. */
 app.use(express.json({ limit: '1mb' }));
 // Every request learns who is signed in; individual routes decide if they care.
 app.use(auth.attachSession);
 
 /* ── o teto de trás ───────────────────────────────────────────────────────
-   As travas que importam são as das rotas — criar conta, fundar clube,
-   comentar —, cada uma com um número que vem do que aquela ação significa. Esta
-   não sabe nada sobre significado: ela existe para o caso que nenhuma das
-   outras cobre, que é alguém simplesmente MARTELAR a API.
-
-   Trezentos por minuto é muito para uma pessoa e pouco para um laço. Uma tela
-   deste app faz umas poucas chamadas ao abrir, e as duas que repetem sozinhas —
-   o mural a cada 120s e o sino a cada 90s — somam menos de duas por minuto.
+   As travas que importam são as das rotas. Esta não sabe nada sobre
+   significado: existe para o caso que nenhuma outra cobre, alguém MARTELAR a
+   API. Trezentos por minuto é muito para uma pessoa e pouco para um laço — o
+   mural a cada 120s e o sino a cada 90s somam menos de duas.
 
    Depois de `attachSession`, para uma pessoa logada ser medida pela conta e não
-   pelo endereço: duas pessoas do clube atrás do mesmo roteador são duas
-   pessoas, e o limitador precisa saber disso. Ver throttle.js.
+   pelo endereço: duas pessoas do clube atrás do mesmo roteador são duas.
 
-   Fora daqui ficam os dois canos de eventos — o `stream` da sala ao vivo e o de
-   avisos. Uma conexão SSE fica aberta por horas e é uma requisição só; contá-la
-   aqui não protegeria nada, e reconectar depois de uma queda de rede esbarraria
-   num limite feito para outra coisa. Eles têm o próprio teto, que é o certo para
-   o que eles gastam: número de conexões simultâneas, em live.js e screening.js. */
+   Fora daqui ficam os dois canos de eventos: uma conexão SSE fica aberta por
+   horas e é uma requisição só, então contá-la não protegeria nada e reconectar
+   depois de uma queda esbarraria num limite feito para outra coisa. O teto
+   deles é número de conexões simultâneas, em live.js e screening.js. */
 const backstop = throttle.limit({
   name: 'api',
   max: 300,
@@ -100,20 +73,15 @@ app.use('/api', (req, res, next) =>
 );
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Duas famílias de rota, e a fronteira entre elas é uma pergunta só: isto
-   depende de QUAL CLUBE?
+   Duas famílias de rota, e a fronteira é uma pergunta: isto depende de QUAL
+   CLUBE?
 
-   Fora do escopo ficam quatro coisas, cada uma por um motivo próprio. Quem é
-   você não depende de sala nenhuma. O catálogo do TMDB é o mesmo mundo para
-   todo mundo, e guardá-lo por clube seria pagar a mesma requisição N vezes. A
-   lista de clubes não pode exigir estar dentro de um. E o retrato de uma pessoa
-   é dela, não da sala — a mesma URL tem de carregar em toda sala em que ela
-   apareça.
+   Fora do escopo: quem é você, o catálogo do TMDB (o mesmo mundo para todos, e
+   guardá-lo por clube pagaria a mesma requisição N vezes), a lista de clubes
+   (não pode exigir estar dentro de um) e o retrato de uma pessoa, que tem de
+   carregar em toda sala em que ela apareça.
 
-   Todo o resto vive sob `/api/c/<slug>/`, atrás de `clubs.resolve`. O clube na
-   URL e não na sessão: um link de ficha colado no Discord tem de significar a
-   mesma coisa para quem clicar, e o `EventSource` da sala ao vivo não sabe
-   mandar cabeçalho. O porquê inteiro está em clubs.js.
+   Todo o resto vive sob `/api/c/<slug>/`. O porquê está em clubs.js.
    ══════════════════════════════════════════════════════════════════════════ */
 const clubs = require('./clubs');
 const clubRoutes = require('./routes/clubs');
@@ -121,19 +89,17 @@ const reviewerRoutes = require('./routes/reviewers');
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
-/* O catálogo do outro universo. Fora do escopo de clube pelo mesmo motivo que o
-   de filmes: o TMDB não é de sala nenhuma, e o cache de uma série é o mesmo em
-   toda a rede. O que é do clube — a fila e o que cada um viu — desce para
+/* Fora do escopo de clube pelo mesmo motivo do catálogo de filmes: o cache de
+   uma série é o mesmo em toda a rede. O que é do clube desce para
    /api/c/<slug>/shows. */
 app.use('/api/series', require('./routes/series'));
 app.use('/api/clubs', clubRoutes.index);
 /* O que a rede está fazendo, acima da linha do clube: a única leitura do produto
    que atravessa salas, e ela só enxerga o que cada uma emprestou. Ver lobby.js. */
 app.use('/api/lobby', require('./routes/lobby'));
-/* O sino, e ele é da REDE e não de uma sala: quem está em três clubes tinha três
-   sinos e precisava entrar em cada um para saber se alguém respondeu. Fora do
-   escopo de clube porque o saguão — a tela em que a pergunta "o que aconteceu
-   enquanto eu não estava?" é a única pergunta — não tem sala nenhuma. */
+/* O sino é da REDE e não de uma sala: quem está em três clubes tinha três
+   sinos. Fora do escopo porque o saguão, onde a pergunta é "o que aconteceu
+   enquanto eu não estava?", não tem sala nenhuma. */
 app.use('/api/notices', require('./routes/notices'));
 app.use('/api/reviewers', reviewerRoutes.index);
 
@@ -142,9 +108,8 @@ scoped.use('/reviewers', reviewerRoutes.scoped);
 scoped.use('/reviews', require('./routes/reviews'));
 scoped.use('/watchlist', require('./routes/watchlist'));
 scoped.use('/shows', require('./routes/shows'));
-/* A conversa e o mural do outro universo. Caminhos próprios e não um parâmetro
-   em `/social` e `/feed`: são outras tabelas, outra unidade avaliada e outras
-   consultas — uma URL só fingiria que é a mesma pergunta. */
+/* Caminhos próprios e não um parâmetro em `/social` e `/feed`: são outras
+   tabelas, outra unidade avaliada e outras consultas. */
 scoped.use('/shows-social', require('./routes/showsSocial'));
 scoped.use('/shows-feed', require('./routes/showsFeed'));
 scoped.use('/screening', require('./routes/screening'));
@@ -158,31 +123,22 @@ scoped.use('/', clubRoutes.scoped);
 app.use('/api/c/:club', clubs.resolve, scoped);
 
 /* The build stamps a content hash into every asset's name, so a file under
-   /assets can never change without changing its URL — which is exactly the
-   condition under which a browser may keep it forever and stop asking. Without
-   this, every visit revalidated a 350kB bundle that had not moved since the
-   last deploy. index.html is deliberately left out: it is the one file whose
-   name never changes, and it is what points at the hashed ones. */
+   /assets can never change without changing its URL — the exact condition under
+   which a browser may keep it forever. index.html is deliberately left out: it
+   is the one file whose name never changes. */
 app.use(
   '/assets',
   express.static(path.join(__dirname, 'public', 'assets'), { immutable: true, maxAge: '1y' })
 );
-/* Everything else, and index.html above all: revalidate every time.
+/* index.html above all: revalidate every time. It carries no hash — it is the
+   file that names the hashed ones — so a browser holding an old copy is running
+   the previous release in full, with no way to find out. `no-cache` does not
+   mean "do not store", it means "ask first".
 
-   It carries no hash in its name — it is the file that names the hashed ones —
-   so a browser holding an old copy is a browser running the previous release
-   in full, and it has no way to find out otherwise. Without a Cache-Control
-   header a browser is free to invent a freshness lifetime of its own, and it
-   does. `no-cache` does not mean "do not store": it means "ask first", which
-   costs one conditional request and answers 304 the moment nothing changed.
-
-   The service worker gets the same header for a stronger reason. It has no hash
-   either, and it is the file that serves the film: a browser still running the
-   previous one is a browser with the previous one's bugs, and a service worker
-   outlives the tab that installed it. Browsers do revalidate a worker script on
-   their own, but "do" is a thing three engines each decided separately and have
-   changed before, and one member stuck on an old worker is one member whose
-   picture stops mid-film for reasons nobody in the room can see. */
+   The service worker gets the same header for a stronger reason: it is the file
+   that serves the film, it outlives the tab that installed it, and browsers
+   revalidating it on their own is a thing three engines each decided separately
+   and have changed before. */
 app.use(
   express.static(path.join(__dirname, 'public'), {
     setHeaders: (res, filePath) => {
@@ -196,28 +152,14 @@ app.use(
 /* ══════════════════════════════════════════════════════════════════════════
    O ÚLTIMO TRATADOR, e por que ele não imprime o erro inteiro.
 
-   Ele imprimia: `console.error('...', err)`. Parece a coisa mais óbvia do
-   mundo e tem um vazamento dentro.
-
    Quando o corpo de uma requisição não é JSON válido, o `body-parser` levanta
-   um erro e **pendura o corpo cru nele**, em `err.body`. Imprimir o erro
-   imprime esse campo. Ou seja: qualquer requisição com JSON torto escrevia o
-   próprio conteúdo no log da instância — e o log é o instrumento com que se lê
-   todo o resto.
+   um erro e PENDURA O CORPO CRU NELE, em `err.body`. Um `console.error(err)`
+   escrevia esse corpo no log da instância — e o caso caro é
+   `/api/auth/login`: um corpo quase-válido com uma senha dentro, em texto puro
+   no painel do Render. Então nada de corpo, nunca.
 
-   O caso caro não é o barulho. É `/api/auth/login` e `/api/auth/password`: um
-   corpo quase-válido com uma senha dentro, e a senha aparecia em texto puro no
-   painel do Render. Este produto guarda só um hash `scrypt`, nunca devolve a
-   senha em resposta nenhuma e nunca a registra em lugar nenhum — menos aqui,
-   por causa de um `console.error` de uma linha.
-
-   Então nada de corpo, nunca. O que sai é o que serve para consertar: a
-   mensagem, o tipo, e onde aconteceu.
-
-   ── e um JSON torto não é um erro do servidor ─────────────────────────────
-   Respondia 500, que quer dizer "eu quebrei". Um corpo malformado é o cliente
-   dizendo algo que não dá para ler, e isso é 400 — a diferença importa para
-   quem estiver do outro lado tentando entender se o problema é dele.
+   E um JSON torto não é 500: 500 quer dizer "eu quebrei", e um corpo malformado
+   é o cliente dizendo algo que não dá para ler, o que é 400.
    ══════════════════════════════════════════════════════════════════════════ */
 const CLIENT_FAULTS = {
   'entity.parse.failed': [400, 'O corpo do pedido não é JSON válido.'],
@@ -242,29 +184,19 @@ app.use((err, req, res, _next) => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O ADMINISTRADOR DA INSTALAÇÃO, e por que ele é UM só.
+   O ADMINISTRADOR DA INSTALAÇÃO, e por que ele é UM só. São duas coisas com o
+   mesmo nome em português:
 
-   São duas coisas diferentes com o mesmo nome em português, e confundir as duas
-   é como um produto assim vaza poder:
-
-   · **ADM de um clube** (`club_members.role`) manda na sala dele. Aprova quem
-     entra, muda a foto, modera a conversa. Qualquer pessoa que funde um clube
-     vira um, e não alcança absolutamente nada fora daquela sala.
-
+   · **ADM de um clube** (`club_members.role`) manda na sala dele e não alcança
+     nada fora dela. Qualquer pessoa que funde um clube vira um.
    · **ADM geral** (`reviewers.is_admin`) cuida de CONTAS — apagar uma pessoa da
-     plataforma inteira, com as fichas dela em todos os clubes. É um só, e é
-     quem hospeda isto.
+     plataforma inteira. É um só, e é quem hospeda isto.
 
-   ── a cadeira é do e-mail, e do e-mail verificado ─────────────────────────
-   Era do NOME: a conta chamada "Vinicius" ganhava a cadeira no boot. Isso estava
-   errado desde que existe cadastro aberto — qualquer pessoa criava uma conta com
-   esse nome e esperava um reinício.
-
-   Agora é `CINECLUBE_ADMIN_EMAIL`, e só vale para uma conta ligada ao Google. Um
-   cadastro por senha não verifica e-mail nenhum (não há como: este app não manda
-   e-mail), então aceitar a cadeira por e-mail auto-declarado seria a mesma porta
-   dos fundos com outra fechadura. Um `google_sub` é a prova de que o Google
-   confirmou aquele endereço, e é isso que a checagem exige.
+   A cadeira é de `CINECLUBE_ADMIN_EMAIL` e só vale para conta ligada ao Google.
+   Era do NOME, e isso estava errado desde que existe cadastro aberto. Um
+   cadastro por senha não verifica e-mail nenhum, então aceitar a cadeira por
+   e-mail auto-declarado seria a mesma porta dos fundos com outra fechadura; um
+   `google_sub` é a prova de que o Google confirmou aquele endereço.
    ══════════════════════════════════════════════════════════════════════════ */
 const OWNER_EMAIL = (process.env.CINECLUBE_ADMIN_EMAIL || '').trim().toLowerCase();
 
@@ -277,11 +209,8 @@ async function boot() {
   /* As contas de exemplo nascem sem credencial nenhuma: são lugares na lista,
      não pessoas, e dar a elas uma senha conhecida seria porta dos fundos.
 
-     O clube fundador. A migração o cria e povoa quando existem dados de antes
-     dos clubes; num banco vazio ela roda antes de existir alguém, então é aqui
-     que ele passa a existir — e as contas de exemplo logo abaixo já nascem
-     dentro dele. Uma pessoa numa rede de clubes sem sala nenhuma para entrar
-     não tem tela em que aparecer. */
+     O clube principal é criado aqui porque num banco vazio a migração roda
+     antes de existir alguém — e as contas de exemplo já nascem dentro dele. */
   const home = await db.ensureHomeClub();
 
   const { n } = await db.prepare('SELECT COUNT(*) AS n FROM reviewers').get();
@@ -305,30 +234,23 @@ async function boot() {
     );
   }
 
-  /* A cadeira é do e-mail configurado, e só de uma conta ligada ao Google —
-     porque só ela teve o e-mail verificado por alguém. Ver o bloco no topo.
-
-     Roda a cada boot, e é de propósito: se um dia o e-mail da variável mudar, a
-     cadeira acompanha, e ninguém fica com ela por ter chegado primeiro. Também
-     TIRA de quem não é mais — é a metade que faz disto uma regra e não uma
-     concessão inicial. */
+  /* Roda a cada boot, de propósito: se o e-mail da variável mudar, a cadeira
+     acompanha. E TIRA de quem não é mais — é a metade que faz disto uma regra e
+     não uma concessão inicial. */
   const adminRow = OWNER_EMAIL
     ? await db
         .prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE AND google_sub IS NOT NULL')
         .get(OWNER_EMAIL)
     : null;
 
-  /* ── a exceção da conta adormecida ─────────────────────────────────────
-     A limpeza pula quem não tem NENHUMA credencial — nem Google, nem senha.
-     Essas contas são as de antes dos clubes, esperando ser reivindicadas, e é
-     justamente `is_admin` que `accountForGoogle` usa para achar qual delas é a
-     do dono na primeira entrada. Rebaixá-la aqui quebraria a migração: a conta
-     perderia a marca antes de existir alguém para herdá-la, e as fichas antigas
-     ficariam num avaliador que ninguém mais alcança.
+  /* A limpeza pula quem não tem NENHUMA credencial — nem Google, nem senha.
+     São as contas de exemplo e as de antes do cadastro, e é `is_admin` que
+     `accountForGoogle` usa para achar a do dono na primeira entrada pelo
+     e-mail configurado. Rebaixá-las aqui tiraria a marca antes de existir
+     alguém para herdá-la.
 
-     Não é uma brecha: uma conta sem credencial nenhuma é uma conta em que
-     ninguém consegue entrar. Ela deixa de ser exceção no instante em que alguém
-     a reivindica, porque aí passa a ter `google_sub`. */
+     Não é brecha: uma conta sem credencial nenhuma é uma conta em que ninguém
+     consegue entrar. */
   await db.prepare(
     `UPDATE reviewers SET is_admin = 0
      WHERE is_admin = 1 AND id <> ?
@@ -341,10 +263,9 @@ async function boot() {
       console.log(`[server] ${adminRow.name} <${OWNER_EMAIL}> é o administrador da instalação`);
     }
 
-    /* E ADM do clube fundador, que é outra coisa: `is_admin` é a instalação,
-       `role` é a sala. Só quando a sala não tem nenhum — pela mesma razão da
-       cadeira acima, um clube que já tem ADM nunca é reassentado por código, ou
-       sair do próprio clube seria desfeito no reinício seguinte. */
+    /* `is_admin` é a instalação, `role` é a sala. Só quando a sala não tem
+       nenhum: um clube que já tem ADM nunca é reassentado por código, ou sair
+       do próprio clube seria desfeito no reinício seguinte. */
     const { n: chaired } = await db
       .prepare(`SELECT COUNT(*) AS n FROM club_members WHERE club_id = ? AND role = 'admin'`)
       .get(home);
@@ -365,13 +286,14 @@ app.ready = ready;
 // listen on an ephemeral port of their own.
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  // Explicitly every interface. A process listening only on loopback is
-  // invisible to the proxy sitting in front of it, which then has nothing to
+  // Explicitly every interface: a process listening only on loopback is
+  // invisible to the proxy in front of it, which then answers as if the service
+  // were down.
   // route a request to and answers as if the service were down.
   const HOST = process.env.HOST || '0.0.0.0';
 
-  // A process that dies without saying why turns a five minute fix into an
-  // afternoon. These keep the default behaviour — the process still exits —
+  // These keep the default behaviour — the process still exits — but name the
+  // cause on the way out.
   // but name the cause on the way out.
   process.on('unhandledRejection', err => {
     console.error('[server] promessa rejeitada sem tratamento:', err);
@@ -385,8 +307,8 @@ if (require.main === module) {
   ready.then(
     () => {
       const server = app.listen(PORT, HOST, () => {
-        // The bound address, not the one we hoped for: this line is the whole
-        // difference between guessing and knowing when routing misbehaves.
+        // The bound address, not the one we hoped for: the difference between
+        // guessing and knowing when routing misbehaves.
         const { address, port } = server.address();
         console.log(`Cineclube ouvindo em ${address}:${port}`);
       });

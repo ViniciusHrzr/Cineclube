@@ -1,29 +1,16 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   O nome pelo qual se chama alguém.
+   O nome pelo qual se chama alguém numa menção.
 
-   Uma menção é escrita à mão, no meio de uma frase, por quem está com pressa —
-   "@beren o terceiro ato desmonta". Ninguém digita "Beren Costa" ali, e ninguém
-   deveria: o que se usa para chamar uma pessoa é o primeiro nome dela.
+   Não é uma coluna, e isso é a decisão inteira: um apelido não é fato sobre a
+   pessoa isolada, é fato sobre ela DENTRO deste clube — "Bruno" só serve
+   enquanto não houver dois Brunos. Gravado, dois membros poderiam acabar com o
+   mesmo apelido e uma menção passaria a apontar para quem chegou primeiro, em
+   silêncio. Derivado do conjunto, a unicidade é garantida por construção.
 
-   ── por que isto não é uma coluna ───────────────────────────────────────
-   Porque um apelido não é um fato sobre a pessoa isolada, é um fato sobre ela
-   DENTRO deste clube: "Bruno" só serve enquanto não houver dois Brunos. Guardar
-   isso numa coluna criaria a possibilidade de dois membros com o mesmo apelido
-   gravado, e o dia em que isso acontecesse uma menção passaria a apontar para
-   quem chegou primeiro em silêncio.
-
-   Derivado do conjunto inteiro, então a unicidade é uma propriedade garantida
-   pela construção e não uma regra que alguém precisa lembrar de aplicar.
-
-   ── a regra ─────────────────────────────────────────────────────────────
-   Primeiro nome. Havendo empate, o primeiro nome mais a primeira palavra
-   seguinte — "brunosa", "brunolima". Persistindo o empate (duas pessoas com
-   exatamente o mesmo nome completo), entra o suficiente do id para separar, que
-   é feio e é o caso que nunca acontece num clube de seis amigos.
-
-   Sem acento e em minúsculas, porque é assim que se digita com pressa. É a
-   mesma normalização que a busca do acervo usa, pela mesma razão: ninguém
-   alcança as teclas mortas no meio de uma frase.
+   A regra: primeiro nome; havendo empate, mais a palavra seguinte
+   ("brunosa", "brunolima"); persistindo (nome completo idêntico), o suficiente
+   do id para separar. Sem acento e em minúsculas — ninguém alcança as teclas
+   mortas no meio de uma frase.
    ══════════════════════════════════════════════════════════════════════════ */
 
 function norm(s) {
@@ -37,10 +24,7 @@ function norm(s) {
 
 const words = name => String(name || '').trim().split(/\s+/).filter(Boolean);
 
-/**
- * Handles únicos para um clube inteiro, na forma `{ [reviewerId]: handle }`.
- * `reviewers` é qualquer lista de objetos com `id` e `name`.
- */
+/** Handles únicos de um clube inteiro, na forma `{ [reviewerId]: handle }`. */
 function handlesFor(reviewers) {
   const list = (reviewers || []).map(r => ({ id: String(r.id), parts: words(r.name) }));
 
@@ -56,8 +40,8 @@ function handlesFor(reviewers) {
     }
     const next = [];
     for (const [handle, people] of Object.entries(bucket)) {
-      /* Sozinho no balde E sem colidir com um apelido já entregue numa passada
-         anterior — sem a segunda metade, "Ana" e "Ana Reis" poderiam receber o
+      /* Sozinho no balde E sem colidir com apelido já entregue numa passada
+         anterior: sem a segunda metade, "Ana" e "Ana Reis" poderiam receber o
          mesmo "ana" em rodadas diferentes. */
       const taken = Object.values(chosen).includes(handle);
       if (people.length === 1 && !taken) chosen[people[0].id] = handle;
@@ -67,7 +51,7 @@ function handlesFor(reviewers) {
   }
 
   /* Nomes idênticos: o id desempata. Feio de propósito — é o caso que não
-     acontece, e resolvê-lo com elegância custaria mais do que ele vale. */
+     acontece. */
   for (const person of pending) {
     const base = norm(person.parts.join('')) || 'membro';
     chosen[person.id] = `${base}${norm(person.id).slice(-3)}`;
@@ -75,13 +59,11 @@ function handlesFor(reviewers) {
   return chosen;
 }
 
-/* ── quem foi chamado num texto ───────────────────────────────────────────
-   Devolve os ids mencionados, sem repetição.
+/* Os ids mencionados num texto, sem repetição.
 
-   O `@` só conta no começo do texto ou depois de algo que não é letra: sem
-   isso, um e-mail colado no meio de um comentário chamaria alguém chamado
-   Gmail. O maior apelido ganha primeiro, senão "@brunosa" seria lido como
-   "@bruno" mais um "sa" perdido. */
+   O `@` só conta no começo ou depois de algo que não é letra, senão um e-mail
+   colado no meio do comentário chamaria alguém chamado Gmail. O maior apelido
+   ganha primeiro, senão "@brunosa" viraria "@bruno" mais um "sa" perdido. */
 function mentionedIn(body, handles) {
   const text = String(body || '');
   if (!text.includes('@')) return [];

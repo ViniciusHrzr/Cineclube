@@ -3,29 +3,17 @@ const db = require('./db');
 const auth = require('./auth');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A montagem que todo teste de API precisa agora.
+   A montagem que todo teste de API precisa: existir uma conta, existir uma
+   sala, e a conta estar naquela sala.
 
-   Antes disto, entrar num teste era uma linha: `POST /api/reviewers` com um PIN,
-   e pronto — havia um clube só, e estar cadastrado era estar dentro dele. Com
-   clubes são três coisas diferentes: existir uma conta, existir uma sala, e a
-   conta estar naquela sala.
+   Direto no banco, porque não é isto que os testes estão testando: um arquivo
+   que verifica se apagar um comentário leva as respostas junto não pode falhar
+   porque o fluxo do Google mudou. `signIn` é a exceção deliberada — chama
+   `accountForGoogle`, o caminho real de criar conta, sem passar pelo Google.
 
-   ── por que direto no banco, e não pela API ────────────────────────────────
-   Porque não é isto que os testes estão testando. Um arquivo que verifica se
-   apagar um comentário leva as respostas junto não deveria falhar porque o fluxo
-   do Google mudou, e fazer a montagem pela rota acopla todos eles à porta de
-   entrada. A entrada tem os próprios testes.
-
-   `signIn` é a exceção parcial e deliberada: ela chama `accountForGoogle`, que é
-   a função real que cria contas no produto. Assim a montagem continua passando
-   pelo caminho de verdade sem passar pelo Google.
-
-   ── e por que este arquivo não mora em test/ ───────────────────────────────
-   Porque `node --test` varre todo .js debaixo de uma pasta chamada test e
-   trataria isto como uma suíte — e uma suíte sem `CINECLUBE_DB` definido abre o
-   banco DE VERDADE. Cada teste aponta o banco para um arquivo descartável antes
-   de exigir qualquer coisa; um arquivo lá dentro que rodasse sozinho não faria
-   isso, e escreveria no clube.
+   NÃO mover para test/: `node --test` varre todo .js debaixo de uma pasta com
+   esse nome e rodaria isto como suíte, sem `CINECLUBE_DB` definido — ou seja,
+   escrevendo no banco DE VERDADE.
    ══════════════════════════════════════════════════════════════════════════ */
 
 let seq = 0;

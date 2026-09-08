@@ -1,33 +1,22 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   MANDAR UM E-MAIL.
+   MANDAR UM E-MAIL: confirmar um endereço, e devolver o acesso a quem perdeu a
+   senha. As duas são um segredo de vida curta que só chega a quem lê aquela
+   caixa, e cuja apresentação é a prova.
 
-   Duas coisas neste produto precisam disso, e são a mesma coisa com dois usos:
-   confirmar que um endereço é seu, e devolver o acesso a quem perdeu a senha.
-   As duas se resumem a um segredo de vida curta que só chega a quem lê aquela
-   caixa de entrada, e cuja apresentação é a prova.
+   HTTP e não SMTP: SMTP exigiria `nodemailer`, e este app tem duas dependências
+   de produção — magreza é propriedade de segurança no processo que guarda as
+   senhas do clube. Brevo porque deixa verificar UM REMETENTE (um Gmail) em vez
+   de exigir domínio próprio, e este produto mora num subdomínio do Render.
 
-   ── por que HTTP e não SMTP ───────────────────────────────────────────────
-   SMTP exigiria `nodemailer`. Este app tem duas dependências de produção, e essa
-   magreza é uma propriedade de segurança: é o processo que guarda as senhas do
-   clube. A API do Brevo é um POST com `fetch`, que o Node já tem.
-
-   ── e por que Brevo ───────────────────────────────────────────────────────
-   Porque ele deixa verificar UM REMETENTE — um endereço de Gmail — em vez de
-   exigir um domínio próprio. Os concorrentes com API melhor exigem domínio para
-   escrever a qualquer pessoa, e este produto mora num subdomínio do Render.
-
-   ── sem chave, o app continua de pé ───────────────────────────────────────
-   Sem `BREVO_API_KEY` nada é enviado e nada quebra: `send` devolve `sent: false`
-   e diz por quê. É o estado do desenvolvimento e dos testes, e é o estado da
-   produção enquanto a chave não estiver lá. As rotas que dependem disto tratam
-   o não-envio como uma resposta possível, nunca como uma exceção.
+   Sem `BREVO_API_KEY` nada é enviado e nada quebra: `send` devolve
+   `sent: false` e diz por quê. As rotas tratam o não-envio como uma resposta
+   possível, nunca como exceção.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
 
-/* Oito segundos. Um provedor de e-mail lento não pode virar uma requisição
-   pendurada: quem pediu um link está olhando para um botão girando, e o cano
-   deste app é uma thread só. */
+/* Um provedor lento não pode virar requisição pendurada: quem pediu o link está
+   olhando um botão girando, e o cano deste app é uma thread só. */
 const TIMEOUT_MS = 8000;
 
 const key = () => (process.env.BREVO_API_KEY || '').trim();
@@ -41,26 +30,14 @@ const configured = () => !!(key() && from());
    em todo pedido de link — e um log que se repete é um log que não se lê. */
 let avisou = false;
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O QUE UM 401 QUASE SEMPRE QUER DIZER.
+/* `Key not found` quase nunca é chave errada digitada: é a chave ERRADA
+   copiada. A página "SMTP & API" do Brevo mostra a senha de SMTP em destaque e
+   a chave da API v3 na aba ao lado, e colar a primeira aqui dá exatamente esta
+   mensagem sem sugerir que foi isso. Uma chave v3 começa com `xkeysib-`.
 
-   `Key not found` é o provedor dizendo que não reconhece a chave, e a causa
-   quase nunca é uma chave errada digitada: é a chave ERRADA copiada. A página
-   "SMTP & API" do Brevo mostra as credenciais de SMTP em destaque — um login e
-   uma senha mestra — e a chave da API v3 fica na aba ao lado. Copiar a senha de
-   SMTP e colar aqui produz exatamente esta mensagem, e nada na mensagem sugere
-   que foi isso.
-
-   Uma chave v3 começa com `xkeysib-`. Então o diagnóstico é conferir a FORMA e
-   dizer o que está errado, em vez de deixar quem está lendo o log adivinhar.
-
-   ── e o que este log não conta ────────────────────────────────────────────
-   Nada da chave. Sai o comprimento e um sim/não sobre o prefixo — e `xkeysib-`
-   é o marcador público do formato, do mesmo tipo que `sk_live_` ou `ghp_`: ele
-   identifica o TIPO da credencial, não a credencial. Um segredo em log é um
-   segredo vazado, e um diagnóstico que exige vazar o segredo para funcionar não
-   é um diagnóstico, é o problema seguinte.
-   ══════════════════════════════════════════════════════════════════════════ */
+   Nada da chave sai no log: só o comprimento e um sim/não sobre o prefixo, que
+   é marcador público do formato (como `sk_live_` ou `ghp_`) e identifica o TIPO
+   da credencial, não a credencial. */
 function keyHint() {
   const k = key();
   const forma = `${k.length} caracteres`;
@@ -70,26 +47,17 @@ function keyHint() {
   return `[mail] a chave NÃO começa com "xkeysib-" (${forma}) — isso é a senha de SMTP, não a chave da API. No Brevo: SMTP & API → aba API Keys → Generate a new API key.`;
 }
 
-/* ── o endereço público deste app ─────────────────────────────────────────
-   O link do e-mail precisa ser absoluto, e a única fonte disso é a mesma
-   variável que o fluxo do Google já usa. Sem ela o link sairia relativo, o que
-   num cliente de e-mail não é um link. */
+/* O link do e-mail precisa ser absoluto, e a fonte é a mesma variável do fluxo
+   do Google. Relativo, num cliente de e-mail, não é link. */
 function baseUrl() {
   return (process.env.CINECLUBE_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O envio.
+/* Devolve `{ sent }` e nunca lança: um provedor fora do ar não é motivo para
+   responder 500, e a tela sabe dizer que o link pode não chegar.
 
-   Devolve `{ sent }` e nunca lança. Um provedor fora do ar não é motivo para
-   uma rota responder 500: quem pediu o link pediu uma coisa que pode não
-   chegar, e a tela sabe dizer isso. Lançar aqui transformaria uma falha
-   externa e temporária num erro do produto.
-
-   O que vai para o log é o suficiente para consertar e nada além: o status e o
-   começo da resposta do provedor. A chave nunca, o corpo nunca — um corpo de
-   e-mail carrega o token, e um token em log é um token vazado.
-   ══════════════════════════════════════════════════════════════════════════ */
+   No log vai o status e o começo da resposta do provedor. A chave nunca, o
+   corpo nunca — um corpo de e-mail carrega o token. */
 async function send({ to, toName, subject, text }) {
   if (!configured()) {
     if (!avisou) {
@@ -113,9 +81,8 @@ async function send({ to, toName, subject, text }) {
         sender: { email: from(), name: fromName() },
         to: [{ email: to, name: toName || undefined }],
         subject,
-        /* Texto puro, e só. Um e-mail deste produto tem quatro linhas e um
-           link; a versão em HTML seria uma segunda cópia da mesma mensagem para
-           manter em dia, e é a que os clientes de e-mail mais estragam. */
+        /* Texto puro: a versão em HTML seria uma segunda cópia da mesma
+           mensagem para manter em dia, e é a que os clientes mais estragam. */
         textContent: text,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -136,17 +103,10 @@ async function send({ to, toName, subject, text }) {
   }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   As duas mensagens.
-
-   Escritas aqui e não na rota, porque são texto do produto — a mesma razão pela
-   qual as frases do sino são escritas pelo servidor e não montadas na tela.
-
-   As duas dizem quanto tempo o link dura e as duas dizem o que fazer se você
-   não pediu nada. A segunda frase é a que importa: um e-mail de redefinição que
-   não explica o que ele é assusta quem o recebe sem ter pedido, e essa pessoa é
-   exatamente quem precisa entender que ninguém entrou na conta dela.
-   ══════════════════════════════════════════════════════════════════════════ */
+/* As duas mensagens moram aqui e não na rota porque são texto do produto. As
+   duas dizem quanto o link dura e o que fazer se você não pediu nada — a
+   segunda frase é a que importa: quem recebe uma redefinição sem ter pedido
+   precisa entender que ninguém entrou na conta dela. */
 
 const verifyMail = (nome, link) => ({
   subject: 'Confirme seu e-mail no Cineclube',
@@ -176,10 +136,8 @@ const resetMail = (nome, link) => ({
   ].join('\n'),
 });
 
-/* O e-mail que responde a um pedido de redefinição feito por uma conta cujo
-   endereço ainda não foi confirmado. Não dá a senha de volta — dá o passo que
-   falta antes disso. Ver a nota em routes/auth.js sobre por que existem dois
-   caminhos e não um. */
+/* Redefinição pedida por conta com endereço ainda não confirmado. Não dá a
+   senha de volta — dá o passo que falta antes disso. */
 const verifyFirstMail = (nome, link) => ({
   subject: 'Confirme seu e-mail para redefinir a senha',
   text: [

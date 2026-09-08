@@ -1,15 +1,6 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   Uma imagem que alguém mandou.
-
-   Duas coisas neste produto aceitam figura — o retrato de uma pessoa e a foto
-   de um clube — e as regras são as mesmas: três formatos, um teto, e nada
-   decodificado antes de se saber que cabe.
-
-   O cliente já encolhe qualquer imagem para um quadrado pequeno antes de
-   mandar. Um corpo perto do teto significa que o cliente não estava no
-   caminho, que é exatamente o caso que isto existe para sobreviver — o
-   navegador é conveniência, nunca a checagem.
-   ══════════════════════════════════════════════════════════════════════════ */
+/* O cliente encolhe a imagem para um quadrado pequeno antes de mandar. Um
+   corpo perto do teto quer dizer que o cliente não estava no caminho — o
+   navegador é conveniência, nunca a checagem. */
 
 const TYPES = ['image/webp', 'image/jpeg', 'image/png'];
 const MAX_BYTES = 400 * 1024;

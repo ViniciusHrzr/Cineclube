@@ -1,47 +1,29 @@
 /* ══════════════════════════════════════════════════════════════════════════
    QUANTAS VEZES, EM QUANTO TEMPO.
 
-   Até aqui o produto tinha uma trava só, e ela protegia uma coisa só: cinco
-   senhas erradas trancavam UMA CONTA. Isso continua certo e continua valendo —
-   e não protege nada do resto, porque o resto não erra senha. Um programa que
-   crie contas, funde clubes e escreva comentários não está adivinhando nada:
-   está usando o produto exatamente como ele foi desenhado, muitas vezes por
-   segundo.
+   Escrito à mão: o app tem duas dependências de produção, e essa magreza é uma
+   propriedade de segurança. Um limitador é sessenta linhas e um Map — trazer
+   uma árvore de pacotes para dentro do processo que guarda as senhas do clube
+   é pagar caro numa moeda que não é linha de código.
 
-   ── por que escrito à mão ─────────────────────────────────────────────────
-   O app tem duas dependências de produção — express e o cliente do libSQL — e
-   essa magreza é uma propriedade de segurança, não uma economia. Um limitador é
-   sessenta linhas e um Map; trazer uma árvore de pacotes para dentro do
-   processo que guarda as senhas do clube, para não escrever sessenta linhas, é
-   pagar caro numa moeda que não é linha de código.
+   Em memória, e isso só funciona porque o serviço roda em UMA instância (ver
+   render.yaml). No dia em que houver duas, cada uma conta a sua metade e todo
+   limite dobra na prática; a resposta certa nesse dia é um contador
+   compartilhado, não um número menor aqui.
 
-   ── por que em memória, e o que isso custa ────────────────────────────────
-   O serviço roda em UMA instância (ver render.yaml). Com uma instância, um Map
-   é a contagem completa e exata. No dia em que houver duas, cada uma passa a
-   contar a sua metade e todo limite dobra na prática — e a resposta certa nesse
-   dia é um contador compartilhado, não um número menor aqui. Fica escrito para
-   que a troca seja uma decisão e não uma surpresa.
+   Reiniciar zera as contagens, de propósito: o Render derruba a instância
+   depois de 15 min parada, e o que estas travas defendem é a rajada, não uma
+   quota mensal.
 
-   Reiniciar zera as contagens. Isso é aceitável de propósito: o Render derruba
-   a instância depois de 15 min parada, então zerar é o estado normal, e o que
-   estas travas defendem é a rajada — não uma quota mensal.
-
-   ── janela fixa, e não balde furado ───────────────────────────────────────
-   Uma janela fixa é grosseira: alguém pode gastar o limite no fim de uma janela
-   e de novo no começo da seguinte, ou seja o dobro num instante. Um balde com
-   vazamento contínuo não tem isso e custa mais estado.
-
-   A janela fixa ganha por uma razão que não é técnica: ela sabe dizer QUANDO
-   passa. "Tente de novo em 42s" é uma frase verdadeira e útil; um balde só sabe
-   dizer "agora não". O produto inteiro é escrito assim — a mensagem nomeia o
-   problema e a saída —, e o pior caso do dobro numa janela está muito abaixo de
-   qualquer número que interesse a quem estiver do outro lado.
+   Janela fixa e não balde furado, apesar de a janela deixar gastar o limite no
+   fim de uma e de novo no começo da seguinte. Ela sabe dizer QUANDO passa —
+   "tente de novo em 42s" é uma frase útil, e um balde só sabe dizer "agora
+   não".
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* Um teto para a própria contagem. Sem ele, o limitador vira a memória que ele
-   deveria proteger: um IP por requisição, um Map crescendo para sempre. Ao
-   estourar, a tabela inteira é descartada — todo mundo recomeça com o limite
-   cheio, o que é generoso por um instante e nunca é uma porta. */
+/* Teto da própria contagem: sem ele o limitador vira a memória que deveria
+   proteger. Ao estourar, a tabela inteira é descartada — generoso por um
+   instante, e nunca uma porta. */
 const MAX_KEYS = 50_000;
 /** De quanto em quanto tempo as janelas vencidas são varridas. */
 const SWEEP_MS = 60_000;
@@ -56,21 +38,16 @@ const sweeper = setInterval(() => {
 }, SWEEP_MS);
 sweeper.unref?.();
 
-/* ── de quem é esta requisição ────────────────────────────────────────────
-   Da CONTA quando há sessão, e do endereço quando não há. A ordem importa e é
-   deliberada: um limite por IP pune uma casa inteira atrás do mesmo roteador —
-   e este produto é um clube de amigos, dos quais dois podem estar na mesma
-   sala. Depois de entrar, a identidade é a conta, que é a coisa que o limite
-   quer de fato medir.
+/* Da CONTA quando há sessão, do endereço quando não há. Um limite por IP pune
+   uma casa inteira atrás do mesmo roteador, e aqui dois membros do clube podem
+   estar na mesma sala.
 
-   Antes de entrar não há escolha: o endereço é tudo que existe, e é justamente
-   aí que mora o abuso mais barato — criar contas. Por isso `/register` e
-   `/login` são medidos por IP explicitamente, e não pela conta que ainda não
-   existe.
+   Antes de entrar não há escolha, e é aí que mora o abuso mais barato: por isso
+   `/register` e `/login` são medidos por IP explicitamente.
 
-   `req.ip` só vale alguma coisa com `trust proxy` ligado: o Render termina o
-   TLS na frente do app, então SEM isso todo mundo no mundo é o mesmo endereço —
-   o do proxy — e o limite por IP vira um limite global. Ver server.js. */
+   `req.ip` só vale alguma coisa com `trust proxy` ligado — o Render termina o
+   TLS na frente do app, e sem isso todo mundo no mundo é o endereço do proxy.
+   Ver server.js. */
 function identityOf(req, by) {
   if (by === 'ip') return 'ip:' + (req.ip || 'sem-endereco');
   const who = req.session?.reviewer_id;
@@ -84,13 +61,11 @@ function saying(seconds) {
   return `${min} minuto${min === 1 ? '' : 's'}`;
 }
 
-/* ── a contagem ───────────────────────────────────────────────────────────
-   Devolve `{ ok }` ou `{ ok: false, retryAfter }`.
+/* Devolve `{ ok }` ou `{ ok: false, retryAfter }`.
 
-   Uma requisição recusada NÃO conta. Se contasse, quem esbarrasse no limite e
-   continuasse tentando empurraria a própria janela para sempre — a trava
-   deixaria de ter fim, e uma trava sem fim é um banimento que ninguém decidiu
-   aplicar. */
+   Uma requisição recusada NÃO conta: se contasse, quem continuasse tentando
+   empurraria a própria janela para sempre, e uma trava sem fim é um banimento
+   que ninguém decidiu aplicar. */
 function take(key, max, windowMs, now = Date.now()) {
   const entry = hits.get(key);
   if (!entry || entry.until <= now) {
@@ -105,18 +80,12 @@ function take(key, max, windowMs, now = Date.now()) {
   return { ok: true };
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O middleware.
+/* `message` recebe o tempo já escrito por extenso. A frase é do produto e não
+   do limitador: "você está indo rápido demais" e "muitas contas criadas deste
+   lugar" são coisas diferentes, e uma mensagem genérica em cima das duas deixa
+   as duas sem saber o que fazer.
 
-   `limit({ name, max, windowMs, by, message })`, e `message` recebe o tempo já
-   escrito por extenso. A frase é do produto e não do limitador: "você está indo
-   rápido demais" e "muitas contas criadas deste lugar" são coisas diferentes
-   acontecendo com pessoas diferentes, e uma mensagem genérica em cima das duas
-   deixaria as duas sem saber o que fazer.
-
-   O 429 carrega `Retry-After` além do corpo. O cabeçalho é para quem não é
-   navegador — e quem não é navegador é a metade do público desta trava.
-   ══════════════════════════════════════════════════════════════════════════ */
+   O 429 carrega `Retry-After` além do corpo, para quem não é navegador. */
 function limit({ name, max, windowMs, by = 'account', message }) {
   return function limited(req, res, next) {
     const verdict = take(`${name}|${identityOf(req, by)}`, max, windowMs);
@@ -141,7 +110,6 @@ function stopTimers() {
 }
 
 /* `take` sai junto do middleware porque nem toda trava cabe numa camada de
-   rota. O pedido de redefinição de senha é medida em dois eixos — por endereço
-   de rede E por conta —, e o segundo só pode ser contado DEPOIS de descobrir se
-   existe conta para aquele e-mail, que é trabalho de dentro do manipulador. */
+   rota: o pedido de redefinição de senha é medido por endereço E por conta, e a
+   conta só se descobre dentro do manipulador. */
 module.exports = { limit, take, reset, stopTimers, MAX_KEYS };
