@@ -1093,12 +1093,6 @@ function LiveScreen({
         </p>
       ) : null}
 
-      {host ? (
-        <p className="q mt-2.5 max-w-[64ch] text-[11.5px] text-ink-dim">
-          O clube vê o que você vê. Serviço com DRM — Netflix, Prime, Disney+ — aparece preto para
-          os outros: é o sistema operacional que bloqueia, não o Cineclube.
-        </p>
-      ) : null}
     </div>
   );
 }
