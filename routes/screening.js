@@ -110,10 +110,26 @@ router.post('/open', wrap(async (req, res) => {
   const movieId = Number(req.body?.movieId);
   if (!Number.isInteger(movieId)) return res.status(400).json({ error: 'Filme inválido.' });
 
+  /* Trocar o filme por baixo de uma sessão aberta é o maior comando que existe
+     — reinicia a sala em zero para os quatro — e, sem esta linha, também seria
+     como se pega o controle de quem está com ele. Uma sala vazia perde o dono
+     sozinha (ver `detach`), então isto nunca deixa um filme preso. */
+  const room = roomOf(req);
+  if (room.open && !screening.isHost(room, req.session.reviewer_id)) {
+    return res.status(403).json({ error: `${room.host.name} está com o controle da sessão.` });
+  }
+
   const movie = await movieById(req.club.id, movieId);
   if (!movie) return res.status(404).json({ error: 'Filme não encontrado no catálogo do clube.' });
 
-  screening.open(roomOf(req), movie);
+  /* Quem abre é o dono da sessão. Não há tela para escolher outro: o clube são
+     quatro pessoas combinando no Discord, e um seletor de dono seria uma
+     pergunta a mais para uma resposta que já está dada por quem clicou. */
+  screening.open(roomOf(req), movie, {
+    id: req.session.reviewer_id,
+    name: req.session.name,
+    dot: req.session.dot,
+  });
   /* A sala já avisou quem está dentro pelo próprio stream; isto avisa quem não
      está, para a marquise de todo mundo acender a lâmpada da Sessão. Depois de
      `open` e nunca antes: um aviso emitido antes da mudança manda o clube
@@ -124,6 +140,9 @@ router.post('/open', wrap(async (req, res) => {
 
 router.post('/close', wrap(async (req, res) => {
   const room = roomOf(req);
+  if (!screening.isHost(room, req.session.reviewer_id)) {
+    return res.status(403).json({ error: `A sessão é de ${room.host.name}. Só quem abriu pode encerrar.` });
+  }
   screening.close(room);
   live.emit('screening', req.session.reviewer_id, req.club.id);
   res.json(screening.snapshot(room));
@@ -143,6 +162,17 @@ router.post('/command', wrap(async (req, res) => {
   const position = raw == null ? null : Number(raw);
   if (position != null && !Number.isFinite(position)) {
     return res.status(400).json({ error: 'Posição inválida.' });
+  }
+
+  /* ── o controle é de uma pessoa só ───────────────────────────────────
+     Recusado aqui e não só na tela: a tela do dono é a única que manda
+     comandos, mas o que garante isso para a sala é esta linha — uma aba velha,
+     uma requisição repetida ou alguém curioso com o console chegam por aqui do
+     mesmo jeito, e cada um deles move o filme dos outros três. */
+  if (!screening.isHost(roomOf(req), req.session.reviewer_id)) {
+    return res
+      .status(403)
+      .json({ error: `${roomOf(req).host.name} está com o controle da sessão.` });
   }
 
   /* ── só a virada, e nunca o arrasto ──────────────────────────────────

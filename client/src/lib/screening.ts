@@ -50,9 +50,17 @@ export type ScreeningLive = {
   since: number;
 };
 
+/* ── de quem é a sessão ───────────────────────────────────────────────────
+   Quem abriu o filme, e a única pessoa cujo play, pause e seek a sala aceita.
+   Chega a todas as telas e não só à do dono: as outras precisam dizer por que o
+   player delas não manda, e um controle que não obedece sem explicar lê como
+   defeito. Nulo enquanto não há sessão. */
+export type ScreeningHost = { id: string; name: string; dot: string };
+
 export type ScreeningState = {
   open: boolean;
   movie: ScreeningMovie | null;
+  host: ScreeningHost | null;
   status: 'playing' | 'paused';
   /** Seconds, true as of `serverTime` — never read this without deriving. */
   position: number;
@@ -77,6 +85,7 @@ export type CommandType = 'play' | 'pause' | 'seek';
 const IDLE: ScreeningState = {
   open: false,
   movie: null,
+  host: null,
   status: 'paused',
   position: 0,
   revision: 0,

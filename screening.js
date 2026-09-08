@@ -92,6 +92,15 @@ function blankRoom(clubId) {
     updatedAt: Date.now(),
     /** Bumped by every mutation, so a client can drop a frame that overtook it. */
     revision: 0,
+    /* ── de quem é a sessão ────────────────────────────────────────────────
+       Quem abriu o filme, e a única pessoa cujo play, pause e seek a sala
+       aceita. Quatro pessoas com a mão no mesmo controle é o que a sala vivia:
+       dois pauses para uma cena, alguém arrastando a barra enquanto outro
+       procurava a mesma cena, e ninguém sabendo de quem foi.
+
+       Nulo enquanto não há sessão — e nulo também numa sala aberta sem dono,
+       que só existe em teste; aí o controle volta a ser de todos. */
+    host: null,
     /* What the club is watching from, when that is a thing that can be handed
        over: a magnet or a URL. Null while nobody has one, and null forever for a
        file on somebody's disk — those bytes cannot be shared by naming them. */
@@ -205,9 +214,10 @@ function stamp(room, now) {
   room.revision += 1;
 }
 
-function open(room, movie, now = Date.now()) {
+function open(room, movie, host = null, now = Date.now()) {
   room.open = true;
   room.movie = movie;
+  room.host = host;
   room.status = 'paused';
   room.position = 0;
   // A link belongs to the film it was opened for, never to the next one. So
@@ -324,6 +334,7 @@ function signal(room, fromId, toId, kind, data) {
 function close(room, now = Date.now()) {
   room.open = false;
   room.movie = null;
+  room.host = null;
   room.status = 'paused';
   room.position = 0;
   room.link = null;
@@ -361,6 +372,13 @@ function seek(room, to, now = Date.now()) {
   // should land you somewhere else in a film that is still running.
   stamp(room, now);
   broadcastState(room);
+}
+
+/* Quem pode mexer no filme. Uma sala sem dono é de todo mundo: é assim que uma
+   sessão aberta antes desta regra, ou aberta por um teste, continua utilizável
+   em vez de ficar travada num controle que ninguém tem. */
+function isHost(room, reviewerId) {
+  return !room.host || room.host.id === reviewerId;
 }
 
 /** Applies a command a member sent. Returns false if it was not a real one. */
@@ -443,6 +461,13 @@ function detach(room, reviewerId) {
      máquina dele. Deixar o campo de pé seria a sala apontando para uma fonte
      que não existe, e cada pessoa esperando um vídeo que ninguém vai mandar. */
   if (room.live?.hostId === reviewerId) room.live = null;
+  /* O dono fechou a aba, e o controle vai para quem chegou primeiro entre os que
+     ficaram. Sem isto o clube herda uma sessão que ninguém pode pausar, e a
+     única saída seria abrir o filme de novo. */
+  if (room.host?.id === reviewerId) {
+    const next = room.viewers.values().next().value;
+    room.host = next ? { id: next.id, name: next.name, dot: next.dot } : null;
+  }
   broadcastState(room);
   // A última pessoa saiu de uma sala fechada: o quarto some com ela.
   sweep(room);
@@ -455,6 +480,10 @@ function snapshot(room, now = Date.now()) {
     type: 'state',
     open: room.open,
     movie: room.movie,
+    /* Quem manda no filme. Vai para todo mundo e não só para o dono: as outras
+       três telas precisam dizer de quem é o controle, e um player que não
+       obedece sem explicar é um player quebrado. */
+    host: room.host,
     status: room.status,
     position: positionAt(room, now),
     revision: room.revision,
@@ -654,6 +683,7 @@ module.exports = {
   pause,
   seek,
   command,
+  isHost,
   setReady,
   attach,
   detach,

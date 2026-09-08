@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Blank, Fault, Key, Poster, Reel, SearchField } from '@/components/bits';
+import { Blank, Fault, Key, Poster, Reel, SearchField, TrailerKey } from '@/components/bits';
 import { SyncedVideo } from '@/components/SyncedVideo';
 import { LiveVideo } from '@/components/LiveVideo';
+import { WatchOn } from '@/components/film';
 import { useClub } from '@/App';
-import { api, initialsOf, reelColor, runtimeOf, type Movie, type WatchItem } from '@/lib/api';
+import { api, fmt, initialsOf, reelColor, runtimeOf, type Movie, type WatchItem } from '@/lib/api';
 import { useScreening, type ScreeningState } from '@/lib/screening';
 import { useLiveShare, type LiveShare } from '@/lib/liveshare';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
@@ -125,6 +126,10 @@ export function ScreeningScreen() {
   const { state, connected, setReady } = screening;
   /** A sala inteira muda de natureza enquanto isto é verdade. */
   const liveOn = state.live !== null;
+  /* A sessão é de quem a abriu: o play, o pause e a barra são dela, e as outras
+     três telas assistem. Uma sala sem dono é de todo mundo — uma sessão aberta
+     antes desta regra continua utilizável em vez de ficar travada. */
+  const iHaveControl = !state.host || state.host.id === club.me.id;
 
   const [source, setSource] = useState<Source>({ kind: 'none' });
   /** Of the local file, once the player has read it. Half of the file's identity. */
@@ -157,11 +162,6 @@ export function ScreeningScreen() {
   const { publishLink } = screening;
   /** The last link this browser told the room about. See `share` below. */
   const shared = useRef<string | null>(null);
-  /* The same value, but set only when this browser is the one that *published*
-     it rather than one that adopted it. Which member put the film on the board
-     is the only fact that separates the one browser that should press play
-     from the three that should follow. */
-  const published = useRef<string | null>(null);
   /** A link this member turned down, so adoption does not force it back. */
   const declined = useRef<string | null>(null);
   /** Whether the film has been started. See "the film starting by itself". */
@@ -182,7 +182,6 @@ export function ScreeningScreen() {
     setSubFile(null);
     setSubOffset(0);
     shared.current = null;
-    published.current = null;
     declined.current = null;
     started.current = false;
     feedingSince.current = null;
@@ -343,7 +342,6 @@ export function ScreeningScreen() {
     (link: string | null) => {
       if (!link || shared.current === link) return;
       shared.current = link;
-      published.current = link;
       void publishLink(link);
     },
     [publishLink]
@@ -379,9 +377,12 @@ export function ScreeningScreen() {
      Somebody drops the file and the evening should begin. Three conditions, and
      each one is a way this could be wrong:
 
-     - Only the member who *published* the source presses it: four browsers each
+     - Only the member who owns the session presses it: four browsers each
        sending the same play is four commands for one press, and whichever
-       arrives last decides where the film starts.
+       arrives last decides where the film starts. It used to be whoever
+       published the source, which is the same person on most nights and the
+       wrong one on the rest — the room takes commands from its owner alone, so
+       an autoplay from anybody else is a 403 and a film that never starts.
      - Only at the top of a film nobody has started. A room paused in the second
        act is somewhere a person put it, and restarting that overrules them.
      - Only once the club has loaded the same source, or once the grace has run
@@ -409,7 +410,7 @@ export function ScreeningScreen() {
     if (state.status === 'playing') started.current = true;
   }, [state.status]);
 
-  const { viewers, link: roomSource, open: roomOpen, status, position } = state;
+  const { viewers, open: roomOpen, status, position } = state;
   useEffect(() => {
     if (started.current || !roomOpen || !feeding) return;
     /* Nada disto vale numa tela ao vivo. Lá não há posição para começar do
@@ -417,7 +418,7 @@ export function ScreeningScreen() {
        apertando play no player dela. */
     if (liveOn) return;
     if (status !== 'paused' || position > 1) return;
-    if (roomSource && published.current !== roomSource) return;
+    if (!iHaveControl) return;
 
     const go = () => {
       if (started.current) return;
@@ -432,7 +433,7 @@ export function ScreeningScreen() {
     const left = START_GRACE_MS - (Date.now() - (feedingSince.current ?? Date.now()));
     const id = window.setTimeout(go, Math.max(0, left));
     return () => window.clearTimeout(id);
-  }, [roomOpen, status, position, roomSource, viewers, feeding, send, liveOn]);
+  }, [roomOpen, status, position, viewers, feeding, send, liveOn, iHaveControl]);
 
   /* ── arriving into a session already under way ───────────────────────────
      The room knows what everyone else is watching, so a member who opens the
@@ -503,6 +504,16 @@ export function ScreeningScreen() {
           <p className="q mt-2 text-[12.5px] text-ink-dim">
             {[movie.year, movie.genre, runtimeOf(movie.runtime)].filter(Boolean).join(' · ')}
           </p>
+          {/* Dito em toda tela, e não só nas três que não mandam: um controle
+              que obedece a uma pessoa é uma regra da sala, e uma regra que só
+              aparece quando ela te barra lê como defeito. */}
+          {state.host ? (
+            <p className="q mt-1.5 text-[11.5px] text-ink-faint">
+              {iHaveControl
+                ? 'Sessão sua — o play, o pause e a barra respondem a você.'
+                : `Sessão de ${state.host.name} — o player responde a quem abriu.`}
+            </p>
+          ) : null}
         </div>
         {/* Ir avaliar é o passo seguinte a assistir, e até agora custava sair
             da sessão, achar o filme no catálogo e abri-lo de novo. Fica aqui,
@@ -515,9 +526,14 @@ export function ScreeningScreen() {
           costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
           onRate={() => club.rateMovie(movie.id)}
         />
-        <Key tone="danger" onClick={() => void closeFilm()}>
-          Encerrar sessão
-        </Key>
+        {/* Encerrar é o maior dos comandos do player: apaga a sala para os
+            quatro. Some da tela de quem não é o dono em vez de ficar ali para
+            ser recusado pelo servidor. */}
+        {iHaveControl ? (
+          <Key tone="danger" onClick={() => void closeFilm()}>
+            Encerrar sessão
+          </Key>
+        ) : null}
       </div>
 
       {/* ── a tela ao vivo tem precedência sobre tudo ─────────────────────
@@ -542,6 +558,7 @@ export function ScreeningScreen() {
             screening={screening}
             src={source.kind === 'url' ? source.url : null}
             sourceTag={tag}
+            canControl={iHaveControl}
             onElement={holdElement}
             onEnded={() => setEnded(true)}
             onPlaybackError={code => setFailure(playbackFailure(code))}
@@ -637,6 +654,8 @@ export function ScreeningScreen() {
         </div>
       )}
 
+      <AboutFilm movieId={movie.id} />
+
       {/* ── the club, and what it is waiting for ────────────────────────────
           A plate for the same reason the booth is one: this is a list, and a
           list of people floating on the wall under a caption is not read as a
@@ -692,6 +711,69 @@ export function ScreeningScreen() {
         ) : null}
       </div>
     </section>
+  );
+}
+
+/* ── a ficha do filme, dentro da sessão ───────────────────────────────────
+   A sala só carrega o que ela precisa para sincronizar — título, ano, gênero e
+   duração —, e durante duas horas de filme o clube pergunta o resto: quem
+   dirigiu, quem está no elenco, que nota o mundo deu, e onde este filme está
+   passando para quem não tem cópia. Tudo isso já existe a uma rota de
+   distância, e até agora custava sair da sessão para ler.
+
+   Buscado por cada tela em vez de viajar no estado da sala, e a razão é a
+   mesma que mantém a legenda fora dele: o snapshot é reemitido a cada mudança,
+   vezes todo mundo conectado, e uma sinopse não muda no meio do filme. Aqui é
+   uma requisição por pessoa por sessão, contra um catálogo que já responde
+   isto para a ficha de projeção.
+
+   Falha calada de propósito: a sessão não depende desta ficha, e um aviso
+   vermelho sobre uma sinopse que não carregou, no meio do filme, é o app
+   chamando atenção para o que ninguém pediu. */
+function AboutFilm({ movieId }: { movieId: number }) {
+  const [movie, setMovie] = useState<Movie | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setMovie(null);
+    api<Movie>(`/api/catalog/movie/${movieId}`).then(
+      m => alive && setMovie(m),
+      () => {
+        /* a sessão inteira funciona sem isto */
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [movieId]);
+
+  if (!movie) return null;
+
+  const facts = [
+    movie.director ? `dir. ${movie.director}` : null,
+    movie.crowd ? `TMDB ${fmt(movie.crowd.score)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="plate mt-6 px-4 py-4">
+      <span className="legend">O filme</span>
+      {facts.length ? <p className="q mt-2 text-[12px] text-ink-dim">{facts.join(' · ')}</p> : null}
+      <p className="mt-2.5 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">
+        {movie.overview || 'Sem sinopse no TMDB.'}
+      </p>
+      {movie.cast?.length ? (
+        <p className="mt-2.5 text-[12px] text-ink-dim">
+          Elenco: {movie.cast.map(c => c.name).join(', ')}
+        </p>
+      ) : null}
+      {movie.trailerUrl ? (
+        <TrailerKey url={movie.trailerUrl} title={movie.title} className="mt-3" />
+      ) : null}
+      {/* A mesma resposta da folha de projeção, com o mesmo crédito ao
+          JustWatch: onde este filme está incluído em algo que alguém do clube
+          já paga. É a saída de quem entrou na sessão sem cópia nenhuma. */}
+      <WatchOn watch={movie.watch} />
+    </div>
   );
 }
 

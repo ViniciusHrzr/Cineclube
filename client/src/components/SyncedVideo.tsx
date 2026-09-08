@@ -139,6 +139,7 @@ export function SyncedVideo({
   screening,
   src,
   sourceTag,
+  canControl,
   onElement,
   onEnded,
   onPlaybackError,
@@ -151,6 +152,11 @@ export function SyncedVideo({
   /** Null in torrent mode, where the stream is attached to the element. */
   src?: string | null;
   sourceTag: string | null;
+  /* Se o que esta pessoa fizer no player vale para a sala. Falso em toda tela
+     que não é a do dono da sessão: os controles continuam ali — volume, tela
+     cheia, legenda são desta pessoa —, mas play, pause e arrastar a barra
+     voltam ao lugar em vez de mover o filme dos outros. */
+  canControl: boolean;
   /** Hands the element out so a torrent can be streamed into it. */
   onElement?: (el: HTMLVideoElement | null) => void;
   /** The credits rolled: the screen offers to rate the film. */
@@ -305,6 +311,13 @@ export function SyncedVideo({
          film for everybody still watching them roll. */
       if (v.ended) return;
 
+      /* Sem o controle, o gesto não vira comando — vira uma correção nesta tela
+         só. Sem esta linha o servidor recusaria com 403 e o player ficaria
+         pausado até o próximo quadro de sincronia, até cinco segundos depois:
+         a pessoa apertou pause e o filme parou para ela, que é exatamente o que
+         a regra existe para não deixar acontecer. */
+      if (!canControl) return reconcile();
+
       const want = positionAt(s, serverNow());
       const statusAgrees = (s.status === 'playing') === !v.paused;
       const positionAgrees = Math.abs(v.currentTime - want) < TOLERANCE_HARD;
@@ -334,7 +347,7 @@ export function SyncedVideo({
          hands the room its own number back rather than moving it. */
       void send(kind, positionAgrees ? v.currentTime : want);
     },
-    [stateRef, serverNow, send]
+    [stateRef, serverNow, send, canControl, reconcile]
   );
 
   /* ── holding the two together ─────────────────────────────────────────── */

@@ -422,7 +422,7 @@ function Verdicts({
    O crédito não é enfeite — usar estes dados obriga a nomear o JustWatch —, e o
    link de saída é a página do próprio TMDB, que cai nas lojas de verdade em vez
    de adivinhar um link fundo num serviço que o leitor talvez nem tenha. */
-function WatchOn({ watch }: { watch: Movie['watch'] }) {
+export function WatchOn({ watch }: { watch: Movie['watch'] }) {
   /* Três estados, e dois deles são nulos. `undefined` é "ninguém perguntou": o
      filme veio do cache porque o TMDB estava fora. `null` é "perguntamos, e não
      passa em lugar nenhum aqui" — uma resposta de verdade.

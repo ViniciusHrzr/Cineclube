@@ -16,6 +16,9 @@ const T0 = 1_700_000_000_000;
 const FILM = { id: 1, title: 'Duna: Parte Dois', year: 2024, genre: 'Ficção', poster: null, runtime: 166 };
 const session = (id, name) => ({ reviewer_id: id, name, dot: '#b5abfc' });
 
+/** Quem abriu a sessão. Aqui não faz diferença: a vaga da transmissão é outra. */
+const HOST = { id: 'dono', name: 'Vinicius', dot: '#b5abfc' };
+
 const CLUBE = 'c-teste';
 let room;
 
@@ -33,7 +36,7 @@ function socket() {
 test.beforeEach(() => {
   screening.reset();
   room = screening.roomFor(CLUBE);
-  screening.open(room, FILM, T0);
+  screening.open(room, FILM, HOST, T0);
 });
 
 /* ── a vaga é de uma pessoa ───────────────────────────────────────────── */
@@ -101,7 +104,7 @@ test('encerrar a sessão apaga a transmissão junto', () => {
 
 test('abrir outro filme também: a tela no ar era do anterior', () => {
   screening.startLive(room, session('p1', 'Vinicius'), T0);
-  screening.open(room, { ...FILM, id: 2, title: 'Outro' }, T0 + 1000);
+  screening.open(room, { ...FILM, id: 2, title: 'Outro' }, HOST, T0 + 1000);
   assert.equal(room.live, null);
 });
 

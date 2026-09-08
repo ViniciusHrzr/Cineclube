@@ -235,6 +235,66 @@ test('a command needs an open session and a real name', async () => {
   await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
+/* ── de quem é o controle ─────────────────────────────────────────────────
+   A sala é de quem abriu. As outras telas assistem, e a delas não manda: a
+   regra vale na rota e não só no botão, porque uma aba velha e um console
+   aberto chegam aqui pelo mesmo caminho que o player. */
+
+test('só quem abriu a sessão comanda o filme', async () => {
+  const dona = await newMember('Dona da Sessão');
+  const outro = await newMember('Outro da Sessão');
+  const film = await queuedFilm({ title: 'A Sessão Dela' });
+
+  await req('POST', at('/screening/close'), {}, dona.cookie);
+  assert.equal((await req('POST', at('/screening/open'), { movieId: film.id }, dona.cookie)).status, 201);
+
+  const refused = await req('POST', at('/screening/command'), { type: 'play', position: 0 }, outro.cookie);
+  assert.equal(refused.status, 403);
+  assert.match(refused.body.error, /Dona da Sessão/, 'a recusa diz de quem é o controle');
+
+  const shut = await req('POST', at('/screening/close'), {}, outro.cookie);
+  assert.equal(shut.status, 403, 'encerrar a sessão de outra pessoa é mexer no player dela');
+
+  const outroFilme = await queuedFilm({ title: 'O Filme Dele' });
+  const roubo = await req('POST', at('/screening/open'), { movieId: outroFilme.id }, outro.cookie);
+  assert.equal(roubo.status, 403, 'trocar o filme por baixo da sessão é tomar o controle dela');
+
+  // E o filme continua exatamente onde a dona o deixou.
+  const still = await req('GET', at('/screening'), null, outro.cookie);
+  assert.equal(still.body.status, 'paused');
+  assert.equal(still.body.host.name, 'Dona da Sessão');
+
+  assert.equal((await req('POST', at('/screening/command'), { type: 'play', position: 0 }, dona.cookie)).status, 200);
+  await req('POST', at('/screening/close'), {}, dona.cookie);
+});
+
+/* Sem isto o clube herda uma sessão que ninguém pode pausar: a dona fecha a aba
+   e o controle fica com uma pessoa que não está mais lá. */
+test('o controle passa a quem ficou quando a dona sai da sala', async () => {
+  const dona = await newMember('Dona Que Sai');
+  const resta = await newMember('Quem Fica');
+  const film = await queuedFilm({ title: 'A Sessão Herdada' });
+
+  const ear = await listen(resta.cookie);
+  await ear.next(f => f.type === 'state');
+
+  const dela = await listen(dona.cookie);
+  await req('POST', at('/screening/open'), { movieId: film.id }, dona.cookie);
+  await ear.next(f => f.type === 'state' && f.host?.name === 'Dona Que Sai');
+
+  await dela.close();
+  const herdada = await ear.next(f => f.type === 'state' && f.host?.name === 'Quem Fica');
+  assert.equal(herdada.open, true, 'a sessão continua aberta; só o controle mudou de mão');
+
+  assert.equal(
+    (await req('POST', at('/screening/command'), { type: 'pause', position: 10 }, resta.cookie)).status,
+    200
+  );
+
+  await ear.close();
+  await req('POST', at('/screening/close'), {}, resta.cookie);
+});
+
 /* ── the stream, which is the whole point ─────────────────────────────────── */
 
 test('one member presses play and the other member\'s stream says so', async () => {
