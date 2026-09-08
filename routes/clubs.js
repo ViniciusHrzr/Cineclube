@@ -10,28 +10,20 @@ const live = require('../live');
 const wrap = require('../wrap');
 const { readDataUrl } = require('../image');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Os clubes.
-
-   Duas metades. `index` é sobre o conjunto — quais existem, e criar mais um — e
-   é a única coisa da rede que se lê sem estar dentro de sala nenhuma. `scoped`
-   é sobre UM clube, montado atrás de `clubs.resolve`, e é onde mora tudo que
-   um ADM faz com a sala dele.
-   ══════════════════════════════════════════════════════════════════════════ */
+/* Duas metades. `index` é sobre o conjunto — quais existem, e criar mais um —
+   e é a única coisa da rede que se lê sem estar dentro de sala nenhuma.
+   `scoped` é sobre UM clube, atrás de `clubs.resolve`. */
 
 const index = express.Router();
 const scoped = express.Router({ mergeParams: true });
 
-/* ── fundar é raro, e caro quando não é ───────────────────────────────────
-   Um clube é uma sala com nome único na rede, e o nome é o recurso escasso: mil
-   clubes criados por um programa não enchem o banco (uma sala vazia são poucas
-   dezenas de bytes) — eles tomam mil nomes e enchem a vitrine do saguão, que é a
-   primeira tela do produto.
+/* O nome é o recurso escasso: mil clubes criados por um programa não enchem o
+   banco — eles tomam mil nomes e enchem a vitrine, que é a primeira tela do
+   produto.
 
-   Cinco por dia por conta. Fundar um clube é um gesto de convidar gente, e
-   ninguém convida cinco grupos de amigos por dia; para quem funda o sexto no
-   mesmo dia, esperar até amanhã é barato. Junto com a trava de cadastro, que é o
-   que impede alguém de simplesmente trocar de conta, isto fecha a torneira. */
+   Cinco por dia por conta: ninguém convida cinco grupos de amigos por dia.
+   Junto com a trava de cadastro, que impede alguém de trocar de conta, isto
+   fecha a torneira. */
 const throttleFound = throttle.limit({
   name: 'club:create',
   max: 5,
@@ -62,9 +54,8 @@ function toDTO(row, extra = {}) {
     slug: row.slug,
     tagline: row.tagline || null,
     visibility: row.visibility,
-    /* A política de leitura de um clube fechado. Vai sempre, inclusive num clube
-       aberto — lá ela está dormente, e a folha de ajustes precisa saber o que
-       mostrar marcado se o ADM fechar a sala de novo. */
+    /* Vai sempre, inclusive num clube aberto, onde está dormente: a folha de
+       ajustes precisa saber o que mostrar marcado se o ADM fechar a sala. */
     showReviews: !!row.show_reviews,
     showComments: !!row.show_comments,
     /* O terceiro interruptor, e ele não é sobre ler esta sala: é sobre o que ela
@@ -76,20 +67,13 @@ function toDTO(row, extra = {}) {
   };
 }
 
-/* ── quais clubes existem ─────────────────────────────────────────────────
-   Duas listas numa resposta, porque a tela que as consome é uma só e as duas
-   respondem perguntas diferentes: `mine` é o chaveiro de quem já chegou,
-   `open` é a vitrine de quem está olhando.
+/* Duas listas numa resposta, porque a tela é uma só e elas respondem perguntas
+   diferentes: `mine` é o chaveiro de quem já chegou, `open` a vitrine de quem
+   está olhando. Um clube em que você já está não aparece na vitrine.
 
-   Um clube em que você já está não aparece na vitrine — ele já está no
-   chaveiro, e uma sala listada duas vezes na mesma tela é a tela dizendo que
-   não sabe quem você é.
-
-   ── e a vitrine lista TODOS ─────────────────────────────────────────────
-   Aberto e fechado. Uma sala que ninguém enxerga é uma sala em que ninguém
-   consegue pedir para entrar, e um clube fechado quer ser achado — o que ele não
-   quer é ser lido. O que a fachada carrega é nome, foto, descrição e quantas
-   pessoas; o acervo fica atrás da porta (ver clubs.js). */
+   A vitrine lista TODOS, aberto e fechado: uma sala que ninguém enxerga é uma
+   sala em que ninguém consegue pedir para entrar. O que a fachada carrega é
+   nome, foto, descrição e quantas pessoas; o acervo fica atrás da porta. */
 index.get('/', wrap(async (req, res) => {
   const me = req.session?.reviewer_id || null;
 
@@ -104,9 +88,8 @@ index.get('/', wrap(async (req, res) => {
     ORDER BY c.created_at ASC
   `).all();
 
-  /* Se você já pediu para entrar em algum. É o que separa "Pedir para entrar"
-     de "Pedido enviado" na vitrine, e sem isto a tela ofereceria de novo o
-     botão que a pessoa acabou de apertar. */
+  /* É o que separa "Pedir para entrar" de "Pedido enviado" na vitrine: sem
+     isto a tela ofereceria de novo o botão que a pessoa acabou de apertar. */
   const asked = me
     ? (await db.prepare('SELECT club_id FROM club_join_requests WHERE reviewer_id = ?').all(me))
         .map(r => r.club_id)
@@ -123,38 +106,27 @@ index.get('/', wrap(async (req, res) => {
   });
 }));
 
-/* ── fundar um clube ──────────────────────────────────────────────────────
-   Quem cria é ADM, e isso não é uma opção em lugar nenhum da interface: uma
-   sala sem ninguém que possa aprovar uma entrada é uma sala que nasce trancada.
+/* Quem cria é ADM, e isso não é opção em lugar nenhum da interface: uma sala sem
+   ninguém que possa aprovar uma entrada nasce trancada.
 
-   Nasce aberto quando não se diz nada, e o formulário mostra as duas opções com
-   o que cada uma significa. As duas aparecem na vitrine; o que muda é a porta —
-   num clube aberto entrar é um clique, num fechado é um pedido que o ADM
-   aprova. */
+   Nasce aberto quando não se diz nada. As duas aparecem na vitrine; o que muda
+   é a porta — num clube aberto entrar é um clique, num fechado é um pedido. */
 index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
   /* ── fundar exige um endereço provado ───────────────────────────────────
-     Não é sobre o clube: é sobre o custo de criar identidades. Um clube toma um
-     nome único da rede e uma vaga na vitrine, e uma conta custa uma requisição.
+     Não é sobre o clube, é sobre o custo de criar identidades: um clube toma um
+     nome único e uma vaga na vitrine, e uma conta custa uma requisição.
      Exigindo confirmação, cada sala fundada passa a exigir uma caixa de entrada
-     de verdade — o que não impede ninguém determinado e encarece o automático,
-     que é tudo que uma trava deste tipo se propõe a fazer.
+     de verdade. Avaliar, comentar e entrar num clube continuam livres — a regra
+     encarece FUNDAR, não participar.
 
-     Uma conta do Google já chega verificada (ver db.js), então isto não pede
-     nada de quem entrou pela porta normal. Quem se cadastrou por senha confirma
-     uma vez, na vida.
+     Uma conta do Google já chega verificada, então isto não pede nada de quem
+     entrou pela porta normal.
 
-     Avaliar, comentar, entrar num clube e usar o produto continuam livres: a
-     regra encarece FUNDAR, e não participar.
-
-     ── e a conta SEM e-mail nenhum passa ──────────────────────────────────
-     Ela existe: `accountForGoogle` grava o endereço como nulo quando ele já
-     pertence a outra conta, para a entrada não morrer num 500 do lado de fora.
-     Essa pessoa entrou pelo Google e não tem endereço para confirmar — a regra
-     aplicada a ela não pede uma prova, tranca uma porta para sempre.
-
-     Deixá-la passar não abre nada: o que a regra encarece é criar identidades
-     baratas, e uma conta do Google já custou uma conta do Google. Quem é
-     medido aqui é quem se cadastrou por senha, que é a porta de graça. */
+     A conta SEM e-mail nenhum passa: ela existe porque `accountForGoogle` grava
+     nulo quando o endereço já é de outra conta, e essa pessoa não tem o que
+     confirmar — a regra aplicada a ela não pede uma prova, tranca uma porta
+     para sempre. Não abre nada: uma conta do Google já custou uma conta do
+     Google, e quem é medido aqui é quem se cadastrou por senha. */
   if (req.session.email && !req.session.email_verified) {
     return res.status(403).json({
       error: 'Confirme seu e-mail para fundar um clube. O link está na sua caixa de entrada.',
@@ -164,11 +136,10 @@ index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
 
   const name = String(req.body?.name || '').trim();
   const tagline = String(req.body?.tagline || '').trim();
-  /* Aberto quando não se diz nada. Isto virou o padrão quando a semântica
-     mudou: `public` deixou de significar "qualquer um lê" e passou a significar
-     "qualquer um entra e avalia", que é o que faz uma rede crescer. Quem quer
-     uma sala de amigos marca fechado, e o formulário mostra as duas com o que
-     cada uma quer dizer — o padrão não decide sozinho. */
+  /* Aberto quando não se diz nada: `public` deixou de significar "qualquer um
+     lê" e passou a significar "qualquer um entra e avalia", que é o que faz uma
+     rede crescer. Quem quer uma sala de amigos marca fechado, e o formulário
+     mostra as duas com o que cada uma quer dizer. */
   const visibility = req.body?.visibility === 'private' ? 'private' : 'public';
 
   if (!name) return res.status(400).json({ error: 'O clube precisa de um nome.' });
@@ -210,8 +181,7 @@ index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* A fachada: de todo mundo, inclusive de um clube fechado. É o que a vitrine
-   desenha e o que um link colado no Discord tem de conseguir mostrar para quem
-   ainda não é de lá. */
+   desenha e o que um link colado no Discord tem de mostrar a quem não é de lá. */
 scoped.get('/', clubs.requireVisible, wrap(async (req, res) => {
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
   const { n } = await db
@@ -221,10 +191,9 @@ scoped.get('/', clubs.requireVisible, wrap(async (req, res) => {
         .get(req.club.id, req.session.reviewer_id)
     : null;
 
-  /* Quantas pessoas estão esperando na porta. Só para quem pode abri-la, e vai
-     junto do clube em vez de numa busca própria porque a marquise precisa dele
-     em toda tela — é o que faz um pedido se anunciar em vez de esperar alguém
-     ir procurá-lo atrás de perfil → engrenagem → Ajustes. */
+  /* Só para quem pode abrir a porta, e junto do clube em vez de numa busca
+     própria porque a marquise precisa dele em toda tela — é o que faz um pedido
+     se anunciar em vez de esperar alguém ir procurá-lo. */
   const pending =
     req.club.isClubAdmin || req.session?.is_admin
       ? (await db
@@ -270,8 +239,7 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
       .get(name, req.club.id);
     if (taken) return res.status(409).json({ error: 'Já existe um clube com esse nome.' });
     /* O slug acompanha o nome, e o antigo deixa de funcionar. É o preço de o
-       endereço ser legível; renomear um clube é raro e o link novo é o que a
-       pessoa vai colar da próxima vez. */
+       endereço ser legível; renomear um clube é raro. */
     const slug = await db.freeSlug(name, req.club.id);
     await db.prepare('UPDATE clubs SET name = ?, slug = ? WHERE id = ?').run(name, slug, req.club.id);
   }
@@ -287,13 +255,10 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
   if ('visibility' in patch) {
     const v = patch.visibility === 'public' ? 'public' : 'private';
     await db.prepare('UPDATE clubs SET visibility = ? WHERE id = ?').run(v, req.club.id);
-    /* ── abrir a sala admite quem estava esperando ──────────────────────
-       Um pedido é alguém dizendo "quero entrar aqui". Abrindo o clube, entrar
-       virou um clique — deixar essas pessoas na fila seria fazê-las apertar um
-       botão para conseguir o que já lhes foi concedido, e simplesmente apagar
-       os pedidos jogaria fora a intenção delas sem dizer nada.
-
-       Fechar não mexe em nada: numa sala aberta ninguém cria pedido. */
+    /* Abrir a sala admite quem estava esperando: entrar virou um clique, e
+       deixá-los na fila seria fazê-los apertar um botão para conseguir o que já
+       lhes foi concedido. Fechar não mexe em nada — numa sala aberta ninguém
+       cria pedido. */
     if (v === 'public') {
       const esperando = await db
         .prepare('SELECT reviewer_id FROM club_join_requests WHERE club_id = ?')
@@ -308,11 +273,9 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
     }
   }
 
-  /* ── o que um estranho enxerga de um clube fechado ─────────────────────
-     Dois interruptores, gravados sempre — mesmo com o clube aberto, onde não
-     fazem diferença nenhuma. Assim a política sobrevive a um período de porta
-     aberta: fechar de novo devolve exatamente o que o ADM tinha escolhido, em
-     vez de zerar em silêncio. */
+  /* Gravados sempre, mesmo com o clube aberto, onde não fazem diferença: assim
+     a política sobrevive a um período de porta aberta, e fechar de novo devolve
+     o que o ADM tinha escolhido em vez de zerar em silêncio. */
   for (const [campo, coluna] of [
     ['showReviews', 'show_reviews'],
     ['showComments', 'show_comments'],
@@ -337,15 +300,12 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
   }
 
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
-  /* Abrir a sala, fechá-la ou mexer no que ela empresta muda o que o saguão
-     deve contar. O cache dele tem um minuto de vida, e um minuto é tempo demais
-     para o ADM que acabou de desligar o interruptor continuar vendo o clube na
-     vitrine — o que ele leria como o botão não ter funcionado.
+  /* O cache do saguão tem um minuto de vida, e um minuto é tempo demais para o
+     ADM que acabou de desligar o interruptor continuar vendo o clube na vitrine
+     — o que ele leria como o botão não ter funcionado.
 
      Os DOIS saguões, porque as paredes de privacidade são do clube e valem nos
-     dois universos. Uma lente nova é um cache novo a invalidar aqui, e esquecer
-     disso não quebra nada: o clube só continua aparecendo por mais um minuto na
-     tela que ele acabou de sair. */
+     dois universos. */
   lobby.invalidate();
   lobbySeries.invalidate();
   live.emit('club', req.session.reviewer_id, req.club.id);
@@ -359,20 +319,16 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
 }));
 
 /* ══════════════════════════════════════════════════════════════════════════
-   ENCERRAR O CLUBE
+   ENCERRAR O CLUBE — a única coisa verdadeiramente destrutiva deste produto, e
+   a única reservada a quem fundou. Não ao ADM: ADMs podem ser vários e são
+   promovidos por outro ADM, e "quem administra hoje" é um cargo, não um dono.
 
-   A única coisa verdadeiramente destrutiva deste produto, e a única reservada a
-   uma pessoa: quem fundou. Não o ADM — ADMs podem ser vários e são promovidos
-   por outro ADM, e "quem administra hoje" é um cargo, não um dono.
+   Sai junto, em cascata: as fichas de todo mundo, a conversa em cima delas, os
+   votos, as curtidas, a fila e a lista de quem estava dentro. Por isso a tela
+   exige escrever o nome do clube antes.
 
-   O que sai junto, em cascata: as fichas de todo mundo, a conversa em cima
-   delas, os votos, as curtidas, a fila e a lista de quem estava dentro. É por
-   isso que a tela exige escrever o nome do clube antes: um clique só é barato
-   demais para uma ação que apaga o que outras pessoas escreveram.
-
-   ── o clube fundador não tem quem o encerre, e isso é bom ─────────────────
-   `Cineclube` foi criado pela migração, sem `created_by`. Ninguém casa com a
-   condição abaixo, então ele não pode ser apagado por rota nenhuma — o que é a
+   O clube fundador não casa com a condição abaixo — foi criado pela migração,
+   sem `created_by` —, então não pode ser apagado por rota nenhuma. É a
    propriedade certa para a sala que guarda o histórico de antes da rede.
    ══════════════════════════════════════════════════════════════════════════ */
 scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
@@ -382,8 +338,7 @@ scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
   }
 
   /* Antes de apagar: os quadros ainda alcançam quem está com a aba aberta, e a
-     tela deles descobre que a sala acabou em vez de esbarrar num 404 no próximo
-     clique. Depois do DELETE não há mais conexão para avisar. */
+     tela deles descobre que a sala acabou em vez de esbarrar num 404. */
   live.emit('club', req.session.reviewer_id, req.club.id);
 
   await db.prepare('DELETE FROM clubs WHERE id = ?').run(req.club.id);
@@ -392,11 +347,8 @@ scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
   res.status(204).end();
 }));
 
-/* ── quem está aqui ───────────────────────────────────────────────────────
-   Conteúdo, e não fachada. A fachada diz QUANTAS pessoas — o número está no
-   card e ajuda a decidir se vale pedir para entrar. Quem são elas é coisa de
-   dentro: uma lista de nomes é informação sobre pessoas, e num clube fechado
-   ela não é de quem está do lado de fora. */
+/* Conteúdo, e não fachada: a fachada diz QUANTAS pessoas, o que ajuda a decidir
+   se vale pedir para entrar. Quem são elas é coisa de dentro. */
 scoped.get('/members', clubs.requireReadable, wrap(async (req, res) => {
   const rows = await clubs.roster(req.club.id);
   res.json({
@@ -411,13 +363,11 @@ scoped.get('/members', clubs.requireReadable, wrap(async (req, res) => {
   });
 }));
 
-/* Sair, ou tirar alguém. As duas coisas na mesma rota porque são a mesma linha
-   apagada; o que muda é quem tem direito, e a regra é a de sempre neste
-   produto: a sua é sua, a dos outros é do ADM.
+/* Sair, ou tirar alguém: a mesma linha apagada, e o que muda é quem tem
+   direito — a sua é sua, a dos outros é do ADM.
 
-   O último ADM não sai. Não é proteção do cargo, é proteção da sala: sem ADM
-   ninguém aprova entrada nem muda nada, e as fichas de todo mundo ficam
-   trancadas lá dentro. */
+   O último ADM não sai. Não é proteção do cargo, é da sala: sem ADM ninguém
+   aprova entrada nem muda nada, e as fichas de todo mundo ficam trancadas. */
 scoped.delete('/members/:id', auth.requireSession, wrap(async (req, res) => {
   const target = req.params.id;
   const me = req.session.reviewer_id;
@@ -428,12 +378,10 @@ scoped.delete('/members/:id', auth.requireSession, wrap(async (req, res) => {
   }
 
   /* ── quem fundou não sai ───────────────────────────────────────────────
-     Nem sozinho, nem tirado por outro ADM. Sair é deixar de administrar, e a
-     regra é que quem fundou administra enquanto o clube existir.
-
-     Não é o cargo sendo protegido, é a sala: um clube cujo dono some continua
-     existindo com o acervo de todo mundo dentro e sem ninguém que possa
-     encerrá-lo. A saída existe e é outra — encerrar o clube. */
+     Nem sozinho, nem tirado por outro ADM. Não é o cargo sendo protegido, é a
+     sala: um clube cujo dono some continua existindo com o acervo de todo mundo
+     dentro e sem ninguém que possa encerrá-lo. A saída existe e é outra —
+     encerrar o clube. */
   if (req.club.createdBy && target === req.club.createdBy) {
     return res.status(409).json({
       error: isSelf
@@ -490,17 +438,13 @@ scoped.patch('/members/:id', clubs.requireClubAdmin, wrap(async (req, res) => {
 }));
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A porta.
+   A porta: uma rota, dois comportamentos, e a visibilidade do clube decide.
 
-   Uma rota, dois comportamentos, e é a visibilidade do clube que decide qual:
-
-   **Aberto** — entra na hora e já pode avaliar. Sem pedido, sem espera, sem
-   ninguém para aprovar. É o que faz uma rede crescer, e a consequência é
-   assumida: quem abre uma sala está dizendo que aceita quem chegar.
+   **Aberto** — entra na hora e já pode avaliar. A consequência é assumida: quem
+   abre uma sala está dizendo que aceita quem chegar.
 
    **Fechado** — vira um pedido, e um ADM decide. A sala aparece na vitrine com
-   nome e foto justamente para que este pedido seja possível; o que ela guarda é
-   o que tem dentro.
+   nome e foto justamente para que este pedido seja possível.
 
    Sem corpo e sem mensagem nos dois casos: um pedido é um nome numa lista, e a
    conversa sobre por que você quer entrar acontece onde as pessoas já se falam.
@@ -554,9 +498,9 @@ scoped.get('/requests', clubs.requireClubAdmin, wrap(async (req, res) => {
 }));
 
 /* Aprovar move a linha de uma tabela para a outra; recusar só apaga. Não existe
-   coluna de estado em lugar nenhum disto, e é de propósito: quem responde "esta
-   pessoa está dentro?" é club_members, e uma segunda tabela guardando um
-   'aprovado' seria uma segunda resposta livre para discordar da primeira. */
+   coluna de estado, de propósito: quem responde "esta pessoa está dentro?" é
+   club_members, e uma segunda tabela com um 'aprovado' seria uma segunda
+   resposta livre para discordar da primeira. */
 scoped.post('/requests/:id', clubs.requireClubAdmin, wrap(async (req, res) => {
   const target = req.params.id;
   const approve = req.body?.approve !== false;

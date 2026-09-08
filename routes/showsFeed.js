@@ -7,34 +7,24 @@ const clubs = require('../clubs');
 const router = express.Router({ mergeParams: true });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O mural do universo de séries.
+   O mural do universo de séries: o irmão de routes/feed.js, com as mesmas duas
+   decisões estruturais — derivado das tabelas que já existem, e ordenado por
+   tempo.
 
-   O irmão de routes/feed.js, com as mesmas duas decisões estruturais: derivado
-   das tabelas que já existem (sem tabela de evento, para nada envelhecer
-   errado) e ordenado por tempo, do mais novo para o mais velho.
+   O que muda é a unidade. No universo de filmes o acontecimento é raro; aqui o
+   gesto principal é MARCAR VISTO, treze vezes numa noite de maratona. Uma placa
+   por episódio seria uma pessoa enterrando o clube inteiro por ter passado o
+   domingo com uma série. Então há três tipos de linha:
 
-   ── mas a unidade daqui é outra, e isso muda o mural ────────────────────
-   No universo de filmes o acontecimento é raro: uma pessoa avalia um filme uma
-   vez, e cada linha merece uma placa. Aqui o gesto principal é MARCAR VISTO, e
-   ele acontece treze vezes numa noite de maratona. Um mural com uma placa por
-   episódio seria uma pessoa enterrando o clube inteiro por ter passado o
-   domingo com uma série — o mesmo defeito que fez o voto em critério sair do
-   mural de filmes.
-
-   Então há três tipos de linha, e o peso de cada uma é o peso do que ela conta:
-
-   · **avaliado** — a ficha com nota, e ela é a linha rica: carrega o mais alto
-     e o mais baixo dos nove critérios, que é onde a pessoa se entusiasmou e
-     onde se decepcionou. É o que dá assunto, e é o que este produto tem de
-     próprio.
-   · **visto** — marcar sem avaliar, e ele vem AGRUPADO: os episódios que uma
-     pessoa marcou da mesma série no mesmo dia são uma linha só, "viu 6
-     episódios de Fringe". Uma maratona é um acontecimento, não seis.
+   · **avaliado** — a ficha com nota, e a linha rica: carrega o mais alto e o
+     mais baixo dos nove critérios.
+   · **visto** — AGRUPADO: os episódios que uma pessoa marcou da mesma série no
+     mesmo dia são uma linha só. Uma maratona é um acontecimento, não seis.
    · **comentado** — alguém escreveu embaixo da ficha de outra pessoa.
 
-   O agrupamento é aqui e não na tela porque ele muda o QUE é um item — o mural
-   tem oitenta itens, e oitenta linhas de "viu um episódio" gastariam o limite
-   inteiro com uma noite de sofá.
+   O agrupamento é aqui e não na tela porque ele muda o QUE é um item: o mural
+   tem oitenta, e oitenta linhas de "viu um episódio" gastariam o limite inteiro
+   com uma noite de sofá.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Quantos acontecimentos o mural carrega. Além disto é arquivo, não mural. */
@@ -83,8 +73,8 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   const items = [];
   /* Os "vistos" abertos, por (pessoa, série, dia). O primeiro do dia cria a
      linha e os seguintes engordam ela — e é o primeiro porque a consulta desce
-     do mais novo para o mais velho, então a linha fica com a hora do episódio
-     mais recente daquela sessão, que é quando o clube a viu acontecer. */
+     do mais novo, então a linha fica com a hora do episódio mais recente
+     daquela sessão. */
   const juntando = new Map();
 
   for (const row of takes) {
@@ -104,9 +94,9 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
         genre: row.show_genre,
         takeId: row.id,
         final: row.final,
-        /* Nulo numa nota rápida, e é o certo: ela não tem critério por dentro,
-           e um alto e um baixo inventados a partir de um número só seriam a
-           tela dizendo o que ninguém disse. */
+        /* Nulo numa nota rápida: ela não tem critério por dentro, e um alto e
+           um baixo inventados a partir de um número só seriam a tela dizendo o
+           que ninguém disse. */
         ends: row.scores ? episodeEndsOf(row.show_genre, row.scores) : null,
         excerpt: row.comment ? excerpt(row.comment) : null,
       });
@@ -161,10 +151,8 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     });
   }
 
-  /* A mesma política de leitura do mural de filmes, linha a linha: um clube
-     fechado que mostra as fichas e esconde a conversa tem um mural pela
-     metade, e decidir isso no cliente seria o dado saindo daqui com a tela
-     prometendo não desenhá-lo. */
+  /* A mesma política de leitura do mural de filmes, linha a linha: decidir isso
+     no cliente seria o dado saindo daqui com a tela prometendo não desenhá-lo. */
   const filtrado =
     req.club.isMember || req.club.visibility === 'public'
       ? items

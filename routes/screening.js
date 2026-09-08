@@ -9,20 +9,18 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* A sala é do clube, e não da internet — e agora "do clube" é uma frase com
-   consequência mecânica: `req.club` já foi resolvido pelo middleware lá em
-   cima, e `roomFor` devolve o quarto daquele clube e de nenhum outro. Assistir
-   é uma coisa que se faz DE DENTRO, então tudo aqui exige ser membro. */
+/* A sala é do clube: `roomFor` devolve o quarto daquele clube e de nenhum
+   outro. Assistir é coisa de DENTRO, então tudo aqui exige ser membro. */
 router.use(auth.requireSession, clubs.requireMember);
 
 /** O quarto deste pedido. Uma linha em toda rota, e é o escopo inteiro. */
 const roomOf = req => screening.roomFor(req.club.id);
 
-/* The film comes from its id and is read back out of the server's own records.
-   Accepting the object the client sent would let any member broadcast an
+/* The film comes from its id and is read back out of the server's own records:
+   accepting the object the client sent would let any member broadcast an
    arbitrary poster URL — and therefore an arbitrary outbound request — into
-   everybody else's browser. The cache is asked first because it is the only
-   one of the two that knows the runtime, which is what bounds the seek bar. */
+   everybody else's browser. The cache is asked first because it is the only one
+   of the two that knows the runtime, which is what bounds the seek bar. */
 const cachedStmt = db.prepare('SELECT tmdb_id, title, year, genre, poster, runtime FROM movies_cache WHERE tmdb_id = ?');
 const queuedStmt = db.prepare(
   'SELECT movie_id, movie_title, movie_year, movie_genre, movie_poster FROM watchlist WHERE club_id = ? AND movie_id = ?'
@@ -58,20 +56,19 @@ router.get('/', wrap(async (req, res) => {
   res.json(screening.snapshot(roomOf(req)));
 }));
 
-/* The clock. A client samples this a few times and keeps the median offset, so
-   that a member whose machine is a minute fast does not spend the whole film
-   a minute ahead of everybody. Deliberately does nothing else: the value of
-   the answer is that it arrives quickly. */
+/* The clock. A client samples this a few times and keeps the median offset, so a
+   member whose machine is a minute fast does not spend the whole film a minute
+   ahead. Deliberately does nothing else: the value of the answer is that it
+   arrives quickly. */
 router.get('/time', (_req, res) => {
   res.json({ t: Date.now() });
 });
 
-/* ── the stream ───────────────────────────────────────────────────────────
-   The headers are all load-bearing. `no-transform` and `X-Accel-Buffering` are
-   what stop an intermediary from holding frames back to fill a buffer, which
-   for this endpoint means holding a play command until the film is over.
-   `flushHeaders` sends them before the first frame exists, which is what makes
-   the browser consider the connection open. */
+/* The headers are all load-bearing: `no-transform` and `X-Accel-Buffering` stop
+   an intermediary from holding frames back to fill a buffer, which here means
+   holding a play command until the film is over. `flushHeaders` sends them
+   before the first frame exists, which makes the browser consider the
+   connection open. */
 router.get('/stream', (req, res) => {
   const room = roomOf(req);
   if (!screening.canSubscribe(room, req.session.reviewer_id)) {
@@ -117,14 +114,10 @@ router.post('/open', wrap(async (req, res) => {
   if (!movie) return res.status(404).json({ error: 'Filme não encontrado no catálogo do clube.' });
 
   screening.open(roomOf(req), movie);
-  /* ── e o resto do clube fica sabendo ──────────────────────────────────
-     A sala já avisou quem está dentro dela pelo próprio stream. Isto avisa
-     quem não está: a marquise de todo mundo acende a lâmpada da Sessão sem
-     que ninguém precise abrir a aba para descobrir que ela começou.
-
-     Depois de `open`, nunca antes, pela mesma razão de sempre — um aviso
-     emitido antes da mudança manda o clube buscar um estado que ainda não
-     existe. Ver live.js. */
+  /* A sala já avisou quem está dentro pelo próprio stream; isto avisa quem não
+     está, para a marquise de todo mundo acender a lâmpada da Sessão. Depois de
+     `open` e nunca antes: um aviso emitido antes da mudança manda o clube
+     buscar um estado que ainda não existe. */
   live.emit('screening', req.session.reviewer_id, req.club.id);
   res.status(201).json(screening.snapshot(roomOf(req)));
 }));
@@ -136,9 +129,8 @@ router.post('/close', wrap(async (req, res) => {
   res.json(screening.snapshot(room));
 }));
 
-/* play, pause and seek. The position is taken from the sender because the
-   sender is the one who knows where their player actually is — but it is
-   clamped in the room before it becomes everyone's truth. */
+/* A posição vem de quem manda, porque é quem sabe onde o player dele está de
+   verdade — e é limitada na sala antes de virar a verdade de todo mundo. */
 router.post('/command', wrap(async (req, res) => {
   if (!screening.withinRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
@@ -154,12 +146,10 @@ router.post('/command', wrap(async (req, res) => {
   }
 
   /* ── só a virada, e nunca o arrasto ──────────────────────────────────
-     A lâmpada da marquise respira quando o filme está rolando e fica parada
-     quando alguém pausou, então play e pause interessam ao clube inteiro.
-     Seek não: puxar a barra dispara comandos aos punhados, e emitir em cada
-     um seria mandar toda aba aberta buscar a sala enquanto uma pessoa
-     procura uma cena. Comparar o status antes e depois é o filtro exato —
-     `seek` é o único que deixa ele em paz de propósito (ver screening.js). */
+     A lâmpada da marquise respira com o filme rolando e fica parada quando
+     alguém pausou, então play e pause interessam ao clube inteiro. Seek não:
+     puxar a barra dispara comandos aos punhados, e emitir em cada um mandaria
+     toda aba aberta buscar a sala enquanto uma pessoa procura uma cena. */
   const room = roomOf(req);
   const was = room.status;
   if (!screening.command(room, type, position)) {
@@ -169,10 +159,10 @@ router.post('/command', wrap(async (req, res) => {
   res.json(screening.snapshot(room));
 }));
 
-/* The pointer to what the club is watching, so a member who arrives late loads
-   it without asking. Anything that is not a magnet or an http(s) URL is refused
-   outright rather than trimmed to fit: this string goes straight into everyone
-   else's player, and half a magnet is not a shorter magnet. */
+/* O ponteiro para o que o clube está vendo, para quem chega tarde carregar sem
+   perguntar. O que não for magnet ou http(s) é recusado inteiro e não aparado:
+   esta string vai direto para o player de todo mundo, e meio magnet não é um
+   magnet menor. */
 router.post('/link', wrap(async (req, res) => {
   if (!screening.withinRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
@@ -187,15 +177,13 @@ router.post('/link', wrap(async (req, res) => {
   res.json(screening.snapshot(room));
 }));
 
-/* ── the subtitle ─────────────────────────────────────────────────────────
-   Two routes rather than a field on the snapshot, and that split is the whole
-   design: the stream announces which subtitle the room is on, and this is
-   where the text is actually collected. The reasoning is in `snapshot`.
+/* Duas rotas em vez de um campo no snapshot, e essa divisão é o desenho: o
+   stream anuncia QUAL legenda a sala está usando, e aqui o texto é buscado. O
+   porquê está em `snapshot`.
 
-   Sent as WebVTT because the browser only speaks WebVTT and the conversion
-   from SubRip already happens on the screen that read the file. Converting
-   once, where the file is opened, beats converting in every browser that
-   receives it — and means the room stores one format instead of two. */
+   WebVTT porque o navegador só fala WebVTT, e a conversão do SubRip já acontece
+   na tela que leu o arquivo: converter uma vez, onde o arquivo é aberto, ganha
+   de converter em cada navegador que recebe. */
 router.get('/subtitle', (req, res) => {
   const subtitle = roomOf(req).subtitle;
   if (!subtitle) return res.status(404).json({ error: 'A sessão não tem legenda.' });
@@ -217,18 +205,15 @@ router.post('/subtitle', wrap(async (req, res) => {
 }));
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A TELA AO VIVO: TRÊS ROTAS E NENHUM BYTE DE VÍDEO.
-
-   O servidor apresenta duas pessoas e sai da frente. `/live` diz quem está com
-   a tela, `/signal` carrega o aperto de mão entre dois navegadores, e `/ice`
-   entrega os endereços que eles usam para se achar. A imagem nunca passa por
-   aqui — se passasse, uma sessão de duas horas seria alguns gigabytes saindo
-   de uma instância de 512 MB, e o recurso não existiria.
+   A TELA AO VIVO: TRÊS ROTAS E NENHUM BYTE DE VÍDEO. `/live` diz quem está com
+   a tela, `/signal` carrega o aperto de mão entre dois navegadores, `/ice`
+   entrega os endereços com que eles se acham. Se a imagem passasse por aqui,
+   uma sessão de duas horas seria alguns gigabytes saindo de uma instância de
+   512 MB, e o recurso não existiria.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* Assumir e largar a transmissão. Uma sessão aberta é pré-requisito pela mesma
-   razão que é para o link: transmitir para uma sala escura é transmitir para
-   ninguém. */
+/* Uma sessão aberta é pré-requisito pela mesma razão que é para o link:
+   transmitir para uma sala escura é transmitir para ninguém. */
 router.post('/live', wrap(async (req, res) => {
   if (!screening.withinRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
@@ -239,9 +224,8 @@ router.post('/live', wrap(async (req, res) => {
   const on = req.body?.on !== false;
   if (on) {
     if (!screening.startLive(room, req.session)) {
-      /* 409 e não 403: não é falta de permissão, é a vaga estar ocupada. A
-         tela mostra de quem ela é, que é a informação que resolve — a pessoa
-         pede a vez no Discord e o outro larga. */
+      /* 409 e não 403: não é falta de permissão, é a vaga estar ocupada. A tela
+         mostra de quem ela é, que é a informação que resolve. */
       return res
         .status(409)
         .json({ error: `${room.live.hostName} já está transmitindo a tela.`, live: room.live });
@@ -252,14 +236,12 @@ router.post('/live', wrap(async (req, res) => {
   res.json(screening.snapshot(room));
 }));
 
-/* ── o carteiro ───────────────────────────────────────────────────────────
-   Oferta, resposta e candidatos de rede, de um membro para outro. O servidor
-   não abre o envelope: para ele isto é uma string opaca com remetente e
-   destinatário, e as duas únicas perguntas que ele faz são se os dois estão na
-   sala.
+/* O carteiro: oferta, resposta e candidatos, de um membro para outro. O servidor
+   não abre o envelope — para ele é uma string opaca com remetente e
+   destinatário, e as únicas perguntas que faz são se os dois estão na sala.
 
-   204 e não 200 com corpo, porque não há resposta — o que a outra ponta
-   responder chega pelo stream dela, não por esta requisição. */
+   204 e não 200 com corpo: o que a outra ponta responder chega pelo stream
+   dela, não por esta requisição. */
 router.post('/signal', wrap(async (req, res) => {
   if (!screening.withinSignalRate(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Sinalização demais em pouco tempo.' });
@@ -273,18 +255,16 @@ router.post('/signal', wrap(async (req, res) => {
     return res.status(400).json({ error: 'Recado para si mesmo.' });
   }
   /* Falso quando o destinatário saiu da sala entre ele oferecer e este recado
-     chegar — o que acontece o tempo todo numa reconexão, e não é erro de
-     ninguém. 404 é o que a outra ponta precisa para desistir daquele par em
-     vez de ficar tentando. */
+     chegar — o que acontece o tempo todo numa reconexão. 404 é o que a outra
+     ponta precisa para desistir daquele par em vez de ficar tentando. */
   if (!screening.signal(room, req.session.reviewer_id, to, kind, data)) {
     return res.status(404).json({ error: 'Essa pessoa não está mais na sessão.' });
   }
   res.status(204).end();
 }));
 
-/* Onde os dois navegadores procuram um caminho um até o outro. Por pessoa
-   porque a credencial de TURN é temporária e assinada com o id de quem pediu;
-   ver turn.js, que também explica por que ela existe. */
+/* Por pessoa porque a credencial de TURN é temporária e assinada com o id de
+   quem pediu; ver turn.js. */
 router.get('/ice', (req, res) => {
   res.json({
     iceServers: turn.iceServers(req.session.reviewer_id),

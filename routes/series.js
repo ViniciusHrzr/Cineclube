@@ -7,13 +7,9 @@ const { cleanEpisodeRef } = require('../show');
 
 const router = express.Router();
 
-/* ── o catálogo de séries ─────────────────────────────────────────────────
-   Irmão de routes/catalog.js. Não é escopado por clube porque o TMDB não é de
-   clube nenhum: uma série é a mesma série em toda sala, e o cache dela é
-   compartilhado exatamente como movies_cache já é.
-
-   O que é do clube — a fila e o que cada um viu — mora em routes/shows.js,
-   debaixo de /api/c/<slug>. */
+/* Irmão de routes/catalog.js. Não é escopado por clube porque o TMDB não é de
+   clube nenhum. O que é do clube — a fila e o que cada um viu — mora em
+   routes/shows.js, debaixo de /api/c/<slug>. */
 
 const upsertShow = db.prepare(`
   INSERT INTO shows_cache
@@ -90,26 +86,14 @@ async function cacheEpisodes(showId, episodes) {
 
 const cacheAll = results => Promise.all(results.map(cacheShow));
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Onde cada série da grade está passando.
-
-   O mesmo mecanismo de routes/catalog.js, sobre `shows_cache` — as colunas
-   `providers` e `providers_at` já existiam ali, esperando por isto. O porquê de
-   cada propriedade está escrito lá por extenso; em uma linha cada:
-
-   · nunca derruba a página — série sem resposta simplesmente não mostra nada,
-     que é um estado que a célula já desenha para as muitas que não passam em
-     lugar nenhum;
-   · nunca bloqueia no lote inteiro — as buscas correm juntas com um teto de
-     quantas ficam no ar;
-   · nunca serve resposta velha como nova — um catálogo se move, e "está na
-     Netflix" errado é pior do que ausente.
+/* Onde cada série da grade está passando: o mesmo mecanismo de
+   routes/catalog.js, sobre `shows_cache`, e o porquê de cada propriedade está
+   escrito lá.
 
    Uma série é o caso em que isto vale MAIS do que num filme: quase todo filme
    pode ser alugado em algum lugar, e por isso a linha de aluguel foi cortada;
-   uma série ou está incluída numa assinatura que alguém já paga ou o clube não
-   vai maratoná-la. É a pergunta que se faz antes de pôr uma na lista.
-   ══════════════════════════════════════════════════════════════════════════ */
+   uma série ou está incluída numa assinatura que alguém já paga, ou o clube não
+   vai maratoná-la. */
 const PROVIDERS_TTL = "-7 days";
 const PROVIDERS_LANES = 6;
 
@@ -152,9 +136,9 @@ async function fillProviders(results) {
     try {
       const watch = await series.watchProvidersFor(s.id);
       known.set(s.id, watch);
-      /* O nulo é gravado também, e de propósito: "não passa em lugar nenhum
-         aqui" é uma resposta, e não escrevê-la faria toda série que não passa
-         custar uma requisição a cada abertura de página, para sempre. */
+      /* O nulo é gravado também, de propósito: "não passa em lugar nenhum aqui"
+         é uma resposta, e não escrevê-la faria toda série que não passa custar
+         uma requisição a cada abertura de página. */
       await saveProvidersStmt.run(JSON.stringify(watch), s.id);
     } catch {
       /* Fora de `known`: esta série não mostra nada e é perguntada de novo da
@@ -166,10 +150,9 @@ async function fillProviders(results) {
   return results;
 }
 
-/* ── os nove critérios de um episódio ─────────────────────────────────────
-   Servido por gênero porque o gênero da SÉRIE decide o vocabulário — vozes numa
-   animação, estrutura num documentário — sem nunca acrescentar pergunta. O
-   porquê inteiro está em criteria.js. */
+/* Servido por gênero porque o gênero da SÉRIE decide o vocabulário — vozes numa
+   animação, estrutura num documentário — sem nunca acrescentar pergunta. Ver
+   criteria.js. */
 router.get('/criteria', (req, res) => {
   const criteria = {};
   for (const genre of GENRES) criteria[genre] = episodeCritsFor(genre);
@@ -202,10 +185,8 @@ router.get('/genre/:genre', wrap(async (req, res) => {
   res.json(data);
 }));
 
-/* ── uma série ────────────────────────────────────────────────────────────
-   Cai no cache quando o TMDB não responde. Uma série no acervo do clube tem de
-   continuar legível com a rede fora — é a mesma promessa que a ficha de um
-   filme já faz. */
+/* Cai no cache quando o TMDB não responde: uma série no acervo do clube tem de
+   continuar legível com a rede fora. */
 router.get('/:id(\\d+)', wrap(async (req, res) => {
   const id = Number(req.params.id);
   try {
@@ -246,8 +227,7 @@ router.get('/:id(\\d+)/season/:season(\\d+)', wrap(async (req, res) => {
   res.json({ season });
 }));
 
-/* Um episódio sozinho, com quem o assina. É o que a ficha criteriosa abre — os
-   nomes de direção e roteiro mudam a cada episódio, e é isso que faz a
+/* Os nomes de direção e roteiro mudam a cada episódio, e é isso que faz a
    avaliação por episódio ser sobre alguém e não sobre um número. */
 router.get('/:showId(\\d+)/episode/:season(\\d+)/:episode(\\d+)', wrap(async (req, res) => {
   const limpo = cleanEpisodeRef(req.params);

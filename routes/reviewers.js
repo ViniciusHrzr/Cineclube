@@ -19,24 +19,20 @@ const throttleProfile = throttle.limit({
   message: espera => `Muitas mudanças seguidas no perfil. Tente de novo em ${espera}.`,
 });
 
-/* Dois roteadores, e a divisão é a mesma pergunta em todo lugar deste recorte:
-   isto é sobre uma PESSOA ou sobre uma SALA?
-
-   `index` é a pessoa: o próprio perfil, o próprio retrato, apagar a conta. Nada
-   disso pertence a clube nenhum, e o retrato de alguém tem de carregar em toda
-   sala em que ela apareça. `scoped` é a sala: quem está nela. */
+/* Dois roteadores, e a divisão é a mesma pergunta de sempre: isto é sobre uma
+   PESSOA ou sobre uma SALA? `index` é a pessoa — o próprio perfil, o próprio
+   retrato, apagar a conta —, e o retrato dela tem de carregar em toda sala em
+   que apareça. `scoped` é a sala: quem está nela. */
 const router = express.Router();
 const scoped = express.Router({ mergeParams: true });
 
 /* ── o elenco de UMA sala ─────────────────────────────────────────────────
-   Isto listava a plataforma inteira, porque a plataforma inteira era um clube e
-   a tela de entrada precisava dos rostos antes de alguém entrar. As duas coisas
-   deixaram de valer no mesmo dia: entrar agora é pelo Google, e listar todo
-   mundo que existe seria a rede entregando seus usuários a qualquer visitante.
+   Isto listava a plataforma inteira, o que numa rede seria entregar os usuários
+   a qualquer visitante. É o elenco do clube pedido.
 
-   Então é o elenco do clube pedido, e `review_count` conta as fichas DAQUELE
-   clube — a mesma pessoa tem contagens diferentes em salas diferentes, que é
-   exatamente o que a decisão de a ficha ser do clube significa.
+   `review_count` conta o ACERVO da pessoa e não as fichas desta sala: uma ficha
+   é de quem a escreveu, e ela aparece no acervo de toda sala em que a pessoa
+   está (ver routes/reviews.js).
 
    `password_hash` e `password_salt` nunca são selecionados aqui, de propósito. */
 const listStmt = db.prepare(`
@@ -63,26 +59,20 @@ const setAvatarStmt = db.prepare(
 );
 const setBioStmt = db.prepare('UPDATE reviewers SET bio = ? WHERE id = ?');
 
-/* ── o teto da bio ────────────────────────────────────────────────────────
-   Uma linha, não um parágrafo. O perfil desenha isto embaixo do nome, numa
-   coluna, e o que a pessoa tem a dizer de verdade sobre um filme tem mil
-   caracteres na conversa — este espaço é para o tom de voz, não para o
-   argumento. Cento e quarenta porque é o comprimento em que uma frase ainda é
-   uma frase e não vira um texto que precisa de parágrafo. */
+/* Uma linha, não um parágrafo: o que a pessoa tem a dizer de verdade sobre um
+   filme tem mil caracteres na conversa, e este espaço é para o tom de voz.
+   Cento e quarenta é o comprimento em que uma frase ainda é uma frase. */
 const MAX_BIO = 140;
 
-/* The picture is a URL and not the bytes. Putting base64 in this DTO would mean
-   every list of reviewers — which the sign-in screen fetches before anyone is
-   even signed in — carried every portrait in the club, uncacheable, on every
-   request. As a URL it is one small extra request that the browser then keeps
-   forever, because `rev` changes whenever the picture does. */
+/* A URL e não os bytes: em base64, toda lista de avaliadores carregaria todo
+   retrato do clube, sem cache, em toda requisição. Como URL é um pedido a mais
+   que o navegador guarda para sempre, porque `rev` muda quando a foto muda. */
 const avatarUrl = row => (row.avatar_rev ? `/api/reviewers/${row.id}/avatar?v=${row.avatar_rev}` : null);
 
-/* `handle` é o apelido de menção, e ele depende do clube inteiro: "bruno" só
-   serve enquanto não houver dois. Por isso é calculado sobre a lista toda e
-   entregue junto de cada pessoa, em vez de derivado do nome dela sozinha — ver
-   handles.js. Um DTO de uma pessoa só não tem como saber se está sozinha com
-   aquele primeiro nome, então quem lista passa o mapa pronto. */
+/* `handle` depende do clube inteiro: "bruno" só serve enquanto não houver dois.
+   Calculado sobre a lista toda e entregue junto de cada pessoa — um DTO de uma
+   pessoa só não tem como saber se ela está sozinha com aquele primeiro nome.
+   Ver handles.js. */
 function toDTO(row, handles) {
   return {
     id: row.id,
@@ -94,9 +84,9 @@ function toDTO(row, handles) {
     role: row.role ?? null,
     hasPassword: !!row.has_password,
     avatar: avatarUrl(row),
-    /* Vazio e ausente são a mesma coisa aqui, e viram `null`: uma bio apagada
-       grava string vazia, e o perfil que recebesse `""` teria de decidir de
-       novo, na tela, se aquilo é uma linha para desenhar. */
+    /* Vazio e ausente são a mesma coisa aqui: uma bio apagada grava string
+       vazia, e o perfil que recebesse `""` teria de decidir de novo, na tela,
+       se aquilo é uma linha para desenhar. */
     bio: row.bio || null,
     createdAt: row.created_at ?? null,
     /** Desde quando está NESTE clube, que é o que o perfil dentro dele mostra. */
@@ -118,25 +108,21 @@ scoped.get('/', clubs.requireReadable, wrap(async (req, res) => {
   res.json({ reviewers: rows.map(r => toDTO(r, handles)) });
 }));
 
-/* ── e não existe mais rota de cadastro ───────────────────────────────────
-   Havia aqui um POST que criava avaliador com nome e PIN, aberto a qualquer um.
-   Ele estava certo enquanto o produto era uma sala de amigos com um endereço
-   que só eles conheciam: cadastrar-se era entrar na sala.
-
-   Numa rede, um endpoint público que cria contas sem verificar e-mail nenhum é
-   um cadastro sem dono. Conta agora nasce de um lugar só — a volta do Google,
-   em accountForGoogle —, e entrar numa SALA é outra coisa completamente: é
-   pedir, e alguém aprovar. */
+/* ── e não existe mais rota de cadastro AQUI ──────────────────────────────
+   Havia um POST que criava avaliador com nome e PIN, aberto a qualquer um.
+   Numa rede, um endpoint público que cria contas sem verificar nada é um
+   cadastro sem dono. Conta nasce em `/api/auth` — pelo Google ou por e-mail e
+   senha —, e entrar numa SALA é outra coisa: é pedir, e alguém aprovar. */
 
 /* ── your own profile, and nobody else's ──────────────────────────────────
    The name and the picture are how a person appears next to everything they
-   ever said here, so the rule is the same one the reviews already follow: it
-   belongs to whoever it is. The route takes no id — it edits the account the
-   session is signed in as, which makes editing someone else's not something to
-   forbid but something there is no way to ask for.
+   ever said here, so the rule is the one the reviews already follow. The route
+   takes no id — it edits the account the session is signed in as, which makes
+   editing someone else's not something to forbid but something there is no way
+   to ask for.
 
-   The admin is deliberately not an exception. Resetting a forgotten PIN is
-   letting someone back in; renaming them is speaking for them. */
+   The admin is deliberately not an exception: letting somebody back in is one
+   thing, renaming them is speaking for them. */
 router.patch('/me', auth.requireSession, throttleProfile, wrap(async (req, res) => {
   const id = req.session.reviewer_id;
   const patch = req.body || {};
@@ -159,15 +145,13 @@ router.patch('/me', auth.requireSession, throttleProfile, wrap(async (req, res) 
   }
 
   /* ── a bio ──────────────────────────────────────────────────────────────
-     Mesma regra do nome e do retrato, e ela é a razão de esta rota não receber
-     id nenhum: escrever "sou o cara do terror" na página de outra pessoa é
-     falar pela boca dela. Nem o admin — a exceção dele é deixar alguém entrar
-     de volta, não dizer quem alguém é.
+     Mesma regra do nome e do retrato, e é a razão de esta rota não receber id:
+     escrever "sou o cara do terror" na página de outra pessoa é falar pela boca
+     dela.
 
-     Uma linha em branco apaga. `null` e `''` chegam pelo mesmo caminho porque
-     do lado de lá são o mesmo gesto: limpar o campo e salvar. Gravar vazio em
-     vez de `null` seria uma segunda forma de "não tem bio", e a leitura acima
-     teria de conhecer as duas. */
+     Uma linha em branco apaga. `null` e `''` chegam pelo mesmo caminho porque do
+     lado de lá são o mesmo gesto, e gravar vazio seria uma segunda forma de
+     "não tem bio" que a leitura teria de conhecer. */
   if ('bio' in patch) {
     const bio = patch.bio == null ? '' : String(patch.bio).trim();
     if (bio.length > MAX_BIO) {
@@ -176,12 +160,10 @@ router.patch('/me', auth.requireSession, throttleProfile, wrap(async (req, res) 
     await setBioStmt.run(bio || null, id);
   }
 
-  /* Um nome e um retrato aparecem ao lado de tudo o que a pessoa já disse aqui,
-     então trocar qualquer um dos dois redesenha o produto inteiro para o resto
-     do clube — não só a tela de avaliadores. */
-  /* Um aviso por clube em que a pessoa está: o nome e o retrato dela aparecem
-     ao lado de tudo que ela já disse em cada uma dessas salas, e o cano só
-     entrega dentro da sala que ele nomeia. */
+  /* Um nome e um retrato aparecem ao lado de tudo o que a pessoa já disse, então
+     trocar qualquer um dos dois redesenha o produto inteiro para o resto do
+     clube. Um aviso por sala em que ela está — o cano só entrega dentro da sala
+     que ele nomeia. */
   for (const c of await clubs.mineStmt.all(id)) live.emit('reviewers', id, c.id);
 
   const row = await db
@@ -199,11 +181,9 @@ router.patch('/me', auth.requireSession, throttleProfile, wrap(async (req, res) 
   });
 }));
 
-/* The picture itself. Readable without a session for the same reason the roster
-   is: the sign-in screen shows the club before anyone has signed in.
-
-   Immutable for a year, and truthfully so — the `rev` in the URL changes with
-   every upload, so this exact URL can only ever answer with this exact image. */
+/* Legível sem sessão, como o elenco. Imutável por um ano, e verdadeiramente: o
+   `rev` na URL muda a cada envio, então esta URL exata só pode responder com
+   esta imagem exata. */
 router.get('/:id/avatar', wrap(async (req, res) => {
   const row = await avatarStmt.get(req.params.id);
   if (!row?.avatar) return res.status(404).end();
@@ -213,23 +193,11 @@ router.get('/:id/avatar', wrap(async (req, res) => {
   res.send(buf);
 }));
 
-/* Being removed. Only the admin removes anyone, and the admin is not removable
-   — not even by themselves.
-
-   Deleting used to be allowed on your own account, which is friendlier and is
-   also how the club could lose its only administrator with one click: the seat
-   is held by a flag on a row, so deleting that row leaves nobody able to reset
-   a PIN or remove anyone, and no route grants the flag back. The rule is
-   enforced here rather than by hiding a button, because a button is not a
-   permission — anyone can call the route directly.
-
-   Reviews go with the account (ON DELETE CASCADE), which is why the
-   confirmation in the client spells out how many. */
 /* ── apagar uma CONTA ─────────────────────────────────────────────────────
-   Isto é a pessoa deixando a plataforma, e não deixando um clube: sair de uma
-   sala é `DELETE /api/c/<slug>/members/<id>`, e é lá que mora a regra do último
-   ADM. Aqui as fichas dela vão junto em cascata, em todos os clubes de uma vez,
-   e é por isso que só o administrador da instalação alcança esta rota.
+   A pessoa deixando a plataforma, e não deixando um clube: sair de uma sala é
+   `DELETE /api/c/<slug>/members/<id>`, e é lá que mora a regra do último ADM.
+   Aqui as fichas dela vão junto em cascata, em todos os clubes de uma vez, e é
+   por isso que só o administrador da instalação alcança esta rota.
 
    O administrador não é removível, nem por ele mesmo: a cadeira é uma coluna
    numa linha, e apagar a linha deixaria a instalação sem ninguém que possa

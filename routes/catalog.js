@@ -40,7 +40,8 @@ function fromCache(c) {
     year: c.year,
     genre: c.genre,
     // Rows written before the column existed still know one genre; one is a
-    // list of one, and the screen that offers a choice simply has nothing to
+    // list of one, and the screen that offers a choice has nothing to choose
+    // between.
     // choose between.
     genres: c.genres ? c.genres.split(',') : [c.genre],
     poster: c.poster,
@@ -72,29 +73,23 @@ async function cacheMovie(m) {
 const cacheAll = results => Promise.all(results.map(cacheMovie));
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Onde cada filme da grade está passando.
+   Onde cada filme da grade está passando. The list endpoints do not carry
+   providers — only the per-film one does — so a page of twenty posters is
+   twenty extra requests the first time it is seen.
 
-   The list endpoints do not carry providers — only the per-film one does — so a
-   page of twenty posters is twenty extra requests the first time it is seen.
-   That is the whole problem this solves, and it solves it by only ever paying
-   for it once per film per week.
+   Three properties, each one a way this could have gone wrong:
 
-   Three properties worth stating, because each one is a way this could have
-   gone wrong:
-
-   · It never fails the page. A film whose providers could not be fetched
-     simply has none, which is a state the card already has to draw for the
-     many films that genuinely stream nowhere.
-   · It never blocks on the whole batch. The fetches run together with a
-     ceiling on how many are in flight, and the route moves on regardless.
-   · It never serves a stale answer as a fresh one. A catalogue moves, and
-     "está na Netflix" being wrong is worse than being absent, so the row
-     carries when it was asked and is refetched once that goes cold.
+   · It never fails the page. A film whose providers could not be fetched has
+     none, which the card already draws for films that stream nowhere.
+   · It never blocks on the whole batch: the fetches run with a ceiling on how
+     many are in flight, and the route moves on regardless.
+   · It never serves a stale answer as a fresh one — "está na Netflix" being
+     wrong is worse than being absent, so the row carries when it was asked.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* A week. Long enough that the club never pays for the same film twice in a
-   sitting, short enough that a film leaving a service is wrong for days rather
-   than forever. */
+/* Long enough that the club never pays for the same film twice in a sitting,
+   short enough that a film leaving a service is wrong for days rather than
+   forever. */
 const PROVIDERS_TTL = "-7 days";
 /* How many provider requests are in the air at once. TMDB tolerates far more,
    but this runs on one small instance and a catalogue page is not worth
@@ -102,10 +97,9 @@ const PROVIDERS_TTL = "-7 days";
 const PROVIDERS_LANES = 6;
 
 /* Built per call because the number of ids varies, which is only possible
-   because `db.prepare` here is a thin wrapper that holds a string — nothing is
-   compiled until the statement is executed. The ids are still bound as
-   parameters; the only thing interpolated is how many question marks there
-   are. */
+   because `db.prepare` here holds a string — nothing is compiled until the
+   statement runs. The ids are still bound as parameters; the only thing
+   interpolated is how many question marks there are. */
 const freshProviders = count => db.prepare(`
   SELECT tmdb_id, providers FROM movies_cache
   WHERE tmdb_id IN (${Array.from({ length: count }, () => '?').join(',')})
@@ -147,9 +141,9 @@ async function fillProviders(results) {
     try {
       const watch = await tmdb.watchProvidersFor(m.id);
       known.set(m.id, watch);
-      /* Null is cached too, and deliberately: "nothing streams this here" is an
+      /* Null is cached too, deliberately: "nothing streams this here" is an
          answer, and not writing it would make every film that streams nowhere
-         cost a request on every single page view, forever. */
+         cost a request on every page view, forever. */
       await saveProvidersStmt.run(JSON.stringify(watch), m.id);
     } catch (e) {
       /* Left out of `known`, so this film shows nothing and is asked again next

@@ -9,20 +9,15 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* ── comentar ─────────────────────────────────────────────────────────────
-   O único texto livre que uma pessoa escreve para as outras neste produto, e
-   por isso a superfície mais valiosa para quem quiser despejar qualquer coisa
-   numa rede social — que é o que este produto está prestes a virar.
+/* O único texto livre que uma pessoa escreve para as outras aqui, e por isso a
+   superfície mais valiosa para quem quiser despejar qualquer coisa.
 
-   Vinte por minuto. Uma discussão de clube em cima de uma ficha é rápida e
-   pode ser em rajada, então o número é folgado: vinte comentários por minuto é
-   mais do que qualquer pessoa digita, mesmo brigando. Passar disso não é ter
-   opinião, é ter um laço.
+   Vinte por minuto é folgado de propósito: uma discussão de clube é rápida e
+   pode ser em rajada. Passar disso não é ter opinião, é ter um laço.
 
-   O voto e a curtida não têm trava própria e é de propósito: os dois são uma
-   linha com chave primária por (alvo, pessoa), então apertar mil vezes não
-   cria mil nada — cria e apaga a mesma linha. O teto de trás em server.js
-   cuida do custo de bater na porta. */
+   O voto e a curtida não têm trava própria: os dois são uma linha com chave
+   primária por (alvo, pessoa), então apertar mil vezes cria e apaga a mesma
+   linha. O teto de trás em server.js cuida do custo de bater na porta. */
 const throttleComment = throttle.limit({
   name: 'comment',
   max: 20,
@@ -31,38 +26,26 @@ const throttleComment = throttle.limit({
 });
 
 /* ── o clube entra por baixo ──────────────────────────────────────────────
-   Nada aqui tem coluna `club_id`, e é de propósito: um comentário pendura numa
-   ficha, e a ficha já sabe de que sala é. Dar a ele uma coluna própria seria
-   uma segunda resposta para a mesma pergunta, livre para divergir da primeira.
+   Nada aqui tem coluna `club_id`: um comentário pendura numa ficha, e a ficha
+   já sabe de que sala é. Uma coluna própria seria uma segunda resposta para a
+   mesma pergunta, livre para divergir.
 
-   O preço é que TODA consulta deste arquivo precisa passar por `reviews` para
-   descobrir o clube. É um JOIN a mais e uma disciplina a mais: uma leitura que
-   esquecer o JOIN mostra a conversa de outro clube, e uma escrita que esquecer
-   deixa alguém comentar dentro de uma sala em que não está. Por isso `reviewStmt`
-   — o portão de toda escrita daqui — carrega `club_id` na condição. */
+   O preço é que TODA consulta deste arquivo passa por `reviews` para descobrir
+   o clube. Uma leitura que esquecer o JOIN mostra a conversa de outro clube, e
+   uma escrita que esquecer deixa alguém comentar numa sala em que não está —
+   por isso `reviewStmt`, o portão de toda escrita daqui, carrega `club_id` na
+   condição. */
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A conversa em cima do que o clube gravou.
+   A conversa em cima do que o clube gravou. Duas coisas sobrevivem à chamada de
+   voz, e as duas penduram numa avaliação específica e não no filme, porque é a
+   ficha de alguém que se discute: um comentário, e um voto na ficha.
 
-   O clube discute filme por voz e a discussão morre com a chamada. Duas coisas
-   aqui sobrevivem a ela, e as duas se penduram numa avaliação específica em vez
-   de no filme, porque é a ficha de alguém que se discute:
-
-   · um comentário, que é alguém respondendo ao take de outra pessoa;
-   · um voto em uma nota isolada — concordar com o 9 dela em fotografia sem
-     concordar com o 4 dela em roteiro, que é como a discordância real se
-     parece.
-
-   ── por que tudo de uma vez ─────────────────────────────────────────────
-   A tela de avaliados desenha o acervo inteiro: quarenta avaliações, cada uma
-   com sua conversa e seus votos. Buscar por avaliação seriam quarenta
-   requisições para montar uma tela, e um estado de carregando dentro de cada
-   gaveta que abre.
-
-   Num clube de quatro pessoas isto é da ordem de centenas de linhas no total,
-   então a coleção inteira vai numa resposta só, junto com o resto do clube, e o
-   cliente escreve por cima do que ele mesmo acabou de mandar. O dia em que isso
-   for grande demais é o dia em que este comentário fica errado.
+   Tudo de uma vez: a tela de avaliados desenha o acervo inteiro, e buscar por
+   avaliação seriam quarenta requisições para montar uma tela, com um estado de
+   carregando dentro de cada gaveta. Num clube de quatro pessoas isto é da ordem
+   de centenas de linhas — o dia em que for grande demais é o dia em que este
+   comentário fica errado.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Longo o bastante para um argumento, curto o bastante para não virar ensaio. */
@@ -118,10 +101,9 @@ const commentOwnerStmt = db.prepare(`
   WHERE c.id = ? AND rv.club_id = ?
 `);
 const deleteCommentStmt = db.prepare('DELETE FROM review_comments WHERE id = ?');
-/* Explícito, além do ON DELETE CASCADE da coluna. A cascata depende de as
-   chaves estrangeiras estarem ligadas, o que é verdade aqui e é uma coisa a
-   menos para depender: uma resposta órfã não some da tela, ela fica invisível
-   num pai que não existe mais — que é pior do que sumir. */
+/* Explícito, além do ON DELETE CASCADE: a cascata depende de as chaves
+   estrangeiras estarem ligadas. Uma resposta órfã não some da tela, ela fica
+   invisível num pai que não existe mais — pior do que sumir. */
 const deleteRepliesStmt = db.prepare('DELETE FROM review_comments WHERE parent_id = ?');
 
 /* O portão. Toda escrita deste arquivo passa por aqui, e `club_id` na condição
@@ -144,10 +126,8 @@ function toCommentDTO(row) {
   return {
     id: row.id,
     reviewId: row.review_id,
-    /* O mesmo id com o nome que os dois universos compartilham. A conversa e o
-       voto são desenhados pelas MESMAS peças nos dois lados (ver
-       components/social.tsx), e a ficha de um episódio não é uma `review` — o
-       nome comum das duas é o que o produto sempre chamou de ficha, take.
+    /* A conversa e o voto são desenhados pelas MESMAS peças nos dois universos
+       (ver components/social.tsx), e a ficha de um episódio não é uma `review`.
        `reviewId` continua porque endereços e telas antigas o leem. */
     takeId: row.review_id,
     reviewerId: row.reviewer_id,
@@ -169,8 +149,8 @@ function toVoteDTO(row) {
   };
 }
 
-/* Aberto, como todo o resto da leitura neste app. O que o PIN protege é
-   escrever: a ameaça aqui é um amigo votando no lugar do outro, não sigilo. */
+/* Aberto, como todo o resto da leitura neste app: o que se protege é escrever —
+   a ameaça é um amigo votando no lugar do outro, não sigilo. */
 router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   const [comments, votes, likes] = await Promise.all([
     commentsStmt.all(req.club.id), votesStmt.all(req.club.id), likesStmt.all(req.club.id)
@@ -182,10 +162,9 @@ router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   });
 }));
 
-/* ── escrever um comentário ───────────────────────────────────────────────
-   Quem assina é a sessão e nunca o corpo, igual à avaliação. Comentar a própria
-   avaliação é permitido de propósito: responder a quem te respondeu é metade de
-   uma conversa. */
+/* Quem assina é a sessão e nunca o corpo. Comentar a própria avaliação é
+   permitido de propósito: responder a quem te respondeu é metade de uma
+   conversa. */
 router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMember, throttleComment, wrap(async (req, res) => {
   const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
@@ -197,14 +176,10 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMem
   }
 
   /* ── responder, e só um nível ──────────────────────────────────────────
-     O pai tem de existir, tem de estar nesta mesma ficha, e tem de ser um
-     comentário de primeiro nível. A terceira condição é o que mantém a
-     profundidade em um: sem ela, uma resposta a uma resposta seria aceita e a
-     tela teria de decidir na hora de desenhar o que fazer com uma escada que
-     ela não sabe desenhar.
-
-     A segunda evita um fio costurado entre duas fichas — uma resposta que
-     aparece numa conversa cujo pai está em outra. */
+     O pai tem de existir, estar NESTA ficha, e ser de primeiro nível. A terceira
+     condição mantém a profundidade em um; a segunda evita um fio costurado entre
+     duas fichas — uma resposta que aparece numa conversa cujo pai está em
+     outra. */
   const parentId = req.body?.parentId ?? null;
   if (parentId != null) {
     const parent = await commentOwnerStmt.get(String(parentId), req.club.id);
@@ -218,9 +193,8 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMem
 
   const id = 'c' + crypto.randomUUID();
   await insertCommentStmt.run(id, review.id, req.session.reviewer_id, body, parentId ? String(parentId) : null);
-  /* Depois da escrita, sempre. Um aviso emitido antes do commit manda o clube
-     inteiro buscar um estado que ainda não existe — e não há segundo aviso a
-     caminho para consertar isso. Ver live.js. */
+  /* Depois da escrita, sempre: um aviso antes do commit manda o clube inteiro
+     buscar um estado que ainda não existe, e não há segundo aviso a caminho. */
   live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(201).json(toCommentDTO(await oneCommentStmt.get(id)));
 }));

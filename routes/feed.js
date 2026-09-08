@@ -11,46 +11,25 @@ const router = express.Router({ mergeParams: true });
 /* ══════════════════════════════════════════════════════════════════════════
    O mural: o que aconteceu no clube, em ordem de tempo.
 
-   O produto tinha três coisas que PRODUZEM sinal social — comentário, curtida,
-   aviso — e nenhuma que o exibisse coletivamente. O sino é a única janela para
-   tudo isso e ele é privado: se a Beren avaliou ontem à noite e o Leonardo
-   discordou da montagem dela, ninguém além dos dois fica sabendo.
-
-   ── o mesmo desenho do sino, e pelo mesmo motivo ────────────────────────
-   Derivado das tabelas que já existem, sem tabela de evento. Um mural gravado
-   no momento em que a coisa acontece é a mesma verdade em dois lugares, e o
-   segundo é o que envelhece: uma avaliação apagada deixaria para trás a linha
-   que anunciou que ela existiu.
-
-   Aqui isso importa mais do que no sino, porque um mural é lido por todo mundo:
-   uma linha sobre um comentário que não existe mais é o clube inteiro vendo o
+   Derivado das tabelas que já existem, sem tabela de evento — pelo mesmo motivo
+   do sino, e aqui importa mais, porque um mural é lido por todo mundo: uma
+   linha sobre um comentário que não existe mais é o clube inteiro vendo o
    produto mentir.
 
-   ── o que entra, e o corte de 26/08/2026 ────────────────────────────────
-   Entram avaliação e comentário. Saíram o voto em critério e o filme posto na
-   fila, cortados pelo dono depois de usar a primeira versão.
+   ── o que entra, e o que foi cortado ────────────────────────────────────
+   Entram avaliação e comentário. O voto em critério saiu por proporção: uma
+   avaliação acontece uma vez por filme por pessoa, mas um voto acontecia até
+   ONZE vezes por ficha por pessoa — uma noite de discussão enterrava a ficha
+   que a originou embaixo de quarenta linhas sobre ela. Ele virou contagem na
+   própria ficha, que é onde significa alguma coisa.
 
-   O motivo é de proporção, e ele é real. Uma avaliação acontece uma vez por
-   filme por pessoa. Um comentário é uma vez por pessoa por ideia — alguém
-   escreveu, é assunto. Mas um voto acontece até ONZE vezes por ficha por
-   pessoa: com seis membros, uma única noite de discussão enterrava a ficha que
-   originou a discussão embaixo de quarenta linhas sobre ela. O sinal virava a
-   moldura do ruído.
-
-   A curtida em comentário nunca entrou, por ser reação a uma reação. E o voto
-   não sumiu da tela: virou contagem na própria ficha, ao lado de quantos
-   responderam — que é onde ele significa alguma coisa.
-
-   A fila saiu junto por ser a linha mais fraca das quatro: pôr um filme na fila
-   é uma intenção, não um acontecimento, e ela já tem uma aba inteira só dela.
+   A curtida nunca entrou, por ser reação a uma reação. A fila saiu por ser
+   intenção e não acontecimento, e já ter uma aba só dela.
 
    ── por que a avaliação é a linha rica ──────────────────────────────────
-   Porque é o que este produto tem de próprio. Onze critérios por ficha
-   descrevem uma opinião com uma precisão que nenhum outro app de filme tem, e
-   um mural que dissesse só "fulano avaliou X — 8,5" seria o feed de qualquer
-   um. Então a linha carrega o mais alto e o mais baixo que a pessoa deu: é onde
-   ela se entusiasmou e onde ela se decepcionou, na mesma linha, e é isso que dá
-   assunto.
+   Um mural que dissesse só "fulano avaliou X — 8,5" seria o feed de qualquer
+   um. A linha carrega o mais alto e o mais baixo que a pessoa deu: onde ela se
+   entusiasmou e onde se decepcionou, na mesma linha, e é isso que dá assunto.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Quantos acontecimentos o mural carrega. Além disto é arquivo, não mural. */
@@ -108,14 +87,13 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     });
   }
 
-  /* `commentId` é o que faz a linha levar ao TEXTO e não só à ficha, e é o mesmo
-     campo que o sino carrega — ver routes/notifications.js. Sem ele, uma linha
-     sobre uma resposta abria a avaliação certa e parava ali: a resposta mora
-     recolhida atrás do "ver N respostas" do comentário que ela responde, então o
-     feed anunciava um texto e entregava uma gaveta fechada por cima dele.
+  /* `commentId` é o que faz a linha levar ao TEXTO e não só à ficha. Sem ele,
+     uma linha sobre uma resposta abria a avaliação certa e parava ali: a
+     resposta mora recolhida atrás do "ver N respostas", então o feed anunciava
+     um texto e entregava uma gaveta fechada por cima dele.
 
-     `parentId` viaja junto porque a tela precisa saber que aquilo é resposta
-     para dizê-lo na frase; para o link em si o id do próprio texto basta. */
+     `parentId` viaja porque a tela precisa saber que aquilo é resposta para
+     dizê-lo na frase. */
   for (const row of comments) {
     items.push({
       id: `c:${row.id}`,
@@ -134,15 +112,12 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   }
 
   /* ── o mural obedece à política de leitura ────────────────────────────
-     O mural é a única tela feita de dois tipos de linha, então ele é a única
-     que precisa filtrar em vez de simplesmente responder ou recusar: um clube
-     fechado que mostra as avaliações e esconde os comentários tem um mural com
-     metade das linhas.
+     É a única tela feita de dois tipos de linha, então a única que precisa
+     filtrar em vez de responder ou recusar: um clube fechado que mostra as
+     avaliações e esconde os comentários tem um mural com metade das linhas.
 
-     A guarda desta rota é `any` — chegar até aqui já exige que pelo menos um dos
-     dois esteja ligado. O que sobra é decidir linha a linha, e é aqui, no
-     servidor: um filtro no cliente seria o dado saindo daqui e a tela prometendo
-     não desenhá-lo. */
+     Decidido aqui, no servidor: um filtro no cliente seria o dado saindo daqui
+     e a tela prometendo não desenhá-lo. */
   const filtrado =
     req.club.isMember || req.club.visibility === 'public'
       ? items

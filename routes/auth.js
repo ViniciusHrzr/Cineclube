@@ -9,29 +9,20 @@ const wrap = require('../wrap');
 const router = express.Router();
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AS DUAS TRAVAS DA PORTA, e elas não são a que já existia.
+   AS DUAS TRAVAS DA PORTA, e elas não são a que já existia — `auth.js` tranca
+   UMA CONTA depois de cinco senhas erradas, e quem vem abaixo não está
+   adivinhando.
 
-   `auth.js` tranca UMA CONTA depois de cinco senhas erradas, por um tempo que
-   cresce. Isso protege contra quem está adivinhando a senha de alguém, e não
-   alcança nada do que vem abaixo — porque quem vem abaixo não está adivinhando.
+   **Cadastrar é a raiz de todo o resto.** Toda outra trava conta por conta;
+   quem pode criar mil identidades tem mil vezes cada um daqueles limites.
 
-   **Cadastrar é a raiz de todo o resto.** Toda outra trava deste produto conta
-   por conta: trinta fichas por hora, vinte comentários por minuto. Uma conta
-   nova custa uma requisição, então quem pode criar mil identidades tem mil
-   vezes cada um daqueles limites, e nenhum deles quer dizer coisa alguma.
+   **E as duas rotas rodam `scryptSync`**, caro de propósito e SÍNCRONO: cada
+   tentativa para o servidor inteiro por uma fração de segundo. Sem isto, um
+   laço em `/register` derruba o app pedindo educadamente, muitas vezes. A trava
+   por conta não ajuda — quem varre e-mails diferentes está sempre na primeira
+   tentativa de uma conta que não existe.
 
-   **E as duas rotas rodam `scryptSync`**, que é caro de propósito — é o que
-   torna uma senha roubada difícil de quebrar. Só que ele é síncrono e o Node
-   tem uma thread: cada tentativa para o servidor inteiro por uma fração de
-   segundo. Sem isto, um laço em `/register` não precisa de brecha nenhuma para
-   derrubar o app; basta pedir educadamente, muitas vezes. A trava por conta não
-   ajuda aqui: quem varre e-mails diferentes está sempre na primeira tentativa
-   de uma conta que não existe.
-
-   Por IP, e não por conta, porque a conta é justamente o que ainda não existe.
-   Cinco cadastros por hora cobre uma casa em que duas pessoas se inscrevem na
-   mesma noite; vinte entradas em quinze minutos cobre quem erra, corrige e
-   volta. Os dois são paredes para um laço.
+   Por IP, porque a conta é justamente o que ainda não existe.
    ══════════════════════════════════════════════════════════════════════════ */
 const throttleRegister = throttle.limit({
   name: 'register',
@@ -50,24 +41,18 @@ const throttleLogin = throttle.limit({
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AS TRAVAS DOS LINKS POR E-MAIL
+   AS TRAVAS DOS LINKS POR E-MAIL, cada número vindo do que a ação significa:
 
-   Toda rota nova abaixo é medida, pela mesma régua do resto do app, e cada
-   número vem do que a ação significa:
+   - **Pedir confirmação** é raro por natureza: uma vez na vida, mais o reenvio.
+   - **Pedir redefinição** é medido em DOIS eixos: por conta, para ninguém
+     encher a caixa de entrada de uma pessoa específica; por endereço de rede,
+     porque quem varre e-mails alheios não tem conta e escaparia do primeiro.
+   - **Apresentar um token** são 256 bits de acaso, então adivinhar não é um
+     caminho — a trava é barata e transforma "impossível" em "impossível e
+     barulhento".
 
-   - **Pedir confirmação** é raro por natureza: você confirma um endereço uma
-     vez na vida, e reenvia quando o primeiro não chegou. Três por hora.
-   - **Pedir redefinição** é medido em DOIS eixos, e isso não é excesso. Por
-     conta, para ninguém encher a caixa de entrada de uma pessoa específica; por
-     endereço de rede, porque quem varre e-mails alheios não tem conta nenhuma e
-     escaparia inteiro de um limite por conta.
-   - **Apresentar um token** é o único que um programa tentaria adivinhar. São
-     256 bits de acaso, então adivinhar não é um caminho — mas a trava é barata
-     e transforma "impossível" em "impossível e barulhento".
-
-   Os dois pedidos ainda gastam um envio de e-mail de verdade, que é uma cota
-   diária com outro dono. Um laço sem trava aqui esgota o provedor e derruba o
-   recurso para o clube inteiro.
+   Os dois pedidos gastam um envio de verdade, que é uma cota diária com outro
+   dono: um laço sem trava esgota o provedor e derruba o recurso para o clube.
    ══════════════════════════════════════════════════════════════════════════ */
 const throttleVerifySend = throttle.limit({
   name: 'verify:send',
@@ -94,9 +79,8 @@ const throttleTokenTry = throttle.limit({
 
 const getReviewer = db.prepare('SELECT * FROM reviewers WHERE id = ?');
 
-/* The picture travels as a URL for the same reason it does in the roster: the
-   bytes belong in one cacheable request, not in every response that happens to
-   mention a person. `rev` is what makes that cache safe. */
+/* A URL e não os bytes, como no elenco: eles pertencem a uma requisição
+   cacheável, e não a toda resposta que por acaso mencione uma pessoa. */
 const avatarUrl = (id, rev) => (rev ? `/api/reviewers/${id}/avatar?v=${rev}` : null);
 
 /** Never leak the hash, the salt, or the lock bookkeeping. */
@@ -115,19 +99,13 @@ function publicReviewer(r) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Entrar.
+   Entrar, por duas portas para a mesma conta.
 
-   Duas portas para a mesma conta, e a ordem entre elas é deliberada.
+   O Google é a porta normal: um clique, e quem cuida de segundo fator e de
+   conta invadida é quem já cuida disso para o resto da vida da pessoa.
 
-   O Google é a porta normal: um clique, nenhuma senha nova para inventar, e
-   quem cuida de segundo fator e de conta invadida é quem já cuida disso para o
-   resto da vida da pessoa.
-
-   A senha existe para a porta não ser única. Ela é pedida uma vez, logo depois
-   da primeira entrada pelo Google, e o dia em que aquela conta sumir — ou em
-   que a pessoa simplesmente não quiser usá-la — o clube continua acessível. Um
-   produto com uma porta só é um produto que alguém pode perder inteiro por um
-   motivo que não tem nada a ver com ele.
+   A senha existe para a porta não ser única — o dia em que aquela conta sumir,
+   ou em que a pessoa não quiser mais usá-la, o clube continua acessível.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -139,10 +117,10 @@ const clientSecret = () => process.env.GOOGLE_CLIENT_SECRET || '';
 const configured = () => !!(clientId() && clientSecret());
 
 /* Precisa bater CARACTERE A CARACTERE com um dos URIs cadastrados no console do
-   Google — esquema, porta e caminho. É o erro de configuração mais comum aqui,
-   e ele aparece como `redirect_uri_mismatch` numa página do Google, longe deste
-   arquivo, então a variável é explícita em vez de deduzida do cabeçalho Host:
-   um proxy que reescreve Host produziria um URI que ninguém cadastrou. */
+   Google. É o erro de configuração mais comum aqui e aparece como
+   `redirect_uri_mismatch` numa página do Google, longe deste arquivo — por isso
+   a variável é explícita e não deduzida do cabeçalho Host, que um proxy
+   reescreve. */
 const redirectUri = () =>
   `${(process.env.CINECLUBE_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')}/api/auth/google/callback`;
 
@@ -167,21 +145,16 @@ function readCookie(req, name) {
   return null;
 }
 
-/* Quem é você? O cliente pergunta isto no boot para decidir entre a tela de
-   entrada e o app. Sessão ausente ou vencida é uma resposta normal, não um erro.
+/* Quem é você? O cliente pergunta no boot para decidir entre a tela de entrada
+   e o app; sessão vencida é resposta normal, não erro.
 
-   `google` diz se a porta do Google existe nesta instalação: sem as variáveis
-   configuradas o botão não deve nem aparecer, e um botão que leva a um 503 é
-   pior do que um botão que não está lá. */
+   `google` diz se a porta do Google existe nesta instalação: um botão que leva
+   a um 503 é pior do que um botão que não está lá. */
 router.get('/me', (req, res) => {
-  /* ── as duas capacidades vão nos DOIS ramos ────────────────────────────
-     Este é o ramo de quem está deslogado, e é justamente ele que a tela de
-     entrada consulta. `mail` estava só no ramo de baixo, então "Esqueci minha
-     senha" nunca aparecia: a única tela que precisa da resposta é a única que
-     não a recebia.
-
-     Nenhuma das duas conta nada sobre ninguém — são fatos sobre a INSTALAÇÃO,
-     do mesmo tipo que já se descobre olhando se o botão do Google está lá. */
+  /* As duas capacidades vão nos DOIS ramos. Este é o de quem está deslogado, e
+     é justamente ele que a tela de entrada consulta — com `mail` só no ramo de
+     baixo, "Esqueci minha senha" nunca aparecia. Nenhuma das duas conta nada
+     sobre ninguém: são fatos sobre a INSTALAÇÃO. */
   if (!req.session) {
     return res.json({ reviewer: null, google: configured(), mail: mail.configured() });
   }
@@ -194,8 +167,7 @@ router.get('/me', (req, res) => {
       email: req.session.email || null,
       emailVerified: !!req.session.email_verified,
       /* A bio vem junto porque o saguão precisa dela: lá não existe elenco de
-         clube nenhum de onde lê-la, e a folha de conta é a mesma nos dois
-         lugares. */
+         clube de onde lê-la. */
       bio: req.session.bio || null,
       avatar: avatarUrl(req.session.reviewer_id, req.session.avatar_rev),
     },
@@ -203,21 +175,18 @@ router.get('/me', (req, res) => {
        "reenviar confirmação" nem "esqueci minha senha": um botão que não tem
        como funcionar é pior que a ausência dele. */
     mail: mail.configured(),
-    /* A tela de cadastro de senha vive disto. É um estado da conta e não um
-       passo de um assistente: quem pular hoje volta a ver o convite amanhã,
-       porque a razão de ela existir — não depender de uma porta só — não
-       expira. */
+    /* É um estado da conta e não um passo de um assistente: quem pular hoje
+       volta a ver o convite amanhã, porque a razão de ele existir — não
+       depender de uma porta só — não expira. */
     needsPassword: !req.session.has_password,
     google: configured(),
   });
 });
 
-/* ── a ida ────────────────────────────────────────────────────────────────
-   O `state` é um número aleatório que vai para o Google e volta, e a cópia dele
-   fica num cookie que só este navegador tem. Sem essa conferência na volta,
-   qualquer um poderia forjar um retorno de callback e entrar como quem ele
-   quisesse — é a proteção contra CSRF do fluxo inteiro, e é a única coisa aqui
-   que não pode ser esquecida. */
+/* O `state` vai para o Google e volta, e a cópia fica num cookie que só este
+   navegador tem. Sem essa conferência na volta, qualquer um forjaria um retorno
+   de callback e entraria como quem quisesse — é a proteção contra CSRF do fluxo
+   inteiro. */
 router.get('/google', (req, res) => {
   if (!configured()) {
     return res.status(503).json({ error: 'A entrada pelo Google não está configurada nesta instalação.' });
@@ -237,11 +206,9 @@ router.get('/google', (req, res) => {
   res.redirect(url.toString());
 });
 
-/* ── e a volta ────────────────────────────────────────────────────────────
-   Toda saída daqui é um redirect para a página, e nunca um JSON: quem está
-   olhando é um navegador que acabou de sair do Google, e um objeto cru na tela
-   é o produto quebrando na frente de alguém que só clicou em entrar. O erro
-   viaja no endereço e a tela de entrada o mostra. */
+/* Toda saída daqui é um redirect e nunca um JSON: quem está olhando é um
+   navegador que acabou de sair do Google, e um objeto cru na tela é o produto
+   quebrando na frente de alguém que só clicou em entrar. */
 router.get('/google/callback', wrap(async (req, res) => {
   const fail = why => res.redirect('/#entrar?erro=' + encodeURIComponent(why));
 
@@ -278,15 +245,10 @@ router.get('/google/callback', wrap(async (req, res) => {
     }
     const token = await r.json();
 
-    /* ── por que o id_token não é verificado por assinatura ────────────────
-       Porque ele não veio pelo navegador: veio desta requisição, feita por este
-       servidor, direto ao endpoint do Google, sobre TLS. O próprio OpenID
-       Connect dispensa a verificação de assinatura exatamente nesse caso — o
-       canal já é a prova de origem. Verificar exigiria buscar e rodar as chaves
-       públicas do Google, que é trabalho e uma dependência a mais para provar
-       uma coisa que o TLS já provou.
-
-       Isto deixaria de valer no dia em que um id_token chegasse pelo cliente.
+    /* O `id_token` não é verificado por assinatura porque não veio pelo
+       navegador: veio desta requisição, feita por este servidor, direto ao
+       Google, sobre TLS — o próprio OpenID Connect dispensa a verificação nesse
+       caso. Deixaria de valer no dia em que um id_token chegasse pelo cliente.
        Nenhum chega. */
     const [, claims] = String(token.id_token || '').split('.');
     payload = JSON.parse(Buffer.from(claims, 'base64url').toString('utf8'));
@@ -348,16 +310,14 @@ router.post('/login', throttleLogin, wrap(async (req, res) => {
   res.json({ reviewer: publicReviewer(reviewer) });
 }));
 
-/* ── criar uma conta ──────────────────────────────────────────────────────
-   A porta para quem não usa Google. Entra logado, porque pedir para a pessoa
-   digitar a senha que ela acabou de escolher é o formulário duvidando dela.
+/* A porta para quem não usa Google. Entra logado, porque pedir a senha que a
+   pessoa acabou de escolher é o formulário duvidando dela.
 
-   Mesma frase para "e-mail já cadastrado" e nada mais — aqui, ao contrário do
-   login, a colisão precisa ser dita: sem ela a pessoa fica tentando criar uma
-   conta que já é dela e não entende por quê. É a troca honesta: um cadastro
-   sempre revela quais e-mails existem, e esconder isso quebraria o cadastro
-   inteiro para proteger uma informação que a tela de "esqueci a senha" de
-   qualquer produto também entrega. */
+   Ao contrário do login, a colisão de e-mail PRECISA ser dita: sem ela a pessoa
+   fica tentando criar uma conta que já é dela e não entende por quê. Um
+   cadastro sempre revela quais e-mails existem, e esconder isso quebraria o
+   cadastro para proteger o que a tela de "esqueci a senha" entrega de qualquer
+   jeito. */
 router.post('/register', throttleRegister, wrap(async (req, res) => {
   const { name, email, password } = req.body || {};
   const out = await auth.register({ name, email, password });
@@ -367,19 +327,13 @@ router.post('/register', throttleRegister, wrap(async (req, res) => {
   const token = await auth.createSession(out.reviewer.id);
   auth.sendSessionCookie(res, token);
 
-  /* ── a confirmação sai sozinha ─────────────────────────────────────────
-     Sem isto, o link só existia depois de a pessoa achar o sino e apertar um
-     botão — e o momento em que ela entende por que confirmar é ESTE, o de
-     acabar de criar a conta. Pedir a mesma ação duas telas depois é pedi-la a
-     alguém que já esqueceu o motivo.
+  /* A confirmação sai sozinha: o momento em que a pessoa entende por que
+     confirmar é ESTE, o de acabar de criar a conta. O botão de reenviar
+     continua existindo para o primeiro envio que some no spam.
 
-     O botão de reenviar continua existindo, e não é redundância: primeiro
-     envio some no spam, gente digita o endereço errado, provedor cai. Um é o
-     caminho normal; o outro é o conserto.
-
-     `await` e não disparado ao vento, porque `mail.send` nunca lança — o pior
-     caso é `sent: false`, que já está tratado. Mas o cadastro não morre por
-     causa dele: a conta já existe e a sessão já foi aberta acima. */
+     `await` e não disparado ao vento, porque `mail.send` nunca lança. E o
+     cadastro não morre por causa dele: a conta já existe e a sessão já foi
+     aberta acima. */
   if (out.reviewer.email) await sendVerification(out.reviewer);
 
   res.status(201).json({ reviewer: publicReviewer(out.reviewer) });
@@ -388,34 +342,20 @@ router.post('/register', throttleRegister, wrap(async (req, res) => {
 /* ══════════════════════════════════════════════════════════════════════════
    CONFIRMAR O ENDEREÇO, E VOLTAR PARA DENTRO SEM A SENHA.
 
-   As duas coisas moram juntas porque são a mesma: um segredo de vida curta que
-   só chega a quem lê aquela caixa, e cuja apresentação é a prova.
-
-   ── por que o link do e-mail não é a rota ─────────────────────────────────
-   O link leva à TELA (`#confirmar/<token>`), e é a tela que faz o POST. A
-   tentação é apontar direto para uma rota e resolver num GET, e ela custa caro:
-   servidores de e-mail e antivírus ABREM os links das mensagens antes de a
-   pessoa ver, para conferir se são seguros. Um token que se gasta ao ser aberto
-   é um token que o scanner do Gmail queima no caminho, e a pessoa clica num
-   link que já não vale sem ninguém ter errado nada.
-
+   O link do e-mail leva à TELA (`#confirmar/<token>`), e é a tela que faz o
+   POST. Apontar direto para uma rota num GET custa caro: servidores de e-mail e
+   antivírus ABREM os links das mensagens antes de a pessoa ver, e um token que
+   se gasta ao ser aberto é um token que o scanner do Gmail queima no caminho.
    Um POST vindo da tela não é feito por scanner nenhum.
 
-   ── e por que pedir redefinição sempre responde a mesma coisa ─────────────
-   "E-mail não cadastrado" transforma esta rota numa lista de quem tem conta
-   aqui: basta pedir uma redefinição para cada endereço que se queira testar. A
-   resposta é idêntica exista a conta ou não, e o que muda é só o que chega (ou
-   não chega) na caixa de entrada de quem for dono dela.
-
-   O cadastro revela colisão de e-mail e continua revelando — lá a informação é
-   necessária para a pessoa entender por que não consegue criar a conta, e
-   escondê-la quebraria o cadastro para proteger o que a tela de "esqueci minha
-   senha" de qualquer produto entrega de qualquer jeito. Aqui não é necessária.
+   Pedir redefinição responde sempre a mesma coisa: "e-mail não cadastrado"
+   transformaria esta rota numa lista de quem tem conta aqui. O que muda é só o
+   que chega — ou não chega — na caixa de entrada de quem for dono dela.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* Cria o link e manda. Um lugar só, porque são dois chamadores: o cadastro, que
-   dispara sozinho, e o botão de reenviar. Escrito duas vezes, o dia em que o
-   texto do e-mail mudar ele muda em um dos dois. */
+/* Um lugar só, porque são dois chamadores: o cadastro, que dispara sozinho, e o
+   botão de reenviar. Escrito duas vezes, o dia em que o texto mudar ele muda em
+   um dos dois. */
 async function sendVerification(reviewer) {
   const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
   const { subject, text } = mail.verifyMail(
@@ -453,8 +393,8 @@ router.post('/reset/request', throttleResetByIp, wrap(async (req, res) => {
   const reviewer = await auth.accountByEmail(req.body?.email);
 
   /* Um segundo eixo, por conta, e ele só existe quando a conta existe: sem
-     isto, alguém em muitos endereços de rede diferentes poderia usar este
-     produto para encher a caixa de entrada de uma pessoa. */
+     isto, alguém em muitos endereços de rede diferentes usaria este produto
+     para encher a caixa de entrada de uma pessoa. */
   if (reviewer) {
     const cabe = throttle.take(`reset:conta|${reviewer.id}`, 5, 60 * 60_000);
     if (cabe.ok) {
@@ -467,18 +407,14 @@ router.post('/reset/request', throttleResetByIp, wrap(async (req, res) => {
         await mail.send({ to: reviewer.email, toName: reviewer.name, subject, text });
       } else {
         /* ── o caminho que evita o beco sem saída ──────────────────────────
-           Uma conta sem endereço confirmado não recupera senha — é a regra do
-           produto, e ela está certa: devolver acesso por um endereço que
-           ninguém provou é devolver acesso a quem quer que tenha escrito
-           aquele endereço no cadastro.
-
-           Só que confirmar exige estar dentro, e quem está pedindo isto está
-           fora. Aplicada ao pé da letra, a regra tranca a pessoa para sempre.
+           Uma conta sem endereço confirmado não recupera senha — devolver acesso
+           por um endereço que ninguém provou é devolver acesso a quem quer que
+           o tenha escrito no cadastro. Só que confirmar exige estar dentro, e
+           quem pede isto está fora.
 
            Então o pedido não é recusado em silêncio: o que chega é o link de
-           CONFIRMAR. Clicando nele o endereço fica provado, e o pedido de
-           redefinição seguinte funciona. São dois passos em vez de um, num
-           caso raro, e nenhum deles entrega acesso a um endereço não provado. */
+           CONFIRMAR. Dois passos em vez de um, num caso raro, e nenhum deles
+           entrega acesso a um endereço não provado. */
         const token = await auth.createEmailToken(reviewer.id, 'verify', reviewer.email);
         const { subject, text } = mail.verifyFirstMail(
           reviewer.name,

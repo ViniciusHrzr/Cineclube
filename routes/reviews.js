@@ -13,24 +13,18 @@ const live = require('../live');
 const router = express.Router({ mergeParams: true });
 
 /* ── o acervo é das PESSOAS da sala ───────────────────────────────────────
-   Todo SELECT aqui filtrava por `club_id`, e o acervo de uma sala era o que
-   tinha sido gravado dentro dela. Quem entrava num clube novo chegava sem nada:
-   onze fichas escritas e nenhuma à vista, como se a pessoa nunca tivesse visto
-   um filme na vida.
-
-   A ficha é de quem a escreveu. O acervo de uma sala é o acervo das pessoas que
-   estão nela, e o `club_id` da ficha vira a etiqueta de onde ela foi gravada —
-   é isso que o `origin` do DTO carrega. Sair do clube leva as suas fichas junto,
-   porque a lista é uma junção com `club_members` e não uma cópia.
+   A ficha é de quem a escreveu, e o acervo de uma sala é o das pessoas que
+   estão nela; o `club_id` vira a etiqueta de onde foi gravada, que é o que o
+   `origin` do DTO carrega.
 
    O que NÃO viaja é a conversa. Comentário, voto e curtida penduram na ficha e
-   não têm sala própria (ver db.js), então a única forma de eles não vazarem de
-   um clube fechado para outro é a conversa continuar acontecendo onde a ficha
-   foi gravada. As rotas de social já cobram `rv.club_id = req.club.id`, e é essa
-   linha que segura isto — não mexer nela é a decisão, não o esquecimento.
+   não têm sala própria (ver db.js), então a única forma de não vazarem de um
+   clube fechado para outro é acontecerem onde a ficha foi gravada. As rotas de
+   social cobram `rv.club_id = req.club.id`, e não mexer nessa linha é a
+   decisão, não o esquecimento.
 
-   Ler é de quem pode ler o clube, o que num clube público inclui quem está de
-   fora: é isso que alimenta a vitrine. Escrever é sempre de membro. */
+   Ler é de quem pode ler o clube — num clube público, inclusive quem está de
+   fora. Escrever é sempre de membro. */
 /* Duas condições e não uma. A junção com o elenco é o que faz a ficha VIAJAR:
    quem entra numa sala chega com o que já escreveu. O clube na ficha é o que
    faz ela NÃO IR EMBORA: quem sai de uma sala deixa lá o que gravou dentro dela
@@ -45,8 +39,7 @@ const DA_SALA = `(
 
 /* The runtime is read through the cache when the take does not carry one: every
    film in the archive was opened before it was rated, so the cache almost always
-   knows it, and takes recorded before reviews had the column get the number
-   without a backfill.
+   knows it.
 
    `clubs oc` é a sala de origem, por LEFT JOIN: uma sala apagada não pode fazer
    a ficha sumir do acervo de quem a escreveu. */
@@ -65,10 +58,9 @@ const JUNCOES = `
 const listStmt = db.prepare(`
   SELECT ${CAMPOS} ${JUNCOES} WHERE ${DA_SALA} ORDER BY rv.date DESC
 `);
-/* `ON CONFLICT(reviewer_id, movie_id)` e não mais a trinca com o clube: é uma
+/* `ON CONFLICT(reviewer_id, movie_id)` e não mais a trinca com o clube: uma
    ficha por pessoa por filme no produto inteiro. Regravar numa sala nova move a
-   etiqueta para ela — a ficha passa a dizer onde foi escrita da última vez, que
-   é a única resposta que não envelhece. */
+   etiqueta para ela. */
 const upsertStmt = db.prepare(`
   INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
   VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
@@ -125,24 +117,19 @@ function toReviewDTO(row, clubId) {
     moviePoster: row.movie_poster,
     movieDirector: row.movie_director,
     movieRuntime: row.movie_runtime ?? row.cached_runtime ?? null,
-    /* Read from the film cache rather than stored with the take, because it is
-       a fact about the film that keeps changing and not a fact about the
-       evening. A take is frozen; the number it disagrees with is not, and
-       freezing a copy of it would slowly turn the comparison into a comparison
-       with a number nobody can find any more. Null on a film the cache has
-       never seen, which after the migration means a film rated before the
-       column existed and not opened since. */
+    /* Read from the film cache rather than stored with the take: it is a fact
+       about the film that keeps changing and not a fact about the evening. A
+       take is frozen; the number it disagrees with is not, and freezing a copy
+       would turn the comparison into one with a number nobody can find. */
     crowd: row.tmdb_votes > 0 ? { score: row.tmdb_score, votes: row.tmdb_votes } : null,
     scores,
     final: row.final,
     date: row.date,
     comment: row.comment || '',
-    /* De onde a ficha veio, e só quando veio de FORA desta sala. Nulo quer
-       dizer "foi avaliado aqui", que é o caso comum e não merece etiqueta —
-       uma tarja em toda linha do acervo é uma tarja que ninguém lê.
-
-       É também o que diz à tela que a conversa desta ficha não mora aqui: o
-       comentário e o voto acontecem na sala onde ela foi gravada. */
+    /* De onde a ficha veio, e só quando veio de FORA desta sala: nulo é "foi
+       avaliado aqui", o caso comum, e uma tarja em toda linha do acervo é uma
+       tarja que ninguém lê. É também o que diz à tela que a conversa desta ficha
+       não mora aqui. */
     origin:
       row.club_id && clubId && row.club_id !== clubId
         ? { name: row.origin_name ?? null, slug: row.origin_slug ?? null }
@@ -181,7 +168,7 @@ const throttleReview = throttle.limit({
 router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(async (req, res) => {
   const { scores, comment } = req.body || {};
   const reviewerId = req.session.reviewer_id;
-  // Quem assina é a sessão, e ser membro já foi conferido pelo middleware — a
+  // Quem assina é a sessão, e ser membro já foi conferido pelo middleware.
   // checagem de "avaliador existe" que morava aqui era a versão sem clubes disso.
   /* O filme vem do corpo e por isso passa por movie.js: o id é escolhido por
      quem escreve, então a unicidade (uma ficha por pessoa por filme) não segura
@@ -205,21 +192,11 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
   const date = new Date().toISOString().slice(0, 10);
   const cleanComment = typeof comment === 'string' ? comment.trim().slice(0, 2000) : null;
 
-  /* ── e o voto de quem já tinha concordado ──────────────────────────────
-     Aqui havia uma limpeza: os votos dos critérios cuja nota mudou eram
-     apagados, porque concordar com um 9 que virou 6 é concordar com uma coisa
-     que não existe mais.
-
-     Com o voto sendo da ficha inteira, isso deixou de valer. O que se aprova
-     agora é o take da pessoa sobre o filme — "boa avaliação", "achei alto
-     demais" — e um take continua sendo o mesmo take depois de a pessoa ajustar
-     meio ponto em fotografia. Apagar a concordância do clube a cada retoque
-     seria cobrar um preço alto por corrigir um número, e o efeito prático seria
-     ninguém mais corrigir.
-
-     Uma regravação que vira o take do avesso existe, e para ela a resposta
-     honesta é a conversa que já mora embaixo da ficha, não um DELETE
-     silencioso. */
+  /* Havia aqui uma limpeza dos votos dos critérios cuja nota mudou. Com o voto
+     sendo da ficha inteira isso deixou de valer: o que se aprova é o take da
+     pessoa sobre o filme, e ele continua o mesmo depois de ela ajustar meio
+     ponto em fotografia. Apagar a concordância do clube a cada retoque cobraria
+     um preço alto por corrigir um número, e o efeito seria ninguém corrigir. */
   await upsertStmt.run({
     id, clubId: req.club.id, reviewerId, movieId: movie.id,
     movieTitle: movie.title, movieYear: movie.year, movieGenre: genre,
@@ -228,16 +205,15 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
     scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
   });
   await deleteWatchlistStmt.run(req.club.id, movie.id);
-  /* O acervo é a outra tela que filtra o banco, e um filme avaliado fica nele
-     para sempre — então é aqui que ele precisa aprender os nomes por que vai
-     ser procurado. Antes de reler a linha, para a resposta já sair com eles. */
+  /* Um filme avaliado fica no acervo para sempre, então é aqui que ele aprende
+     os nomes por que vai ser procurado. Antes de reler a linha, para a resposta
+     já sair com eles. */
   await fillEnglishTitle(movie.id);
 
   /* Dois avisos porque gravar uma nota mexe em duas coleções: a ficha entra no
-     acervo e o filme sai da fila (`deleteWatchlistStmt`, acima). Um aviso só
-     deixaria a fila de todo mundo com um filme que já foi visto e avaliado — e
-     seria a tela ao vivo divergindo da tela recarregada, que é o defeito exato
-     que este mecanismo não pode ter. */
+     acervo e o filme sai da fila. Um aviso só deixaria a fila de todo mundo com
+     um filme já avaliado — a tela ao vivo divergindo da recarregada, que é o
+     defeito exato que este mecanismo não pode ter. */
   live.emit('reviews', reviewerId, req.club.id);
   live.emit('watchlist', reviewerId, req.club.id);
 
@@ -245,13 +221,10 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
   res.status(201).json(toReviewDTO(saved, req.club.id));
 }));
 
-/* A take belongs to whoever gave it, and to nobody else — not to the admin
-   either. Removing a rating is not moderation, it is unsaying an opinion, and
-   the one thing this club's record is for is that each person's opinion stands
-   as they left it. Writing is already closed the same way: the session signs
-   the take, so there is no request anyone can send that edits somebody else's.
-   Without this check any signed-in member could quietly erase another's
-   rating. */
+/* A ficha é de quem a deu, e de mais ninguém — nem do admin. Apagar uma nota
+   não é moderação, é desdizer uma opinião, e o que este registro é serve para
+   que a de cada um fique como ela a deixou. Sem esta checagem qualquer membro
+   logado apagaria a de outro. */
 router.delete('/:id', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const row = await ownerStmt.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });

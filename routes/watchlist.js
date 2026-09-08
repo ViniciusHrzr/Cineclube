@@ -23,10 +23,8 @@ const throttleQueue = throttle.limit({
    predate the column.
 
    The original title comes through the cache rather than being copied into this
-   table, the same way the archive reads the TMDB score: the queue row is a
-   pointer to a film, and every film in it passed through the catalogue on its
-   way here, so the cache knows the name. Null on the film the cache somehow
-   never saw, which the card draws as simply not having a second line. */
+   table: a queue row is a pointer to a film, and every film in it passed through
+   the catalogue on its way here. */
 const listStmt = db.prepare(`
   SELECT w.*, mc.original_title, mc.english_title
   FROM watchlist w
@@ -65,15 +63,12 @@ function toDTO(row) {
     genre: row.movie_genre,
     poster: row.movie_poster,
     addedAt: row.added_at,
-    /* Quem teve a ideia. A coluna existia só para o feed ter o que contar, e a
-       fila em si nunca a mostrava: quarenta pôsteres numa grade, cada um
-       escolhido por alguém, e nada na tela dizendo por quem — a pergunta "quem
-       foi que pôs esse aí" só tinha resposta no mural, rolando para trás.
+    /* Quem teve a ideia. A coluna existia só para o feed, e a fila nunca a
+       mostrava: quarenta pôsteres, cada um escolhido por alguém, e nada na tela
+       dizendo por quem.
 
-       Só o id. O nome, a cor e o retrato são fatos sobre a pessoa e não sobre a
-       linha da fila, e o clube inteiro já está carregado no cliente desde o
-       boot — mandá-los aqui repetiria os mesmos seis nomes quarenta vezes na
-       mesma resposta. Nulo nas linhas anteriores à coluna. */
+       Só o id: o nome, a cor e o retrato são fatos sobre a pessoa e não sobre a
+       linha, e o clube inteiro já está carregado no cliente desde o boot. */
     addedBy: row.added_by || null
   };
 }
@@ -85,8 +80,8 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
 
 // The queue is shared, so changing it is a club action and needs a member.
 router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(async (req, res) => {
-  /* Mesmo saneamento da ficha, e pelo mesmo motivo: o id vem de quem escreve, e
-     sem teto nos textos a fila é um jeito de gravar um megabyte por chamada. */
+  /* Mesmo saneamento da ficha: o id vem de quem escreve, e sem teto nos textos a
+     fila é um jeito de gravar um megabyte por chamada. */
   const limpo = cleanMovie(req.body?.movie);
   if (limpo.error) return res.status(400).json({ error: limpo.error });
   const movie = limpo.movie;
@@ -100,10 +95,9 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(a
   /* A fila é uma das telas que filtram o banco, então o filme entra nela já
      sabendo por quais nomes pode ser procurado depois. */
   await fillEnglishTitle(movie.id);
-  /* A fila é do clube inteiro, e é a coleção em que duas pessoas mais tropeçam
-     uma na outra: sem isto, dois membros escolhendo o filme da semana ao mesmo
-     tempo põem o mesmo título duas vezes porque nenhum dos dois viu o do
-     outro. */
+  /* A fila é a coleção em que duas pessoas mais tropeçam uma na outra: sem
+     isto, dois membros escolhendo o filme da semana ao mesmo tempo põem o mesmo
+     título duas vezes. */
   live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.status(201).json({ ok: true });
 }));
@@ -134,33 +128,23 @@ router.put('/order', auth.requireSession, clubs.requireMember, wrap(async (req, 
 }));
 
 /* ── tirar é de quem pôs ──────────────────────────────────────────────────
-   A fila é do clube e continua sendo: qualquer um põe, a ordem é uma só e vale
-   para todo mundo, e o filme sai sozinho quando alguém o avalia. O que deixou
-   de ser de todos é a tesoura.
-
    Uma escolha na fila é alguém dizendo "quero ver isto com vocês", e apagar
-   isso é desdizer uma pessoa — a mesma regra que a avaliação já segue: ninguém
-   apaga a nota de ninguém. Sem isto, uma limpeza bem-intencionada às onze da
-   noite tira quatro filmes que outra pessoa vinha esperando há um mês, e não
-   sobra registro de que estiveram lá: a linha da fila é a única memória de que
-   aquela escolha existiu.
+   isso é desdizer uma pessoa — a mesma regra que a avaliação já segue. Sem
+   isto, uma limpeza bem-intencionada tira quatro filmes que outra pessoa vinha
+   esperando, e a linha da fila é a única memória de que aquela escolha existiu.
 
-   O administrador é exceção, e é a única. Aqui ele é mesmo o zelador: linhas
-   antigas sem dono e escolhas de quem já saiu do clube não podem ficar
-   entaladas na fila para sempre, e não há outro caminho para tirá-las.
+   O ADM é exceção e é a única: linhas antigas sem dono e escolhas de quem já
+   saiu do clube não podem ficar entaladas para sempre.
 
-   Sumir com uma linha que não existe continua sendo 204 e não 404. Duas
-   pessoas tirando o mesmo filme ao mesmo tempo — o que agora acontece de
-   verdade, com a fila ao vivo — não é erro de ninguém: o pedido queria que o
-   filme não estivesse lá, e ele não está. */
+   Sumir com uma linha que não existe continua sendo 204 e não 404: o pedido
+   queria que o filme não estivesse lá, e ele não está. */
 router.delete('/:movieId', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const row = await ownerStmt.get(req.club.id, Number(req.params.movieId));
   if (!row) return res.status(204).end();
 
-  /* O zelador agora é o ADM do CLUBE, e não o da instalação: a fila é daquela
-     sala, e quem cuida das linhas presas nela é quem cuida da sala. O admin da
-     instalação continua valendo porque `requireClubAdmin` o inclui, mas aqui a
-     conta é feita direto contra o papel. */
+  /* O zelador é o ADM do CLUBE e não o da instalação: a fila é daquela sala. O
+     admin da instalação continua valendo porque `requireClubAdmin` o inclui,
+     mas aqui a conta é feita direto contra o papel. */
   const mine = !!row.added_by && row.added_by === req.session.reviewer_id;
   if (!mine && !req.club.isClubAdmin && !req.session.is_admin) {
     return res.status(403).json({

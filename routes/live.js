@@ -5,20 +5,17 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* ── o cano ───────────────────────────────────────────────────────────────
-   Os cabeçalhos são todos funcionais, e são os mesmos da sala de projeção pelo
-   mesmo motivo: `no-transform` e `X-Accel-Buffering` impedem um intermediário
-   de segurar quadros para encher um buffer, o que neste endpoint significa
-   segurar um aviso até a pessoa recarregar a página — que é exatamente o
-   problema que ele veio resolver. `flushHeaders` manda tudo antes de existir o
-   primeiro quadro, que é o que faz o navegador considerar a conexão aberta.
+/* Os cabeçalhos são funcionais: `no-transform` e `X-Accel-Buffering` impedem um
+   intermediário de segurar quadros para encher um buffer, o que aqui significa
+   segurar um aviso até a pessoa recarregar a página. `flushHeaders` manda tudo
+   antes do primeiro quadro, que é o que faz o navegador considerar a conexão
+   aberta.
 
-   Precisa de sessão E de ser membro, e a segunda parte é nova. Antes bastava
-   estar no clube porque só havia um; agora a conexão pertence a uma sala, e o
-   que trafega nela deixou de ser inócuo: um aviso de `social` diz "alguém
-   escreveu alguma coisa agora", e num clube privado saber que há gente ativa lá
-   dentro já é mais do que quem está de fora tem direito de saber. O pareamento
-   acontece em live.js, no `emit`; isto aqui é a metade que carimba a conexão. */
+   Sessão E ser membro: a conexão pertence a uma sala, e o que trafega nela não
+   é inócuo — um aviso de `social` diz "alguém escreveu alguma coisa agora", e
+   num clube privado saber que há gente ativa lá dentro já é mais do que quem
+   está de fora tem direito de saber. O pareamento acontece no `emit` de
+   live.js; isto é a metade que carimba a conexão. */
 router.get('/stream', auth.requireSession, clubs.requireMember, (req, res) => {
   if (!live.canSubscribe(req.session.reviewer_id)) {
     return res.status(429).json({ error: 'Conexões demais. Feche outras abas do Cineclube.' });

@@ -10,31 +10,15 @@ const live = require('../live');
 const router = express.Router({ mergeParams: true });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A CONVERSA EM CIMA DE UM EPISÓDIO.
+   A CONVERSA EM CIMA DE UM EPISÓDIO — irmão de routes/social.js, e a palavra é
+   irmão e não cópia: as regras são as MESMAS e estão escritas lá com o porquê
+   de cada uma. O que muda é onde elas penduram, e é isso que obriga o arquivo a
+   existir em vez de a rota ganhar um parâmetro dizendo de que tipo é o alvo.
 
-   O irmão de routes/social.js, e a palavra é irmão e não cópia: as regras aqui
-   são as MESMAS, uma por uma, e estão escritas lá com o porquê inteiro de cada
-   uma. O que muda é onde elas penduram — numa ficha de episódio em vez de numa
-   ficha de filme —, e é isso que obriga o arquivo a existir em vez de a rota
-   ganhar um parâmetro dizendo de que tipo é o alvo.
-
-   Resumidas, para não obrigar a abrir o outro arquivo:
-
-   · Comentar é o único texto livre entre pessoas, então tem trava própria.
-   · Responder tem profundidade UM: uma resposta não recebe resposta.
-   · Um voto por (ficha, quem votou). Zero apaga a linha, e não grava neutro.
-   · Ninguém vota na própria ficha nem curte o próprio comentário — é
-     aritmética e não moral: um placar que o autor pode somar em si mesmo
-     deixa de medir o clube.
-   · Apagar é de quem escreveu, e do ADM, que é quem modera.
-
-   ── o clube entra por baixo, de novo ────────────────────────────────────
-   Nada aqui tem `club_id`. Um comentário pendura numa ficha de episódio, e a
-   ficha já sabe de que sala é. O preço é o mesmo de lá: TODA consulta passa
-   por `episode_takes` para descobrir o clube, e `takeStmt` — o portão de toda
-   escrita — carrega `club_id` na condição. Uma leitura que esquecer o JOIN
-   mostra a conversa de outra sala; uma escrita que esquecer deixa alguém
-   escrever dentro de uma sala em que não está.
+   Nada aqui tem `club_id`: um comentário pendura numa ficha de episódio, e a
+   ficha já sabe de que sala é. O preço é o mesmo de lá — TODA consulta passa
+   por `episode_takes` para descobrir o clube, e `takeStmt`, o portão de toda
+   escrita, carrega `club_id` na condição.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const throttleComment = throttle.limit({

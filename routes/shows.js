@@ -11,14 +11,12 @@ const { cleanShow, cleanEpisodeRef, text, MAX_EPISODE_TITLE } = require('../show
 
 const router = express.Router({ mergeParams: true });
 
-/* ── o lado do clube ──────────────────────────────────────────────────────
-   A fila de séries e o que cada pessoa viu. O catálogo — o que o TMDB sabe —
+/* A fila de séries e o que cada pessoa viu. O catálogo — o que o TMDB sabe —
    mora em routes/series.js e não é de clube nenhum.
 
-   Tudo aqui é escopado pelo clube da URL, como o resto do app: uma série na
-   fila do clube de terror não existe para o clube de drama, e "Beren viu
-   S02E05" é um fato sobre a Beren NESTE clube. É essa frase que faz o Trakt não
-   servir de dono deste dado. */
+   Tudo aqui é escopado pelo clube da URL: "Beren viu S02E05" é um fato sobre a
+   Beren NESTE clube, e é essa frase que faz o Trakt não servir de dono deste
+   dado. */
 
 const throttleQueue = throttle.limit({
   name: 'show-queue',
@@ -27,9 +25,9 @@ const throttleQueue = throttle.limit({
   message: espera => `Muitas séries postas na fila seguidas. Tente de novo em ${espera}.`,
 });
 
-/* Marcar visto é o gesto mais repetido deste universo: uma maratona de uma
-   temporada são treze toques em vinte minutos, e isso é uso legítimo. O teto
-   existe para o que não é gente. */
+/* Marcar visto é o gesto mais repetido deste universo — uma maratona são treze
+   toques em vinte minutos, e isso é uso legítimo. O teto existe para o que não
+   é gente. */
 const throttleTake = throttle.limit({
   name: 'episode-take',
   max: 400,
@@ -60,8 +58,7 @@ const queueOwnerStmt = db.prepare(`
 `);
 const deleteQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ?');
 
-/* Quantos episódios o clube já viu de cada série da fila, e quantos avaliou.
-   Contado por episódio distinto e não por linha: quatro pessoas vendo o mesmo
+/* Contado por episódio distinto e não por linha: quatro pessoas vendo o mesmo
    episódio é um episódio visto pelo clube, não quatro. */
 const progressStmt = db.prepare(`
   SELECT show_id,
@@ -145,16 +142,12 @@ function takeDTO(row) {
   const genre = GENRES.includes(row.show_genre) ? row.show_genre : 'Drama';
   const scores = row.scores ? JSON.parse(row.scores) : null;
   /* ── os nove, abertos ────────────────────────────────────────────────────
-     A mesma coisa que a ficha de um filme manda, e pelo mesmo motivo: é o que
-     o produto tem de próprio. Sem isto, "T1E05 — 7,4" é a linha de qualquer
-     app, e a tela não tinha como abrir a ficha porque ela nunca chegou aberta.
+     O mesmo que a ficha de um filme manda: sem isto, "T1E05 — 7,4" é a linha de
+     qualquer app.
 
-     Só o que ESTA ficha respondeu — ver `episodeAnsweredIn`: uma ficha antiga
-     tem as chaves que existiam quando foi escrita, e imprimir um critério
-     ausente como 0,0 é pôr uma opinião na boca de alguém.
-
-     Vazio quando a ficha é só "vi" ou é nota rápida: as duas não têm critério
-     nenhum por dentro, e a tela desenha o que houver. */
+     Só o que ESTA ficha respondeu — uma ficha antiga tem as chaves que existiam
+     quando foi escrita, e imprimir um critério ausente como 0,0 é pôr uma
+     opinião na boca de alguém. Vazio quando a ficha é só "vi" ou nota rápida. */
   const breakdown = scores
     ? episodeAnsweredIn(genre, scores).map(c => ({
         key: c.key, name: c.name, w: c.w, group: c.group, value: scores[c.key],
@@ -254,10 +247,8 @@ router.get('/:showId(\\d+)/takes', clubs.requireReadable, wrap(async (req, res) 
    · { quick: 8 }               — a nota objetiva
    · { scores: {...} }          — a avaliação criteriosa
 
-   As duas notas se substituem, nos dois sentidos: a última coisa que a pessoa
-   disse é a que vale, e nenhuma sobra escondida na linha. O cliente é quem não
-   oferece a nota rápida em cima de uma criteriosa — explicar antes, e não
-   decidir por ninguém, é a regra que a fila de filmes já segue. */
+   As duas notas se substituem nos dois sentidos: a última coisa que a pessoa
+   disse é a que vale, e nenhuma sobra escondida na linha. */
 router.put(
   '/:showId(\\d+)/:season(\\d+)/:episode(\\d+)',
   auth.requireSession, clubs.requireMember, throttleTake,
@@ -269,8 +260,8 @@ router.put(
     const body = req.body || {};
     const genre = GENRES.includes(body.genre) ? body.genre : 'Drama';
 
-    /* O título e o pôster viajam com a escrita e são gravados na linha, como a
-       ficha de um filme faz: o acervo é lido com o TMDB fora da requisição, e
+    /* O título e o pôster viajam com a escrita e são gravados na linha, como na
+       ficha de um filme: o acervo é lido com o TMDB fora da requisição, e
        "S02E05" sem o nome da série não é um registro. */
     const showTitle = text(body.showTitle, 300);
     if (!showTitle) return res.status(400).json({ error: 'Série inválida.' });
@@ -311,7 +302,7 @@ router.put(
     );
 
     await upsertTake.run({
-      /* O id só é sorteado quando a linha nasce. Numa regravação o upsert casa
+      /* O id só é sorteado quando a linha nasce: numa regravação o upsert casa
          pela chave natural e não toca nele, que é o que faz um endereço de
          ficha continuar valendo depois de a nota mudar. */
       id: existing?.id || 'e' + crypto.randomUUID(),
@@ -332,7 +323,7 @@ router.put(
   })
 );
 
-/* Desmarcar. Apaga a linha inteira, e é o certo: a linha É o "eu vi", então
+/* Desmarcar apaga a linha inteira, e é o certo: a linha É o "eu vi", então
    tirar o visto e tirar a nota são o mesmo gesto. Quem só quer trocar a nota
    grava outra por cima. */
 router.delete(
