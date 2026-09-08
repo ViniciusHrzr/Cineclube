@@ -1227,10 +1227,11 @@ function SourcePanel({
             áudio do sistema" é a única combinação que leva o som de um
             programa fora do navegador, e ela é uma caixinha desmarcada num
             seletor que a pessoa atravessa em dois segundos. */}
-        <p className="q max-w-[46ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
-          Escolha <span className="text-ink">Tela inteira</span> e marque{' '}
-          <span className="text-ink">compartilhar o áudio do sistema</span> — é o que leva o som do
-          VLC ou de qualquer programa. Janela não carrega áudio. DRM sai preto.
+        <p className="q max-w-[48ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
+          Se o filme estiver numa aba, compartilhe a <span className="text-ink">aba</span> e marque
+          o áudio dela — é o único jeito que não leva a conversa do Discord junto. Fora do
+          navegador, use <span className="text-ink">Tela inteira</span> com o áudio do sistema. DRM
+          sai preto.
         </p>
       </div>
 

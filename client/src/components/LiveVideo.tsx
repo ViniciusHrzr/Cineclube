@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Maximize2,
-  Minimize2,
-  Pause,
-  Play,
-  SlidersHorizontal,
-  Volume1,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { AudioLines, Maximize2, Minimize2, Play, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -20,8 +11,8 @@ import { cn } from '@/lib/utils';
    outra pessoa, com menos de um segundo de atraso, e não há uma segunda cópia
    para discordar dela.
 
-   O que existe aqui é uma cabine de projeção com quatro controles, e a decisão
-   de desenho é qual deles é uma verdade e qual seria mentira.
+   O que existe aqui é uma cabine de projeção com três controles, e a decisão
+   de desenho foi qual deles é uma verdade e qual seria mentira.
 
    ── por que não há barra de tempo ────────────────────────────────────────
    Porque não há para onde ir. Uma transmissão ao vivo não tem passado
@@ -34,14 +25,14 @@ import { cn } from '@/lib/utils';
    ocupa o canto: ela não é enfeite, é a barra de tempo desta sala inteira,
    dizendo a única posição que existe.
 
-   ── e por que a pausa É uma verdade ──────────────────────────────────────
-   Pausar não engana ninguém porque não guarda nada. O elemento para de
-   desenhar, o stream continua chegando e sendo descartado, e voltar cai no
-   quadro de agora — não dois minutos atrás. É "levantei para pegar água", e é
-   exatamente isso que acontece: você perde o pedaço, como perderia no cinema.
+   ── e por que também não há pausa ────────────────────────────────────────
+   Ela chegou a existir e foi tirada, o que é diferente de nunca ter sido
+   pensada. Pausar aqui não engana — não guarda nada, e voltar cai no quadro de
+   agora —, mas também não serve: o filme segue para o clube de qualquer jeito,
+   então o botão só fazia a pessoa perder um pedaço com mais passos do que
+   olhar para o outro lado.
 
-   Só a SUA imagem para. O filme segue para o clube, porque quem controla a
-   sessão é quem está com a tela.
+   O que sobrou é o que muda alguma coisa: quão alto, o quê, e quão grande.
 
    ── a barra que some ─────────────────────────────────────────────────────
    Ela existe sobre a imagem, então ela sai da frente. Aparece com o ponteiro,
@@ -175,19 +166,6 @@ export function LiveVideo({
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  const togglePlay = useCallback(() => {
-    const el = video.current;
-    if (!el) return;
-    if (el.paused) {
-      /* O clique É a interação que o navegador estava esperando, então esta
-         chamada acontece dentro do gesto e por isso é aceita mesmo com som. */
-      el.muted = muted;
-      void el.play().then(() => setBlocked(false));
-    } else {
-      el.pause();
-    }
-  }, [muted]);
-
   /* A proporção da fonte, lida do elemento. Zero enquanto não há quadro, e
      um zero aqui viraria uma divisão que apaga o invólucro. */
   const medir = useCallback((el: HTMLVideoElement) => {
@@ -219,10 +197,7 @@ export function LiveVideo({
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
       const tecla = e.key.toLowerCase();
-      if (tecla === ' ' || tecla === 'k') {
-        e.preventDefault();
-        togglePlay();
-      } else if (tecla === 'm') {
+      if (tecla === 'm') {
         setMuted(v => !v);
       } else if (tecla === 'f') {
         toggleFull();
@@ -235,7 +210,7 @@ export function LiveVideo({
       }
       wake();
     },
-    [toggleFull, togglePlay, wake]
+    [toggleFull, wake]
   );
 
   const Speaker = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
@@ -324,70 +299,62 @@ export function LiveVideo({
         )}
       >
         <div className="flex items-center gap-1.5 border-t border-white/[0.07] bg-house/80 px-2 py-2 backdrop-blur-sm sm:gap-2 sm:px-3">
-          <CabinKey
-            onClick={togglePlay}
-            label={playing ? 'Pausar a sua imagem' : 'Voltar ao vivo'}
-            hint={playing ? 'Pausa só a sua tela — o filme segue para o clube' : undefined}
-          >
-            {playing ? (
-              <Pause className="h-4 w-4" strokeWidth={1.8} aria-hidden />
-            ) : (
-              <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden />
-            )}
-          </CabinKey>
+          {/* ── o volume, de todo mundo ──────────────────────────────────
+              Inclusive de quem transmite. A tela dele começa muda de propósito
+              — o som do filme já está saindo das caixas daquela máquina, e
+              devolvê-lo por cima é um eco de si mesmo com o atraso da captura
+              —, mas o controle fica: é com ele que se confere o que foi
+              parar na transmissão sem ter de perguntar ao clube.
 
-          {/* ── o som ────────────────────────────────────────────────────
-              Dois controles diferentes para duas perguntas diferentes. Quem
-              assiste pergunta "quão alto?", e a resposta é um volume. Quem
-              transmite não tem essa pergunta — o som dele já está nas caixas
-              dele, e um volume ali não mudaria nada para ninguém. A pergunta
-              dele é "o que o clube está ouvindo?", e a resposta é a fonte. */}
-          {hostPreview ? (
-            audio ? (
-              <AudioPicker audio={audio} onOpenChange={setPinned} />
-            ) : null
-          ) : (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <CabinKey
-                onClick={() => setMuted(v => !v)}
-                label={muted ? 'Tirar do mudo' : 'Deixar mudo'}
-              >
-                <Speaker className="h-4 w-4" strokeWidth={1.8} aria-hidden />
-              </CabinKey>
+              A película e a porta do sistema, num terço do tamanho: a faixa
+              acesa é a parte exposta, o resto é filme virgem. Ver
+              `.vol-range` em index.css. */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <CabinKey
+              onClick={() => setMuted(v => !v)}
+              label={muted ? 'Tirar do mudo' : 'Deixar mudo'}
+              hint={
+                hostPreview && muted
+                  ? 'Ouvir o que está indo para o clube (vai ecoar com as suas caixas)'
+                  : undefined
+              }
+            >
+              <Speaker className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+            </CabinKey>
 
-              {/* A película e a porta do sistema, num terço do tamanho: a
-                  faixa acesa é a parte exposta, o resto é filme virgem. Ver
-                  `.vol-range` em index.css. */}
-              <div className="relative w-[76px] sm:w-[104px]">
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-seam bg-white/[0.09]"
-                />
-                <span
-                  aria-hidden
-                  className={cn(
-                    'pointer-events-none absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-seam bg-beam',
-                    muted && 'opacity-30'
-                  )}
-                  style={{ width: `${(muted ? 0 : volume) * 100}%` }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={muted ? 0 : volume}
-                  onChange={e => {
-                    setVolume(Number(e.target.value));
-                    setMuted(false);
-                  }}
-                  aria-label="Volume"
-                  aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
-                  className="vol-range relative"
-                />
-              </div>
+            <div className="relative w-[76px] sm:w-[104px]">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-seam bg-white/[0.09]"
+              />
+              <span
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-seam bg-beam',
+                  muted && 'opacity-30'
+                )}
+                style={{ width: `${(muted ? 0 : volume) * 100}%` }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={muted ? 0 : volume}
+                onChange={e => {
+                  setVolume(Number(e.target.value));
+                  setMuted(false);
+                }}
+                aria-label="Volume"
+                aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
+                className="vol-range relative"
+              />
             </div>
-          )}
+          </div>
+
+          {/* O que o clube ouve, e só para quem transmite. É a outra pergunta
+              do som: não "quão alto", mas "o quê". */}
+          {hostPreview && audio ? <AudioPicker audio={audio} onOpenChange={setPinned} /> : null}
 
           {/* De quem é a imagem, no meio da barra e não numa legenda acima
               dela: em tela cheia não existe nada acima dela. Some no telefone,
@@ -445,20 +412,37 @@ export function LiveVideo({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A FONTE DO SOM, NA CABINE DE QUEM TRANSMITE.
+   O QUE O CLUBE OUVE.
 
-   Existe por um problema concreto: o clube conversa no Discord enquanto
-   assiste, e "áudio do sistema" inclui o Discord. As vozes voltam pela
-   transmissão com quase um segundo de atraso, e quem está nas duas coisas se
-   ouve falando duas vezes.
+   ── o pedido, e a resposta honesta ───────────────────────────────────────
+   O que se quer aqui é escolher o áudio de UM APLICATIVO: manda o VLC, não
+   manda o Discord. Isso não existe na web. Nenhum navegador, em nenhum
+   sistema, expõe uma forma de escolher de qual programa vem o som — o Windows
+   tem essa API, o navegador não a oferece, e `getDisplayMedia` recebe o mix da
+   máquina inteira já pronto e misturado.
 
-   Nenhuma configuração de navegador tira um aplicativo do mix — `getDisplay-
-   Media` recebe ele pronto do sistema operacional. O que dá é mandar outra
-   coisa, e é isso que este botão escolhe.
+   Então este painel não escolhe o aplicativo. Ele escolhe a ENTRADA por onde o
+   som chega, que é a alavanca que sobra — e é ela que faz as duas receitas
+   abaixo funcionarem. Elas resolvem o problema de verdade; só não é o
+   navegador quem separa os aplicativos, é o sistema.
 
-   Recolhido atrás de um ícone porque listar as entradas pede permissão de
-   microfone: perguntar isso a quem nunca vai trocar de fonte seria assustar
-   por nada. Quem abre é quem tem o problema.
+   ── receita 1: o filme está numa aba ─────────────────────────────────────
+   Compartilhe a ABA em vez da tela. Áudio de aba é só daquela aba, e o Discord
+   fica de fora por construção. Não precisa deste painel nem de instalar nada,
+   e é por isso que ela é a primeira coisa que a tela diz.
+
+   ── receita 2: o filme está no VLC, ou em qualquer programa ──────────────
+   Aí o sistema separa, em dois passos. O Windows manda cada aplicativo para o
+   dispositivo de saída que se quiser (Configurações · Sistema · Som · Mixer de
+   volume), e a captura de tela só carrega o que sai pelo dispositivo PADRÃO.
+   Então: o player vai para um cabo virtual, o Discord vai para o fone. O que a
+   transmissão pega é o cabo, e é aqui que ele é escolhido.
+
+   ── por que fica recolhido atrás de um ícone ─────────────────────────────
+   Listar as entradas exige a permissão de microfone do navegador — não porque
+   isto seja um microfone, mas porque é a mesma permissão que dá acesso a
+   qualquer entrada de som. Pedi-la a quem nunca vai trocar de fonte seria
+   assustar por nada, então quem abre é quem tem o problema.
    ══════════════════════════════════════════════════════════════════════════ */
 function AudioPicker({
   audio,
@@ -498,44 +482,64 @@ function AudioPicker({
     <div className="relative">
       <CabinKey
         onClick={() => void abrir()}
-        label="De onde sai o som que o clube ouve"
-        hint="Trocar a fonte do som — tire o Discord da transmissão"
+        label="O que o clube ouve"
+        hint="Tirar o Discord da transmissão"
       >
-        <SlidersHorizontal className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+        <AudioLines className="h-4 w-4" strokeWidth={1.8} aria-hidden />
       </CabinKey>
 
       {open ? (
-        <div className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[min(78vw,340px)] rounded-plate bg-house-seat p-3.5 ring-1 ring-white/[0.06]">
-          <span className="legend">De onde sai o som</span>
+        <div className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[min(84vw,400px)] rounded-plate bg-house-seat p-4 ring-1 ring-white/[0.06]">
+          <span className="legend">O que o clube ouve</span>
+
+          {/* A frase que evita a hora perdida. Escolher o áudio de um
+              aplicativo não existe em navegador nenhum, e deixar isso
+              subentendido faria a pessoa procurar a opção pelo resto da noite.
+              Dito primeiro, e uma vez. */}
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-dim">
-            O áudio do sistema carrega tudo que toca nesta máquina, o Discord incluído. Mande o som
-            do player para uma entrada separada — um cabo virtual, tipo VB-Cable — e escolha ela
-            aqui: sai só o filme, e a conversa continua nas suas caixas.
+            Escolher o som de um programa específico não existe em navegador nenhum — o que chega
+            aqui é o mix da máquina inteira, o Discord junto. Quem separa é o sistema, de um destes
+            dois jeitos.
           </p>
 
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <SourceChip on={audio.currentId === null} onClick={() => void escolher(null)}>
-              Som da captura
-            </SourceChip>
-            {audio.sources.map(d => (
-              <SourceChip
-                key={d.deviceId}
-                on={audio.currentId === d.deviceId}
-                onClick={() => void escolher(d.deviceId)}
-              >
-                {d.label || 'entrada sem nome'}
+          <ol className="mt-3 flex flex-col gap-2.5 border-t border-white/[0.06] pt-3">
+            <li className="text-[12.5px] leading-relaxed text-ink-dim">
+              <span className="font-display text-[11px] uppercase tracking-[0.14em] text-beam">
+                O filme está numa aba
+              </span>
+              <br />
+              Compartilhe a <span className="text-ink">aba</span>, não a tela. Áudio de aba é só
+              daquela aba. Resolve sozinho, sem instalar nada.
+            </li>
+            <li className="text-[12.5px] leading-relaxed text-ink-dim">
+              <span className="font-display text-[11px] uppercase tracking-[0.14em] text-beam">
+                O filme está no VLC, ou em outro programa
+              </span>
+              <br />
+              No Windows, em <span className="text-ink">Som · Mixer de volume</span>, mande o player
+              para um cabo virtual (VB-Cable) e o Discord para o fone. Depois escolha o cabo aqui
+              embaixo.
+            </li>
+          </ol>
+
+          <div className="mt-3.5 border-t border-white/[0.06] pt-3">
+            <span className="q text-[11px] text-ink-faint">Entrada que vai para o clube</span>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <SourceChip on={audio.currentId === null} onClick={() => void escolher(null)}>
+                Som da captura
               </SourceChip>
-            ))}
+              {audio.sources.map(d => (
+                <SourceChip
+                  key={d.deviceId}
+                  on={audio.currentId === d.deviceId}
+                  onClick={() => void escolher(d.deviceId)}
+                >
+                  {d.label || 'entrada sem nome'}
+                </SourceChip>
+              ))}
+            </div>
+            {busy ? <p className="q mt-2.5 text-[11px] text-ink-dim">trocando…</p> : null}
           </div>
-
-          {busy ? <p className="q mt-2.5 text-[11px] text-ink-dim">trocando…</p> : null}
-
-          {/* O caminho que dispensa cabo virtual, dito por último porque só
-              serve quando o filme está no navegador — e aí é o mais limpo que
-              existe: áudio de aba não inclui mais nada. */}
-          <p className="q mt-2.5 text-[11px] leading-relaxed text-ink-faint">
-            Se o filme estiver numa aba, compartilhar a ABA já resolve sozinho.
-          </p>
         </div>
       ) : null}
     </div>
