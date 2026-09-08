@@ -110,7 +110,10 @@ test('o sino junta as salas de que a pessoa é, e diz de qual veio cada linha', 
 
   const sino = await req('GET', '/api/notices', null, dono.cookie);
   assert.equal(sino.status, 200);
-  assert.equal(sino.body.clubs, 2);
+  /* Três e não duas: toda conta nova nasce no clube principal, então as duas
+     salas do teste vêm sempre com ela junto. Ver joinHomeClub.
+     O que importa é o sino saber de qual sala veio cada linha, abaixo. */
+  assert.equal(sino.body.clubs, 3);
 
   const salas = sino.body.items.map(i => i.club?.slug);
   assert.ok(salas.includes(uma.sala.slug), 'o aviso da primeira sala está lá');
@@ -158,7 +161,9 @@ test('o sino não traz avisos de sala nenhuma de que a pessoa não é', async ()
   const forasteiro = await kit.signIn();
   const sino = await req('GET', '/api/notices', null, forasteiro.cookie);
   assert.equal(sino.status, 200);
-  assert.equal(sino.body.clubs, 0);
+  /* Uma sala: a principal, onde ele nasceu e onde não aconteceu nada. O que se
+     prova aqui é que a sala ALHEIA não vazou — não que ele esteja sozinho. */
+  assert.equal(sino.body.clubs, 1);
   assert.equal(sino.body.items.length, 0);
   assert.ok(!JSON.stringify(sino.body).includes(alheia.sala.slug));
 });

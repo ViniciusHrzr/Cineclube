@@ -279,9 +279,9 @@ test('a folha não mostra ficha de sala que não abre as fichas', async () => {
 });
 
 test('a mesma pessoa não ocupa duas vagas das cinco', async () => {
-  /* A mesma pessoa avalia o mesmo filme em dois clubes com notas independentes,
-     e é assim que este produto funciona. Numa lista de cinco, ela apareceria
-     duas vezes — quatro pessoas se dizendo cinco. */
+  /* A ficha é da pessoa: avaliar o mesmo filme numa segunda sala regrava a
+     mesma ficha e move a etiqueta de onde ela foi escrita. Então a rede vê uma
+     nota, a última — e não a mesma pessoa se dizendo duas. */
   const quem = await kit.signIn('Está Nos Dois');
   const uma = await kit.makeClub({ owner: quem.id, visibility: 'public' });
   const outra = await kit.makeClub({ owner: quem.id, visibility: 'public' });
@@ -292,8 +292,8 @@ test('a mesma pessoa não ocupa duas vagas das cinco', async () => {
 
   const folha = (await req('GET', `/api/lobby/film/${filme.id}`)).body;
   assert.equal(folha.takes.length, 1, 'uma ficha por pessoa na lista');
-  assert.equal(folha.count, 2, 'mas as duas notas contam na média');
-  assert.equal(folha.average, 6);
+  assert.equal(folha.count, 1, 'e uma nota só, porque a segunda regravou a primeira');
+  assert.equal(folha.average, 4, 'a que vale é a última gravada');
 });
 
 test('a folha aguenta um filme que ninguém avaliou, e um id torto', async () => {

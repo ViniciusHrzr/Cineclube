@@ -39,9 +39,6 @@ type Source =
      A member arriving into that session gets a picture instead of a dead end. */
   | { kind: 'url'; url: string };
 
-/** Shown once, on the first torrent of this browser. It is a fact, not a scare. */
-const P2P_NOTICE = 'cineclube.p2p-avisado';
-
 /* ── how big the words are ────────────────────────────────────────────────
    Kept in this browser and remembered between films, because it is not a fact
    about the subtitle — it is a fact about the screen it is being read on, and
@@ -1235,14 +1232,6 @@ function SourceLine({
   torrent: TorrentStatus;
   peaked: boolean;
 }) {
-  const [warned, setWarned] = useState(() => {
-    try {
-      return localStorage.getItem(P2P_NOTICE) === '1';
-    } catch {
-      return true; // storage refused: the notice is not worth an exception
-    }
-  });
-
   if (source.kind === 'url') {
     return <span className="q text-[12px] text-ink-dim">URL direta</span>;
   }
@@ -1281,25 +1270,6 @@ function SourceLine({
         </p>
       ) : null}
 
-      {!warned ? (
-        <p className="q mt-1 text-[11.5px] text-ink-dim">
-          Conexão direta entre navegadores expõe seu IP para os outros peers — é assim em qualquer P2P.{' '}
-          <button
-            type="button"
-            onClick={() => {
-              setWarned(true);
-              try {
-                localStorage.setItem(P2P_NOTICE, '1');
-              } catch {
-                /* the notice simply returns next time */
-              }
-            }}
-            className="underline underline-offset-2 transition-colors hover:text-beam"
-          >
-            Entendi
-          </button>
-        </p>
-      ) : null}
     </div>
   );
 }

@@ -48,11 +48,9 @@ import { UserPlus } from 'lucide-react';
 import { Key, Reel } from '@/components/bits';
 import { AccountSheet, SettingsSheet } from '@/components/settings';
 import { Lobby } from '@/screens/Lobby';
-import { ClaimAccount, SetPassword, SignIn } from '@/screens/SignIn';
+import { SetPassword, SignIn } from '@/screens/SignIn';
 import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
 
-/** Uma conta de antes da entrada pelo Google, esperando dono. */
-type Orphan = { id: string; name: string; dot: string; avatar: string | null };
 import { cn, plural } from '@/lib/utils';
 import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
@@ -297,11 +295,6 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(false);
   const [skippedPassword, setSkippedPassword] = useState(false);
-  /* Contas de antes da entrada pelo Google que ninguém reivindicou. `null`
-     enquanto não se perguntou; a lista se esvazia sozinha conforme as pessoas
-     voltam, e no dia em que zerar esta tela some para sempre. */
-  const [orphans, setOrphans] = useState<Orphan[] | null>(null);
-  const [skippedClaim, setSkippedClaim] = useState(false);
   const [route, setRoute] = useState<Route>(() => routeFromHash());
   /* Lido junto da rota e pelo mesmo ouvinte: sair da tela de confirmação
      reescreve o endereço, e sem isto o app mostraria a tela que ele já não pede. */
@@ -325,16 +318,6 @@ export default function App() {
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
-
-  /* Só depois de haver sessão, e o erro morre em silêncio: lista vazia e lista
-     que não carregou levam ao mesmo lugar — seguir sem oferecer nada. */
-  useEffect(() => {
-    if (!me) return;
-    void auth
-      .claimable()
-      .then(r => setOrphans(r.accounts))
-      .catch(() => setOrphans([]));
-  }, [me]);
 
   useEffect(() => {
     const onHash = () => {
@@ -406,32 +389,6 @@ export default function App() {
           void checkAuth();
         }}
         onSkip={() => setSkippedPassword(true)}
-      />
-    );
-  }
-
-  /* "Você já tinha conta aqui?" — depois da senha, e só quando há o que
-     reivindicar. A lista só traz órfãs de um clube em que a pessoa já está (ver
-     auth.js), então esta tela cai DEPOIS de o ADM ter aceitado a entrada, que é
-     o que torna o PIN prova suficiente. QUANDO oferecer é decidido no servidor:
-     quem já reivindicou e quem já recusou recebem lista vazia. */
-  if (orphans && orphans.length > 0 && !skippedClaim) {
-    return (
-      <ClaimAccount
-        accounts={orphans}
-        onClaimed={() => {
-          /* Ficha, fila e conversa mudaram de dono, e a sessão aponta para outra
-             conta. Recarregar é mais honesto do que costurar isso a mão. */
-          location.reload();
-        }}
-        onSkip={() => {
-          setSkippedClaim(true);
-          // Some agora na tela; o servidor garante que não volte amanhã.
-          void auth.dismissClaim().catch(() => {
-            /* Falhou gravar: some nesta sessão e a pergunta volta depois.
-               Insistir com um erro seria punir quem disse "não sou daqui". */
-          });
-        }}
       />
     );
   }

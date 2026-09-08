@@ -102,3 +102,58 @@ export function Breakdown({ r, comment }: { r: { breakdown: BreakdownRow[] }; co
     </div>
   );
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DE ONDE A FICHA VEIO
+
+   O acervo de uma sala é o acervo das pessoas dela: quem entra num clube novo
+   chega com o que já escreveu, em vez de chegar com a estante vazia. Uma ficha
+   assim precisa dizer onde foi escrita, ou o clube parece ter avaliado coisas
+   que nunca viu junto.
+
+   Só aparece quando a ficha veio de fora — o servidor manda `origin` nulo para o
+   que foi gravado aqui, que é o caso comum. Uma etiqueta em toda linha do acervo
+   é uma etiqueta que ninguém lê.
+
+   As duas peças são a mesma informação em dois lugares: a pastilha, na fileira
+   fechada, e a frase, dentro da gaveta, onde a conversa estaria. A conversa não
+   viaja com a ficha — comentário e voto acontecem na sala onde ela foi gravada,
+   porque não têm sala própria e vazariam de um clube fechado para outro. Então
+   a gaveta diz isso em palavras, e aponta a porta.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type Origin = { name: string | null; slug: string | null };
+
+/** A pastilha da fileira: o nome da sala, discreto, sem competir com a nota. */
+export function OriginTag({ where }: { where: Origin }) {
+  const name = where.name ?? 'outro clube';
+  return (
+    <span
+      title={`Avaliado no ${name}`}
+      className="hidden flex-none rounded-cell bg-house-seat/70 px-1.5 py-[3px] font-display text-[9.5px] uppercase leading-none tracking-[0.1em] text-ink-faint ring-1 ring-house-rail sm:inline-block"
+    >
+      {name}
+    </span>
+  );
+}
+
+/** A frase da gaveta, no lugar da conversa. */
+export function OriginNote({ where }: { where: Origin }) {
+  const name = where.name ?? 'outro clube';
+  return (
+    <p className="q mt-4 border-t border-white/[0.06] pt-3 text-[12px] text-ink-dim">
+      Avaliado no <span className="text-ink">{name}</span> — a conversa sobre esta ficha acontece lá.
+      {where.slug ? (
+        <>
+          {' '}
+          <a
+            href={`#c/${encodeURIComponent(where.slug)}/avaliados`}
+            className="underline underline-offset-2 transition-colors hover:text-beam"
+          >
+            Abrir
+          </a>
+        </>
+      ) : null}
+    </p>
+  );
+}

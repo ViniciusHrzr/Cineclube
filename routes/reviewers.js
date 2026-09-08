@@ -46,7 +46,10 @@ const listStmt = db.prepare(`
          COUNT(rv.id) AS review_count
   FROM club_members m
   JOIN reviewers r ON r.id = m.reviewer_id
-  LEFT JOIN reviews rv ON rv.reviewer_id = r.id AND rv.club_id = m.club_id
+  /* Sem o clube na junção, de propósito: a contagem é do ACERVO da pessoa, e o
+     acervo dela é o mesmo em qualquer sala. Preso ao clube, o elenco dizia
+     "0 fichas" para quem chegou ontem trazendo dez. */
+  LEFT JOIN reviews rv ON rv.reviewer_id = r.id
   WHERE m.club_id = ?
   GROUP BY r.id
   ORDER BY m.joined_at ASC

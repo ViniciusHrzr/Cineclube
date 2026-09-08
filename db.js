@@ -95,19 +95,45 @@ async function freeSlug(name, exceptId = null) {
   }
 }
 
-/* O clube fundador: este produto teve um clube antes de ter o conceito de clube,
-   e tudo gravado até aqui é dele. Idempotente — chamado pela migração e outra
-   vez pelo boot, depois das contas de exemplo. */
+/* ── o clube principal ────────────────────────────────────────────────────
+   Este produto teve um clube antes de ter o conceito de clube, e tudo gravado
+   até ali é dele. Ele deixou de ser só o primeiro: é a PRAÇA da rede — aberto,
+   e a sala em que toda conta nova nasce. Quem chega já chega em algum lugar,
+   em vez de cair num saguão onde a única coisa a fazer é fundar um clube ou
+   bater na porta de um fechado.
+
+   Idempotente — chamado pela migração e outra vez pelo boot, depois das contas
+   de exemplo. */
 async function ensureHomeClub() {
   const found = await prepare('SELECT id FROM clubs WHERE name = ? COLLATE NOCASE').get(HOME_CLUB);
   if (found) return found.id;
   const id = 'c' + crypto.randomUUID();
-  /* Fechado: o acervo de um grupo de amigos não passa a ser público porque o
-     produto cresceu. Aparece na vitrine; entrar depende do ADM. */
   await prepare(
-    `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'private')`
+    `INSERT INTO clubs (id, name, slug, visibility) VALUES (?, ?, ?, 'public')`
   ).run(id, HOME_CLUB, slugify(HOME_CLUB));
   return id;
+}
+
+/* ── toda conta nova nasce aqui dentro ────────────────────────────────────
+   Chamado por quem cria conta — pelo Google e por e-mail e senha —, e por mais
+   ninguém. `ON CONFLICT DO NOTHING` porque entrar duas vezes na mesma sala não
+   é um erro: é a segunda chamada de uma função que promete um estado, não um
+   evento.
+
+   Falhar aqui não pode derrubar a criação da conta. Uma pessoa sem clube tem um
+   saguão para resolver isso; uma pessoa sem conta não tem nada. */
+async function joinHomeClub(reviewerId) {
+  try {
+    const home = await ensureHomeClub();
+    await prepare(
+      `INSERT INTO club_members (club_id, reviewer_id, role) VALUES (?, ?, 'member')
+       ON CONFLICT DO NOTHING`
+    ).run(home, reviewerId);
+    return home;
+  } catch (e) {
+    console.error('[db] não deu para pôr a conta nova no clube principal:', e.message);
+    return null;
+  }
 }
 
 async function migrate() {
@@ -546,17 +572,21 @@ async function migrate() {
     await exec('ALTER TABLE clubs ADD COLUMN show_charts INTEGER NOT NULL DEFAULT 0');
   }
 
-  /* A primeira versão dos clubes criou o Cineclube como `public`, e ali `public`
-     queria dizer "qualquer um lê o acervo". Isto conserta os bancos que pegaram
-     aquela versão. Uma vez só, marcada na tabela acima: quem decidir abrir o
-     clube depois não pode ter a decisão desfeita no próximo reinício. */
-  if (!(await done('home-club-private'))) {
+  /* O Cineclube abre. Ele nasceu público, foi fechado por uma migração antiga —
+     `public` queria dizer outra coisa então — e agora é a praça da rede: a sala
+     em que toda conta nova cai, e uma sala em que se cai não pode ter porteiro.
+
+     Uma vez só, marcada na tabela acima, pela mesma razão da migração que ela
+     substitui: quem decidir fechar a sala depois não pode ter a decisão desfeita
+     no próximo reinício. E `created_by IS NULL` continua sendo a condição —
+     mexe no clube fundador, nunca num homônimo que alguém tenha criado. */
+  if (!(await done('home-club-public'))) {
     const r = await prepare(
-      `UPDATE clubs SET visibility = 'private'
-       WHERE name = ? COLLATE NOCASE AND visibility = 'public' AND created_by IS NULL`
+      `UPDATE clubs SET visibility = 'public'
+       WHERE name = ? COLLATE NOCASE AND visibility = 'private' AND created_by IS NULL`
     ).run(HOME_CLUB);
-    await mark('home-club-private');
-    if (r?.rowsAffected) console.log(`[db] ${HOME_CLUB} voltou a ser um clube fechado`);
+    await mark('home-club-public');
+    if (r?.rowsAffected) console.log(`[db] ${HOME_CLUB} agora é um clube aberto`);
   }
   const memberCols = await columnsOf('club_members');
   if (!memberCols.includes('notifications_seen_at')) {
@@ -953,6 +983,56 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS take_comment_likes_comment ON take_comment_likes(comment_id);
   `);
+  /* ── a ficha é da pessoa, e o clube é uma etiqueta ──────────────────────
+     A unicidade era `(club_id, reviewer_id, movie_id)`: a mesma pessoa podia ter
+     uma ficha do mesmo filme em cada sala, e o acervo de uma sala era só o que
+     tinha sido gravado ali dentro. Quem entrasse num clube novo chegava com o
+     acervo vazio — onze avaliações escritas, e nenhuma delas à vista.
+
+     Agora a ficha é de quem a escreveu: uma por pessoa por filme, no produto
+     inteiro. O `club_id` deixa de ser a chave e vira o que sempre foi de fato —
+     a etiqueta de ONDE aquilo foi avaliado. O acervo de uma sala passa a ser o
+     acervo das pessoas dela, cada linha dizendo de onde veio.
+
+     Um índice único NOVO em vez de reconstruir a tabela: a restrição antiga é
+     mais frouxa que esta, então ela continua declarada e nunca mais decide nada.
+     Reconstruir `reviews` significaria mover conversa, voto e curtida em
+     cascata, e a tabela já foi reconstruída uma vez neste arquivo — a segunda
+     não paga o risco.
+
+     A limpeza antes é a condição para o índice existir. Em produção ela não tem
+     o que apagar (todas as fichas moram numa sala só), mas uma instalação com
+     dois clubes teria pares repetidos, e é melhor guardar a mais recente do que
+     o boot morrer num índice que não sobe. Marcada na tabela `meta` porque APAGA
+     — uma correção de valor não pode rodar duas vezes. */
+  if (!(await done('fichas-por-pessoa'))) {
+    const sobrando = await prepare(`
+      SELECT COUNT(*) AS n FROM (
+        SELECT id, ROW_NUMBER() OVER (
+          PARTITION BY reviewer_id, movie_id
+          ORDER BY COALESCE(recorded_at, date) DESC, id DESC
+        ) AS pos FROM reviews
+      ) WHERE pos > 1
+    `).get();
+    if (sobrando?.n) {
+      await exec(`
+        DELETE FROM reviews WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+              PARTITION BY reviewer_id, movie_id
+              ORDER BY COALESCE(recorded_at, date) DESC, id DESC
+            ) AS pos FROM reviews
+          ) WHERE pos > 1
+        )
+      `);
+      console.log(`[db] fichas: ${sobrando.n} repetida(s) da mesma pessoa no mesmo filme, ficou a mais recente`);
+    }
+    await mark('fichas-por-pessoa');
+  }
+  await exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS reviews_person_movie ON reviews(reviewer_id, movie_id);
+    CREATE INDEX IF NOT EXISTS reviews_reviewer ON reviews(reviewer_id);
+  `);
 
   // Sessão vencida é peso morto e risco; some no boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
@@ -973,5 +1053,6 @@ module.exports = {
   slugify,
   freeSlug,
   ensureHomeClub,
+  joinHomeClub,
   close: () => client.close(),
 };

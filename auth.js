@@ -152,6 +152,9 @@ async function register({ name, email, password }) {
   await db.prepare('INSERT INTO reviewers (id, name, dot, email) VALUES (?, ?, ?, ?)')
     .run(id, quem, dot, mail);
   await setPassword(id, password);
+  /* Nasce dentro do clube principal. Ver joinHomeClub: uma conta que chega a um
+     saguão vazio não tem o que fazer nele. */
+  await db.joinHomeClub(id);
   return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id) };
 }
 
@@ -240,151 +243,29 @@ async function accountForGoogle({ sub, email, name, verified }) {
   await db.prepare(
     'INSERT INTO reviewers (id, name, dot, email, google_sub, email_verified) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, (name || mail || 'Alguém').slice(0, 60), dot, free ? trusted : null, sub, verificado);
+  /* A mesma sala de quem entra por e-mail e senha: a porta muda, o lugar onde
+     se chega não. */
+  await db.joinHomeClub(id);
   const created = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id);
   return { reviewer: created, created: true };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   REIVINDICAR A CONTA DE ANTES
+   FUNDIR DUAS CONTAS DA MESMA PESSOA
 
-   Dez pessoas tinham conta neste produto quando entrar era um PIN de quatro
-   dígitos. O PIN acabou; as fichas delas, não. Sem um caminho de volta, cada uma
-   entra pelo Google, ganha uma conta nova e vazia, e o histórico fica num
-   avaliador que ninguém mais alcança.
+   Aqui morava uma ponte: dez pessoas tinham conta quando entrar era um PIN de
+   quatro dígitos, e a tela de "você já tinha conta aqui?" deixava cada uma
+   reclamar a sua provando com o PIN que sempre usou. A ponte foi retirada — ela
+   nasceu com data para morrer, e a data chegou. O que fica é o motor dela, que
+   não é da migração: duas contas da mesma pessoa é uma situação que um produto
+   com duas portas de entrada (Google e senha) produz sozinho, para sempre.
 
-   ── por que o PIN, e não o navegador ──────────────────────────────────────
-   A ideia óbvia é ligar automaticamente: se este navegador ainda está logado
-   como alguém, gruda a conta Google nele. Ela é ruim por duas razões. O alcance
-   é quase nada — a sessão antiga durava 24 horas e já venceu para praticamente
-   todo mundo. E o que ela faz é "ligar quem está neste navegador a quem acabou
-   de autenticar", que num computador compartilhado é tomada de conta.
+   Sem rota. Quem chama é `scripts/merge-accounts.js`, rodado à mão por quem
+   administra a instalação, com os dois ids na frente. Uma fusão é irreversível
+   e escolhe qual das duas pessoas sobrevive: não é uma decisão para se tomar
+   atrás de um botão, num telefone, sem olhar o que tem dos dois lados.
 
-   O PIN é melhor justamente por ser o que já existia: ele nunca saiu do banco,
-   ele prova quem é a pessoa, e ela o conhece. Quatro dígitos são dez mil
-   combinações, então a mesma trava por tentativas que protegia o login protege
-   isto — é o único lugar do produto onde um PIN ainda vale alguma coisa.
-
-   ── e por que o PIN sozinho não bastaria ──────────────────────────────────
-   Porque num clube de amigos os PINs se repetem. Se metade das pessoas usava
-   `1234`, escolher o rosto de alguém e chutar é prova fraca: a trava por
-   tentativas não serve de nada quando o palpite acerta de primeira.
-
-   Daí a segunda condição, que é a que faz o trabalho: **só aparece na lista de
-   quem divide um clube com a conta órfã**. As contas de antes estão todas no
-   clube fundador, que é fechado — então ver a lista exige que o ADM já tenha
-   deixado a pessoa entrar. O aval dele é o primeiro fator; o PIN é o segundo, e
-   um estranho não chega nem a ver os nomes.
-
-   O efeito colateral é a ordem certa das coisas: entra, pede para entrar no
-   clube, é aceito, e só então reivindica. Quem chega de fora não tem o que
-   reivindicar mesmo.
-
-   ── e por que isto não fica aberto para sempre ────────────────────────────
-   Não precisa fechar por prazo: fecha sozinho. Uma conta reivindicada ganha
-   `google_sub` e sai da lista; nenhuma conta nova nasce com PIN, porque não há
-   mais como criar uma. O dia em que a última for reclamada, esta rota deixa de
-   ter o que oferecer e vira código morto — que é o destino certo dela.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-const hashPin = (pin, salt) => crypto.scryptSync(pin, salt, 64).toString('hex');
-
-/* As contas de antes que ninguém reivindicou — e só as que dividem um clube com
-   quem está perguntando. Ver o bloco acima: é esta condição, e não o PIN, que
-   impede um estranho de sequer ver a lista. */
-const CLAIMABLE = `
-  SELECT DISTINCT r.id, r.name, r.dot, r.avatar_rev
-  FROM reviewers r
-  JOIN club_members orfa ON orfa.reviewer_id = r.id
-  JOIN club_members minha ON minha.club_id = orfa.club_id AND minha.reviewer_id = ?
-  WHERE r.pin_hash IS NOT NULL AND r.google_sub IS NULL AND r.password_hash IS NULL
-    AND r.id <> ?
-  ORDER BY r.name ASC
-`;
-
-/* ── e para QUEM a lista existe ────────────────────────────────────────────
-   Duas condições sobre quem pergunta, e as duas nasceram do mesmo defeito: a
-   tela reaparecia para todo mundo, toda vez, para sempre.
-
-   O motivo é que a lista é "contas órfãs no seu clube", e ela continua cheia
-   depois de você reclamar a sua — sobram as das outras nove pessoas. Quem já
-   reivindicou era perguntado de novo no login seguinte, e quem nunca teve conta
-   aqui era perguntado eternamente.
-
-   1. **Quem já é uma conta antiga não pergunta nada.** Reivindicar move as
-      credenciais para a linha velha, que carrega `pin_hash`; então ter
-      `pin_hash` é exatamente a marca de "esta conta já é a de antes". Serve para
-      quem reivindicou e para quem nunca deixou de ser.
-
-   2. **Quem dispensou, dispensou.** `claim_dismissed_at` é a resposta gravada
-      de "não é nenhuma dessas", e ela vale em qualquer navegador.
-
-   As duas moram aqui, num lugar só, e não na tela: uma regra de quando oferecer
-   que vive no cliente é uma regra que o próximo cliente esquece. */
-async function claimable(reviewerId) {
-  const quem = await db
-    .prepare('SELECT pin_hash, claim_dismissed_at FROM reviewers WHERE id = ?')
-    .get(reviewerId);
-  if (!quem || quem.pin_hash || quem.claim_dismissed_at) return [];
-  return db.prepare(CLAIMABLE).all(reviewerId, reviewerId);
-}
-
-/** "Não é nenhuma dessas." Grava, e a tela não volta. */
-const dismissClaim = reviewerId =>
-  db
-    .prepare("UPDATE reviewers SET claim_dismissed_at = datetime('now') WHERE id = ?")
-    .run(reviewerId);
-
-/* A mesma condição, para uma conta só. É ela que a rota de reivindicar cobra
-   antes de conferir PIN nenhum — sem isto, a lista seria uma sugestão e o id
-   viajaria no corpo do pedido, que é o mesmo que não ter regra. */
-async function canClaim(reviewerId, targetId) {
-  const row = await db.prepare(`
-    SELECT 1 AS x
-    FROM club_members orfa
-    JOIN club_members minha ON minha.club_id = orfa.club_id AND minha.reviewer_id = ?
-    WHERE orfa.reviewer_id = ?
-  `).get(reviewerId, targetId);
-  return !!row;
-}
-
-/* Confere o PIN de uma conta adormecida, com a mesma contagem de erros do
-   login. Devolve 'ok' | 'bad' | 'locked' | 'gone'. */
-async function checkClaimPin(reviewerId, pin) {
-  const row = await db
-    .prepare(
-      `SELECT * FROM reviewers
-       WHERE id = ? AND pin_hash IS NOT NULL AND google_sub IS NULL AND password_hash IS NULL`
-    )
-    .get(reviewerId);
-  if (!row) return 'gone';
-
-  if (row.locked_until) {
-    const still = await db.prepare("SELECT datetime('now') < ? AS locked").get(row.locked_until);
-    if (still.locked) return 'locked';
-  }
-
-  const expected = Buffer.from(row.pin_hash, 'hex');
-  const actual = Buffer.from(hashPin(String(pin ?? ''), row.pin_salt), 'hex');
-  const ok = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-
-  if (ok) {
-    await db.prepare('UPDATE reviewers SET auth_attempts = 0, locked_until = NULL WHERE id = ?').run(row.id);
-    return 'ok';
-  }
-
-  const attempts = (row.auth_attempts || 0) + 1;
-  if (attempts >= MAX_ATTEMPTS) {
-    const pause = LOCK_SECONDS * (attempts - MAX_ATTEMPTS + 1);
-    await db.prepare(
-      `UPDATE reviewers SET auth_attempts = ?, locked_until = datetime('now', '+' || ? || ' seconds') WHERE id = ?`
-    ).run(attempts, pause, row.id);
-  } else {
-    await db.prepare('UPDATE reviewers SET auth_attempts = ? WHERE id = ?').run(attempts, row.id);
-  }
-  return 'bad';
-}
-
-/* ── a fusão ──────────────────────────────────────────────────────────────
+   ── a direção ─────────────────────────────────────────────────────────────
    A conta ANTIGA sobrevive, e a nova é dissolvida nela. É a direção certa e não
    é arbitrária: mover as credenciais é mexer em quatro colunas de uma linha,
    e mover o histórico seria reescrever a chave estrangeira em sete tabelas com
@@ -394,7 +275,8 @@ async function checkClaimPin(reviewerId, pin) {
 
    Tudo num lote, que no libSQL é uma transação: se qualquer passo falhar, a
    conta nova não pode ficar sem as credenciais que já foram tiradas dela — isso
-   trancaria a pessoa para fora das duas. */
+   trancaria a pessoa para fora das duas.
+   ══════════════════════════════════════════════════════════════════════════ */
 async function claimAccount(newId, oldId) {
   const nova = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(newId);
   if (!nova) return { error: 'Sessão inválida.' };
@@ -664,10 +546,6 @@ module.exports = {
   lockedSecondsLeft,
   register,
   accountForGoogle,
-  claimable,
-  dismissClaim,
-  canClaim,
-  checkClaimPin,
   claimAccount,
   createEmailToken,
   useEmailToken,

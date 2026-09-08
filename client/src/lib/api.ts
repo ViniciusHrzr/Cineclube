@@ -122,19 +122,6 @@ export const auth = {
   logout: () => post<null>('/api/auth/logout', {}),
   setPassword: (password: string, current?: string) =>
     post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
-  /* As contas de antes do Google que ninguém reivindicou. A lista se esvazia
-     sozinha conforme as pessoas voltam, e no dia em que estiver vazia esta tela
-     deixa de aparecer para sempre. */
-  claimable: () =>
-    api<{ accounts: { id: string; name: string; dot: string; avatar: string | null }[] }>(
-      '/api/auth/claimable'
-    ),
-  claim: (reviewerId: string, pin: string) =>
-    post<{ reviewer: SessionUser }>('/api/auth/claim', { reviewerId, pin }),
-  /* "Não é nenhuma dessas." Gravado no servidor, e não aqui: a resposta tem de
-     valer no celular da pessoa também. */
-  dismissClaim: () => post<{ ok: true }>('/api/auth/claim/dismiss', {}),
-
   /* ── os links que chegam por e-mail ─────────────────────────────────────
      Confirmar um endereço e voltar para dentro sem a senha são a mesma coisa
      com dois fins: um segredo de vida curta que só chega a quem lê aquela caixa
@@ -810,6 +797,11 @@ export type Review = {
      the film and it keeps moving, while the take is frozen. Null on a film the
      cache has never seen. */
   crowd?: { score: number; votes: number } | null;
+  /* Em que sala esta ficha foi gravada, e só quando NÃO foi nesta. O acervo de
+     um clube é o acervo das pessoas dele — quem entra chega com o que já
+     escreveu —, então uma ficha de fora precisa dizer de onde veio. Nulo é o
+     caso comum: foi avaliado aqui, e não há o que etiquetar. */
+  origin?: { name: string | null; slug: string | null } | null;
 };
 
 export type Movie = {

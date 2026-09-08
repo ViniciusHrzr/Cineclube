@@ -12,63 +12,94 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* ── o acervo é de uma sala ───────────────────────────────────────────────
-   Todo SELECT aqui carrega `club_id`, e não é uma otimização: sem ele o acervo
-   de todo mundo seria o mesmo acervo, que é literalmente o que este produto era
-   antes de ter clubes. A média do clube, o ranking, a régua de divergência —
-   tudo isso só significa alguma coisa dentro de um grupo que assistiu junto.
+/* ── o acervo é das PESSOAS da sala ───────────────────────────────────────
+   Todo SELECT aqui filtrava por `club_id`, e o acervo de uma sala era o que
+   tinha sido gravado dentro dela. Quem entrava num clube novo chegava sem nada:
+   onze fichas escritas e nenhuma à vista, como se a pessoa nunca tivesse visto
+   um filme na vida.
+
+   A ficha é de quem a escreveu. O acervo de uma sala é o acervo das pessoas que
+   estão nela, e o `club_id` da ficha vira a etiqueta de onde ela foi gravada —
+   é isso que o `origin` do DTO carrega. Sair do clube leva as suas fichas junto,
+   porque a lista é uma junção com `club_members` e não uma cópia.
+
+   O que NÃO viaja é a conversa. Comentário, voto e curtida penduram na ficha e
+   não têm sala própria (ver db.js), então a única forma de eles não vazarem de
+   um clube fechado para outro é a conversa continuar acontecendo onde a ficha
+   foi gravada. As rotas de social já cobram `rv.club_id = req.club.id`, e é essa
+   linha que segura isto — não mexer nela é a decisão, não o esquecimento.
 
    Ler é de quem pode ler o clube, o que num clube público inclui quem está de
    fora: é isso que alimenta a vitrine. Escrever é sempre de membro. */
+/* Duas condições e não uma. A junção com o elenco é o que faz a ficha VIAJAR:
+   quem entra numa sala chega com o que já escreveu. O clube na ficha é o que
+   faz ela NÃO IR EMBORA: quem sai de uma sala deixa lá o que gravou dentro dela
+   — o acervo de um clube é a memória de um grupo, e uma memória que encolhe
+   porque alguém foi embora não é memória.
+
+   Toma o id da sala duas vezes, uma por condição. */
+const DA_SALA = `(
+  rv.club_id = ?
+  OR rv.reviewer_id IN (SELECT reviewer_id FROM club_members WHERE club_id = ?)
+)`;
 
 /* The runtime is read through the cache when the take does not carry one: every
    film in the archive was opened before it was rated, so the cache almost always
    knows it, and takes recorded before reviews had the column get the number
-   without a backfill. */
-const listStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
-         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes,
-         mc.original_title, mc.english_title
+   without a backfill.
+
+   `clubs oc` é a sala de origem, por LEFT JOIN: uma sala apagada não pode fazer
+   a ficha sumir do acervo de quem a escreveu. */
+const CAMPOS = `
+  rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
+  mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes,
+  mc.original_title, mc.english_title,
+  oc.name AS origin_name, oc.slug AS origin_slug
+`;
+const JUNCOES = `
   FROM reviews rv
   JOIN reviewers r ON r.id = rv.reviewer_id
   LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
-  WHERE rv.club_id = ?
-  ORDER BY rv.date DESC
+  LEFT JOIN clubs oc ON oc.id = rv.club_id
+`;
+const listStmt = db.prepare(`
+  SELECT ${CAMPOS} ${JUNCOES} WHERE ${DA_SALA} ORDER BY rv.date DESC
 `);
+/* `ON CONFLICT(reviewer_id, movie_id)` e não mais a trinca com o clube: é uma
+   ficha por pessoa por filme no produto inteiro. Regravar numa sala nova move a
+   etiqueta para ela — a ficha passa a dizer onde foi escrita da última vez, que
+   é a única resposta que não envelhece. */
 const upsertStmt = db.prepare(`
   INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
   VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
-  ON CONFLICT(club_id, reviewer_id, movie_id) DO UPDATE SET
+  ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
     -- Regravar é um acontecimento: o mural mostra a ficha de novo, na hora em
     -- que ela mudou, em vez de escondê-la no dia em que foi criada.
     recorded_at = datetime('now'),
+    club_id = excluded.club_id,
     movie_title = excluded.movie_title, movie_year = excluded.movie_year, movie_genre = excluded.movie_genre,
     movie_poster = excluded.movie_poster, movie_director = excluded.movie_director,
     movie_runtime = COALESCE(excluded.movie_runtime, reviews.movie_runtime),
     scores = excluded.scores, final = excluded.final, date = excluded.date, comment = excluded.comment
 `);
 const averagesStmt = db.prepare(`
-  SELECT movie_id, AVG(final) AS avg, COUNT(*) AS count
-  FROM reviews
-  WHERE club_id = ?
-  GROUP BY movie_id
-`);
-const savedStmt = db.prepare(`
-  SELECT rv.*, r.name AS reviewer_name, r.dot AS reviewer_dot,
-         mc.runtime AS cached_runtime, mc.tmdb_score, mc.tmdb_votes,
-         mc.original_title, mc.english_title
+  SELECT rv.movie_id, AVG(rv.final) AS avg, COUNT(*) AS count
   FROM reviews rv
-  JOIN reviewers r ON r.id = rv.reviewer_id
-  LEFT JOIN movies_cache mc ON mc.tmdb_id = rv.movie_id
-  WHERE rv.club_id = ? AND rv.reviewer_id = ? AND rv.movie_id = ?
+  WHERE ${DA_SALA}
+  GROUP BY rv.movie_id
 `);
-/* `club_id` na condição e não só na leitura: sem ele, o id de uma ficha de
-   outro clube apagaria aquela ficha por uma rota deste. */
-const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ? AND club_id = ?');
+/* Sem clube na condição: a ficha é única por pessoa e filme, então esta trinca
+   virou um par. */
+const savedStmt = db.prepare(`
+  SELECT ${CAMPOS} ${JUNCOES} WHERE rv.reviewer_id = ? AND rv.movie_id = ?
+`);
+/* Sem `club_id` também aqui, e não é um relaxamento: a linha seguinte cobra que
+   a ficha seja de quem pediu, e a sua ficha é sua em qualquer sala. */
+const ownerStmt = db.prepare('SELECT id, reviewer_id FROM reviews WHERE id = ?');
 const deleteStmt = db.prepare('DELETE FROM reviews WHERE id = ?');
 const deleteWatchlistStmt = db.prepare('DELETE FROM watchlist WHERE club_id = ? AND movie_id = ?');
 
-function toReviewDTO(row) {
+function toReviewDTO(row, clubId) {
   const genre = GENRES.includes(row.movie_genre) ? row.movie_genre : 'Drama';
   const scores = JSON.parse(row.scores);
   /* Only what this take answers. A take from before Aproveitamento existed has
@@ -106,18 +137,28 @@ function toReviewDTO(row) {
     final: row.final,
     date: row.date,
     comment: row.comment || '',
+    /* De onde a ficha veio, e só quando veio de FORA desta sala. Nulo quer
+       dizer "foi avaliado aqui", que é o caso comum e não merece etiqueta —
+       uma tarja em toda linha do acervo é uma tarja que ninguém lê.
+
+       É também o que diz à tela que a conversa desta ficha não mora aqui: o
+       comentário e o voto acontecem na sala onde ela foi gravada. */
+    origin:
+      row.club_id && clubId && row.club_id !== clubId
+        ? { name: row.origin_name ?? null, slug: row.origin_slug ?? null }
+        : null,
     breakdown
   };
 }
 
 router.get('/', clubs.canRead('reviews'), wrap(async (req, res) => {
-  const rows = await listStmt.all(req.club.id);
-  res.json({ reviews: rows.map(toReviewDTO) });
+  const rows = await listStmt.all(req.club.id, req.club.id);
+  res.json({ reviews: rows.map(r => toReviewDTO(r, req.club.id)) });
 }));
 
 router.get('/averages', clubs.canRead('reviews'), wrap(async (req, res) => {
   const out = {};
-  for (const row of await averagesStmt.all(req.club.id)) {
+  for (const row of await averagesStmt.all(req.club.id, req.club.id)) {
     out[row.movie_id] = { avg: row.avg, count: row.count };
   }
   res.json({ averages: out });
@@ -200,8 +241,8 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
   live.emit('reviews', reviewerId, req.club.id);
   live.emit('watchlist', reviewerId, req.club.id);
 
-  const saved = await savedStmt.get(req.club.id, reviewerId, movie.id);
-  res.status(201).json(toReviewDTO(saved));
+  const saved = await savedStmt.get(reviewerId, movie.id);
+  res.status(201).json(toReviewDTO(saved, req.club.id));
 }));
 
 /* A take belongs to whoever gave it, and to nobody else — not to the admin
@@ -212,7 +253,7 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
    Without this check any signed-in member could quietly erase another's
    rating. */
 router.delete('/:id', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
-  const row = await ownerStmt.get(req.params.id, req.club.id);
+  const row = await ownerStmt.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Avaliação não encontrada.' });
   if (row.reviewer_id !== req.session.reviewer_id) {
     return res.status(403).json({ error: 'Você só pode excluir as suas próprias avaliações.' });

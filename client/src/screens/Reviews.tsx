@@ -22,7 +22,7 @@ import {
 /* Voto, conversa e detalhamento saíram desta tela e viraram peça: o feed e o
    perfil abrem a ficha no lugar, com as mesmas regras. */
 import { Conversation, TakeVotes } from '@/components/social';
-import { Breakdown } from '@/components/take';
+import { Breakdown, OriginNote, OriginTag } from '@/components/take';
 import { PersonReel } from '@/components/person';
 import { cdel, fmt, initialsOf, reelColor, runtimeOf, type Review } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -394,13 +394,16 @@ function Take({
             <CrowdNote crowd={r.crowd} />
           </span>
         </button>
-        <TakeVotes take={r} />
+        {/* A ficha de fora não tem polegar: concordar é um gesto da sala onde a
+            ficha foi gravada, e aqui ela é acervo, não conversa. No lugar dele,
+            a pastilha que diz de onde veio. */}
+        {r.origin ? <OriginTag where={r.origin} /> : <TakeVotes take={r} />}
         <DrawerArrow open={open} onToggle={onToggle} />
       </div>
       <Drawer open={open}>
         <div className="px-3 pb-4 pt-1">
           <Breakdown r={r} comment={r.comment} />
-          <Conversation take={r} />
+          {r.origin ? <OriginNote where={r.origin} /> : <Conversation take={r} />}
           <TakeActions r={r} onDelete={onDelete} className="mt-4" />
         </div>
       </Drawer>
@@ -789,13 +792,13 @@ function ByMovie({
                         <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.reviewerName}</span>
                         <span className="q flex-none text-[17px]">{fmt(r.final)}</span>
                       </button>
-                      <TakeVotes take={r} />
+                      {r.origin ? <OriginTag where={r.origin} /> : <TakeVotes take={r} />}
                       <DrawerArrow open={openIds.has(r.id)} onToggle={() => onToggle(r.id)} />
                     </div>
                     <Drawer open={openIds.has(r.id)}>
                       <div className="px-3 pb-4 pt-1">
                         <Breakdown r={r} comment={r.comment} />
-                        <Conversation take={r} />
+                        {r.origin ? <OriginNote where={r.origin} /> : <Conversation take={r} />}
                         <TakeActions r={r} onDelete={() => onDelete(r)} className="mt-4" invite={false} />
                       </div>
                     </Drawer>

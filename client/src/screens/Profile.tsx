@@ -13,7 +13,7 @@ import {
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
 /* As mesmas peças do acervo e do feed: a ficha abre nesta página (ver `Takes`) e
    não pode ser uma segunda versão do que o acervo mostra. */
-import { Breakdown } from '@/components/take';
+import { Breakdown, OriginNote } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
 import {
   fmt,
@@ -1085,7 +1085,9 @@ function TakeLine({
           <div id={`ficha-corpo-${review.id}`} className="px-2 pb-4 pt-1">
             <Breakdown r={review} comment={review.comment} />
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <TakeVotes take={review} labelled />
+              {/* Ficha de fora não recebe polegar aqui: o voto é da sala onde ela
+                  foi gravada. Ver OriginNote, logo abaixo. */}
+              {review.origin ? null : <TakeVotes take={review} labelled />}
               {/* O caminho para o acervo continua existindo, como uma saída e
                   não como o gesto principal: lá a ficha aparece ao lado das dos
                   outros sobre o mesmo filme, que é a única coisa que esta
@@ -1098,7 +1100,7 @@ function TakeLine({
                 Ver no acervo
               </button>
             </div>
-            <Conversation take={review} />
+            {review.origin ? <OriginNote where={review.origin} /> : <Conversation take={review} />}
           </div>
         ) : null}
       </Drawer>
