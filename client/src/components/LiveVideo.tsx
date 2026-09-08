@@ -228,9 +228,9 @@ export function LiveVideo({
         'group relative overflow-hidden rounded-cell bg-black outline-none',
         'focus-visible:ring-1 focus-visible:ring-dye-brass',
         /* Em tela cheia o retângulo vira a sala inteira: os cantos de célula
-           não têm o que arredondar contra, e a imagem tem de caber inteira em
-           vez de ser cortada pela proporção do monitor. */
-        full && 'flex h-full w-full items-center justify-center rounded-none',
+           não têm o que arredondar contra, e a proporção medida sai do caminho
+           — quem manda passa a ser o monitor. */
+        full && 'h-full w-full rounded-none',
         !awake && playing && 'cursor-none',
         className
       )}
@@ -254,8 +254,19 @@ export function LiveVideo({
            `object-contain` e nunca `cover`: cortar a borda de uma tela
            compartilhada corta legenda, corta menu, corta o que a pessoa quis
            mostrar. Sobra tarja preta quando a proporção não fecha, e tarja
-           preta é a resposta certa — é o que um cinema faz. */
-        className={cn('h-full w-full bg-black object-contain', full && 'max-h-full')}
+           preta é a resposta certa — é o que um cinema faz.
+
+           ── e por que `absolute` em tela cheia ──────────────────────────
+           Porque a raiz deste app roda com `zoom: 1.25` (ver index.css), e um
+           `height: 100%` dentro de um elemento em tela cheia resolve contra a
+           caixa sem zoom: o vídeo saía com 80% do monitor, centralizado, com
+           tarja preta dos quatro lados. Posicionamento absoluto não passa por
+           essa conta — ele gruda nas quatro bordas do invólucro, que é o que
+           "tela cheia" quer dizer. */
+        className={cn(
+          'bg-black object-contain',
+          full ? 'absolute inset-0 h-full w-full' : 'h-full w-full'
+        )}
       />
 
       {/* ── a lâmpada ────────────────────────────────────────────────────
@@ -412,7 +423,7 @@ export function LiveVideo({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O QUE O CLUBE OUVE.
+   O ÁUDIO QUE VAI PARA O CLUBE.
 
    ── o pedido, e a resposta honesta ───────────────────────────────────────
    O que se quer aqui é escolher o áudio de UM APLICATIVO: manda o VLC, não
@@ -482,64 +493,30 @@ function AudioPicker({
     <div className="relative">
       <CabinKey
         onClick={() => void abrir()}
-        label="O que o clube ouve"
-        hint="Tirar o Discord da transmissão"
+        label="Áudio que vai para o clube"
+        hint="Áudio que vai para o clube"
       >
         <AudioLines className="h-4 w-4" strokeWidth={1.8} aria-hidden />
       </CabinKey>
 
       {open ? (
-        <div className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[min(84vw,400px)] rounded-plate bg-house-seat p-4 ring-1 ring-white/[0.06]">
-          <span className="legend">O que o clube ouve</span>
-
-          {/* A frase que evita a hora perdida. Escolher o áudio de um
-              aplicativo não existe em navegador nenhum, e deixar isso
-              subentendido faria a pessoa procurar a opção pelo resto da noite.
-              Dito primeiro, e uma vez. */}
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-dim">
-            Escolher o som de um programa específico não existe em navegador nenhum — o que chega
-            aqui é o mix da máquina inteira, o Discord junto. Quem separa é o sistema, de um destes
-            dois jeitos.
-          </p>
-
-          <ol className="mt-3 flex flex-col gap-2.5 border-t border-white/[0.06] pt-3">
-            <li className="text-[12.5px] leading-relaxed text-ink-dim">
-              <span className="font-display text-[11px] uppercase tracking-[0.14em] text-beam">
-                O filme está numa aba
-              </span>
-              <br />
-              Compartilhe a <span className="text-ink">aba</span>, não a tela. Áudio de aba é só
-              daquela aba. Resolve sozinho, sem instalar nada.
-            </li>
-            <li className="text-[12.5px] leading-relaxed text-ink-dim">
-              <span className="font-display text-[11px] uppercase tracking-[0.14em] text-beam">
-                O filme está no VLC, ou em outro programa
-              </span>
-              <br />
-              No Windows, em <span className="text-ink">Som · Mixer de volume</span>, mande o player
-              para um cabo virtual (VB-Cable) e o Discord para o fone. Depois escolha o cabo aqui
-              embaixo.
-            </li>
-          </ol>
-
-          <div className="mt-3.5 border-t border-white/[0.06] pt-3">
-            <span className="q text-[11px] text-ink-faint">Entrada que vai para o clube</span>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <SourceChip on={audio.currentId === null} onClick={() => void escolher(null)}>
-                Som da captura
+        <div className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[min(80vw,300px)] rounded-plate bg-house-seat p-3.5 ring-1 ring-white/[0.06]">
+          <span className="legend">Áudio que vai para o clube</span>
+          <div className="mt-2.5 flex flex-col items-start gap-1.5">
+            <SourceChip on={audio.currentId === null} onClick={() => void escolher(null)}>
+              Som da captura
+            </SourceChip>
+            {audio.sources.map(d => (
+              <SourceChip
+                key={d.deviceId}
+                on={audio.currentId === d.deviceId}
+                onClick={() => void escolher(d.deviceId)}
+              >
+                {d.label || 'entrada sem nome'}
               </SourceChip>
-              {audio.sources.map(d => (
-                <SourceChip
-                  key={d.deviceId}
-                  on={audio.currentId === d.deviceId}
-                  onClick={() => void escolher(d.deviceId)}
-                >
-                  {d.label || 'entrada sem nome'}
-                </SourceChip>
-              ))}
-            </div>
-            {busy ? <p className="q mt-2.5 text-[11px] text-ink-dim">trocando…</p> : null}
+            ))}
           </div>
+          {busy ? <p className="q mt-2.5 text-[11px] text-ink-dim">trocando…</p> : null}
         </div>
       ) : null}
     </div>

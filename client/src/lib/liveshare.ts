@@ -197,6 +197,47 @@ async function tune(sender: RTCRtpSender) {
    corrente — não se inventa nada, só se preenche parâmetros que o padrão do
    Opus define. Se a linha não estiver lá, nada é feito: um SDP meio editado é
    pior do que um SDP intocado. */
+/* ── os primeiros trinta segundos, que saíam lavados ──────────────────────
+   O WebRTC não sabe quanta banda existe entre duas máquinas, então ele começa
+   baixo e sobe medindo. Isso é certo para uma chamada, em que os primeiros
+   segundos são alguém dizendo "oi", e é errado para um filme: a sessão começa
+   numa lama que vai clareando por meio minuto, bem no momento em que o clube
+   está olhando para a tela pela primeira vez.
+
+   `x-google-start-bitrate` é onde o Chrome deixa dizer por onde COMEÇAR. Três
+   megabits é imagem assistível no primeiro quadro, e continua sendo um chute
+   conservador perto do teto de oito — se a rede não aguentar, ela desce em
+   segundos, que é a direção barata do erro.
+
+   Como o estéreo, isto só existe escrito no SDP; não há API. E como ele, não
+   inventa nada — são parâmetros que o próprio Chrome define. */
+const START_BITRATE_KBPS = 3000;
+
+function withStartBitrate(sdp: string) {
+  /* Todo codec de vídeo, e não só o primeiro: o navegador oferece VP8, VP9,
+     H.264 e AV1, e QUAL deles será usado quem decide é o outro lado. Ajustar
+     um só é ajustar o que talvez não seja escolhido. */
+  const codecs = [...sdp.matchAll(/a=rtpmap:(\d+) (?:VP8|VP9|H264|AV1)\/90000/gi)];
+  let out = sdp;
+  for (const achado of codecs) {
+    const pt = achado[1];
+    const param = `x-google-start-bitrate=${START_BITRATE_KBPS}`;
+    const fmtp = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+    /* Emendado na linha que já existe quando ela existe. Uma SEGUNDA linha
+       `a=fmtp:` para o mesmo formato é SDP inválido — o H.264 sempre traz a
+       dele, com o perfil dentro —, e um SDP inválido não é uma qualidade pior,
+       é uma conexão que não abre. */
+    if (fmtp.test(out)) {
+      out = out.replace(fmtp, (_all, params: string) =>
+        params.includes('x-google-start-bitrate') ? `a=fmtp:${pt} ${params}` : `a=fmtp:${pt} ${params};${param}`
+      );
+    } else {
+      out = out.replace(achado[0], `${achado[0]}\r\na=fmtp:${pt} ${param}`);
+    }
+  }
+  return out;
+}
+
 function inStereo(sdp: string) {
   const rtpmap = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
   if (!rtpmap) return sdp;
@@ -379,7 +420,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           /* O estéreo é pedido aqui, na oferta, porque é ela que declara o que
              este lado vai mandar. Depois de `setLocalDescription` não há mais
              o que negociar. */
-          const dito = { type: offer.type, sdp: inStereo(offer.sdp ?? '') };
+          const dito = { type: offer.type, sdp: withStartBitrate(inStereo(offer.sdp ?? '')) };
           await peer.pc.setLocalDescription(dito);
           void sendSignal(from, 'offer', dito);
           setPeers(peerMap.current.size);
@@ -609,7 +650,21 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
       const permissao = await navigator.mediaDevices.getUserMedia({ audio: true });
       for (const t of permissao.getTracks()) t.stop();
       const todos = await navigator.mediaDevices.enumerateDevices();
-      setAudioSources(todos.filter(d => d.kind === 'audioinput' && d.deviceId));
+      /* ── as duplicatas do Windows ────────────────────────────────────────
+         Ele publica cada entrada três vezes: a real, uma sob o apelido
+         `default` e outra sob `communications`, e as três chegam aqui com o
+         mesmo nome e um prefixo colado na frente ("Padrão - ", "Comunicações
+         - "). Numa lista de quatro linhas em que três dizem a mesma coisa,
+         escolher deixa de ser escolher. Fica só a real. */
+      setAudioSources(
+        todos.filter(
+          d =>
+            d.kind === 'audioinput' &&
+            d.deviceId &&
+            d.deviceId !== 'default' &&
+            d.deviceId !== 'communications'
+        )
+      );
     } catch (e) {
       setError('Não consegui listar as entradas de áudio: ' + (e as Error).message);
     }
@@ -677,7 +732,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         await tune(peer.pc.addTrack(faixa, localRef.current));
         try {
           const offer = await peer.pc.createOffer();
-          const dito = { type: offer.type, sdp: inStereo(offer.sdp ?? '') };
+          const dito = { type: offer.type, sdp: withStartBitrate(inStereo(offer.sdp ?? '')) };
           await peer.pc.setLocalDescription(dito);
           void sendSignal(withId, 'offer', dito);
         } catch {
