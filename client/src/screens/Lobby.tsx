@@ -270,7 +270,9 @@ export function Lobby({
             </span>
             <Lens on={universe} onPick={onUniverse} />
           </div>
-          <div className="flex flex-none items-center gap-x-1 sm:gap-x-4">
+          {/* `relative` porque o painel do sino se pendura AQUI, e não no
+              sino: depois dele ainda vêm o retrato e a saída. Ver `Notices`. */}
+          <div className="relative flex flex-none items-center gap-x-1 sm:gap-x-4">
             {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta
                 todas as salas e diz de qual veio cada linha. */}
             <Notices />

@@ -272,8 +272,18 @@ export function Notices() {
     };
   }, [open]);
 
+  /* ── onde o painel se ancora ──────────────────────────────────────────
+     NÃO no sino. O sino não mora no fim da barra: depois dele vêm o retrato e
+     a saída, uns cento e trinta pixels. Um painel de 340px alinhado pela
+     direita DO SINO começa, num telefone, bem antes da borda esquerda da tela
+     — e era isso que cortava "Novidades" em "des" e todo nome pela metade.
+
+     Sem `relative` aqui de propósito: quem posiciona é o bloco de ações do
+     cabeçalho, que é `relative` nos dois lugares onde este sino aparece (o
+     saguão e a marquise do clube). Alinhado pela direita DELE, o painel cai
+     junto da margem da página, que é onde ele cabe em qualquer largura. */
   return (
-    <div ref={box} className="relative">
+    <div ref={box}>
       <button
         type="button"
         onClick={() => void toggle()}
@@ -324,9 +334,10 @@ export function Notices() {
         <div
           role="region"
           aria-label="Novidades"
-          /* Ancorado à direita porque o sino mora no fim da marquise: alinhado à
-             esquerda, um painel de 340px sairia da tela num celular. */
-          className="plate absolute right-0 top-[38px] z-40 max-h-[min(calc(70dvh/var(--ui-zoom)),520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+          /* Alinhado pela direita do bloco de ações e caindo logo abaixo dele:
+             assim o painel encosta na margem da página em vez de sair pela
+             esquerda, e o topo acompanha a altura da barra sem número fixo. */
+          className="plate absolute right-0 top-[calc(100%+8px)] z-40 max-h-[min(calc(70dvh/var(--ui-zoom)),520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
         >
           <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-white/[0.07] bg-house-seat px-4 py-3">
             <span className="legend">Novidades</span>

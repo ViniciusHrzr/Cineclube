@@ -1866,7 +1866,11 @@ function Marquee({
         </button>
         <SectionTabs variant="marquee" tabs={tabs} tab={tab} onTab={onTab} room={room} rec={rec} />
 
-        <div className="flex items-center gap-2">
+        {/* `relative` porque o painel do sino se pendura AQUI, e não no sino:
+            depois dele ainda vêm o retrato e a porta do saguão, e alinhar o
+            painel pela direita do sino o jogava para fora da tela num
+            telefone. Ver `Notices`. */}
+        <div className="relative flex items-center gap-2">
           {/* Quem está batendo na porta: só para quem pode abrir, e só quando há
               alguém. O pedido vivia numa lista atrás de perfil, engrenagem e
               Ajustes, sem nada anunciando que estava lá. Latão e não vermelho,
