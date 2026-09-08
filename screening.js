@@ -58,6 +58,28 @@ const RUNTIME_SLACK_SECONDS = 900;
 
 const COMMANDS = new Set(['play', 'pause', 'seek']);
 
+/* As quatro palavras do aperto de mão. O servidor não interpreta nenhuma: esta
+   lista existe para que o cano só carregue o que a outra ponta sabe ouvir, e
+   não qualquer coisa que um membro resolva mandar para o navegador de outro.
+
+   `want` é a única que não é do WebRTC — é do produto. Quem quer imagem e não
+   tem pede, e quem transmite responde com uma oferta. Ver o cabeçalho de
+   client/src/lib/liveshare.ts: é o pedido vindo do espectador que faz a
+   reconexão ser o mesmo caminho da conexão inicial. */
+const SIGNALS = new Set(['want', 'offer', 'answer', 'ice']);
+/* Um SDP de vídeo dá uns 5 kB e um candidato ICE umas poucas centenas de
+   bytes. Isto é folgado para o primeiro e absurdo para o segundo, que é como
+   um teto deve ser: ele não está aqui para ajustar o protocolo, está para que
+   nada sem tamanho atravesse a sala. */
+const MAX_SIGNAL = 16 * 1024;
+/* O aperto de mão é uma rajada: um navegador cospe algumas dezenas de
+   candidatos em poucos segundos, e por pessoa da sala. O teto de comandos
+   (dez em cinco segundos) mataria a conexão antes de ela existir, então a
+   sinalização tem o balde dela — largo o bastante para uma sala de seis se
+   conectando ao mesmo tempo, estreito o bastante para não ser um megafone. */
+const SIGNAL_WINDOW_MS = 10_000;
+const SIGNAL_MAX = 400;
+
 /* Anything that ends up in a `src`, or beside one. `javascript:` and `data:`
    are the two that turn a shared string into somebody else's code, and the
    room hands every string it accepts to every other member's browser. */
@@ -100,10 +122,25 @@ function blankRoom(clubId) {
        is nowhere else for it to live — the file came off somebody's disk. What
        the snapshot carries is still only a pointer; see `snapshot`. */
     subtitle: null,
+    /* ── quem está transmitindo a própria tela ─────────────────────────────
+       Nulo quase sempre. Quando não é, a sala mudou de natureza: em vez de
+       quatro cópias de um arquivo andando juntas por um relógio, é UM vídeo ao
+       vivo saindo da máquina de uma pessoa para as outras por WebRTC.
+
+       O servidor não vê um quadro sequer disso — a mídia vai direto de
+       navegador a navegador. O que ele guarda é só o nome de quem está no
+       comando, porque é o que decide para quem os outros devem pedir imagem, e
+       o que a tela do clube precisa dizer. Ver `signal` mais abaixo. */
+    live: null,
     viewers: new Map(),
     /* As conexões desta sala. Ficavam num Set do módulo, e ali um broadcast era
-       para todo mundo que estivesse ouvindo qualquer coisa. */
-    streams: new Set(),
+       para todo mundo que estivesse ouvindo qualquer coisa.
+
+       Um Map e não um Set porque agora existe recado com destinatário: o aperto
+       de mão do WebRTC é uma conversa entre DUAS pessoas, e mandá-la para a
+       sala inteira seria cada navegador tendo de peneirar oferta que não é
+       dele. O valor é de quem é a conexão. */
+    streams: new Map(),
   };
 }
 
@@ -204,6 +241,9 @@ function open(room, movie, now = Date.now()) {
   // does a subtitle, and rather more obviously.
   room.link = null;
   room.subtitle = null;
+  // E a transmissão pela mesma razão: quem estava com a tela no ar estava com
+  // ela para o filme anterior.
+  room.live = null;
   stamp(room, now);
   broadcastState(room);
 }
@@ -263,6 +303,72 @@ function setSubtitle(room, subtitle, now = Date.now()) {
   return true;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A TELA DE ALGUÉM, AO VIVO.
+
+   O outro modo da sala, e o oposto dele em tudo. No modo arquivo cada pessoa
+   tem a própria cópia e o que se sincroniza é um relógio — daí a posição
+   derivada, a deriva, a tolerância. Aqui existe UM vídeo, saindo da placa de
+   vídeo de quem transmite, e todo mundo vê o mesmo quadro porque é o mesmo
+   quadro. Não há posição, não há seek, não há o que sincronizar: quem controla
+   é quem está com a tela, apertando play no player dele.
+
+   ── o servidor não carrega mídia ────────────────────────────────────────
+   Nem um quadro. A imagem vai direto de navegador a navegador por WebRTC, e o
+   que passa por aqui são os poucos quilobytes do aperto de mão — a oferta, a
+   resposta e os candidatos de rede. Isso é a diferença entre uma instância de
+   512 MB servir um clube e não servir nenhum.
+
+   ── por que uma pessoa e não uma lista ──────────────────────────────────
+   Porque é uma sessão de cinema. Duas telas ao vivo ao mesmo tempo não é um
+   recurso com o dobro do valor, é a pergunta "qual das duas estamos vendo?"
+   sem resposta — e cada uma custaria a subida de quem transmite vezes o número
+   de pessoas na sala. Quem chegar segundo recebe a recusa e pode pedir a vez a
+   quem está com ela, que é a mesma conversa que aconteceria no Discord.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Assumir a transmissão. Falha se outra pessoa já está com ela. */
+function startLive(room, session, now = Date.now()) {
+  if (room.live && room.live.hostId !== session.reviewer_id) return false;
+  room.live = {
+    hostId: session.reviewer_id,
+    hostName: session.name,
+    hostDot: session.dot,
+    since: now,
+  };
+  stamp(room, now);
+  broadcastState(room);
+  return true;
+}
+
+/* Largar a transmissão. Só quem está com ela — e é por isso que isto recebe um
+   id em vez de simplesmente zerar: sem a comparação, qualquer pessoa na sala
+   derrubaria a tela de quem está transmitindo apertando um botão na dela. */
+function stopLive(room, reviewerId, now = Date.now()) {
+  if (!room.live || room.live.hostId !== reviewerId) return false;
+  room.live = null;
+  stamp(room, now);
+  broadcastState(room);
+  return true;
+}
+
+/* ── o aperto de mão, encaminhado ─────────────────────────────────────────
+   O servidor é o carteiro e não o assunto: ele não lê a oferta, não sabe o que
+   é um candidato ICE, e nada disso é guardado. O que ele garante são as duas
+   coisas que um carteiro garante — que o remetente está na sala, e que o
+   destinatário também.
+
+   `data` viaja como veio. É SDP ou candidato, gerado pelo navegador de um
+   membro e entregue ao de outro, e o teto existe porque toda string que entra
+   aqui sai multiplicada pelas conexões abertas. */
+function signal(room, fromId, toId, kind, data) {
+  if (!SIGNALS.has(kind)) return false;
+  if (!room.viewers.has(fromId) || !room.viewers.has(toId)) return false;
+  const payload = JSON.stringify(data ?? null);
+  if (payload.length > MAX_SIGNAL) return false;
+  return sendTo(room, toId, { type: 'signal', from: fromId, kind, data }) > 0;
+}
+
 function close(room, now = Date.now()) {
   room.open = false;
   room.movie = null;
@@ -270,6 +376,9 @@ function close(room, now = Date.now()) {
   room.position = 0;
   room.link = null;
   room.subtitle = null;
+  /* Encerrar a sessão derruba a transmissão junto. Uma tela ao vivo sem filme
+     aberto seria uma sala escura com alguém ainda no ar dentro dela. */
+  room.live = null;
   // The viewers survive: they are the people with a connection open, and
   // closing the film does not disconnect anybody.
   for (const viewer of room.viewers.values()) {
@@ -388,6 +497,10 @@ function detach(room, reviewerId) {
   viewer.streams -= 1;
   if (viewer.streams > 0) return;
   room.viewers.delete(reviewerId);
+  /* Quem transmitia foi embora, e com ele foi a imagem: as conexões saíram da
+     máquina dele. Deixar o campo de pé seria a sala apontando para uma fonte
+     que não existe, e cada pessoa esperando um vídeo que ninguém vai mandar. */
+  if (room.live?.hostId === reviewerId) room.live = null;
   broadcastState(room);
   // A última pessoa saiu de uma sala fechada: o quarto some com ela.
   sweep(room);
@@ -412,6 +525,10 @@ function snapshot(room, now = Date.now()) {
        *that* there is a subtitle and which one; whoever does not have it
        fetches it once, over HTTP, from `GET /api/screening/subtitle`. */
     subtitle: room.subtitle ? { id: room.subtitle.id, name: room.subtitle.name } : null,
+    /* Quem está com a tela no ar, ou null. É o campo que faz cada navegador
+       decidir o próprio papel sem perguntar nada: quem se vê aqui transmite,
+       quem não se vê pede imagem a quem está. */
+    live: room.live,
     // The client measures its own offset against this; without it, one member
     // with a crooked clock drifts permanently and nothing can tell why.
     serverTime: now,
@@ -447,7 +564,21 @@ function write(res, payload) {
 function broadcastState(room) {
   if (!room.streams.size) return;
   const frame = snapshot(room);
-  for (const res of room.streams) write(res, frame);
+  for (const res of room.streams.keys()) write(res, frame);
+}
+
+/* Um recado para UMA pessoa, em todas as abas que ela tiver abertas na sala.
+   Todas e não a primeira: a outra ponta não sabe em qual aba a pessoa está
+   olhando, e uma oferta entregue à aba errada é um aperto de mão que nunca
+   fecha. A aba que não estiver esperando aquele recado o descarta. */
+function sendTo(room, reviewerId, payload) {
+  let delivered = 0;
+  for (const [res, id] of room.streams) {
+    if (id !== reviewerId) continue;
+    write(res, payload);
+    delivered += 1;
+  }
+  return delivered;
 }
 
 /** Quantas conexões existem em todas as salas somadas. */
@@ -468,8 +599,8 @@ function canSubscribe(room, reviewerId) {
   return !viewer || viewer.streams < MAX_STREAMS_PER_VIEWER;
 }
 
-function subscribe(room, res) {
-  room.streams.add(res);
+function subscribe(room, res, reviewerId) {
+  room.streams.set(res, reviewerId);
   write(res, snapshot(room));
 }
 
@@ -540,10 +671,27 @@ function withinRate(reviewerId, now = Date.now()) {
   return bucket.count <= RATE_MAX;
 }
 
+/* O mesmo mecanismo, balde separado. Dividir com os comandos faria o aperto de
+   mão gastar as dez fichas que existem para o play e o pause — e a pessoa que
+   acabou de entrar na transmissão perderia o controle da sessão por ter se
+   conectado a ela. */
+const signalBuckets = new Map();
+
+function withinSignalRate(reviewerId, now = Date.now()) {
+  const bucket = signalBuckets.get(reviewerId);
+  if (!bucket || now - bucket.since > SIGNAL_WINDOW_MS) {
+    signalBuckets.set(reviewerId, { count: 1, since: now });
+    return true;
+  }
+  bucket.count += 1;
+  return bucket.count <= SIGNAL_MAX;
+}
+
 /** Tests only: esvazia o prédio inteiro. */
 function reset() {
   rooms.clear();
   buckets.clear();
+  signalBuckets.clear();
 }
 
 module.exports = {
@@ -564,6 +712,10 @@ module.exports = {
   isShareableLink,
   setLink,
   setSubtitle,
+  startLive,
+  stopLive,
+  signal,
+  sendTo,
   open,
   close,
   play,
@@ -580,5 +732,8 @@ module.exports = {
   startTimers,
   stopTimers,
   withinRate,
+  withinSignalRate,
+  MAX_SIGNAL,
+  SIGNALS,
   reset,
 };

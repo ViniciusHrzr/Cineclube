@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Blank, Fault, Key, Poster, Reel, SearchField } from '@/components/bits';
 import { SyncedVideo } from '@/components/SyncedVideo';
+import { LiveVideo } from '@/components/LiveVideo';
 import { useClub } from '@/App';
 import { api, initialsOf, reelColor, runtimeOf, type Movie, type WatchItem } from '@/lib/api';
-import { useScreening } from '@/lib/screening';
+import { useScreening, type ScreeningState } from '@/lib/screening';
+import { useLiveShare, type LiveShare } from '@/lib/liveshare';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
 import { cn, named, norm, plural } from '@/lib/utils';
 
@@ -131,7 +133,13 @@ export function ScreeningScreen() {
   const club = useClub();
   const screening = useScreening(club.fault);
   const torrent = useTorrent();
+  /* O segundo modo da sala. Ele não conversa com o torrent nem com o motor de
+     sincronia: quando há alguém transmitindo, aqueles dois não têm trabalho —
+     não existe cópia local para sincronizar. Ver lib/liveshare.ts. */
+  const liveShare = useLiveShare(screening, club.me.id);
   const { state, connected, setReady } = screening;
+  /** A sala inteira muda de natureza enquanto isto é verdade. */
+  const liveOn = state.live !== null;
 
   const [source, setSource] = useState<Source>({ kind: 'none' });
   /** Of the local file, once the player has read it. Half of the file's identity. */
@@ -203,10 +211,15 @@ export function ScreeningScreen() {
      the club can tell a shared copy from somebody's own rip without comparing
      anything but this. A URL is exact for the same reason. */
   const tag = useMemo(() => {
+    /* Na tela ao vivo todo mundo está literalmente na mesma imagem, então o
+       marcador é um só e igual para a sala inteira. Isso não é cosmético: é o
+       que impede o aviso de "cópias diferentes" de disparar numa sessão em que
+       cópia diferente é impossível. */
+    if (state.live) return `live:${state.live.hostId}`;
     if (source.kind === 'torrent') return torrent.status.infoHash;
     if (source.kind === 'url') return source.url;
     return null;
-  }, [source, torrent.status.infoHash]);
+  }, [source, torrent.status.infoHash, state.live]);
 
   /* The player reports readiness only when it changes, and a member whose film
      never stalls would therefore never say what they are watching. This is what
@@ -423,6 +436,10 @@ export function ScreeningScreen() {
   const { viewers, link: roomSource, open: roomOpen, status, position } = state;
   useEffect(() => {
     if (started.current || !roomOpen || !feeding) return;
+    /* Nada disto vale numa tela ao vivo. Lá não há posição para começar do
+       zero, e "play" não é um comando da sala — é a pessoa que transmite
+       apertando play no player dela. */
+    if (liveOn) return;
     if (status !== 'paused' || position > 1) return;
     if (roomSource && published.current !== roomSource) return;
 
@@ -439,7 +456,7 @@ export function ScreeningScreen() {
     const left = START_GRACE_MS - (Date.now() - (feedingSince.current ?? Date.now()));
     const id = window.setTimeout(go, Math.max(0, left));
     return () => window.clearTimeout(id);
-  }, [roomOpen, status, position, roomSource, viewers, feeding, send]);
+  }, [roomOpen, status, position, roomSource, viewers, feeding, send, liveOn]);
 
   /* ── arriving into a session already under way ───────────────────────────
      The room knows what everyone else is watching, so a member who opens the
@@ -449,6 +466,9 @@ export function ScreeningScreen() {
   const roomLink = state.link;
   useEffect(() => {
     if (!state.open || !roomLink || source.kind !== 'none') return;
+    /* Nem isto: adotar o link da sala enquanto alguém transmite poria um
+       torrent para baixar atrás de uma imagem que já está chegando. */
+    if (liveOn) return;
     if (roomLink === declined.current) return;
     // Adopted, not chosen — so it must not be published back as news.
     shared.current = roomLink;
@@ -458,7 +478,7 @@ export function ScreeningScreen() {
     } else {
       setSource({ kind: 'url', url: roomLink });
     }
-  }, [state.open, roomLink, source.kind, receive]);
+  }, [state.open, roomLink, source.kind, receive, liveOn]);
 
   /* ── the drop that must never navigate ───────────────────────────────────
      A page that does not cancel `drop` hands the file to the browser, and the
@@ -525,11 +545,21 @@ export function ScreeningScreen() {
         </Key>
       </div>
 
-      {source.kind === 'none' ? (
+      {/* ── a tela ao vivo tem precedência sobre tudo ─────────────────────
+          Não é uma terceira opção ao lado das outras: enquanto alguém está
+          transmitindo, a sala inteira está naquele modo, e mostrar o seletor de
+          arquivo por baixo seria oferecer um segundo filme durante o primeiro.
+          Quem quiser voltar ao modo arquivo para a transmissão — o que é uma
+          decisão da sala, e não desta aba. */}
+      {liveOn ? (
+        <LiveScreen live={state.live!} share={liveShare} me={club.me.id} />
+      ) : source.kind === 'none' ? (
         <SourcePanel
           onMagnet={value => chooseTorrent(value, 'receive')}
           onTorrentFile={file => chooseTorrent(file, 'receive')}
           onSeed={file => chooseTorrent(file, 'seed')}
+          onShareScreen={() => void liveShare.start()}
+          shareError={liveShare.error}
         />
       ) : (
         <div className="mt-6">
@@ -946,14 +976,95 @@ function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () =
    and it sat under the drop box implying that the honest path was optional. A
    magnet or a .torrent released here is still understood, because that costs a
    line in `take` and rescues somebody who has one; it is simply never offered. */
+/* ══════════════════════════════════════════════════════════════════════════
+   A SALA, QUANDO ELA É A TELA DE ALGUÉM.
+
+   Substitui o player e a cabine de uma vez, porque quase nada do que há ali
+   quer dizer alguma coisa aqui. A legenda não: o que chega é uma imagem
+   pronta, com as letras já dentro dela se o player de quem transmite as
+   estiver desenhando. A troca de fonte não: a fonte é uma pessoa. O aviso de
+   cópias diferentes não: é impossível haver duas.
+
+   O que sobra é o que a sala precisa saber — de quem é a tela, se a imagem
+   está chegando, e como sair.
+   ══════════════════════════════════════════════════════════════════════════ */
+function LiveScreen({
+  live,
+  share,
+  me,
+}: {
+  live: NonNullable<ScreeningState['live']>;
+  share: LiveShare;
+  me: string;
+}) {
+  const host = live.hostId === me;
+
+  return (
+    <div className="mt-6">
+      <LiveVideo stream={share.stream} muted={host} />
+
+      <div className="plate mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
+        <span className="legend">{host ? 'Você está transmitindo' : `Tela de ${live.hostName}`}</span>
+
+        <span className="q text-[12px] text-ink-dim">
+          {share.phase === 'failed'
+            ? share.error
+            : host
+              ? share.peers
+                ? `${plural(share.peers, 'pessoa recebendo', 'pessoas recebendo')}`
+                : 'ninguém recebendo ainda'
+              : share.phase === 'waiting'
+                ? 'abrindo caminho até a máquina dela…'
+                : 'ao vivo'}
+        </span>
+
+        {host ? (
+          <button
+            type="button"
+            onClick={share.stop}
+            className="ml-auto font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
+          >
+            Parar de transmitir
+          </button>
+        ) : null}
+      </div>
+
+      {/* ── a única falha que precisa ser dita antes de acontecer ─────────
+          Sem relay, quem estiver numa rede que não deixa duas máquinas se
+          acharem — operadora móvel, e alguns provedores — não recebe imagem
+          nenhuma. E não recebe em silêncio: a conexão fica tentando. Uma roda
+          girando para sempre é a pior forma de dizer isso, então a sala diz
+          antes, e só para quem está esperando. */}
+      {!host && share.phase === 'waiting' && !share.relayed ? (
+        <p className="q mt-2.5 max-w-[60ch] text-[11.5px] text-ink-dim">
+          Se a imagem não chegar em alguns segundos, é a sua rede ou a dela não deixando as duas
+          máquinas se acharem — o servidor de retransmissão não está configurado.
+        </p>
+      ) : null}
+
+      {host ? (
+        <p className="q mt-2.5 max-w-[64ch] text-[11.5px] text-ink-dim">
+          O clube vê o que você vê, com o som que sair da aba ou do sistema. Serviço com DRM —
+          Netflix, Prime, Disney+ — aparece preto para os outros: é o sistema operacional que
+          bloqueia, não o Cineclube.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SourcePanel({
   onMagnet,
   onTorrentFile,
   onSeed,
+  onShareScreen,
+  shareError,
 }: {
   onMagnet: (value: string) => void;
   onTorrentFile: (file: File) => void;
   onSeed: (file: File) => void;
+  onShareScreen: () => void;
+  shareError: string | null;
 }) {
   const [over, setOver] = useState(false);
   /* A file chosen here is the same file dropped on the box: it is seeded to the
@@ -1048,6 +1159,27 @@ function SourcePanel({
 
         {refused ? <p className="q mt-3 text-[11.5px] text-dye-red-lit">{refused}</p> : null}
       </div>
+
+      {/* ── e o caminho que toca qualquer coisa ────────────────────────────
+          Abaixo da caixa e não ao lado dela, porque não são dois iguais. O
+          arquivo é o melhor jeito quando dá: cada pessoa recebe uma cópia, a
+          qualidade não depende da subida de ninguém, e a sala tem seek e
+          legenda de verdade. Isto é o que funciona quando aquilo não funciona
+          — um .mkv que o navegador não decodifica, um serviço que só toca no
+          player dele, um arquivo que ninguém quer distribuir.
+
+          O preço está escrito porque ele é real e é de uma pessoa só: numa
+          transmissão a imagem sai da máquina de quem compartilha, uma cópia
+          para cada pessoa da sala. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-house-rail pt-4">
+        <Key onClick={onShareScreen}>Compartilhar minha tela</Key>
+        <p className="q max-w-[42ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
+          O clube vê a sua tela ao vivo, com o som. Toca o que o seu computador tocar — menos
+          serviço com DRM, que sai preto.
+        </p>
+      </div>
+
+      {shareError ? <p className="q mt-2.5 text-[11.5px] text-dye-red-lit">{shareError}</p> : null}
     </div>
   );
 }

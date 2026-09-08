@@ -4,6 +4,7 @@ const auth = require('../auth');
 const clubs = require('../clubs');
 const wrap = require('../wrap');
 const screening = require('../screening');
+const turn = require('../turn');
 const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
@@ -91,7 +92,9 @@ router.get('/stream', (req, res) => {
 
   screening.startTimers();
   screening.attach(room, req.session);
-  screening.subscribe(room, res);
+  /* Com o dono da conexão, porque a sala precisa saber mandar recado para UMA
+     pessoa: o aperto de mão da tela ao vivo é entre duas. Ver `sendTo`. */
+  screening.subscribe(room, res, req.session.reviewer_id);
 
   let gone = false;
   const leave = () => {
@@ -212,6 +215,85 @@ router.post('/subtitle', wrap(async (req, res) => {
   }
   res.json(screening.snapshot(room));
 }));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A TELA AO VIVO: TRÊS ROTAS E NENHUM BYTE DE VÍDEO.
+
+   O servidor apresenta duas pessoas e sai da frente. `/live` diz quem está com
+   a tela, `/signal` carrega o aperto de mão entre dois navegadores, e `/ice`
+   entrega os endereços que eles usam para se achar. A imagem nunca passa por
+   aqui — se passasse, uma sessão de duas horas seria alguns gigabytes saindo
+   de uma instância de 512 MB, e o recurso não existiria.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Assumir e largar a transmissão. Uma sessão aberta é pré-requisito pela mesma
+   razão que é para o link: transmitir para uma sala escura é transmitir para
+   ninguém. */
+router.post('/live', wrap(async (req, res) => {
+  if (!screening.withinRate(req.session.reviewer_id)) {
+    return res.status(429).json({ error: 'Comandos demais em pouco tempo.' });
+  }
+  const room = roomOf(req);
+  if (!room.open) return res.status(409).json({ error: 'Nenhuma sessão aberta.' });
+
+  const on = req.body?.on !== false;
+  if (on) {
+    if (!screening.startLive(room, req.session)) {
+      /* 409 e não 403: não é falta de permissão, é a vaga estar ocupada. A
+         tela mostra de quem ela é, que é a informação que resolve — a pessoa
+         pede a vez no Discord e o outro larga. */
+      return res
+        .status(409)
+        .json({ error: `${room.live.hostName} já está transmitindo a tela.`, live: room.live });
+    }
+  } else {
+    screening.stopLive(room, req.session.reviewer_id);
+  }
+  res.json(screening.snapshot(room));
+}));
+
+/* ── o carteiro ───────────────────────────────────────────────────────────
+   Oferta, resposta e candidatos de rede, de um membro para outro. O servidor
+   não abre o envelope: para ele isto é uma string opaca com remetente e
+   destinatário, e as duas únicas perguntas que ele faz são se os dois estão na
+   sala.
+
+   204 e não 200 com corpo, porque não há resposta — o que a outra ponta
+   responder chega pelo stream dela, não por esta requisição. */
+router.post('/signal', wrap(async (req, res) => {
+  if (!screening.withinSignalRate(req.session.reviewer_id)) {
+    return res.status(429).json({ error: 'Sinalização demais em pouco tempo.' });
+  }
+  const room = roomOf(req);
+  const { to, kind, data } = req.body || {};
+  if (typeof to !== 'string' || typeof kind !== 'string') {
+    return res.status(400).json({ error: 'Recado sem destinatário ou sem tipo.' });
+  }
+  if (to === req.session.reviewer_id) {
+    return res.status(400).json({ error: 'Recado para si mesmo.' });
+  }
+  /* Falso quando o destinatário saiu da sala entre ele oferecer e este recado
+     chegar — o que acontece o tempo todo numa reconexão, e não é erro de
+     ninguém. 404 é o que a outra ponta precisa para desistir daquele par em
+     vez de ficar tentando. */
+  if (!screening.signal(room, req.session.reviewer_id, to, kind, data)) {
+    return res.status(404).json({ error: 'Essa pessoa não está mais na sessão.' });
+  }
+  res.status(204).end();
+}));
+
+/* Onde os dois navegadores procuram um caminho um até o outro. Por pessoa
+   porque a credencial de TURN é temporária e assinada com o id de quem pediu;
+   ver turn.js, que também explica por que ela existe. */
+router.get('/ice', (req, res) => {
+  res.json({
+    iceServers: turn.iceServers(req.session.reviewer_id),
+    /* Para a tela poder ser honesta antes de falhar: sem relay configurado,
+       quem estiver atrás de CGNAT não vai conseguir, e dizer isso é melhor do
+       que uma roda girando para sempre. */
+    relayed: turn.hasTurn(),
+  });
+});
 
 /* Whether this member can play right now, and what they are playing. The
    source tag is how the club finds out somebody opened a different file before

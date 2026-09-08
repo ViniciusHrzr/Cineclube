@@ -41,6 +41,20 @@ export type ScreeningViewer = {
   sourceTag: string | null;
 };
 
+/* ── quem está com a tela no ar ───────────────────────────────────────────
+   Nulo quase sempre, e quando não é a sala mudou de natureza: em vez de cada
+   um tocar a própria cópia com um relógio comum, existe UM vídeo saindo da
+   máquina desta pessoa. Este campo é o que faz cada navegador descobrir o
+   próprio papel sem perguntar — quem se lê aqui transmite, quem não se lê pede
+   imagem a quem está. Ver lib/liveshare.ts. */
+export type ScreeningLive = {
+  hostId: string;
+  hostName: string;
+  hostDot: string;
+  /** Instante do servidor em que a transmissão começou. */
+  since: number;
+};
+
 export type ScreeningState = {
   open: boolean;
   movie: ScreeningMovie | null;
@@ -55,6 +69,7 @@ export type ScreeningState = {
      mutation and the file is a hundred kilobytes. `id` is what changes when
      somebody swaps the file, and therefore the only thing worth comparing. */
   subtitle: { id: number; name: string } | null;
+  live: ScreeningLive | null;
   serverTime: number;
   viewers: ScreeningViewer[];
 };
@@ -72,6 +87,7 @@ const IDLE: ScreeningState = {
   revision: 0,
   link: null,
   subtitle: null,
+  live: null,
   serverTime: 0,
   viewers: [],
 };
@@ -159,7 +175,16 @@ async function measureOffset(samples = 5): Promise<number> {
    joined late, or came back from a locked phone converges without asking. */
 type Frame =
   | ({ type: 'state' } & ScreeningState)
-  | { type: 'sync'; status: 'playing' | 'paused'; position: number; revision: number; serverTime: number };
+  | { type: 'sync'; status: 'playing' | 'paused'; position: number; revision: number; serverTime: number }
+  /* O aperto de mão da tela ao vivo, de um membro para outro. Não é estado da
+     sala e não passa pelo reducer: é um recado endereçado, e quem trata dele é
+     o motor de WebRTC. Ver `onSignal` abaixo e lib/liveshare.ts. */
+  | { type: 'signal'; from: string; kind: SignalKind; data: unknown };
+
+export type SignalKind = 'want' | 'offer' | 'answer' | 'ice';
+
+/** O que o servidor devolve em `/screening/ice`. Ver turn.js. */
+export type IceConfig = { iceServers: RTCIceServer[]; relayed: boolean };
 
 export function useScreening(onError?: (msg: string) => void) {
   const [state, setState] = useState<ScreeningState>(IDLE);
@@ -175,6 +200,24 @@ export function useScreening(onError?: (msg: string) => void) {
   offsetRef.current = offset;
 
   const serverNow = useCallback(() => Date.now() + offsetRef.current, []);
+
+  /* ── por onde o aperto de mão sai do stream ──────────────────────────────
+     Um recado de sinalização não é estado da sala: ele é endereçado, chega em
+     rajada e não tem nada a ver com onde o filme está. Passá-lo pelo `setState`
+     redesenharia a tela inteira a cada candidato de rede — algumas dezenas
+     deles por pessoa, nos primeiros segundos de uma conexão.
+
+     Então ele sai por fora, para quem tiver se inscrito. O conjunto vive numa
+     ref porque o efeito do EventSource não pode depender dele: abrir e fechar
+     o stream a cada inscrição derrubaria a sala toda vez. */
+  const listeners = useRef(new Set<(from: string, kind: SignalKind, data: unknown) => void>());
+
+  const onSignal = useCallback((fn: (from: string, kind: SignalKind, data: unknown) => void) => {
+    listeners.current.add(fn);
+    return () => {
+      listeners.current.delete(fn);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -204,6 +247,10 @@ export function useScreening(onError?: (msg: string) => void) {
       try {
         frame = JSON.parse(e.data);
       } catch {
+        return;
+      }
+      if (frame.type === 'signal') {
+        for (const fn of listeners.current) fn(frame.from, frame.kind, frame.data);
         return;
       }
       setState(prev => {
@@ -302,6 +349,45 @@ export function useScreening(onError?: (msg: string) => void) {
   /** The text the room announced. Throws, so the caller can leave it alone. */
   const fetchSubtitle = useCallback(() => capi<SubtitleFile>('/screening/subtitle'), []);
 
+  /* ── a tela ao vivo ──────────────────────────────────────────────────────
+     Assumir a transmissão é um pedido que pode ser recusado: a vaga é de uma
+     pessoa só, e quem chega depois precisa saber disso com o nome de quem está
+     nela. Devolve se conseguiu, e o erro já foi dito. */
+  const startLive = useCallback(async () => {
+    try {
+      await cpost('/screening/live', { on: true });
+      return true;
+    } catch (e) {
+      onError?.((e as Error).message);
+      return false;
+    }
+  }, [onError]);
+
+  /* Largar não falha de um jeito que interesse a alguém: ou já não era sua, ou
+     a sala vai contar pelo stream que não é mais. */
+  const stopLive = useCallback(async () => {
+    try {
+      await cpost('/screening/live', { on: false });
+    } catch {
+      /* o stream corrige */
+    }
+  }, []);
+
+  /* Um recado do aperto de mão. Silencioso de propósito: um candidato de rede
+     perdido é normal — o navegador manda vários caminhos e basta um funcionar
+     —, e um toast por candidato seria a tela piscando durante a conexão. */
+  const sendSignal = useCallback(async (to: string, kind: SignalKind, data?: unknown) => {
+    try {
+      await cpost('/screening/signal', { to, kind, data: data ?? null });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  /** Onde os navegadores se procuram. Estoura, e quem chama decide o que fazer. */
+  const fetchIce = useCallback(() => capi<IceConfig>('/screening/ice'), []);
+
   /* Reporting readiness is chatter, not an action: it fires on every stall and
      every recovery, and a failed one is corrected by the next. Errors are
      swallowed on purpose — surfacing them would put a toast on screen for
@@ -331,6 +417,11 @@ export function useScreening(onError?: (msg: string) => void) {
       publishLink,
       publishSubtitle,
       fetchSubtitle,
+      startLive,
+      stopLive,
+      sendSignal,
+      fetchIce,
+      onSignal,
     }),
     [
       state,
@@ -345,6 +436,11 @@ export function useScreening(onError?: (msg: string) => void) {
       publishLink,
       publishSubtitle,
       fetchSubtitle,
+      startLive,
+      stopLive,
+      sendSignal,
+      fetchIce,
+      onSignal,
     ]
   );
 }
