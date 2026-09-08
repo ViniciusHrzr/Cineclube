@@ -10,22 +10,19 @@ import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
 import { cn, named, norm, plural } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The screening room, as a screen.
-
-   Three things share this page and they are deliberately kept apart:
+   The screening room, as a screen. Three things share this page and are
+   deliberately kept apart:
 
    - `useScreening` is the room — who is here, what is playing, where the film
-     is. It is the club's shared state and the server owns it.
-   - `useTorrent` is a receiver. It plays a link somebody hands it and knows
-     nothing about the room; the room, in turn, never learns what it is.
-   - This file is the seam. It chooses a source, hands the resulting stream to
-     one `<video>`, and lets the room drive that element.
+     is. The server owns it.
+   - `useTorrent` is a receiver: it plays a link and knows nothing about the
+     room; the room never learns what it is.
+   - This file is the seam: it chooses a source, hands the stream to one
+     `<video>`, and lets the room drive that element.
 
-   The consequence worth stating: the sync engine works with any source. There
-   are two — the film itself, dropped here and handed to the club, and a direct
-   URL for the occasions when the club already has one — and the torrent path is
-   the only one with failure modes of its own, which is why most of the words on
-   this page belong to it.
+   The consequence worth stating: the sync engine works with any source, and the
+   torrent path is the only one with failure modes of its own — which is why
+   most of the words on this page belong to it.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** What this member is playing. Everyone chooses their own; the room only syncs. */
@@ -39,17 +36,13 @@ type Source =
      A member arriving into that session gets a picture instead of a dead end. */
   | { kind: 'url'; url: string };
 
-/* ── how big the words are ────────────────────────────────────────────────
-   Kept in this browser and remembered between films, because it is not a fact
-   about the subtitle — it is a fact about the screen it is being read on, and
-   somebody watching on a laptop two feet away wants a different answer from
-   somebody with a television across the room. Same reason the offset is
-   per-person, one step further out: the offset belongs to the copy, this
-   belongs to the seat.
+/* Kept in this browser and remembered between films, because it is not a fact
+   about the subtitle — it is a fact about the screen it is read on. Same reason
+   the offset is per-person, one step further out: the offset belongs to the
+   copy, this belongs to the seat.
 
-   A percentage of whatever the browser was already going to use. The UA sizes
-   cues from the size of the video, so 100 is "leave it alone" and the range is
-   somebody saying it is wrong for them. */
+   A percentage of whatever the browser was already going to use: the UA sizes
+   cues from the size of the video, so 100 is "leave it alone". */
 const SUB_SIZE = 'cineclube.legenda-tamanho';
 const SUB_SIZE_MIN = 40;
 const SUB_SIZE_MAX = 200;
@@ -61,29 +54,24 @@ const SUB_SIZE_STEP = 10;
    which will never choose anything — does not hold up the evening. */
 const START_GRACE_MS = 20_000;
 
-/* ── the width of the room ────────────────────────────────────────────────
-   Narrower than the page, and the picture is the reason. The rest of the
-   product is a shelf of posters and wants the full 1240; a film does not. At
-   the column's full width the video is edge to edge with nothing around it —
-   no dark to sit the frame against — and every control underneath is stranded
-   at the far ends of a line the eye has to travel to read as one row.
+/* Narrower than the page, and the picture is the reason: at the column's full
+   width the video is edge to edge with no dark to sit the frame against, and
+   every control underneath is stranded at the far ends of a line the eye has to
+   travel to read as one row.
 
-   So the whole screen moves in together, not just the video: a player at 900
-   with a status bar at 1240 under it is not a smaller player, it is a player
-   that lost an argument with the layout. */
+   The whole screen moves in together, not just the video: a player at 900 with
+   a status bar at 1240 under it is not a smaller player, it is a player that
+   lost an argument with the layout. */
 const ROOM = 'mx-auto w-full max-w-[900px]';
 
 /* ── subtitles ────────────────────────────────────────────────────────────
    A `<track>` only speaks WebVTT, and what people have on disk is almost always
-   SubRip. The two are close enough that converting is a header and a punctuation
-   change — which is worth doing here rather than asking somebody to go find a
-   converter in the middle of a film.
+   SubRip — close enough that converting is a header and a punctuation change.
 
-   The offset is not a nicety either: a subtitle file found separately from the
-   video is routinely a second or two out, and without a way to shift it the
-   file is simply wrong. It is applied by rewriting the timestamps rather than
-   by moving live cues, because a rebuilt file is a state the player can be
-   handed cleanly, and a mutated cue list is one it half-notices. */
+   O deslocamento não é luxo: um arquivo de legenda achado separado do vídeo
+   costuma estar um ou dois segundos fora. Aplicado reescrevendo os carimbos e
+   não movendo as cues ao vivo, porque um arquivo refeito é um estado que o
+   player recebe limpo, e uma lista de cues mutada é um que ele meio percebe. */
 
 /** SubRip is UTF-8 as often as it is Windows-1252, and neither says which. */
 async function readSubtitle(file: File) {
@@ -282,16 +270,14 @@ export function ScreeningScreen() {
     return () => el.textTracks.removeEventListener('addtrack', apply);
   }, [subsOn, subtitle]);
 
-  /* ── the subtitle, which does travel ─────────────────────────────────────
-     The film cannot be handed over — it is gigabytes and it lives on one disk
-     — but the subtitles are a hundred kilobytes of text, and four people each
-     hunting down the same .srt is the same errand the room exists to abolish.
-     So this one goes to the club, and everybody's player picks it up.
+  /* O filme não pode ser entregue — são gigabytes num disco só —, mas a legenda
+     são cem kilobytes de texto, e quatro pessoas caçando o mesmo .srt é a
+     mesma tarefa que a sala existe para abolir.
 
-     Converted to WebVTT here rather than in each browser that receives it: the
-     conversion belongs where the file was opened, and the room then stores one
-     format instead of two. At offset zero, always — the shift is the one part
-     that stays personal, because it is a fact about your copy of the film. */
+     Convertida para WebVTT aqui e não em cada navegador que recebe: a conversão
+     pertence a onde o arquivo foi aberto, e a sala guarda um formato em vez de
+     dois. Sempre em deslocamento zero — o ajuste é a parte que continua
+     pessoal, porque é fato sobre a SUA cópia do filme. */
   const { publishSubtitle, fetchSubtitle } = screening;
 
   const importSubtitle = useCallback(
@@ -390,27 +376,20 @@ export function ScreeningScreen() {
   }, [seedMagnet, share]);
 
   /* ── the film starting by itself ─────────────────────────────────────────
-     Somebody drops the file and the evening should begin. Asking the person
-     who just handed the club the film to then go and find the play button is
-     a step that exists only because the code needed it to; nobody watching
-     ever wanted it.
+     Somebody drops the file and the evening should begin. Three conditions, and
+     each one is a way this could be wrong:
 
-     Three conditions, and each one is a way this could be wrong:
-
-     - Only the member who *published* the source presses it. Everybody else
-       follows the room, which is the whole design — four browsers each
+     - Only the member who *published* the source presses it: four browsers each
        sending the same play is four commands for one press, and whichever
        arrives last decides where the film starts.
-     - Only at the top of a film that nobody has started. A room already
-       running, or paused somewhere in the second act, is somewhere a person
-       put it, and restarting that is the app overruling them.
-     - Only once the club has loaded the same source — or once the grace has
-       run out, because a tab open on a second monitor will never load
-       anything and must not be able to hold up the film.
+     - Only at the top of a film nobody has started. A room paused in the second
+       act is somewhere a person put it, and restarting that overrules them.
+     - Only once the club has loaded the same source, or once the grace has run
+       out — a tab open on a second monitor will never load anything and must
+       not hold up the film.
 
-     `duration` is the honest signal that this browser has a film rather than
-     a promise of one: it is read off the element, so it exists only after the
-     player has actually opened what it was given. */
+     `duration` is the honest signal that this browser has a film rather than a
+     promise of one: it exists only after the player opened what it was given. */
   const { send } = screening;
 
   const feeding =
@@ -480,13 +459,12 @@ export function ScreeningScreen() {
   /* ── the drop that must never navigate ───────────────────────────────────
      A page that does not cancel `drop` hands the file to the browser, and the
      browser opens it — replacing the document. The app does not crash, it is
-     *gone*: no React tree left to catch anything, no error to print, nothing
-     but the reload.
+     *gone*: no React tree left to catch anything, nothing but the reload.
 
-     Cancelling on the drop area alone was not enough, because a drop that
-     lands a few pixels outside it is not a drop on the area — it is a drop on
-     the page, and the page had no opinion. Releasing near a target is what
-     dragging *is*, so the whole window says no, and the target says yes. */
+     Cancelling on the drop area alone was not enough: a drop a few pixels
+     outside it is a drop on the page, and the page had no opinion. Releasing
+     near a target is what dragging *is*, so the whole window says no and the
+     target says yes. */
   useEffect(() => {
     const swallow = (e: DragEvent) => e.preventDefault();
     window.addEventListener('dragover', swallow);
@@ -734,23 +712,18 @@ function Head({ connected, viewers }: { connected: boolean; viewers: number }) {
 }
 
 /* ── choosing the film ────────────────────────────────────────────────────
-   A fila é a porta principal e continua sendo: a sessão de uma noite quase
-   sempre é uma coisa que o clube combinou antes e marcou em Quero ver.
+   A fila é a porta principal e continua sendo, mas não pode ser a única: o
+   clube decide na hora com muito mais frequência do que este picker admitia.
+   O caminho era sair da sessão, achar o filme no catálogo, pôr na fila só para
+   poder tirar depois, e voltar — e uma fila é uma intenção guardada, não uma
+   permissão.
 
-   Mas ela não pode ser a única. O clube assiste junto pelo Discord e decide na
-   hora com muito mais frequência do que este picker admitia — alguém lembra de
-   um filme no meio da conversa, e ele não está na fila. O caminho era sair da
-   sessão, achar o filme no catálogo, pôr na fila só para poder tirar depois, e
-   voltar. Uma fila é uma intenção guardada, não uma permissão.
-
-   Então o campo procura nos dois lugares ao mesmo tempo: filtra a fila, que é
-   local e instantânea, e pergunta ao TMDB, que é o resto do cinema. As duas
-   respostas ficam separadas e nessa ordem, porque um filme que o clube já
-   escolheu vale mais do que um que ele acabou de encontrar.
+   Então o campo procura nos dois lugares ao mesmo tempo, e as duas respostas
+   ficam separadas e nessa ordem: um filme que o clube já escolheu vale mais do
+   que um que ele acabou de encontrar.
 
    Nada disto precisou de servidor: `/api/catalog/search` grava o que devolve em
-   `movies_cache`, e é de lá que `/api/screening/open` lê o filme. Procurar já
-   era, sem ninguém ter projetado assim, o que tornava um filme abrível. */
+   `movies_cache`, e é de lá que `/api/screening/open` lê o filme. */
 function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id: number) => void }) {
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<Movie[] | null>(null);
@@ -908,26 +881,18 @@ function PosterGrid({
 }
 
 /* ── going to rate, and what it costs the seeder ──────────────────────────
-   An evening ends the same way every time: the credits roll and everybody goes
-   to write down what they thought. Until now that meant leaving the session,
-   finding the film in the catalogue and opening it again — three steps to get
-   to the one screen the whole product is for.
+   Toda noite acaba igual: sobem os créditos e todo mundo vai escrever o que
+   achou. Só que sair não é de graça para todo mundo — esta tela é dona da
+   engine de torrent, e trocar de rota a desmonta. Para quem recebe isso custa o
+   próprio stream; para quem semeia é o filme acabando para a sala inteira.
 
-   The complication is that leaving is not free for everybody. This screen owns
-   the torrent engine, and `rateMovie` changes the route, which unmounts the
-   screen, which destroys the engine. For somebody receiving that costs them
-   their own stream and nobody else's. For the person seeding it is the film
-   ending for the entire room — the same fact the sentence under the player
-   already states about closing the tab.
+   Então a chave pergunta antes, e só quando a resposta pode custar algo à sala:
+   semeando, com alguém ainda conectado. Em todo outro caminho ela simplesmente
+   vai — uma confirmação que aparece quando não há o que confirmar é como as
+   pessoas aprendem a clicar através da que importava.
 
-   So the key asks first, and only when the answer could actually cost the room
-   something: seeding, with somebody still connected. On every other path — a
-   receiver, a seeder alone, anyone who watched from a file — it simply goes.
-   A confirmation that appears when there is nothing to confirm is how people
-   learn to click through the one that mattered.
-
-   Armed rather than modal, because a dialog over a film that four people are
-   still watching is a worse interruption than the thing it is warning about. */
+   Armada e não modal: um diálogo por cima de um filme que quatro pessoas ainda
+   estão vendo é uma interrupção pior do que a coisa contra a qual ele avisa. */
 function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () => void }) {
   const [armed, setArmed] = useState(false);
 
@@ -962,28 +927,26 @@ function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () =
 }
 
 /* ── choosing the source ──────────────────────────────────────────────────
-   One way in: the film itself, dropped or chosen. Everything else this panel
-   ever offered was a link, and a link is the thing this product exists not to
-   need — somebody hunting one down, pasting it into the chat, and four people
-   finding out together that it does not play.
+   Uma porta: o filme, arrastado ou escolhido. Tudo o mais que este painel já
+   ofereceu era um link, e link é justamente o que este produto existe para não
+   precisar — alguém caçando um, colando no chat, e quatro pessoas descobrindo
+   juntas que ele não toca.
 
-   The field for a direct video URL is gone with the rest. It was the last of
-   them and it was the worst: it worked in principle, it worked almost never in
-   practice — a public mp4 the whole club can reach is not a thing anybody has —
-   and it sat under the drop box implying that the honest path was optional. A
-   magnet or a .torrent released here is still understood, because that costs a
-   line in `take` and rescues somebody who has one; it is simply never offered. */
+   O campo de URL direta era o último e o pior: funcionava em princípio, quase
+   nunca na prática, e ficava embaixo da caixa de arrastar sugerindo que o
+   caminho honesto era opcional. Um magnet solto aqui continua sendo entendido,
+   porque isso custa uma linha em `take` e resgata quem tem um — só não é
+   oferecido. */
 /* ══════════════════════════════════════════════════════════════════════════
    A SALA, QUANDO ELA É A TELA DE ALGUÉM.
 
-   Substitui o player e a cabine de uma vez, porque quase nada do que há ali
-   quer dizer alguma coisa aqui. A legenda não: o que chega é uma imagem
-   pronta, com as letras já dentro dela se o player de quem transmite as
-   estiver desenhando. A troca de fonte não: a fonte é uma pessoa. O aviso de
-   cópias diferentes não: é impossível haver duas.
+   Substitui o player e a cabine de uma vez, porque quase nada dali quer dizer
+   alguma coisa aqui: a legenda não (o que chega é imagem pronta), a troca de
+   fonte não (a fonte é uma pessoa), o aviso de cópias diferentes não (é
+   impossível haver duas).
 
-   O que sobra é o que a sala precisa saber — de quem é a tela, se a imagem
-   está chegando, e como sair.
+   O que sobra é o que a sala precisa saber: de quem é a tela, se a imagem está
+   chegando, e como sair.
    ══════════════════════════════════════════════════════════════════════════ */
 function LiveScreen({
   live,
@@ -1274,16 +1237,13 @@ function SourceLine({
   );
 }
 
-/* ── a knob with a reading on it ──────────────────────────────────────────
-   Four pieces of one control, in one shell, divided by hairlines: what it
-   adjusts, less, where it stands, more.
+/* Quatro peças de um controle, numa casca só, divididas por fios: o que ele
+   ajusta, menos, onde está, mais.
 
-   They were four loose things in a row before — a caption in one face, two
-   outlined buttons in another, a number floating between them with nothing
-   around it — and every group on the line was assembled differently from the
-   last, so the eye had to work out which caption owned which buttons. The
-   symbols are the same on both knobs for the same reason: `A−`/`A+` next to
-   `−0,5s`/`+0,5s` reads as two different kinds of control, and they are not. */
+   Eram quatro coisas soltas numa fileira, cada grupo montado diferente do
+   anterior, e o olho tinha de descobrir qual legenda mandava em quais botões.
+   Os símbolos são os mesmos nos dois botões pela mesma razão: `A−`/`A+` ao lado
+   de `−0,5s`/`+0,5s` lê como dois tipos de controle, e não são. */
 function Stepper({
   label,
   value,
@@ -1323,16 +1283,12 @@ function Stepper({
   );
 }
 
-/* ── subtitles ────────────────────────────────────────────────────────────
-   The file is the club's — one person finds it and everybody's player loads
-   it. The two adjustments are not, and the split is deliberate:
+/* O arquivo é do clube — uma pessoa acha e o player de todo mundo carrega. Os
+   dois ajustes não são, e a divisão é deliberada:
 
-   - the offset belongs to your *copy of the film*. Two members watching
-     different rips need different shifts, and one person's correction pushed
-     onto everybody would break the three it was not measured against;
-   - the size belongs to your *screen*, which the room knows nothing about.
-
-   So one file, and two knobs that never leave the browser they are turned in. */
+   - o deslocamento pertence à sua CÓPIA do filme: dois membros com rips
+     diferentes precisam de ajustes diferentes;
+   - o tamanho pertence à sua TELA, que a sala não conhece. */
 function SubtitleBar({
   subtitle,
   on,
@@ -1444,4 +1400,3 @@ function SubtitleBar({
     </div>
   );
 }
-

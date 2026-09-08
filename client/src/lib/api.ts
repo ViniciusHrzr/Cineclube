@@ -122,15 +122,10 @@ export const auth = {
   logout: () => post<null>('/api/auth/logout', {}),
   setPassword: (password: string, current?: string) =>
     post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
-  /* ── os links que chegam por e-mail ─────────────────────────────────────
-     Confirmar um endereço e voltar para dentro sem a senha são a mesma coisa
-     com dois fins: um segredo de vida curta que só chega a quem lê aquela caixa
-     de entrada.
-
-     O link do e-mail aponta para a TELA (`#confirmar/<token>`), e é ela que
-     chama isto. Nunca para uma rota direta — servidores de e-mail e antivírus
-     abrem os links das mensagens antes de a pessoa ver, e um token que se gasta
-     ao ser aberto é um token que o scanner queima no caminho. */
+  /* O link do e-mail aponta para a TELA (`#confirmar/<token>`), e é ela que
+     chama isto. Nunca uma rota direta: servidores de e-mail e antivírus abrem
+     os links das mensagens antes de a pessoa ver, e um token que se gasta ao ser
+     aberto é um token que o scanner queima no caminho. */
   sendVerification: () => post<{ ok: true; sent?: boolean; already?: boolean }>('/api/auth/verify/send', {}),
   verifyEmail: (token: string) => post<{ ok: true; name: string }>('/api/auth/verify', { token }),
   /* Responde igual exista a conta ou não: uma resposta diferente transformaria
@@ -189,12 +184,9 @@ export const clubs = {
 
 /* ── o saguão ─────────────────────────────────────────────────────────────
    O que a rede está fazendo, acima da linha do clube. Tudo aqui é o que cada
-   sala emprestou de propósito: um clube fechado que não ligou nada não aparece
-   em campo nenhum destes. Ver lobby.js, que é onde a parede é desenhada.
-
-   Uma chamada só para seis coisas, porque são seis agregações na porta de
-   entrada — e uma porta que faz seis viagens é uma porta que pensa antes de
-   abrir. */
+   sala emprestou de propósito — ver lobby.js, onde a parede é desenhada. Uma
+   chamada só para seis agregações: uma porta que faz seis viagens é uma porta
+   que pensa antes de abrir. */
 export type LobbyMovie = {
   id: number;
   title: string;
@@ -264,10 +256,8 @@ export type LobbySnapshot = {
   windowDays: number;
 };
 
-/* ── uma ficha na folha de um filme ───────────────────────────────────────
-   Ordenadas por `credibility`: quantas fichas aquela pessoa já escreveu nas
-   salas que emprestam. Quem enfrentou os onze critérios cem vezes carrega uma
-   régua que quem os enfrentou uma vez não carrega — e é a única coisa aqui que
+/* Ordenadas por `credibility`: quantas fichas aquela pessoa já escreveu nas
+   salas que emprestam — quantidade de calibragem, que é a única coisa aqui que
    um banco sabe medir. Não pondera nota nenhuma: decide só quem aparece
    primeiro numa lista de cinco, que é edição e não aritmética. */
 export type LobbyTake = {
@@ -289,12 +279,10 @@ export type LobbyFilm = {
   clubs: number;
 };
 
-/* ── o universo, que é uma lente e não um lugar ───────────────────────────
-   Um clube é um clube: mesmo nome, mesma gente, mesmo ADM. O universo decide o
-   que se olha DENTRO dele — o acervo de filmes ou o de séries —, e por isso
-   mora no endereço e não na sessão. A regra é a mesma que já vale para o clube:
-   um link colado no Discord não pode significar coisas diferentes conforme o
-   que o leitor escolheu antes de abri-lo. */
+/* Um clube é um clube: mesmo nome, mesma gente, mesmo ADM. O universo decide o
+   que se olha DENTRO dele, e por isso mora no endereço e não na sessão — um
+   link colado no Discord não pode significar coisas diferentes conforme o que o
+   leitor escolheu antes de abri-lo. */
 export type Universe = 'filmes' | 'series';
 
 /* A lente de séries devolve a MESMA forma, com outro acervo dentro. É o que
@@ -350,11 +338,10 @@ export type SeriesItem = {
   genres: string[];
   poster: string | null;
   crowd: { score: number; votes: number } | null;
-  /* Onde ela está passando. Os três estados de sempre: ausente é "ninguém
-     perguntou" (a série veio do cache), `null` é "perguntamos e não passa em
-     lugar nenhum aqui", e a lista é a resposta. Ver `fillProviders` em
-     routes/series.js — e vale mais aqui do que num filme: uma série ou está
-     incluída numa assinatura que alguém já paga, ou o clube não maratona. */
+  /* Os três estados: ausente é "ninguém perguntou" (a série veio do cache),
+     `null` é "perguntamos e não passa em lugar nenhum aqui", e a lista é a
+     resposta. Vale mais aqui do que num filme — uma série ou está incluída numa
+     assinatura que alguém já paga, ou o clube não maratona. */
   watch?: {
     link: string | null;
     streaming: Provider[];
@@ -588,13 +575,11 @@ export const profile = {
     }),
 };
 
-/* ── os três grupos de uma ficha ──────────────────────────────────────────
-   `oficio` são os oito sobre como o filme é feito, `genero` são os dois que o
-   filme escolhe, `pessoal` é o único que pergunta sobre você.
+/* `oficio` são os oito sobre como o filme é feito, `genero` os dois que o filme
+   escolhe, `pessoal` o único que pergunta sobre você.
 
-   Vem do servidor em vez de ser deduzido da chave ou do peso. O peso era o que
-   agrupava antes — ×1 era ofício, ×2 era gênero — e no dia em que os pesos
-   ficaram iguais esse atalho passou a não dizer nada. */
+   Vem do servidor em vez de deduzido da chave ou do peso: o peso era o que
+   agrupava antes, e com os pesos iguais esse atalho não diz nada. */
 export type CriterionGroup = 'oficio' | 'genero' | 'pessoal';
 
 export type Criterion = { key: string; name: string; hint: string; w: number; group: CriterionGroup };
@@ -681,15 +666,14 @@ export type Notice = {
   value?: number;
 };
 
-/* ── o feed ───────────────────────────────────────────────────────────────
-   O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
-   tabelas de sempre — ver routes/feed.js —, então uma linha nunca sobrevive ao
-   acontecimento que ela anuncia.
+/* O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
+   tabelas de sempre, então uma linha nunca sobrevive ao acontecimento que ela
+   anuncia.
 
-   Um tipo só para os quatro acontecimentos, com os campos que só alguns deles
-   têm marcados como opcionais. A alternativa é uma união discriminada, que aqui
-   custaria quatro interfaces e um `switch` de tipo em cada leitura para
-   descrever quatro formas que compartilham nove campos dos onze. */
+   Um tipo só para os quatro acontecimentos, com os campos que só alguns têm
+   marcados como opcionais: a união discriminada custaria quatro interfaces e um
+   `switch` de tipo em cada leitura para descrever quatro formas que
+   compartilham nove campos dos onze. */
 export type FeedEvent = {
   id: string;
   kind: 'review' | 'comment' | 'vote' | 'queued';
@@ -722,14 +706,12 @@ export type FeedEvent = {
 /* O sino é de uma sala: a pessoa em três clubes tem três sinos, e cada um conta
    o que aconteceu na sua. Ver routes/notifications.js. */
 /* ── o sino, e ele é da REDE ──────────────────────────────────────────────
-   Uma lista só, de todas as salas de que a pessoa é. Antes havia um sino por
-   clube e ele só existia dentro dele: quem estava em três salas precisava entrar
-   em cada uma para saber se alguém tinha respondido alguma coisa, e o saguão —
-   a primeira tela depois de entrar, onde "o que aconteceu enquanto eu não
-   estava?" é a única pergunta — não tinha nenhum.
+   Uma lista só, de todas as salas de que a pessoa é. Antes havia um por clube:
+   quem estava em três salas precisava entrar em cada uma para saber se alguém
+   tinha respondido, e o saguão — onde "o que aconteceu enquanto eu não estava?"
+   é a única pergunta — não tinha nenhum.
 
-   Fora do escopo de clube (`api` e não `capi`), por isso mesmo. A rota por sala
-   continua existindo no servidor; nenhuma tela usa. */
+   Fora do escopo de clube (`api` e não `capi`), por isso mesmo. */
 export const notifications = {
   all: () =>
     api<{
@@ -808,10 +790,9 @@ export type Movie = {
   id: number;
   title: string;
   /* O nome com que o filme circula lá fora, para quem vai atrás de uma cópia:
-     "Entre Facas e Segredos" não acha nada, "Knives Out" acha. Null when it is
-     the same string as `title`, which is most films — the line is only drawn
-     when it has something to add. Not always English: it is TMDB's original
-     title, so a Korean film comes back in Korean. */
+     "Entre Facas e Segredos" não acha nada, "Knives Out" acha. Null quando é a
+     mesma string do título. Nem sempre inglês: é o `original_title` do TMDB,
+     então um filme coreano volta em coreano. */
   original?: string | null;
   /* O nome em inglês, quando ele não é nenhum dos dois acima — Parasita é
      `Parasita`, `기생충` e `Parasite`, e só o terceiro acha uma cópia. Existe
@@ -829,22 +810,20 @@ export type Movie = {
   runtime?: number | null;
   overview?: string | null;
   cast?: { name: string }[];
-  /* Who signs each criterion, keyed by criterion key — `fotografia`, `som`,
-     `montagem`. Built by the server from credits it was already parsing. A key
-     is absent when nobody is credited for it, which happens honestly: an
-     animation rarely credits a director of photography, and nobody at all
-     signs `originalidade`. */
+  /* Who signs each criterion, keyed by criterion key. A key is absent when
+     nobody is credited for it, which happens honestly: an animation rarely
+     credits a director of photography, and nobody at all signs
+     `originalidade`. */
   crew?: Record<string, string[]>;
   /* TMDB's own average, on the same 0–10 as the club's, with the number of
      people behind it. Null when nobody has voted — TMDB reports that as an
      average of zero, which is not the same thing as a bad film. */
   crowd?: { score: number; votes: number } | null;
   trailerUrl?: string | null;
-  /* Where the film can be watched in Brazil, from TMDB's JustWatch data. Null
-     when nothing carries it here, which for an old or obscure film is the
-     common case — and absent entirely on a cached film, because the cache does
-     not store it: a catalogue moves and a stale answer to "está na Netflix?"
-     is worse than no answer. */
+  /* Where the film can be watched in Brazil. Null when nothing carries it here,
+     which for an old or obscure film is the common case — and absent entirely on
+     a cached film, because a catalogue moves and a stale answer to "está na
+     Netflix?" is worse than no answer. */
   watch?: {
     /** TMDB's page for this film's providers. The link out, as they ask. */
     link: string | null;
@@ -877,22 +856,18 @@ export type WatchItem = {
 /* ══════════════════════════════════════════════════════════════════════════
    De qual clube fala esta chamada.
 
-   O servidor põe o clube na URL (`/api/c/<slug>/...`) e o porquê está em
-   clubs.js: link colado no Discord tem de significar a mesma coisa para quem
-   clicar, e `EventSource` não sabe mandar cabeçalho.
+   O servidor põe o clube na URL, e o porquê está em clubs.js. Do lado de cá
+   isso vira uma pergunta chata: quinze componentes chamam a API, e passar o
+   slug por props do App até o botão de curtir seria uma prop nova em cada um
+   deles para dizer o que a barra de endereço já diz.
 
-   Do lado de cá isso vira uma pergunta chata: quinze componentes chamam a API, e
-   passar o slug por props do App até o botão de curtir seria uma prop nova em
-   cada um deles para dizer uma coisa que a barra de endereço já diz.
+   Então mora num módulo, escrito por quem lê a rota — o App, antes de montar
+   qualquer tela. O que o torna seguro é a ordem: nenhuma busca acontece antes
+   de a rota ser resolvida, porque a tela que buscaria só existe depois de o
+   clube existir.
 
-   Então mora aqui, num módulo, e é escrito por quem lê a rota — o App, antes de
-   montar qualquer tela. Estado mutável de módulo é feio e é o mesmo desenho que
-   `live.ts` já usa pelo mesmo motivo. O que o torna seguro é a ordem: nenhuma
-   busca acontece antes de a rota ser resolvida, porque a tela que buscaria só
-   existe depois de o clube existir.
-
-   `capi` grita em vez de mandar uma URL torta quando esquecem de escrever: um
-   404 de `/api/c/undefined/reviews` seria um bug procurado no servidor.
+   `capi` grita em vez de mandar uma URL torta: um 404 de
+   `/api/c/undefined/reviews` seria um bug procurado no servidor.
    ══════════════════════════════════════════════════════════════════════════ */
 let currentClub: string | null = null;
 
@@ -905,9 +880,8 @@ export function clubPath(path: string) {
   return `/api/c/${encodeURIComponent(currentClub)}${path}`;
 }
 
-/* Há sala aberta? Existe para quem PODE rodar fora de uma — e desde que o sino
-   passou a ser da rede, isso deixou de ser hipotético: ele vive no saguão, onde
-   não há clube, e o cano ao vivo que ele escuta é por sala.
+/* Há sala aberta? Existe para quem PODE rodar fora de uma — o sino vive no
+   saguão, onde não há clube, e o cano ao vivo que ele escuta é por sala.
 
    Uma pergunta e não um `try` em volta de `clubPath`: o lançamento ali é para
    pegar uma chamada de clube feita cedo demais, que é um defeito. "Ainda não há
@@ -959,11 +933,10 @@ export const del = (path: string) => api<null>(path, { method: 'DELETE' });
    The server owns the formula (app/criteria.js). The client recomputes it only
    so the score answers the hand without a round trip; it never decides it. */
 
-/* A média do que a ficha responde, ponderada — o que hoje é a média simples,
-   porque todo peso é 1. O divisor é contado e não constante: uma avaliação
-   gravada antes de Aproveitamento existir tem dez marcas e não onze, e a
-   décima primeira não é um zero, é uma pergunta que ninguém fez. Mesma conta
-   do servidor, em criteria.js, que é quem decide. */
+/* A média do que a ficha responde, ponderada — hoje a média simples, porque
+   todo peso é 1. O divisor é CONTADO: uma avaliação anterior a Aproveitamento
+   tem dez marcas, e a décima primeira não é um zero, é uma pergunta que ninguém
+   fez. Mesma conta do servidor, em criteria.js, que é quem decide. */
 export function finalOf(criteria: Criterion[], scores: Record<string, number>) {
   const weight = totalWeight(criteria, scores);
   return weight ? weightedSum(criteria, scores) / weight : 0;
@@ -985,12 +958,10 @@ export function fmt(n: number) {
   return Number(n).toFixed(1).replace('.', ',');
 }
 
-/* ── how long it runs ─────────────────────────────────────────────────────
-   Written the way a listing writes it — 1h 52min, 2h for a round one, 48min
-   for a short — rather than the raw minute count TMDB reports, because "112"
-   is a number to convert and "1h 52min" is a length of evening. Null when the
-   film has no runtime on record, so every caller can decide with `? :` whether
-   the line has a duration in it at all. */
+/* Written the way a listing writes it — 1h 52min, 2h for a round one, 48min for
+   a short — because "112" is a number to convert and "1h 52min" is a length of
+   evening. Null when the film has no runtime on record, so every caller can
+   decide whether the line has a duration in it at all. */
 export function runtimeOf(minutes: number | null | undefined) {
   if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return null;
   const total = Math.round(minutes);
@@ -1017,15 +988,11 @@ export function initialsOf(name: string) {
    assigns once per person, never from roster position, so removing a member
    cannot recolour everyone else's history. */
 const LEGACY_DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#b2b6ca', '#d2cefd', '#9397ab'];
-/* As dez cores de carretel. A segunda era o ciano do sistema e virou verdete
-   quando o ciano saiu do produto inteiro — o slot é o mesmo, então quem já
-   usava continua sendo a segunda pessoa do clube, só que noutro tom.
-
-   Verdete e não latão, apesar de latão ser a cor de estado agora: identidade e
-   estado não podem ser a mesma tinta. Uma pessoa cuja etiqueta tem exatamente a
-   cor do anel de foco é uma pessoa que parece selecionada o tempo todo. Pelo
-   mesmo motivo o âmbar do índice 2 ficou vizinho do latão e é o próximo a se
-   mexer, se alguém achar que embaralha. */
+/* As dez cores de carretel. Verdete e não latão, apesar de latão ser a cor de
+   estado: identidade e estado não podem ser a mesma tinta — uma pessoa cuja
+   etiqueta tem exatamente a cor do anel de foco parece selecionada o tempo
+   todo. Pelo mesmo motivo o âmbar do índice 2 é o próximo a se mexer, se alguém
+   achar que embaralha. */
 const REEL = [
   '#e0362c', '#4fa98c', '#e8b44a', '#7bc47f', '#c77dd6',
   '#f08a5d', '#5b8dd9', '#d95f8a', '#8fce7c', '#c9bfae',

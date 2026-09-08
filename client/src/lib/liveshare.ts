@@ -2,72 +2,42 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Screening, SignalKind } from '@/lib/screening';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A TELA DE ALGUÉM, NA TELA DE TODO MUNDO.
+   A TELA DE ALGUÉM, NA TELA DE TODO MUNDO — o segundo modo da sessão, e o
+   avesso do primeiro. No modo arquivo cada pessoa tem a própria cópia e o que
+   viaja é um relógio; aqui existe UM vídeo, e sincronia deixa de ser um
+   problema e vira consequência.
 
-   O segundo modo da sessão, e o avesso do primeiro. No modo arquivo cada
-   pessoa tem a própria cópia do filme e o que viaja é um relógio: por isso
-   existem a posição derivada, a deriva, a tolerância, a almofada de buffer —
-   toda a máquina de fazer quatro vídeos independentes fingirem ser um.
+   O preço é a subida de quem transmite: numa malha ele manda uma cópia para
+   cada pessoa, e cinco espectadores a 2,5 Mbps são uns 12,5 Mbps saindo daquela
+   máquina. Por isso a malha só serve para uma sala do tamanho de um clube.
 
-   Aqui não há o que fingir. Existe UM vídeo, saindo da placa de vídeo de quem
-   transmite, e as outras pessoas recebem os mesmos quadros. Sincronia deixa de
-   ser um problema e vira uma consequência. Quem controla é quem está com a
-   tela — o play, o pause e o avanço são os do player DELE, e o clube vê isso
-   acontecer com menos de um segundo de atraso.
-
-   O preço é a subida de quem transmite. Numa malha, ele manda uma cópia do
-   vídeo para cada pessoa: cinco espectadores a 2,5 Mbps são uns 12,5 Mbps
-   saindo daquela máquina. É por isso que a malha só serve para uma sala do
-   tamanho de um clube.
-
-   ── quem fala primeiro ────────────────────────────────────────────────────
-   O espectador. Isso é o contrário do que parece natural — quem tem a imagem
-   deveria oferecê-la —, e é assim de propósito.
-
-   Se o transmissor oferecesse, ele teria de saber para QUEM: leria a lista de
-   pessoas na sala, notaria quem entrou, e teria de descobrir sozinho que a
-   conexão de alguém morreu para refazê-la. Cada um desses é um jeito de a sala
-   e a realidade discordarem.
-
-   Com o pedido vindo do outro lado, nada disso precisa existir. Quem quer
-   imagem e não tem pede. O transmissor não mantém lista de ninguém: responde a
-   quem pediu.
+   ── quem fala primeiro é o ESPECTADOR ─────────────────────────────────────
+   O contrário do que parece natural, e de propósito. Se o transmissor
+   oferecesse, ele teria de saber para QUEM: ler a lista da sala, notar quem
+   entrou, descobrir sozinho que a conexão de alguém morreu. Cada um desses é um
+   jeito de a sala e a realidade discordarem. Com o pedido vindo do outro lado,
+   o transmissor não mantém lista de ninguém — responde a quem pediu.
 
    ══════════════════════════════════════════════════════════════════════════
-   AS DUAS ARMADILHAS DESTE ARQUIVO
-
-   As duas produzem o MESMO sintoma, e é o pior sintoma possível: a conexão
-   fecha, o `<video>` recebe um stream, e o que toca é um retângulo preto e
-   mudo. Para sempre, sem erro em lugar nenhum. Foi assim que a primeira versão
-   deste arquivo saiu, e vale escrever por que.
+   AS DUAS ARMADILHAS, e as duas dão o MESMO sintoma: a conexão fecha, o
+   `<video>` recebe um stream, e o que toca é um retângulo preto e mudo. Para
+   sempre, sem erro em lugar nenhum.
 
    ── 1. o candidato que chega antes do dono ────────────────────────────────
-   Um navegador cospe candidatos de rede assim que termina a própria descrição,
-   e eles atravessam o servidor mais rápido do que o outro lado leva para
-   montar a conexão dele. Quem recebe um candidato de um par que ainda não
-   existe não tem onde guardá-lo.
-
-   A primeira versão jogava fora. E jogar fora não é neutro: os primeiros
-   candidatos são justamente os melhores — o endereço da rede local e o que o
-   STUN acabou de descobrir. Perdidos eles, sobra tentar caminhos piores, e às
-   vezes não sobra nenhum. Agora esperam em `early`, e são despejados no par no
-   instante em que ele nasce.
+   Candidatos de rede atravessam o servidor mais rápido do que o outro lado leva
+   para montar a conexão dele, e quem recebe um candidato de um par que ainda
+   não existe não tem onde guardá-lo. Jogar fora não é neutro: os primeiros são
+   justamente os melhores — o endereço da rede local e o que o STUN acabou de
+   descobrir. Agora esperam em `early`.
 
    ── 2. o pedido repetido que derruba a resposta ───────────────────────────
-   O espectador pede imagem e repete o pedido se nada chegar. O transmissor
-   respondia a cada pedido montando uma conexão NOVA — e fechando a anterior.
+   O espectador repete o pedido se nada chegar, e o transmissor respondia a cada
+   um montando conexão NOVA e fechando a anterior. Numa rede lenta a armadilha
+   fecha sozinha: a resposta do espectador chega para um objeto já fechado, e os
+   dois lados ficam achando que estão conectados.
 
-   Numa rede lenta isso é uma armadilha que fecha sozinha: o pedido é repetido
-   antes de a primeira oferta chegar, o transmissor derruba a conexão que
-   acabou de oferecer, e a resposta do espectador chega para um objeto que já
-   foi fechado. Os dois lados ficam achando que estão conectados a alguém. O
-   espectador até recebe um stream — de uma conexão morta —, e o resultado é a
-   tela preta e muda.
-
-   Agora um pedido repetido para uma conexão que ainda está tentando é
-   IGNORADO. Só se remonta o que morreu de verdade. E o espectador não repete
-   por não ter par: repete por não ter par CONECTADO, dentro de um prazo que dá
-   tempo de um aperto de mão inteiro acontecer.
+   Agora um pedido repetido para uma conexão que ainda está tentando é IGNORADO,
+   e o espectador repete por não ter par CONECTADO — não por não ter par.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** De quanto em quanto o espectador reavalia se precisa pedir de novo. */
@@ -84,17 +54,13 @@ const HANDSHAKE_MS = 12_000;
    uma captura de tela assume. */
 const HINT = 'motion';
 
-/* ── por que a imagem saía lavada ─────────────────────────────────────────
-   O WebRTC trata conteúdo de tela como apresentação de slides: o teto de banda
-   que ele assume sozinho para uma captura fica na casa de 2 Mbps, que é
-   generoso para um documento parado e é lama para um filme em movimento. O
-   codificador então faz a única coisa que pode com o que lhe deram — joga
-   resolução fora — e o resultado é exatamente o que se viu.
+/* O WebRTC trata conteúdo de tela como apresentação de slides: o teto que ele
+   assume sozinho fica na casa de 2 Mbps, generoso para um documento parado e
+   lama para um filme em movimento. O codificador então joga resolução fora.
 
-   Oito megabits é folgado para 1080p30 de conteúdo real, e é um TETO, não uma
-   meta: quando a rede não sustenta, o controle de congestionamento desce
-   sozinho e a sessão continua. O que o teto muda é que a decisão passa a ser
-   da rede, e não de um palpite feito antes de a rede existir. */
+   Oito megabits é um TETO e não uma meta: quando a rede não sustenta, o
+   controle de congestionamento desce sozinho. O que o teto muda é que a decisão
+   passa a ser da rede, e não de um palpite feito antes de a rede existir. */
 const VIDEO_BITRATE = 8_000_000;
 /* Opus com música. O padrão de uma chamada fica perto de 32 kbps porque o
    assunto é voz; 192 kbps em estéreo é o que faz trilha sonora soar como
@@ -188,29 +154,21 @@ async function tune(sender: RTCRtpSender) {
   }
 }
 
-/* ── o estéreo, que só existe se for pedido no SDP ────────────────────────
-   O Opus nasce mono numa chamada, porque o assunto de uma chamada é voz. Não
-   há API para mudar isso: a única forma é escrever no próprio SDP, na linha
-   que descreve o codec, antes de ele virar a descrição local.
-
-   Editar SDP é sempre suspeito e este é um dos poucos casos em que é a prática
-   corrente — não se inventa nada, só se preenche parâmetros que o padrão do
-   Opus define. Se a linha não estiver lá, nada é feito: um SDP meio editado é
-   pior do que um SDP intocado. */
-/* ── os primeiros trinta segundos, que saíam lavados ──────────────────────
-   O WebRTC não sabe quanta banda existe entre duas máquinas, então ele começa
-   baixo e sobe medindo. Isso é certo para uma chamada, em que os primeiros
-   segundos são alguém dizendo "oi", e é errado para um filme: a sessão começa
-   numa lama que vai clareando por meio minuto, bem no momento em que o clube
-   está olhando para a tela pela primeira vez.
+/* O Opus nasce mono numa chamada, porque o assunto de uma chamada é voz, e não
+   há API para mudar isso: a única forma é escrever no próprio SDP antes de ele
+   virar a descrição local. Editar SDP é sempre suspeito e este é um dos poucos
+   casos em que é a prática corrente — não se inventa nada, só se preenchem
+   parâmetros que o padrão do Opus define. Se a linha não estiver lá, nada é
+   feito: um SDP meio editado é pior do que um intocado. */
+/* O WebRTC não sabe quanta banda existe entre duas máquinas, então começa baixo
+   e sobe medindo. Certo para uma chamada, errado para um filme: a sessão começa
+   numa lama que vai clareando por meio minuto, bem quando o clube está olhando
+   para a tela pela primeira vez.
 
    `x-google-start-bitrate` é onde o Chrome deixa dizer por onde COMEÇAR. Três
-   megabits é imagem assistível no primeiro quadro, e continua sendo um chute
-   conservador perto do teto de oito — se a rede não aguentar, ela desce em
-   segundos, que é a direção barata do erro.
-
-   Como o estéreo, isto só existe escrito no SDP; não há API. E como ele, não
-   inventa nada — são parâmetros que o próprio Chrome define. */
+   megabits é imagem assistível no primeiro quadro e um chute conservador perto
+   do teto de oito — se a rede não aguentar, ela desce em segundos, que é a
+   direção barata do erro. Como o estéreo, só existe escrito no SDP. */
 const START_BITRATE_KBPS = 3000;
 
 function withStartBitrate(sdp: string) {
@@ -444,14 +402,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
              qualquer membro poderia empurrar vídeo para a tela de outro. */
           if (from !== hostId || host) return;
 
-          /* ── uma oferta pode ser a primeira ou a segunda ─────────────────
-             A segunda acontece quando quem transmite troca a fonte de áudio
-             numa conexão que não tinha faixa de som: não há o que substituir,
-             então uma faixa é acrescentada e isso exige negociar de novo.
-
-             Montar um par novo aqui derrubaria a imagem que já está na tela
-             para receber a mesma imagem de volta. Um par vivo e em repouso
-             recebe a oferta e responde; só o que morreu é remontado. */
+          /* Uma oferta pode ser a primeira ou a SEGUNDA — a segunda acontece
+             quando quem transmite troca a fonte de áudio numa conexão sem faixa
+             de som, o que exige negociar de novo. Montar um par novo aqui
+             derrubaria a imagem que já está na tela para receber a mesma imagem
+             de volta: um par vivo recebe a oferta e responde. */
           const vivo = peerMap.current.get(from);
           const reaproveita = vivo && !DEAD.has(vivo.pc.connectionState);
           if (reaproveita && vivo.pc.signalingState !== 'stable') {
@@ -531,13 +486,10 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
              caminho que leva som é o que aparece primeiro. */
           displaySurface: 'monitor',
         },
-        /* ── o áudio, e por que ele é pedido assim ─────────────────────────
-           Sem tratamento nenhum. As três primeiras são o processamento de VOZ
-           que um navegador liga por padrão — cancelar eco, suprimir ruído,
-           nivelar ganho —, e as três destroem música: o supressor de ruído come
-           a cauda de um acorde, e o ganho automático abaixa o volume toda vez
-           que a trilha cresce. Numa chamada elas são o produto; num filme são
-           um estrago. */
+        /* Sem tratamento nenhum. As três primeiras são o processamento de VOZ
+           que um navegador liga por padrão, e as três destroem música: o
+           supressor de ruído come a cauda de um acorde, e o ganho automático
+           abaixa o volume toda vez que a trilha cresce. */
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -546,18 +498,17 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           sampleRate: 48_000,
         },
         /* ── as dicas que só o Chrome entende ──────────────────────────────
-           Fora do tipo padrão porque não estão no `lib.dom` — e valem o
-           desconforto, porque decidem o que a pessoa vê no seletor de janelas.
+           Fora do tipo padrão porque não estão no `lib.dom`, e valem o
+           desconforto porque decidem o que a pessoa vê no seletor de janelas.
 
-           `systemAudio: include` e `displaySurface: monitor` empurram a escolha
-           para TELA INTEIRA, que é o único modo em que o Chrome oferece o som
-           do sistema. É o que faz um VLC, um player de TV ou qualquer programa
-           fora do navegador ser ouvido pelo clube — compartilhar uma JANELA não
-           carrega áudio nenhum, em nenhuma plataforma, e nunca vai carregar.
+           `systemAudio: include` e `displaySurface: monitor` empurram para TELA
+           INTEIRA, o único modo em que o Chrome oferece o som do sistema — é o
+           que faz um VLC ser ouvido pelo clube. Compartilhar uma JANELA não
+           carrega áudio nenhum, em plataforma nenhuma.
 
-           `selfBrowserSurface: exclude` tira esta própria aba da lista, que
-           escolhida gera o túnel de espelhos infinito. `surfaceSwitching`
-           deixa trocar de tela sem derrubar a transmissão. */
+           `selfBrowserSurface: exclude` tira esta aba da lista, que escolhida
+           gera o túnel de espelhos. `surfaceSwitching` deixa trocar de tela sem
+           derrubar a transmissão. */
         ...({
           systemAudio: 'include',
           monitorTypeSurfaces: 'include',
@@ -616,29 +567,22 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   }, [drop, stopLive]);
 
   /* ══════════════════════════════════════════════════════════════════════
-     DE ONDE SAI O SOM, E POR QUE ISTO PRECISA EXISTIR.
+     DE ONDE SAI O SOM.
 
-     O clube assiste junto e conversa no Discord ao mesmo tempo. Quando quem
-     transmite manda "o áudio do sistema", o sistema inclui o Discord: as vozes
-     de todo mundo voltam pela transmissão com quase um segundo de atraso, e
-     quem está nas duas coisas se ouve falando duas vezes.
+     O clube conversa no Discord enquanto assiste. Quando quem transmite manda
+     "o áudio do sistema", o sistema inclui o Discord: as vozes voltam pela
+     transmissão com quase um segundo de atraso, e quem está nas duas coisas se
+     ouve falando duas vezes.
 
-     Nenhuma configuração de navegador conserta isso. `getDisplayMedia` recebe
-     o mix já pronto do sistema operacional — não existe API, em navegador
-     nenhum, para tirar um aplicativo de dentro dele. O que existe é escolher
-     OUTRA fonte, e é isso que estas duas funções fazem.
+     Nenhuma configuração de navegador conserta isso — `getDisplayMedia` recebe
+     o mix já pronto do sistema operacional. O que existe é escolher OUTRA
+     fonte, e são dois caminhos limpos:
 
-     Dois caminhos limpos, e os dois passam por aqui:
-
-     · **Compartilhar a aba** em que o filme está tocando. O áudio de aba é só
-       daquela aba, e o Discord fica de fora por construção. É a resposta
-       quando o filme está no navegador, e não precisa de nada disto.
-
-     · **Uma entrada de áudio dedicada**, quando o filme está num VLC ou num
-       programa qualquer. Manda-se o som do player para um cabo virtual
-       (VB-Cable e afins), escolhe-se esse cabo aqui, e o que sai é só o filme.
-       O Discord continua tocando nas caixas de quem transmite e não entra na
-       transmissão, porque nunca passou por essa entrada.
+     · **Compartilhar a aba** em que o filme toca: o áudio de aba é só daquela
+       aba, e o Discord fica de fora por construção.
+     · **Uma entrada de áudio dedicada**, quando o filme está num VLC: manda-se
+       o som do player para um cabo virtual, escolhe-se esse cabo aqui, e o que
+       sai é só o filme.
      ══════════════════════════════════════════════════════════════════════ */
 
   const listAudio = useCallback(async () => {
@@ -650,12 +594,10 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
       const permissao = await navigator.mediaDevices.getUserMedia({ audio: true });
       for (const t of permissao.getTracks()) t.stop();
       const todos = await navigator.mediaDevices.enumerateDevices();
-      /* ── as duplicatas do Windows ────────────────────────────────────────
-         Ele publica cada entrada três vezes: a real, uma sob o apelido
-         `default` e outra sob `communications`, e as três chegam aqui com o
-         mesmo nome e um prefixo colado na frente ("Padrão - ", "Comunicações
-         - "). Numa lista de quatro linhas em que três dizem a mesma coisa,
-         escolher deixa de ser escolher. Fica só a real. */
+      /* O Windows publica cada entrada três vezes: a real, uma sob o apelido
+         `default` e outra sob `communications`, todas com o mesmo nome e um
+         prefixo colado na frente. Numa lista de quatro linhas em que três dizem
+         a mesma coisa, escolher deixa de ser escolher. */
       setAudioSources(
         todos.filter(
           d =>
@@ -713,14 +655,12 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
       setAudioSourceId(deviceId);
       setHasAudio(Boolean(faixa));
 
-      /* ── e agora, em voo ────────────────────────────────────────────────
-         `replaceTrack` troca o que está saindo sem renegociar nada: ninguém
-         perde a imagem, ninguém reconecta, o filme não pisca. É a razão de
-         esta troca ser um botão e não um "pare e comece de novo".
+      /* `replaceTrack` troca o que está saindo sem renegociar nada: ninguém
+         perde a imagem, o filme não pisca. É a razão de esta troca ser um botão
+         e não um "pare e comece de novo".
 
          Quem não tem faixa de áudio nenhuma — uma captura de janela que veio
-         muda — é o caso que exige negociar: não há o que substituir, então a
-         faixa é acrescentada e uma oferta nova é mandada. */
+         muda — é o caso que exige negociar. */
       for (const [withId, peer] of peerMap.current) {
         const sender = peer.pc.getSenders().find(s => s.track?.kind === 'audio');
         if (sender) {

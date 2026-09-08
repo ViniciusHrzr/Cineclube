@@ -2,32 +2,26 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { localChunkStore } from '@/lib/chunkStore';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The receiver.
-
-   This module is a BitTorrent client that happens to run in a tab. It receives
-   a link somebody hands it and plays what comes back; it has no index, no
-   search, and no idea which film the room has open. The screening engine does
+   The receiver: a BitTorrent client that happens to run in a tab. It receives a
+   link somebody hands it and plays what comes back. The screening engine does
    not import it and does not know it exists — the room synchronises a `<video>`
    element, whatever is feeding it.
 
    ── the one fact that shapes everything ───────────────────────────────────
    A browser tab cannot open a TCP socket, and the ordinary BitTorrent swarm is
-   TCP/uTP. What a tab can reach is WebRTC peers and HTTP web seeds, and nothing
-   else. So a magnet from a public tracker usually resolves *zero* peers here —
-   not because anything is broken, but because the swarm it names is unreachable
-   from a web page. That is why this file treats "no peers after a while" as a
-   named, explained state rather than an error, and why seeding from a browser
-   is a first-class mode: one member with the file on disk is what makes the
-   link work for everybody else.
+   TCP/uTP. What a tab reaches is WebRTC peers and HTTP web seeds, and nothing
+   else — so a magnet from a public tracker usually resolves *zero* peers here,
+   not because anything is broken but because that swarm is unreachable from a
+   web page. That is why "no peers after a while" is a named, explained state
+   rather than an error, and why seeding from a browser is a first-class mode.
 
    ── why a service worker ──────────────────────────────────────────────────
-   Streaming means the video element must be able to range-request a file that
-   exists only in another tab's memory. WebTorrent does that by registering a
-   service worker and answering fetches through it, so `file.streamTo(el)` is
-   really `el.src = <a URL the worker serves>`. That requires the worker to
-   control this page, which is why it is registered at the site root and not
-   beside the bundle: a worker's scope is its own directory, and one under
-   /assets could never control a page at /.
+   The video element must be able to range-request a file that exists only in
+   another tab's memory, so WebTorrent registers a service worker and answers
+   fetches through it: `file.streamTo(el)` is really `el.src = <a URL the worker
+   serves>`. That requires the worker to control this page, which is why it is
+   registered at the site root — a worker's scope is its own directory, and one
+   under /assets could never control a page at /.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** How long a magnet is allowed to find nobody before the screen says so. */
@@ -41,17 +35,14 @@ const POLL_MS = 1000;
    file name. The player answers it by trying, and says so if it fails. */
 const VIDEO = /\.(mp4|m4v|webm|ogv|mov|mkv|avi)$/i;
 
-/* ── how two browsers find each other ─────────────────────────────────────
-   They cannot. Not directly, not even on the same machine: a tab has no way to
-   discover another tab, and there is no local discovery in a browser. What
-   introduces them is a WebSocket tracker on the public internet, which both
-   sides announce to and which hands each the other's address.
+/* Dois navegadores não se acham sozinhos — nem na mesma máquina: não há
+   descoberta local num navegador. Quem os apresenta é um tracker WebSocket na
+   internet pública.
 
-   Which makes the tracker a single point of failure for the whole feature —
-   and these are volunteer-run and go down. So the list is explicit and plural
-   rather than left to whichever one the engine happens to default to: one
-   tracker being unreachable then costs a failed socket instead of the evening.
-   Announced by the seeder, they also travel inside the magnet it generates. */
+   O que faz do tracker um ponto único de falha para o recurso inteiro, e eles
+   são mantidos por voluntários e caem. Por isso a lista é explícita e plural:
+   um tracker fora do ar custa um socket falhado em vez da noite. Anunciados
+   pelo semeador, eles também viajam dentro do magnet que ele gera. */
 const TRACKERS = [
   'wss://tracker.openwebtorrent.com',
   'wss://tracker.webtorrent.dev',
@@ -104,25 +95,22 @@ const IDLE: TorrentStatus = {
 };
 
 /* ── asking not to be evicted mid-film ────────────────────────────────────
-   What a receiver downloads lives in the origin's storage, and by default that
-   storage is *best-effort*: the browser is free to throw it away when the disk
-   gets tight, without asking and without telling the page. Mid-film that is
-   the store disappearing under a running player.
+   O que um receptor baixa vive no armazenamento da origem, e por padrão esse
+   armazenamento é *best-effort*: o navegador pode jogá-lo fora quando o disco
+   apertar, sem avisar. No meio do filme isso é a estante sumindo debaixo de um
+   player rodando.
 
-   Marking it persistent is the one call that takes it out of that category,
-   and it is worth making precisely because it is so cheap — no bytes, no
-   ongoing cost, and the browser is allowed to simply say no.
+   Marcar como persistente tira isso daquela categoria, e vale por ser barato —
+   nenhum byte, nenhum custo contínuo, e o navegador pode simplesmente recusar.
 
-   Only on the receiving side. The seeder plays and serves from the file the
-   member chose, and keeps nothing in origin storage at all, so asking there
-   would be requesting a guarantee about data that does not exist.
+   Só do lado que recebe: o semeador toca e serve do arquivo que a pessoa
+   escolheu e não guarda nada na origem.
 
-   Every step is allowed to fail and none of them is allowed to matter: this is
-   an improvement to how well the download survives, not a condition for
-   starting one. `persisted()` first because a browser that has already granted
-   this should not be asked again — and where the request is a prompt rather
-   than a heuristic, that is the difference between asking once and asking at
-   the start of every screening. */
+   Todo passo pode falhar e nenhum pode importar: isto melhora a sobrevivência
+   do download, não é condição para começar um. `persisted()` primeiro porque um
+   navegador que já concedeu não deve ser perguntado de novo — onde o pedido é
+   um prompt, essa é a diferença entre perguntar uma vez e perguntar no começo
+   de toda sessão. */
 async function askToPersist() {
   try {
     if (!navigator.storage?.persist || !navigator.storage.persisted) return;
@@ -195,28 +183,20 @@ export function useTorrent() {
        This was the fifty-minute stutter, and only ever for the one person who
        had brought the film.
 
-       `file.streamURL` is a URL served by the service worker out of the
-       torrent's chunk store, and for somebody receiving that is the only way
-       there is. For the seeder it is a detour with the whole engine inside it:
-       every second of picture is read back out of the browser's origin-private
-       filesystem, through the piece cache, across the worker boundary, on the
-       same main thread that is hashing pieces and pushing bytes down a WebRTC
-       channel to everybody else in the room. It costs nothing at first because
-       there is nothing to compete with. An hour in there are peers who have
-       reconnected, a store that has been written end to end, and a cache that
-       is answering somebody else's request every time this player wants a
-       frame — so the seeder, the one machine that has the entire film sitting
-       on its own disk, is the one that starts to judder while the room it is
-       feeding runs clean.
+       `file.streamURL` is served by the service worker out of the torrent's
+       chunk store — the only way there is, for somebody receiving. For the
+       seeder it is a detour with the whole engine inside it: every second of
+       picture read back out of origin-private storage, through the piece cache,
+       across the worker boundary, on the same main thread that is hashing
+       pieces and pushing bytes to everybody else. It costs nothing at first. An
+       hour in, the one machine with the entire film on its own disk is the one
+       that judders while the room it feeds runs clean.
 
-       So it does not use the pipe it is filling. The `File` is right here; the
-       browser can read it directly, at disk speed, with no JavaScript on the
-       path at all. Seeding then costs the seeder's picture nothing, and cannot
-       — the two no longer touch.
-
-       It also means the film starts the moment the file is chosen instead of
-       after the engine has hashed it, which is the behaviour the room wanted
-       anyway. */
+       So it does not use the pipe it is filling: the `File` is right here, and
+       the browser reads it directly, at disk speed, with no JavaScript on the
+       path. Seeding then cannot cost the seeder's picture anything — the two no
+       longer touch. It also means the film starts the moment the file is chosen
+       instead of after the engine has hashed it. */
     if (localRef.current) {
       localURLRef.current ??= URL.createObjectURL(localRef.current);
       if (el.getAttribute('src') !== localURLRef.current) el.src = localURLRef.current;
@@ -236,14 +216,12 @@ export function useTorrent() {
       /* `streamTo` is `el.src = <url>`, and assigning `src` reloads the element
          even when the URL is identical — back to zero, and paused. This runs
          whenever either half arrives, so the same pairing can come round more
-         than once for reasons that have nothing to do with the film: a re-render
-         that re-attaches the ref, a second call from `hold`. Each repeat would
-         be a restart, so the pairing that is already made is left alone.
+         than once for reasons unrelated to the film. Each repeat would be a
+         restart, so a pairing already made is left alone.
 
-         Compared as the attribute rather than the property: `el.src` resolves
-         against the document, `streamURL` is a path, and a comparison between
-         the two forms is never equal — which would make the guard a no-op and
-         hide the bug it exists to stop. */
+         Compared as the ATTRIBUTE and not the property: `el.src` resolves
+         against the document while `streamURL` is a path, and the two forms are
+         never equal — which would make the guard a no-op. */
       const url = file.streamURL;
       if (el.getAttribute('src') === url) return;
       el.src = url;
@@ -278,24 +256,19 @@ export function useTorrent() {
          a controller that is not active. */
       await navigator.serviceWorker.ready;
 
-      /* Loaded here and not at the top of the file. The engine is heavier than
-         the entire rest of the app, and most visits never open this screen —
-         imported dynamically, the bundler puts it in a chunk of its own that
-         only downloads when somebody actually asks for a torrent.
+      /* Carregado aqui e não no topo: a engine é mais pesada que o resto do app
+         inteiro, e a maioria das visitas nunca abre esta tela. Importada assim,
+         o bundler a põe num pedaço próprio.
 
-         The prebuilt browser bundle, not the package entry: the entry expects
-         Node globals (`Buffer`, `process`) that a bundler would have to be
-         talked into providing, and this file is the same code with that already
-         resolved. */
+         O bundle de browser pronto, e não a entrada do pacote: a entrada espera
+         globais de Node (`Buffer`, `process`) que o bundler teria de ser
+         convencido a fornecer. */
       const { default: WebTorrent } = await import('webtorrent/dist/webtorrent.min.js');
-      /* The engine's own ceiling is 55 connections, which is the right number
-         for a public swarm and the wrong one for a living room. Nobody without
-         the link can reach this infohash, so the real population is the club —
-         but a connection that drops is not always collected the moment it
-         does, and members reload. Over an evening the seeder is the one that
-         accumulates them, because everybody connects to it and it connects to
-         everybody. Sixteen is generous for a room of people and low enough
-         that the pile cannot grow all night. */
+      /* O teto da própria engine é 55 conexões, que é o número certo para um
+         enxame público e o errado para uma sala de estar. Ninguém sem o link
+         alcança este infohash, então a população real é o clube — mas conexão
+         que cai nem sempre é recolhida na hora, e gente recarrega. Ao longo da
+         noite quem acumula é o semeador, porque todo mundo conecta nele. */
       const client = new WebTorrent({ maxConns: 16 });
       client.createServer({ controller: reg });
       client.on('error', err => {

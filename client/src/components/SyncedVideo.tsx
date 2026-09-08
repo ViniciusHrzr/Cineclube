@@ -6,33 +6,25 @@ import { cn } from '@/lib/utils';
    One player, obeying the room.
 
    ── the echo problem, and why there is no timer in here ───────────────────
-   Applying the room's state to a player fires the player's own events: calling
-   `.play()` fires `play`, setting `currentTime` fires `seeked`. If those
-   handlers report back, every command becomes a new command and four browsers
-   spend the evening shouting the same instruction at each other.
+   Applying the room's state fires the player's own events: `.play()` fires
+   `play`, setting `currentTime` fires `seeked`. If those handlers report back,
+   every command becomes a new command and four browsers spend the evening
+   shouting the same instruction at each other.
 
    The usual patch is a flag raised before the mutation and lowered on a
-   timeout. It is a race: the timeout is a guess about when the browser will
-   get round to firing the event, and a guess that is too short reports an echo
-   while one that is too long swallows a real press.
-
-   There is no need to guess. The room's state already says what the player
-   ought to be doing, so a local event can simply be asked: does the player now
-   agree with the room? If it does, this event is the room's own doing and
-   there is nothing to report. If it does not, a person did it. No flag, no
-   timeout, and it cannot get stuck in the wrong position — every event is
-   judged fresh against the current truth.
+   timeout, and it is a race: too short reports an echo, too long swallows a
+   real press. There is no need to guess — the room's state already says what
+   the player ought to be doing, so a local event is asked whether the player
+   now AGREES with the room. If it does, the event is the room's own doing.
+   Every event is judged fresh against the current truth.
 
    ── the drift problem ─────────────────────────────────────────────────────
    Two players told to play at the same instant do not stay together: they
-   buffer differently, their clocks tick differently, and a browser in a
-   background tab is throttled. Left alone they separate by seconds over a
-   feature film.
-
-   Correcting that with a seek every time would be a stutter every few seconds.
-   So the size of the error picks the instrument: a big gap is a seek, because
-   nothing else will close it; a small one is a five percent nudge to the
-   playback rate, which is inaudible and erases a half-second of drift in ten.
+   buffer differently, their clocks tick differently, and a background tab is
+   throttled. Correcting with a seek every time would be a stutter every few
+   seconds, so the size of the error picks the instrument: a big gap is a seek,
+   a small one a five percent nudge to the playback rate — inaudible, and it
+   erases half a second of drift in ten.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Beyond this, only a seek will do. */
@@ -43,45 +35,36 @@ const TOLERANCE_SOFT = 0.35;
 const NUDGE = 0.05;
 const DRIFT_INTERVAL_MS = 2000;
 /* Buffering for less than this is the network breathing; past it, the club is
-   waiting for you and ought to be told.
-
-   Era 1,2s, e 1,2s é curto demais para o preço que cobra: um soluço numa
-   conexão parava quatro pessoas, e voltar custa a todas elas os quatro segundos
-   de almofada que a retomada exige. O que interrompe a sessão tem de ser uma
-   travada de verdade, não um respiro. */
+   waiting for you. Era 1,2s, e 1,2s cobra caro: um soluço parava quatro pessoas,
+   e voltar custa a todas elas os quatro segundos de almofada da retomada. */
 const STALL_AFTER_MS = 3000;
 
 /* How far apart two lines of one subtitle sit, as a multiple of their size.
+   Tighter than body copy wants, because a subtitle is two lines read as one
+   utterance in the second they are on screen — loose leading makes the eye
+   travel, and travelling reads as the two halves belonging to different
+   thoughts.
 
-   Tighter than anything the browser would arrive at on its own, and tighter
-   than body copy wants, because a subtitle is not a paragraph: it is two lines
-   that have to be read as one utterance in the second they are on screen.
-   Loose leading makes the eye travel, and travelling is what reads as the two
-   halves of a sentence belonging to different thoughts.
-
-   The floor is not taste, it is the alphabet. Poppins puts an accented capital
-   about 0.78em above the baseline and a descender 0.21em below it, so two
-   lines of Portuguese — which stacks Á over g without being asked twice —
-   have roughly 0.99em of ink between the top of one and the bottom of the
-   other. Below about 1.05 they touch. This leaves a hair of room over that. */
+   The floor is not taste, it is the alphabet: Poppins puts an accented capital
+   0.78em above the baseline and a descender 0.21em below, so two lines of
+   Portuguese have roughly 0.99em of ink between them. Below about 1.05 they
+   touch. */
 const SUB_LEADING = 1.12;
 
 /* ── being ready, measured instead of guessed ─────────────────────────────
-   Recovery used to be the `canplay` event, and that was the start-stop loop.
-   `canplay` means "there are a couple of frames" — which on a stream still
+   Recovery used to be the `canplay` event, and that was the start-stop loop:
+   `canplay` means "there are a couple of frames", which on a stream still
    filling is true again a second after it stopped being true. The room resumes
-   by itself when everybody is ready, so each of those flickers restarted the
-   film, which immediately ran out of picture and stalled again. Two or three
-   seconds per cycle, forever, and nothing in the loop ever converged.
+   when everybody is ready, so each flicker restarted the film, which ran out of
+   picture and stalled again.
 
-   The fix is to stop asking a yes/no question and measure the thing that
-   actually decides it: how many seconds of film are buffered ahead of where we
-   are. Ready means there is a cushion, not that a frame exists.
+   So stop asking a yes/no question and measure what decides it: how many
+   seconds are buffered ahead. Ready means there is a cushion, not that a frame
+   exists.
 
-   And the cushion grows. If a stall comes back quickly, the last cushion was
-   too small for this connection, so the next one is doubled — the loop that
-   used to run forever now backs off into a single longer wait and then plays.
-   A stretch of healthy playback puts it back to the bottom. */
+   And the cushion GROWS: a stall that comes back quickly means the last cushion
+   was too small for this connection, so the next is doubled. A stretch of
+   healthy playback puts it back to the bottom. */
 const PROBE_MS = 500;
 const BUFFER_BASE_S = 4;
 const BUFFER_CEIL_S = 24;
@@ -89,13 +72,10 @@ const BUFFER_CEIL_S = 24;
 const RESTALL_MS = 8000;
 /** And this long without one means the connection is fine now. */
 const HEALTHY_MS = 30_000;
-/* Nothing may hold the club indefinitely. A player that cannot fill its
-   cushion — a dead swarm, a throttled background tab, a codec the browser is
-   quietly failing at — would otherwise keep everybody on a paused frame with
-   no way out but a reload. Past this it reports ready regardless and takes the
-   consequence itself: it is behind, the drift corrector seeks it forward, and
-   the club carries on. Being left behind is recoverable; holding four people
-   hostage to one buffer is not. */
+/* Nothing may hold the club indefinitely. Past this a player reports ready
+   regardless and takes the consequence itself: it is behind, the drift
+   corrector seeks it forward, and the club carries on. Being left behind is
+   recoverable; holding four people hostage to one buffer is not. */
 const GIVE_UP_MS = 25_000;
 /* A picture that has not moved while the room believes it is playing is a
    stall the browser never announced — a codec it cannot decode, a stream that
@@ -105,38 +85,29 @@ const FROZEN_MS = 1600;
 /* ── the seek that must not repeat ────────────────────────────────────────
    A hard seek is the only instrument that closes a big gap, and on a stream it
    is also the most destructive thing in this file: it throws away the download
-   window the engine had been filling and opens a new one somewhere the swarm
-   has sent nothing yet.
+   window the engine had been filling and opens a new one where the swarm has
+   sent nothing yet.
 
-   Paid once, by a player that is merely in the wrong place, that is a fair
-   price. Paid by a player that is behind *because it cannot download as fast
-   as the film plays*, it is a trap that closes on itself. It is behind, so it
-   is seeked. The seek empties its buffer, so it starves. Starving, it falls
-   behind again, and two seconds later it is seeked again. It never accumulates
-   a single second of film, and the picture never survives longer than the gap
-   between two corrections.
+   Paid once by a player merely in the wrong place, that is fair. Paid by a
+   player that is behind *because it cannot download as fast as the film plays*,
+   it is a trap that closes on itself: it is seeked, the seek empties its
+   buffer, it starves, falls behind, and is seeked again. It never accumulates a
+   single second of film.
 
-   That is the start-stop that outlived every fix aimed at the room, and this
-   is why: the loop never involves the room. Two clients and a server can be
-   perfectly agreed about where the film is while one of them is being sawn in
-   half by its own corrections.
-
-   So a seek that lands somewhere already buffered stays free — it costs
-   nothing and fixes everything it is for. A seek that lands anywhere else is
-   rationed to one per `RESEEK_MS`. Somebody arriving mid-film still gets their
-   seek. Somebody whose connection cannot keep up is left running behind the
-   club instead, which is a worse seat and an actual seat. */
+   That is the start-stop that outlived every fix aimed at the room, and this is
+   why: the loop never involves the room. So a seek that lands somewhere already
+   buffered stays free, and one that lands anywhere else is rationed to one per
+   `RESEEK_MS`. Somebody whose connection cannot keep up is left running behind
+   the club instead — a worse seat, and an actual seat. */
 const RESEEK_MS = 10_000;
 
 /* ── seeing it happen ─────────────────────────────────────────────────────
-   Several fixes have been aimed at this start-stop and the ones that missed
-   missed for the same reason: the evidence was a description of the symptom,
-   and the mechanisms that produce that symptom are several and independent —
-   the room stopping itself, a player reporting a stall, a corrector sawing at
-   the picture. They look identical from the sofa.
+   Os consertos que erraram este start-stop erraram pela mesma razão: a
+   evidência era uma descrição do sintoma, e os mecanismos que o produzem são
+   vários e independentes — a sala se parando, um player reportando travada, um
+   corretor serrando a imagem. Da poltrona são idênticos.
 
-   So the decisions print themselves: who corrected what, and why. Off unless
-   asked for, because it is a few lines a second:
+   Então as decisões se imprimem. Desligado a menos que se peça:
 
      localStorage.setItem('cineclube.debug', '1')   // then reload            */
 const DEBUG = (() => {
@@ -219,44 +190,30 @@ export function SyncedVideo({
      Este é o defeito que a sala inteira sentia como "pausa sozinho": quem
      entrava no meio do filme parava todo mundo.
 
-     A mecânica era esta. Um <video> que acaba de receber um arquivo dispara
-     `waiting` na hora — ele não tem nem o primeiro quadro, e é claro que não
-     tem — e `waiting` era travada. Segundos depois este navegador dizia à sala
-     que estava travado, e a sala, que trata a travada de um como problema de
-     todos, pausava o filme para os outros três. Não era uma conexão ruim: era o
-     preço de alguém abrir a aba. Com o clube chegando ao longo de dez minutos,
-     isso acontecia uma vez por pessoa, e da poltrona parecia uma sala que
-     parava sozinha do nada.
+     Um <video> que acaba de receber um arquivo dispara `waiting` na hora — ele
+     não tem nem o primeiro quadro —, e `waiting` era travada. Segundos depois
+     este navegador dizia à sala que estava travado, e a sala pausava para os
+     outros três. Não era conexão ruim: era o preço de alguém abrir a aba.
 
-     A distinção que faltava é entre TRAVAR e AINDA NÃO TER COMEÇADO. Travar é
-     uma coisa que só pode acontecer com quem estava junto: o filme corria na
-     tela desta pessoa e parou. Quem nunca teve imagem não travou — está
-     carregando, e carregar é problema de quem carrega.
-
-     Então este navegador só ganha o direito de segurar a sala depois de a
-     imagem dele ter andado de verdade com a sala rodando. Antes disso ele
-     carrega calado, é levado ao lugar certo pelo corretor de deriva quando
-     conseguir tocar, e entra no meio da sessão sem que ninguém perceba. */
+     A distinção que faltava é entre TRAVAR e AINDA NÃO TER COMEÇADO. Travar só
+     pode acontecer com quem estava junto. Então este navegador só ganha o
+     direito de segurar a sala depois de a imagem dele ter andado de verdade com
+     a sala rodando; antes disso carrega calado e é levado ao lugar certo pelo
+     corretor de deriva. */
   const joinedIn = useRef(false);
 
   /* ── the ref that must not be rewritten on every render ──────────────────
      Written inline, this callback is a new function each render, and React
-     answers a new ref by detaching the old one and attaching the new: `null`,
-     then the element, every single time. For a ref that only stores a value
-     that is invisible. Here it is not, because `onElement` hands the element
-     to the torrent engine, and the engine's way of attaching a stream is
-     `el.src = …`.
+     answers a new ref by detaching the old and attaching the new: `null`, then
+     the element, every time. That is invisible for a ref that stores a value —
+     not here, because `onElement` hands the element to the torrent engine, and
+     the engine attaches a stream with `el.src = …`.
 
-     Assigning `src` is never a no-op. The media load algorithm runs whether or
-     not the URL changed: the element throws away what it had, rewinds to zero
-     and pauses. This screen re-renders about once a second all by itself — the
-     torrent poll reports peers and progress on a timer — so the film was being
-     reloaded about once a second.
-
-     That is the start-stop that survived every fix aimed at the room, and it
-     is why none of them touched it: the room was never involved. Two browsers
-     and a server can agree perfectly about where the film is while the picture
-     is being torn down and rebuilt underneath them. */
+     Assigning `src` is never a no-op: the media load algorithm runs whether or
+     not the URL changed, so the element throws away what it had, rewinds to
+     zero and pauses. This screen re-renders about once a second on its own —
+     the torrent poll reports peers and progress on a timer — so the film was
+     being reloaded about once a second. */
   const holdVideo = useCallback(
     (el: HTMLVideoElement | null) => {
       videoRef.current = el;
@@ -355,21 +312,16 @@ export function SyncedVideo({
       /* ── which disagreement counts, and for which event ──────────────────
          This used to be one test for both — report unless the player agrees
          about status *and* position — and that was a feedback loop with the
-         club's evening inside it.
+         club's evening inside it: a buffering player falls behind, so every
+         `play` the browser fired looked like disagreement and got reported as
+         "play at 00:03", dragging the whole room back to where the slowest copy
+         had stalled.
 
-         A player that is buffering sits still while the room runs on, so its
-         position falls behind. Every `play` the browser then fired looked like
-         disagreement, and got reported as "play at 00:03" — dragging the whole
-         room back to where the slowest copy had stalled. Everybody seeks back,
-         everybody re-buffers, and it goes round again: the start-stop.
-
-         A position that is behind is not somebody pressing something. It is
-         exactly what the drift corrector exists to close, quietly, without
-         telling anyone. So:
-
-         - play and pause report a *status* disagreement, and nothing else;
-         - only a seek reports a position, because dragging the bar is the one
-           gesture that means "everyone, go there". */
+         A position that is behind is not somebody pressing something — it is
+         what the drift corrector exists to close, quietly. So play and pause
+         report a *status* disagreement and nothing else, and only a seek
+         reports a position, because dragging the bar is the one gesture that
+         means "everyone, go there". */
       if (kind === 'seek') {
         if (positionAgrees) return; // our own reconcile coming back
         void send('seek', v.currentTime);
@@ -424,15 +376,12 @@ export function SyncedVideo({
   );
 
   /* ── where resuming will actually land ────────────────────────────────────
-     Measuring the cushion under the player's own feet was the subtler half of
-     the start-stop, and it survived the first fix. While this copy sat frozen
-     the room ran on, so the moment it says "ready" it is seeked forward — and
-     the seconds it had just finished buffering are now behind it. It reports
-     ready on a cushion it is about to throw away, arrives somewhere with
-     nothing loaded, and stalls again on the same breath.
+     While this copy sat frozen the room ran on, so the moment it says "ready"
+     it is seeked forward — and the seconds it had just finished buffering are
+     now behind it. It reports ready on a cushion it is about to throw away.
 
-     So the question the probe asks is not "can I play from here" but "can I
-     play from where the room will put me". */
+     So the probe asks not "can I play from here" but "can I play from where the
+     room will put me". */
   const resumeFrom = useCallback(
     (v: HTMLVideoElement, s: ScreeningState) => {
       const want = positionAt(s, serverNow());

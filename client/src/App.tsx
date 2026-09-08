@@ -83,19 +83,12 @@ export const TABS = [
   { id: 'people', label: 'Avaliadores', hidden: true },
 ] as const;
 
-/* ── as seções do outro universo ──────────────────────────────────────────
-   Uma tabela própria, e não `hidden` espalhado na de cima. As duas listas
-   respondem a mesma pergunta — quais seções existem — sobre mundos diferentes,
-   e misturá-las obrigaria toda leitura de rota a saber de qual das duas aquela
-   entrada é.
+/* Uma tabela própria, e não `hidden` espalhado na de cima: as duas listas
+   respondem a mesma pergunta sobre mundos diferentes, e misturá-las obrigaria
+   toda leitura de rota a saber de qual das duas aquela entrada é.
 
-   Sem Sessão, e a ausência é deliberada: a sala de projeção toca filme. Uma aba
-   que leva a uma tela vazia é pior do que aba nenhuma.
-
-   O Feed faltava pelo mesmo tipo de razão e deixou de faltar em 07/09/2026: o
-   construtor de eventos existe agora (routes/showsFeed.js), e com ele o mural
-   deste universo conta três coisas — episódio avaliado, episódio visto e
-   comentário — em vez das duas do outro. */
+   Sem Sessão, e a ausência é deliberada: a sala de projeção toca filme, e uma
+   aba que leva a uma tela vazia é pior do que aba nenhuma. */
 export const SERIES_TABS = [
   /* O feed primeiro, como no universo de filmes: um mural que não é a tela de
      chegada é um mural que ninguém lê. */
@@ -189,24 +182,19 @@ export function useClub() {
 
 /* ── `#c/<slug>/reviews/<id>` ─────────────────────────────────────────────
    A chave é o id da avaliação e não o par filme+avaliador: é o id que o aviso
-   do sino carrega e o que sobrevive a uma regravação (o upsert casa por
-   avaliador+filme e não toca na coluna `id`), então um link colado no Discord
-   continua valendo depois de a pessoa ajustar a nota.
+   do sino carrega e o que sobrevive a uma regravação, então um link colado no
+   Discord continua valendo depois de a pessoa ajustar a nota.
 
-   O clube vem na frente, e não guardado na sessão, porque o endereço é feito
-   para ser colado: na sessão ele significaria coisas diferentes conforme a sala
-   em que o leitor estivesse. O outro motivo é mecânico e está em clubs.js —
-   `EventSource` não manda cabeçalho.
+   O clube vem na frente e não guardado na sessão, porque o endereço é feito
+   para ser colado. O outro motivo é mecânico e está em clubs.js: `EventSource`
+   não manda cabeçalho.
 
    Sem `c/` na frente não há clube: é o saguão. Seção desconhecida cai no
    catálogo; id que não existe mais abre a aba e não foca nada. */
-/* ── e o universo vem antes de tudo ───────────────────────────────────────
-   `#series/c/<slug>/feed` contra `#c/<slug>/feed`. O prefixo é o universo, e
-   ele mora no endereço pela mesmíssima razão que o clube mora: um link colado
-   no Discord não pode significar coisas diferentes conforme o que o leitor
-   escolheu no saguão antes de abri-lo.
+/* O universo vem antes de tudo: `#series/c/<slug>/feed` contra `#c/<slug>/feed`.
+   Mora no endereço pela mesma razão que o clube mora.
 
-   Filmes é a ausência de prefixo, e isso não é preguiça — é o que faz todo
+   Filmes é a AUSÊNCIA de prefixo, e isso não é preguiça: é o que faz todo
    endereço que já existe continuar valendo. Uma ficha compartilhada mês passado
    abre no mesmo lugar depois de o universo de séries existir. */
 type Universe = 'filmes' | 'series';
@@ -285,11 +273,10 @@ const lensOf = (universe: Universe) => (universe === 'series' ? 'series/' : '');
 const clubHash = (slug: string, rest = '', universe: Universe = 'filmes') =>
   `${lensOf(universe)}c/${encodeURIComponent(slug)}${rest ? '/' + rest : ''}`;
 
-/* ── o app antes de haver uma sala ────────────────────────────────────────
-   Três perguntas em ordem, cada uma só fazendo sentido depois da anterior: quem
+/* Três perguntas em ordem, cada uma só fazendo sentido depois da anterior: quem
    é você, você já guardou uma segunda chave, e em que sala você está. Separado
-   do `ClubApp` justamente por isso: lá embaixo dá para assumir que há clube,
-   sessão e dados, sem desenhar nenhum estado de "ainda não". */
+   do `ClubApp` por isso — lá embaixo dá para assumir que há clube, sessão e
+   dados, sem desenhar nenhum estado de "ainda não". */
 export default function App() {
   const [me, setMe] = useState<SessionUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -432,11 +419,10 @@ export default function App() {
   }
 
   /* `key` no slug E na lente: trocar de clube desmonta o app inteiro em vez de
-     reaproveitar as telas, e é o isolamento do lado de cá — nenhum estado do
-     clube anterior sobrevive porque o componente que o segurava deixou de
-     existir. A lente entra na chave pela mesma razão: o acervo de séries de um
-     clube não é o de filmes dele, e reaproveitar as telas entre os dois seria
-     mostrar uma fila carregada com a coisa errada até a busca voltar. */
+     reaproveitar as telas, e nenhum estado do clube anterior sobrevive porque o
+     componente que o segurava deixou de existir. A lente entra pela mesma razão
+     — reaproveitar as telas entre os dois universos mostraria uma fila
+     carregada com a coisa errada até a busca voltar. */
   return (
     <ClubApp
       key={`${route.universe}/${route.club}`}
@@ -454,12 +440,10 @@ export default function App() {
 }
 
 /* ══ o clube, pela lente de séries ═════════════════════════════════════════
-   Irmão de `ClubApp` e deliberadamente separado dele. Os dois compartilham a
-   moldura, a marquise e o clube; o que muda é tudo o que está dentro — outras
-   seções, outro acervo, outra unidade avaliada.
-
-   Sem contexto próprio: são quatro telas e elas recebem por prop o que precisam.
-   Um segundo `ClubContext` seria uma segunda verdade sobre a mesma sala. */
+   Irmão de `ClubApp`: os dois compartilham a moldura, a marquise e o clube, e o
+   que muda é tudo o que está dentro. Sem contexto próprio — são quatro telas e
+   recebem por prop o que precisam; um segundo `ClubContext` seria uma segunda
+   verdade sobre a mesma sala. */
 function SeriesClubApp({
   slug,
   route,
@@ -544,11 +528,9 @@ function SeriesClubApp({
     }
   }, []);
 
-  /* ── a conversa, e as quatro escritas dela ─────────────────────────────
-     As mesmas quatro do universo de filmes, e a estratégia é a mesma: escrever
-     e reler a coleção inteira. Num clube pequeno ela são centenas de linhas, e
-     costurar a resposta na lista à mão seria uma segunda cópia da regra de
-     ordenação — a que o servidor já aplica. */
+  /* As mesmas quatro escritas do universo de filmes, com a mesma estratégia:
+     escrever e reler a coleção inteira. Costurar a resposta na lista à mão seria
+     uma segunda cópia da regra de ordenação que o servidor já aplica. */
   const relerConversa = useCallback(async () => {
     const got = await showsSocial.all();
     setComments(got.comments);
@@ -663,11 +645,10 @@ function SeriesClubApp({
     [refresh, fault]
   );
 
-  /* O pedaço da sala que as peças sociais leem. O outro universo entrega uma
-     vista do contexto grande dele; aqui é montado a partir do que estas telas
-     já carregam. As duas entregas satisfazem o mesmo contrato, e é por isso que
-     o voto, a conversa, o retrato e a menção são as MESMAS peças nos dois
-     lados. Ver lib/world.tsx. */
+  /* O pedaço da sala que as peças sociais leem, montado a partir do que estas
+     telas já carregam. As duas entregas satisfazem o mesmo contrato, e é por
+     isso que o voto, a conversa, o retrato e a menção são as MESMAS peças nos
+     dois universos. Ver lib/world.tsx. */
   const world = useMemo<World>(
     () => ({
       me,
@@ -985,12 +966,10 @@ function ClubApp({
     [slug, lens]
   );
 
-  /* A aba, o endereço e de quem é, de uma vez. O endereço é escrito sempre,
-     inclusive já estando num perfil: ir de um perfil a outro tem de mexer no
-     Voltar. `null` explícito e não ausência — chamar sem id pede o SEU perfil e
-     tem de apagar quem estava aberto. A rolagem volta ao topo porque isto é
-     troca de página: quem clica num nome lá embaixo cairia no meio de outra
-     pessoa sem ver de quem. */
+  /* O endereço é escrito sempre, inclusive já estando num perfil: ir de um
+     perfil a outro tem de mexer no Voltar. `null` explícito e não ausência —
+     chamar sem id pede o SEU perfil e tem de apagar quem estava aberto. A
+     rolagem volta ao topo porque isto é troca de página. */
   const goPerson = useCallback(
     (reviewerId?: string | null) => {
       const id = reviewerId ?? null;
@@ -1086,11 +1065,10 @@ function ClubApp({
     async (m: Movie | WatchItem) => {
       const held = watchRef.current.find(w => String(w.id) === String(m.id));
       const has = !!held;
-      /* Tirar é de quem pôs: a mesma regra do servidor (ver routes/watchlist.js),
-         dita aqui para o marcador do catálogo não mandar um pedido que já se
-         sabe recusado. Explicar antes, não decidir. Na fila a tesoura nem
-         aparece nos filmes dos outros; no catálogo o marcador é um só e não tem
-         a marca de quem escolheu, então quem aperta merece uma frase. */
+      /* Tirar é de quem pôs — a mesma regra do servidor, dita aqui para o
+         marcador do catálogo não mandar um pedido que já se sabe recusado. Na
+         fila a tesoura nem aparece nos filmes dos outros; no catálogo o marcador
+         é um só, então quem aperta merece uma frase. */
       if (held && meRef.current) {
         const me = meRef.current;
         const owner = rosterRef.current.find(p => p.id === held.addedBy) ?? null;
@@ -1167,11 +1145,10 @@ function ClubApp({
   );
 
   /* A lâmpada da marquise: sem ela, uma sessão começava e quem estava no
-     catálogo só descobria abrindo a aba Sessão — e o custo é chegar dez minutos
-     atrasado. Pergunta de fora e nunca assina o stream da sala: entrar nele é
-     entrar na sala (o porquê está em lib/screening.ts). O erro morre em
-     silêncio, como em `applyLive`: ninguém pediu esta pergunta, e uma lâmpada
-     apagada é uma falha honesta. */
+     catálogo só descobria abrindo a aba Sessão. Pergunta de fora e nunca assina
+     o stream da sala — entrar nele é entrar na sala (ver lib/screening.ts). O
+     erro morre em silêncio: ninguém pediu esta pergunta, e uma lâmpada apagada
+     é uma falha honesta. */
   const readRoom = useCallback(async () => {
     try {
       const next = await readPulse();
@@ -1205,13 +1182,10 @@ function ClubApp({
   /* O clube ao vivo. Tudo acima era uma fotografia tirada no boot: uma aba
      aberta às oito mostrava às onze o mesmo de oito.
 
-     O servidor avisa (ver live.js), e o aviso diz só QUAL coleção mudou. Buscar
-     de novo em vez de aplicar um delta é a decisão inteira: há uma única forma
-     de cada coleção chegar — a rota —, então a tela ao vivo não tem como
-     divergir da recarregada.
-
-     Erro morre em silêncio: ninguém pediu esta busca, ela é consequência de
-     outra pessoa ter feito algo. Perde-se uma rodada; a próxima recupera. */
+     O aviso do servidor diz só QUAL coleção mudou, e buscar de novo em vez de
+     aplicar um delta é a decisão inteira: há uma única forma de cada coleção
+     chegar — a rota —, então a tela ao vivo não tem como divergir da
+     recarregada. Erro morre em silêncio; a próxima rodada recupera. */
   const applyLive = useCallback((kinds: ReadonlySet<LiveKind>) => {
     const quiet = () => {
       /* engolido: ver acima */
@@ -1365,11 +1339,9 @@ function ClubApp({
     ]
   );
 
-  /* ── a vista que as peças sociais leem ─────────────────────────────────
-     O contexto acima é grande e é deste universo. As peças que desenham voto,
-     conversa, retrato e menção precisam de um pedaço dele, e o universo de
-     séries sabe entregar o mesmo pedaço — é isso que as deixa ser as MESMAS
-     peças nos dois lados em vez de duas cópias. Ver lib/world.tsx.
+  /* A vista que as peças sociais leem: o contexto acima é grande e é deste
+     universo, e o de séries sabe entregar o mesmo pedaço — é isso que as deixa
+     ser as MESMAS peças nos dois lados. Ver lib/world.tsx.
 
      `takeId` e não `reviewId`: o servidor manda os dois nomes, e daqui para
      dentro do componente só existe o que serve para as duas fichas. */
@@ -1578,19 +1550,16 @@ function ClubApp({
 }
 
 /* ── a lâmpada de gravação ────────────────────────────────────────────────
-   O mesmo ponto de seis pixels que o produto já usa para "isto está rodando".
-
    Nunca é uma superfície: vermelho cheio nesta sala é a chave de gravar, uma
-   por tela, e um retângulo vermelho no alto de TODA tela competiria com ela —
-   o mesmo argumento que fez o distintivo do sino ser de latão. Passa a luz, e a
-   palavra Sessão em vermelho como texto.
+   por tela, e um retângulo vermelho no alto de TODA tela competiria com ela.
+   Passa a luz, e a palavra Sessão em vermelho como texto.
 
    E não empurra nada: aparecer do nada jogaria Avaliados, o sino e os rostos
    para a direita de um quadro para o outro. Está sempre montada e ABRE, de zero
-   à largura dela, na curva do produto.
+   à largura dela.
 
    Respira com o filme rodando e fica parada em pausa: duas informações pelo
-   preço de nenhuma pergunta a mais, visíveis pelo canto do olho. */
+   preço de nenhuma pergunta a mais. */
 function Lamp({
   on,
   playing,
@@ -1621,17 +1590,15 @@ function Lamp({
 
 /* ── as cinco seções, em dois lugares ─────────────────────────────────────
    No computador na marquise; no telefone numa barra no rodapé, onde o polegar
-   já está. Um componente só de propósito: escrever a fileira duas vezes seria
-   manter duas verdades sobre quais seções existem e qual está acesa, e na
-   terceira mexida elas divergiriam. O `variant` decide moldura e tamanho.
+   já está. Um componente só: escrever a fileira duas vezes seria manter duas
+   verdades sobre quais seções existem e qual está acesa.
 
-   As duas são montadas e uma fica em `display: none` conforme o ponteiro — isso
-   tira a escondida da árvore de acessibilidade, então não há duas paradas de
-   tabulação para a mesma seção.
+   As duas são montadas e uma fica em `display: none` conforme o ponteiro —
+   isso tira a escondida da árvore de acessibilidade, então não há duas paradas
+   de tabulação para a mesma seção.
 
-   O traço vermelho troca de lado: embaixo da palavra em cima, em cima dela
-   embaixo. Nos dois casos é a borda voltada PARA O CONTEÚDO; mantê-lo embaixo
-   na barra o encostaria na borda da tela, onde não separa nada. */
+   O traço vermelho troca de lado: nos dois casos é a borda voltada PARA O
+   CONTEÚDO, e mantê-lo embaixo na barra o encostaria na borda da tela. */
 
 /* Um ponto vermelho sozinho diz "alguma coisa"; o clube quer saber o quê antes
    de trocar de seção. Vai no `title` e no `aria-label` — este substitui a
@@ -1686,13 +1653,12 @@ function SectionTabs({
       className={cn(
         bar
           ? /* No FLUXO, e não `fixed`: presa era o que a fazia subir e descer
-               com a barra de endereço do Android. Ver a moldura do app.
+               com a barra de endereço do Android.
 
-               E sem recuo de área segura. `env(safe-area-inset-bottom)` devolve
+               E sem recuo de área segura: `env(safe-area-inset-bottom)` devolve
                o que `viewport-fit=cover` toma, e sem `cover` o navegador nunca
-               tomou — a janela já termina onde os botões começam. Somar os dois
-               engordava a barra. Os dois são um par: se um dia isto for de
-               ponta a ponta, o recuo volta junto com o `cover`. */
+               tomou. Os dois são um par — se um dia isto for de ponta a ponta,
+               o recuo volta junto com o `cover`. */
             'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 coarse:flex'
           : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
@@ -1713,11 +1679,10 @@ function SectionTabs({
             className={cn(
               'relative flex items-center font-display uppercase leading-none transition-colors duration-150',
               bar
-                ? /* Cinco colunas iguais: um alvo por seção, com um quinto da
-                     tela de largura cada. Quarenta e oito e não os cinquenta e
-                     seis de uma barra do Android — aquela medida pressupõe um
-                     ícone acima da palavra, e esta é só palavra. Ainda passa do
-                     piso de toque. */
+                ? /* Cinco colunas iguais, um alvo por seção. Quarenta e oito e
+                     não os cinquenta e seis de uma barra do Android: aquela
+                     medida pressupõe um ícone acima da palavra, e esta é só
+                     palavra. Ainda passa do piso de toque. */
                   'min-h-[48px] flex-1 flex-col justify-center gap-1 px-1 text-[11px] tracking-[0.1em]'
                 : 'flex-none rounded-cell px-3 py-2 text-[14px] tracking-[0.12em]',
               /* Acesa, a palavra vira vermelha — nunca por cima do creme da aba
