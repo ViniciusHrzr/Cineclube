@@ -6,13 +6,11 @@ const {
   genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn, GENRE_PRIORITY
 } = require('../criteria');
 
-/* ── a escala ────────────────────────────────────────────────────────────
-   Every genre asks eleven questions and every one of them weighs the same, so
-   a card full of tens is a ten and two films of different genres are on one
-   scale. What is guarded here is that property, not the constant that used to
-   produce it — the divisor is counted from the take now (see finalOf), which
-   is what lets a ten-criterion take from before Aproveitamento still read as a
-   score out of ten. */
+/* Todo gênero pergunta onze e todas pesam igual, então uma ficha cheia de dez é
+   um dez e dois filmes de gêneros diferentes estão na mesma régua. O que se
+   guarda é essa propriedade e não a constante que a produzia: o divisor é
+   contado da ficha (ver finalOf), que é o que deixa uma de dez critérios ainda
+   ser uma nota de zero a dez. */
 
 test('every genre asks eleven questions, all at the same weight', () => {
   for (const genre of GENRES) {
@@ -211,17 +209,13 @@ test('the single genre is the first of the list', () => {
   }
 });
 
-/* ── the base, and the genres allowed to move it ──────────────────────────
-   A genre may replace a slot of the base when the default question has no
-   referent — "Atuações" on an animation, "Direção de Arte" on a documentary.
-   What it may not do is add one, drop one, or reorder them: the count is what
-   keeps every take on one scale and the order is what makes two cards
-   comparable side by side. So the swap is checked against the declaration
-   rather than forbidden outright.
+/* Um gênero pode SUBSTITUIR um slot da base quando a pergunta padrão não tem
+   referente — "Atuações" numa animação. O que ele não pode é acrescentar,
+   remover ou reordenar: a contagem é o que mantém toda ficha numa régua, e a
+   ordem é o que faz duas cartas comparáveis lado a lado.
 
-   `baseKeys` reads the craft group. It used to read `w === 1`, which was the
-   same set only while the genre pair weighed 2 — with every weight equal, the
-   group is the thing that was actually meant. */
+   `baseKeys` lê o grupo de ofício. Lia `w === 1`, que era o mesmo conjunto só
+   enquanto o par do gênero pesava 2. */
 const baseKeys = g => critsFor(g).filter(c => c.group === 'oficio').map(c => c.key);
 /** The base as declared, minus the personal slot, which critsFor moves to the end. */
 const declaredCraft = BASE.map(t => t[0]).filter(k => k !== PERSONAL_KEY);

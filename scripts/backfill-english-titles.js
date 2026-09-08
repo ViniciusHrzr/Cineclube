@@ -4,24 +4,17 @@
        npm run backfill:ingles           escreve
        npm run backfill:ingles -- --dry  só mostra o que faria
 
-   Três telas filtram uma lista lida do banco — a fila, a sessão e o acervo — e
-   a busca delas casa com qualquer nome do filme. Para Parasita esse nome é
-   `Parasite`, que não é o título em português nem o original, e sem ele o
-   filme simplesmente não é encontrado numa lista que está na tela.
+   A busca da fila, da sessão e do acervo casa com qualquer nome do filme, e
+   para Parasita esse nome é `Parasite`. De hoje em diante o nome entra sozinho
+   quando o filme vira algo que o clube guarda; o que não se cura sozinho é o
+   que já estava lá, porque essas telas leem o banco e nunca voltam ao TMDB.
 
-   De hoje em diante isso se resolve sozinho: o nome em inglês entra quando o
-   filme entra na fila, quando é avaliado, e de graça quando alguém abre a
-   ficha. O que não se cura sozinho é o que já estava lá — a fila e o acervo
-   leem o banco e nunca voltam ao TMDB por conta própria.
+   Só olha filme avaliado e filme na fila: a busca do catálogo é a do próprio
+   TMDB, que já acha um filme por qualquer nome.
 
-   Só olha o que está exposto numa busca: filme avaliado e filme na fila. O
-   catálogo não precisa, porque a busca dele é a do próprio TMDB, que já acha
-   um filme por qualquer um dos seus nomes.
-
-   Seguro de rodar duas vezes: quem já tem o nome não é consultado. Filme cujo
-   nome em inglês é igual ao que já temos fica nulo de propósito — não é falha,
-   é o TMDB dizendo que não há um terceiro nome — e será perguntado de novo numa
-   próxima rodada, que é o preço de não ter uma coluna só para lembrar disso.
+   Seguro de rodar duas vezes. Filme cujo nome em inglês é igual ao que já temos
+   fica nulo de propósito, e será perguntado de novo numa próxima rodada — o
+   preço de não ter uma coluna só para lembrar disso.
    ══════════════════════════════════════════════════════════════════════════ */
 
 try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }
@@ -36,10 +29,9 @@ const DRY = process.argv.includes('--dry');
 const PAUSE_MS = 250;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/* Todo filme que aparece numa tela que filtra o banco e que ainda não sabe o
-   próprio nome em inglês. O INNER JOIN é de propósito, ao contrário do backfill
-   das notas: sem linha no cache não há onde escrever a coluna, e esse filme
-   ganha a linha inteira na próxima vez que aparecer numa busca. */
+/* O INNER JOIN é de propósito, ao contrário do backfill das notas: sem linha no
+   cache não há onde escrever a coluna, e esse filme ganha a linha inteira na
+   próxima vez que aparecer numa busca. */
 const pendingStmt = db.prepare(`
   SELECT DISTINCT id, title FROM (
     SELECT rv.movie_id AS id, mc.title AS title

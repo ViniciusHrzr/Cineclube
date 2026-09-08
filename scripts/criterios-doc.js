@@ -3,15 +3,12 @@
 
        npm run doc:criterios
 
-   O documento existia antes deste script e foi escrito à mão, o que só
-   funciona enquanto ninguém mexe nos critérios. Ele diz de si mesmo que é
-   "extraído de criteria.js, que é a fonte da verdade" — agora é verdade: nada
-   aqui é digitado duas vezes, e um critério renomeado no código sai renomeado
-   no texto na próxima rodada.
+   O documento era escrito à mão, o que só funciona enquanto ninguém mexe nos
+   critérios. Agora nada é digitado duas vezes: um critério renomeado no código
+   sai renomeado no texto na próxima rodada.
 
-   Sai fora de app/ de propósito. É um documento para a mesa, não para o
-   servidor: alguém do clube abre, lê e discorda, e para isso ele tem que estar
-   onde as pessoas mexem e não dentro do código.
+   Sai fora de app/ de propósito — é um documento para a mesa, não para o
+   servidor, e precisa estar onde as pessoas mexem.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const fs = require('node:fs');
@@ -204,9 +201,8 @@ for (const genre of GENRES) {
   if (total !== 11) throw new Error(`${genre} soma ${total} pesos — o texto diria uma mentira`);
 }
 
-/* With a BOM, and CRLF. The file the club opens is opened on Windows, by
-   double-clicking it, and a UTF-8 .txt with neither is a file full of Ã‡ in
-   half the editors that exist. Nothing reads this programmatically, so the
-   only audience is the one that needs it spelled out. */
+/* With a BOM, and CRLF: the file the club opens is opened on Windows, by
+   double-clicking it, and a UTF-8 .txt with neither is a file full of Ã‡ in half
+   the editors that exist. */
 fs.writeFileSync(OUT, '﻿' + out.join('\r\n'), 'utf8');
 console.log(`[critérios] escrito em ${OUT}`);

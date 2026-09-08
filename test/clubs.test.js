@@ -21,21 +21,14 @@ const { critsFor } = require('../criteria');
 /* ══════════════════════════════════════════════════════════════════════════
    Os clubes, e a parede entre eles.
 
-   Este arquivo existe por um motivo diferente do resto da suíte. Os outros
-   protegem o que o produto FAZ; este protege o que ele NÃO PODE fazer, e a
-   diferença importa porque um vazamento não se parece com um defeito: nada
-   quebra, nada dá erro, nenhuma tela fica estranha. Alguém simplesmente vê uma
-   coisa que não é dele.
+   Os outros arquivos protegem o que o produto FAZ; este protege o que ele NÃO
+   PODE fazer, e a diferença importa porque um vazamento não se parece com um
+   defeito: nada quebra, nada dá erro, nenhuma tela fica estranha. Alguém
+   simplesmente vê uma coisa que não é dele.
 
-   São quatro paredes, e cada uma pode cair sozinha:
-
-   1. a leitura — o acervo, o mural e a conversa de um clube privado;
-   2. a escrita — quem não é da sala não escreve nela, nem sendo membro de outra;
-   3. o cano ao vivo — que antes era um broadcast para todo mundo conectado;
-   4. a sala de projeção — que era uma sala em memória para o produto inteiro.
-
-   A terceira é a mais fácil de esquecer e a mais silenciosa: um aviso de
-   `social` não carrega conteúdo nenhum, só a palavra. Mas ele diz "alguma coisa
+   São quatro paredes, e cada uma pode cair sozinha: a leitura, a escrita, o
+   cano ao vivo e a sala de projeção. A terceira é a mais silenciosa — um aviso
+   de `social` não carrega conteúdo, só a palavra, mas ele diz "alguma coisa
    aconteceu agora", e num clube privado isso já é mais do que quem está de fora
    tem direito de saber.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -50,13 +43,10 @@ test.before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-/* ── por que este arquivo zera as travas ──────────────────────────────────
-   Esta suíte cadastra e funda muito mais do que uma pessoa cadastraria e
-   fundaria, e faz tudo do mesmo endereço: sem isto ela bate na trava de
-   `/register` (cinco por hora por IP) e falha em testes que não são sobre ela.
-
-   Zerar aqui não afrouxa nada — quem verifica que as travas travam é
-   `abuse.test.js`, e lá elas rodam de verdade. */
+/* Esta suíte cadastra e funda muito mais do que uma pessoa, e tudo do mesmo
+   endereço: sem zerar as travas ela bate na de `/register` e falha em testes
+   que não são sobre ela. Não afrouxa nada — quem verifica que as travas travam
+   é `abuse.test.js`. */
 test.beforeEach(() => throttle.reset());
 
 test.after(async () => {
@@ -153,12 +143,9 @@ test('mas o conteúdo de um clube fechado é só de quem é dele', async () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A política de leitura de um clube fechado.
-
-   Fechado deixou de ser uma coisa só: o ADM decide, em dois interruptores, se um
-   estranho vê as avaliações, os comentários, os dois ou nenhum. Com os dois
-   ligados o clube fica fechado APENAS NA PORTA — ler é livre, entrar e avaliar
-   não.
+   A política de leitura de um clube fechado: o ADM decide, em dois
+   interruptores, se um estranho vê as avaliações, os comentários, os dois ou
+   nenhum. Com os dois ligados o clube fica fechado APENAS NA PORTA.
 
    Uma regra de leitura que erra não parece um defeito: ninguém vê um erro, uma
    pessoa só vê o que não era dela. Por isso a matriz inteira está aqui, e não
@@ -631,14 +618,10 @@ test('ninguém tira outra pessoa sem ser ADM', async () => {
   assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, dono.cookie)).status, 204);
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Quem fundou, e o que só ela pode.
-
-   Duas regras que andam juntas: quem fundou é a única que encerra o clube, e a
+/* Duas regras que andam juntas: quem fundou é a única que encerra o clube, e a
    única que não pode deixar de administrá-lo. A segunda existe por causa da
    primeira — um clube cujo dono saiu continua existindo com o acervo de todo
-   mundo dentro e sem ninguém que possa encerrá-lo.
-   ══════════════════════════════════════════════════════════════════════════ */
+   mundo dentro e sem ninguém que possa encerrá-lo. */
 
 test('só quem fundou encerra o clube', async () => {
   const dono = await kit.signIn();

@@ -1,21 +1,14 @@
 /* ══════════════════════════════════════════════════════════════════════════
    Preenche a nota do TMDB dos filmes que já estavam no acervo.
 
-       npm run backfill:notas          escreve
+       npm run backfill:notas           escreve
        npm run backfill:notas -- --dry  só mostra o que faria
 
-   A nota do TMDB entra no cache do filme sozinha, de qualquer busca ou de
-   qualquer ficha aberta — todo endpoint de lista carrega vote_average. Então
-   todo filme avaliado de hoje em diante já chega com ela.
-
-   O que não se cura sozinho é o que já estava lá. Um filme avaliado antes das
-   colunas existirem só ganha a nota quando alguém buscar por ele de novo, e a
-   aba de avaliados nunca faz isso: ela lê o banco e pronto. O resultado é o
-   acervo com algumas notas do TMDB e outras não, sem nenhum motivo visível para
-   a diferença — que é exatamente como isso apareceu.
-
-   Só olha o que está exposto: filme avaliado e filme na fila. O catálogo se
-   cura sozinho na próxima busca e não precisa de ajuda.
+   A nota entra no cache sozinha em qualquer busca, então todo filme avaliado de
+   hoje em diante já chega com ela. Um filme avaliado antes das colunas
+   existirem só a ganharia se alguém buscasse por ele de novo, e a aba de
+   avaliados nunca faz isso: ela lê o banco e pronto. O resultado era o acervo
+   com algumas notas e outras não, sem motivo visível para a diferença.
 
    Seguro de rodar duas vezes: quem já tem nota não é consultado, e a escrita é
    um COALESCE que nunca apaga o que encontrar.
@@ -33,9 +26,8 @@ const DRY = process.argv.includes('--dry');
 const PAUSE_MS = 250;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/* Todo filme que aparece numa tela lida do banco e que ninguém sabe a nota.
-   O LEFT JOIN é o que pega também o caso raro do filme avaliado que nunca
-   entrou no cache — a linha não existe, mc.tmdb_score vem nula, e o upsert
+/* O LEFT JOIN é o que pega também o caso raro do filme avaliado que nunca
+   entrou no cache — a linha não existe, `mc.tmdb_score` vem nula, e o upsert
    abaixo cria. */
 const pendingStmt = db.prepare(`
   SELECT DISTINCT id, title FROM (
@@ -55,9 +47,9 @@ const pendingStmt = db.prepare(`
   ORDER BY title
 `);
 
-/* O filme quase sempre já está no cache e só faltava a nota, mas o INSERT existe
-   para o caso em que não está. Os campos que não vieram do TMDB nesta chamada
-   ficam com COALESCE para nunca apagarem o que já havia. */
+/* O INSERT existe para o caso em que o filme não está no cache. Os campos que
+   não vieram do TMDB nesta chamada ficam com COALESCE para nunca apagarem o que
+   já havia. */
 const fillStmt = db.prepare(`
   INSERT INTO movies_cache (tmdb_id, title, year, genre, poster, director, runtime, tmdb_score, tmdb_votes, cached_at)
   VALUES (@id, @title, @year, @genre, @poster, @director, @runtime, @score, @votes, datetime('now'))

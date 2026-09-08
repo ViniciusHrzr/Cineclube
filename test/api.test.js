@@ -15,12 +15,8 @@ const db = require('../db');
 const kit = require('../testkit');
 
 /* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo.
-
    Pública, e isso é assunto de alguns destes testes: ler um clube aberto não
-   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
-   produto sempre teve. O que o clube fechado faz está provado em clubs.test.js. */
+   exige sessão nenhuma. O que o clube fechado faz está em clubs.test.js. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -326,13 +322,9 @@ test('mexer na bio não mexe no nome nem no retrato', async () => {
 /* ── sign-in ─────────────────────────────────────────────────────────── */
 
 /* ── entrar ──────────────────────────────────────────────────────────────
-   O PIN de quatro dígitos era a credencial enquanto entrar significava escolher
-   o próprio rosto numa lista de quatro pessoas. Numa rede essa lista é todo
-   mundo, então a identidade passou a ser o e-mail e a credencial, uma senha.
-
-   O que estes testes protegem não mudou de natureza: que a credencial nunca sai
-   do servidor, que errar tem custo crescente, e que a rota de entrada não vira
-   um jeito de descobrir quem tem conta aqui. */
+   O que estes testes protegem: que a credencial nunca sai do servidor, que
+   errar tem custo crescente, e que a rota de entrada não vira um jeito de
+   descobrir quem tem conta aqui. */
 
 test('a sessão diz quem eu sou', async () => {
   const reviewer = await newReviewer('Login OK');

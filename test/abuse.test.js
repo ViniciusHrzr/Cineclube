@@ -18,22 +18,16 @@ const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O que o produto faz com quem não está usando o produto.
+   O que o produto faz com quem não está usando o produto: um cliente que faz
+   exatamente o que a API permite, muitas vezes por segundo. Dois assuntos:
 
-   As outras suítes verificam que as coisas funcionam, e `clubs.test.js` que as
-   paredes entre salas seguram. Esta verifica o terceiro caso: um cliente que faz
-   exatamente o que a API permite, muitas vezes por segundo.
+   1. **O tamanho do que entra.** Um título de novecentos mil caracteres é o
+      corpo de 1 MB usado como foi permitido. Como o `id` do filme é escolhido
+      por quem escreve, a unicidade não segura nada — e o plano do banco tem
+      500 MB, cuja punição por estourar é a suspensão.
 
-   Dois assuntos, e eles falham de jeitos diferentes:
-
-   1. **O tamanho do que entra.** Um título de novecentos mil caracteres não é um
-      ataque esperto: é o corpo de 1 MB usado como foi permitido. Como o `id` do
-      filme é escolhido por quem escreve, a unicidade não segura nada — e o plano
-      do banco tem 500 MB, cuja punição por estourar é a suspensão.
-
-   2. **Quantas vezes.** Cadastro, clube, ficha, fila e comentário. O cadastro é o
-      que mais importa, porque toda outra trava conta por conta e uma conta nova
-      custa uma requisição.
+   2. **Quantas vezes.** O cadastro é o que mais importa: toda outra trava conta
+      por conta, e uma conta nova custa uma requisição.
    ══════════════════════════════════════════════════════════════════════════ */
 
 let baseUrl;
@@ -152,19 +146,13 @@ test('a fila também corta', async () => {
 /* ══════════════════════════════════════════════════════════════════════════
    1b. SQL DENTRO DO TEXTO
 
-   Nada aqui escapa nem filtra aspas, e é de propósito: escapar é a defesa de
-   quem monta SQL com texto, e este produto nunca monta. Todo valor viaja como
-   parâmetro (`client.execute({ sql, args })`), então o banco recebe a consulta
-   e os dados por caminhos separados e nunca lê um como o outro.
+   Nada aqui escapa nem filtra aspas, de propósito: escapar é a defesa de quem
+   monta SQL com texto, e este produto nunca monta — todo valor viaja como
+   parâmetro, então o banco recebe consulta e dados por caminhos separados.
 
-   A consequência prática é a que estes testes fixam: uma carga de injeção é
-   gravada e devolvida LETRA POR LETRA, porque para o produto ela nunca foi
-   código — é o que alguém escreveu sobre um filme. Um dia em que ela voltar
-   modificada, ou faltando um pedaço, é o dia em que alguém começou a tratar
-   texto como comando.
-
-   As cargas abaixo são as clássicas, e a primeira é a que o dono do produto
-   testou à mão em produção.
+   O que estes testes fixam é a consequência: uma carga de injeção é gravada e
+   devolvida LETRA POR LETRA. O dia em que ela voltar modificada, ou faltando um
+   pedaço, é o dia em que alguém começou a tratar texto como comando.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const CARGAS = [
@@ -232,11 +220,9 @@ test('injeção na conversa, no nome do clube e no título do filme, idem', asyn
    1c. O QUE VAI PARA O LOG
 
    Um corpo com JSON torto fazia o `body-parser` levantar um erro com o corpo
-   cru pendurado nele, e o tratador imprimia o erro inteiro. Duas consequências:
-   qualquer um escrevia no log da instância a partir de fora, e um corpo
-   quase-válido para `/api/auth/login` levava uma senha em texto puro junto.
-
-   O que este teste fixa é a resposta; que o log ficou limpo está em server.js.
+   cru pendurado, e o tratador imprimia o erro inteiro: qualquer um escrevia no
+   log da instância a partir de fora, e um corpo quase-válido para
+   `/api/auth/login` levava uma senha em texto puro junto.
    ══════════════════════════════════════════════════════════════════════════ */
 
 test('JSON torto é 400 do cliente, e não 500 do servidor', async () => {
@@ -305,13 +291,9 @@ test('comentar em rajada bate na porta', async () => {
   assert.equal(ditos.filter(r => r.status === 429).length, 3);
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A trava tem de ter fim.
-
-   Uma requisição recusada não conta. Se contasse, quem esbarrasse no limite e
-   continuasse tentando empurraria a própria janela para sempre — e uma trava
-   sem fim é um banimento que ninguém decidiu aplicar.
-   ══════════════════════════════════════════════════════════════════════════ */
+/* A trava tem de ter fim: uma requisição recusada não conta. Se contasse, quem
+   esbarrasse no limite e continuasse tentando empurraria a própria janela para
+   sempre, e uma trava sem fim é um banimento que ninguém decidiu aplicar. */
 
 test('bater na porta trancada não estende a tranca', async () => {
   const dono = await kit.signIn();

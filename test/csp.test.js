@@ -16,16 +16,13 @@ const throttle = require('../throttle');
 const csp = require('../csp');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A política de conteúdo, conferida sem navegador.
+   A política de conteúdo, conferida sem navegador. O que dá para verificar aqui
+   é que ela PERMITE tudo que os arquivos publicados referenciam, e que não
+   permite as duas coisas que a esvaziariam.
 
-   Uma CSP só é verificada de verdade abrindo a página, e é por isso que ela sai
-   em modo aviso primeiro. O que dá para verificar aqui é outra coisa, e não é
-   pouca: que a política PERMITE tudo que os arquivos publicados referenciam, e
-   que ela não permite as duas coisas que a esvaziariam.
-
-   O valor deste arquivo é no futuro. No dia em que uma dependência nova trouxer
-   um `eval`, ou alguém apontar uma imagem para outro domínio, é aqui que
-   aparece — em vez de aparecer como um pedaço branco na tela de outra pessoa.
+   O valor é no futuro: no dia em que uma dependência nova trouxer um `eval`, ou
+   alguém apontar uma imagem para outro domínio, é aqui que aparece — em vez de
+   aparecer como um pedaço branco na tela de outra pessoa.
    ══════════════════════════════════════════════════════════════════════════ */
 
 let baseUrl;
@@ -125,20 +122,15 @@ test('cada script inline entra pelo hash, e são exatamente dois', async () => {
 });
 
 /* ── o que a árvore tem e o navegador não recebe ──────────────────────────
-   `npm audit` no cliente aponta quatro falhas altas, todas no mesmo caminho:
-   webtorrent → torrent-discovery → bittorrent-tracker → `ip`, cujo `isPublic`
-   classifica endereços errado (SSRF).
+   `npm audit` no cliente aponta quatro falhas altas no mesmo caminho:
+   webtorrent → torrent-discovery → bittorrent-tracker → `ip`.
 
-   Elas não chegam ao navegador. O build de browser do WebTorrent não inclui o
-   rastreador de rede que usa `ip` — é código de Node, para um cliente que abre
-   sockets de verdade —, e o pacote publicado não tem uma linha dele. Além
-   disso, SSRF é uma falha de quem faz requisições a partir de um servidor; uma
-   página não tem esse poder, e `connect-src` fecha o que sobraria.
+   Elas não chegam ao navegador: o build de browser do WebTorrent não inclui o
+   rastreador de rede que usa `ip`, e o pacote publicado não tem uma linha dele.
+   Além disso SSRF é falha de quem faz requisições a partir de um servidor.
 
-   Isto é uma AFIRMAÇÃO SOBRE O ARTEFATO, então é medida e não anotada. No dia
-   em que uma versão nova do WebTorrent passar a embarcar aquele caminho, é aqui
-   que aparece — em vez de continuar sendo verdade porque alguém escreveu que
-   era, uma vez, num commit. */
+   Isto é uma AFIRMAÇÃO SOBRE O ARTEFATO, então é medida e não anotada: no dia
+   em que uma versão nova passar a embarcar aquele caminho, é aqui que aparece. */
 test('o rastreador de rede do Node não vai junto para o navegador', () => {
   const dir = path.join(__dirname, '..', 'public', 'assets');
   const publicados = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
@@ -160,20 +152,15 @@ test('o rastreador de rede do Node não vai junto para o navegador', () => {
 /* ══════════════════════════════════════════════════════════════════════════
    O FIM DE LINHA, que é como este arquivo errou uma vez.
 
-   O navegador não hasheia os bytes que recebeu. O parser de HTML normaliza o
-   fluxo de entrada antes de olhar para qualquer coisa — todo CRLF vira LF, todo
-   CR solto vira LF — e é o texto DEPOIS disso que ele hasheia.
-
-   Este arquivo lia o HTML do disco e hasheava o que estava lá. Com o
-   `index.html` publicado gravado em CRLF, os dois hashes ficavam diferentes por
-   causa de um caractere que o navegador já tinha descartado, e a política
-   recusava os dois scripts do próprio produto. Em modo de bloquear, a página
-   teria perdido o ajuste de zoom e a detecção de GPU sem uma única mensagem de
-   erro; foi o modo de aviso que contou.
+   O navegador não hasheia os bytes que recebeu: o parser de HTML normaliza o
+   fluxo antes — CRLF e CR solto viram LF — e hasheia o resultado. Lendo o HTML
+   do disco, gravado em CRLF, os dois hashes diferiam por um caractere que o
+   navegador já tinha descartado, e a política recusava os scripts do próprio
+   produto. Em modo de bloquear, a página teria perdido o ajuste de zoom e a
+   detecção de GPU sem uma única mensagem de erro.
 
    O teste é o que impede a volta: o mesmo script com os dois fins de linha tem
-   de produzir o mesmo hash, e ele tem de ser o do LF, que é o que o navegador
-   calcula.
+   de produzir o mesmo hash, e ele tem de ser o do LF.
    ══════════════════════════════════════════════════════════════════════════ */
 
 test('o hash é o do texto que o parser vê, e não o dos bytes em disco', () => {

@@ -11,38 +11,27 @@ const auth = require('../auth');
        node scripts/merge-accounts.js --old <id> --new <id>            (ensaio)
        node scripts/merge-accounts.js --old <id> --new <id> --apply
 
-   ── por que isto existe se já há a tela de reivindicar ────────────────────
-   A tela pede o PIN da conta adormecida, e há contas que nunca tiveram um: as
-   de seed nasceram sem credencial nenhuma, de propósito — dar uma senha
-   conhecida a elas seria porta dos fundos. Para essas, a ponte de dentro do
-   produto não fecha, e a fusão só pode ser um gesto deliberado de quem
-   administra a instalação, feito uma vez, com os dois ids na mão.
-
-   Também é o caminho quando alguém entrou pelo Google e ganhou uma conta nova
-   em vez de cair na antiga. Isso não é defeito: `accountForGoogle` liga por
-   e-mail apenas quando a conta antiga JÁ TEM aquele endereço, e as contas de
-   antes da entrada pelo Google não têm e-mail nenhum. Sem essa regra, quem
-   escrevesse o endereço de outra pessoa herdaria a conta dela.
+   É o único caminho de fusão que existe: a ponte de dentro do produto, que
+   pedia o PIN da conta adormecida, foi retirada. Serve para quem entrou pelo
+   Google e ganhou uma conta nova em vez de cair na antiga — o que não é
+   defeito: `accountForGoogle` liga por e-mail apenas quando a conta antiga JÁ
+   TEM aquele endereço, senão quem escrevesse o e-mail de outra pessoa herdaria
+   a conta dela.
 
    ── a direção, e ela não é a que se diz em voz alta ───────────────────────
-   Pede-se "migrar do antigo para o novo". O que acontece é o contrário no
-   mecanismo e a mesma coisa no resultado: a conta ANTIGA sobrevive e absorve as
-   credenciais da nova. Mover o histórico seria reescrever a chave estrangeira
-   em seis tabelas com restrição de unicidade em cada uma; mover a credencial é
-   mexer em quatro colunas de uma linha.
+   Pede-se "migrar do antigo para o novo", e o mecanismo é o contrário: a conta
+   ANTIGA sobrevive e absorve as credenciais da nova. Mover o histórico seria
+   reescrever a chave estrangeira em seis tabelas com restrição de unicidade em
+   cada uma; mover a credencial é mexer em quatro colunas de uma linha. E
+   preserva o que importa — as fichas continuam apontando para o mesmo id, e
+   todo link já colado no Discord continua valendo. O nome, o retrato e a bio
+   que sobrevivem são os da conta antiga.
 
-   E é o que preserva o que importa: as fichas, os comentários e os votos
-   continuam apontando para o mesmo id, e todo link de ficha já colado no
-   Discord continua valendo. O nome, o retrato e a bio que sobrevivem são os da
-   conta antiga — se os novos forem os desejados, são dois cliques no perfil
-   depois.
-
-   ── e por que ele não faz nada sem `--apply` ──────────────────────────────
+   ── e por que nada acontece sem `--apply` ─────────────────────────────────
    Porque a fusão apaga uma linha de `reviewers`, e apagar uma pessoa leva em
-   cascata tudo que ainda apontar para ela. O ensaio mostra exatamente o que
-   move e o que COLIDE — as linhas que o `OR IGNORE` vai descartar em silêncio,
-   que são a única perda possível aqui e a única coisa que não dá para desfazer
-   sem o backup.
+   cascata tudo que ainda apontar para ela. O ensaio mostra o que move e o que
+   COLIDE — as linhas que o `OR IGNORE` descarta em silêncio, que são a única
+   perda possível aqui e a única que não dá para desfazer sem o backup.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const arg = name => {
@@ -94,11 +83,10 @@ function mostrar(rows) {
   console.log('');
 }
 
-/* ── o que vai se perder, se algo for ─────────────────────────────────────
-   As seis tabelas movidas têm restrição de unicidade, e a fusão usa
+/* As seis tabelas movidas têm restrição de unicidade, e a fusão usa
    `UPDATE OR IGNORE`: onde a conta antiga já tem a linha equivalente, a da nova
-   é descartada. Isso é o certo — entre duas fichas do mesmo filme na mesma
-   sala, a antiga é a que tem histórico — mas descartar em silêncio não é. */
+   é descartada. Isso é o certo — entre duas fichas do mesmo filme, a antiga tem
+   histórico — mas descartar em silêncio não é. */
 async function colisoes(oldId, newId) {
   const um = (sql, ...args) => db.prepare(sql).get(...args).then(r => Number(r.n));
   return {

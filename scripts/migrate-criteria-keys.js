@@ -1,29 +1,21 @@
 /* ══════════════════════════════════════════════════════════════════════════
    Renomeia as chaves de critério guardadas nas avaliações antigas.
 
-   A nota de uma avaliação é gravada como um objeto JSON chaveado pelos
-   critérios que existiam no dia em que ela foi dada. Quando um gênero troca uma
-   pergunta por outra — "Atuações" por "Vozes" numa animação — a chave muda, e
-   sem esta migração toda avaliação anterior perde aquele critério: ele passa a
-   ler zero na abertura da nota, porque a chave nova não existe no registro.
-
-   Rode a partir do diretório app/:
-
        npm run migrate:criterios
+       npm run migrate:criterios -- --dry
 
-   ── por que isto não mexe na nota final ─────────────────────────────────
-   Toda troca abaixo cai num slot do mesmo peso: um critério ×1 vira outro ×1,
-   um ×2 vira outro ×2. Renomear a chave preserva a soma exatamente, então a
-   coluna `final` continua correta e não é tocada. Se alguma troca futura mudar
-   de peso, isto aqui deixa de bastar e a nota precisa ser recalculada.
+   A nota é gravada como um objeto JSON chaveado pelos critérios que existiam no
+   dia em que foi dada. Quando um gênero troca uma pergunta por outra —
+   "Atuações" por "Vozes" numa animação — a chave muda, e sem isto toda
+   avaliação anterior perde aquele critério: ele lê zero na abertura da nota.
 
-   É idempotente: uma chave já renomeada não é encontrada de novo, e uma linha
-   em que nada mudou não é reescrita. Rodar duas vezes não faz nada na segunda.
+   Não mexe na coluna `final` porque toda troca abaixo cai num slot do mesmo
+   peso, e renomear preserva a soma. Uma troca futura que mude de peso deixa
+   isto insuficiente, e a nota precisa ser recalculada.
 
-   Com --dry não escreve nada: lê o acervo, imprime exatamente o que faria e
-   sai. Existe por causa do banco de produção, que fica atrás de uma URL e um
-   token de ambiente — quando o alvo é o clube inteiro e não este notebook, a
-   primeira rodada deve ser a que não pode dar errado.
+   Idempotente: uma chave já renomeada não é encontrada de novo. `--dry` existe
+   por causa do banco de produção — quando o alvo é o clube inteiro e não este
+   notebook, a primeira rodada deve ser a que não pode dar errado.
    ══════════════════════════════════════════════════════════════════════════ */
 
 try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }

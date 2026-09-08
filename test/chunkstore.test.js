@@ -4,20 +4,15 @@ import assert from 'node:assert/strict';
 import { localChunkStore } from '../client/src/lib/chunkStore.ts';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The store the seeder serves peers from.
+   The store the seeder serves peers from. It computes where the bytes are and
+   reads them out of the file, so the arithmetic *is* the store.
 
-   It exists so that seeding does not write a second copy of the film to disk
-   — see the header of `chunkStore.ts` for why that copy was costing the
-   person who brought the film their own picture. What it replaced was a store
-   that genuinely held the bytes; this one computes where they are and reads
-   them out of the file, so the arithmetic *is* the store.
-
-   And arithmetic is the one kind of mistake this cannot make survivably. A
-   store that returns the wrong bytes does not fail here. It fails as a hash
+   And arithmetic is the one kind of mistake this cannot make survivably: a
+   store that returns the wrong bytes does not fail here, it fails as a hash
    mismatch in somebody else's browser, halfway through the evening, with
    nothing on screen to say why. So every offset the engine can ask for is
-   pinned here: whole pieces, the short last piece, and the block-inside-a-
-   piece form that a peer actually uses.
+   pinned: whole pieces, the short last piece, and the block-inside-a-piece form
+   that a peer actually uses.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** A stand-in for the browser's `File`, over bytes we can predict. */

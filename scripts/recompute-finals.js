@@ -4,24 +4,16 @@
        npm run recalcular:notas           escreve
        npm run recalcular:notas -- --dry  só mostra o que faria
 
-   Em 25/08/2026 os pesos ficaram todos iguais: o que era oito critérios ×1 mais
-   dois ×2 dividido por 12 virou a média simples do que a ficha responde. Isso
-   muda a nota de toda avaliação em que os dois critérios do gênero não estavam
-   exatamente na média das outras — ou seja, praticamente todas.
+   Em 25/08/2026 os pesos ficaram todos iguais, o que muda a nota de toda
+   avaliação em que os dois critérios do gênero não estavam exatamente na média
+   das outras. O detalhamento se recalcula sozinho na tela; a coluna `final`,
+   que a média do clube e o pódio somam, não — sem isto o clube vê o
+   detalhamento com pesos iguais e a nota ao lado vinda de outra conta.
 
-   O que não se cura sozinho é a coluna `final` no banco. Ela foi gravada com a
-   fórmula da época, e é ela que a média do clube e a aba "melhores do clube"
-   somam. Sem isto o clube vê o detalhamento com pesos iguais e a nota ao lado
-   vinda de outra conta.
+   Não inventa Aproveitamento para quem não respondeu: `finalOf` divide pelo que
+   a ficha responde, então as duas continuam sendo médias na mesma escala.
 
-   ── o que este script não faz ───────────────────────────────────────────
-   Não inventa Aproveitamento para quem não respondeu. Uma avaliação anterior a
-   esta data tem dez marcas, e finalOf divide pelo que a ficha responde: dez
-   ali, onze numa nova. As duas continuam sendo médias na mesma escala de 0 a
-   10, e ninguém leva um tombo de um ponto por uma pergunta que não existia.
-
-   Seguro de rodar duas vezes: recalcular uma nota já correta escreve o mesmo
-   número, e o script conta quantas de fato mudaram.
+   Seguro de rodar duas vezes.
    ══════════════════════════════════════════════════════════════════════════ */
 
 try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }
