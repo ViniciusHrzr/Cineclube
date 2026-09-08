@@ -34,7 +34,7 @@ import {
 import { Channels, Gauge } from '@/components/channels';
 /* A fileira de marcas do cartão de filme, e não uma cópia dela: é a mesma
    resposta à mesma pergunta, e duas cópias divergiriam na terceira mexida. */
-import { OnCell } from '@/components/film';
+import { OnCell, WatchOn } from '@/components/film';
 /* As mesmas peças do universo de filmes: o voto na ficha, a conversa, o
    detalhamento dos critérios, o retrato clicável. Elas leem a sala pelo
    `useWorld`, e a raiz de séries entrega uma — ver lib/world.tsx. */
@@ -577,6 +577,15 @@ export function ShowScreen({
     };
   }, [showId, season, fault]);
 
+  /** O que VOCÊ já viu, para a chave de marcar a temporada saber o que falta. */
+  const meusVistos = useMemo(
+    () =>
+      new Set(
+        takes.filter(t => t.reviewerId === meId).map(t => `${t.season}x${t.episode}`)
+      ),
+    [takes, meId]
+  );
+
   /* As fichas indexadas por episódio, uma vez: a lista pergunta por cada linha
      que desenha, e varrer o array inteiro por episódio é o mesmo trabalho
      repetido vinte vezes. */
@@ -701,6 +710,13 @@ export function ShowScreen({
               </TrailerKey>
             ) : null}
           </div>
+
+          {/* O mesmo bloco da folha de projeção de um filme, e a pergunta que
+              esta tela mais provoca: o cartão da grade já traz as marcas, e a
+              ficha aberta — onde se decide começar vinte horas — não trazia
+              nada. Numa série a resposta vale mais: ou está numa assinatura que
+              alguém já paga, ou o clube não maratona. */}
+          <WatchOn watch={show.watch} />
         </div>
       </header>
 
@@ -720,6 +736,20 @@ export function ShowScreen({
                 {`T${s.season}`}
               </Chip>
             ))}
+            {/* Na ponta da fileira de temporadas porque é sobre a que está
+                aberta, e não sobre a série. */}
+            {temporada ? (
+              <MarkSeason
+                episodes={temporada.episodes}
+                mine={meusVistos}
+                showId={show.id}
+                showTitle={show.title}
+                showPoster={show.poster}
+                genre={genero}
+                onSaved={onSaved}
+                fault={fault}
+              />
+            ) : null}
           </div>
 
           {!temporada ? (
@@ -770,6 +800,104 @@ export function ShowScreen({
         />
       ) : null}
     </section>
+  );
+}
+
+/* ── a temporada inteira, de uma vez ──────────────────────────────────────
+   Quem chega a uma série no meio já viu as três primeiras temporadas, e marcar
+   isso eram trinta cliques — o suficiente para ninguém marcar nada, e um
+   progresso do clube que mente para baixo.
+
+   Só o que FALTA, nunca o que já está marcado: uma linha já gravada carrega a
+   nota de quem a gravou, e reescrevê-la seria uma marcação em massa apagando
+   uma avaliação que ninguém mandou apagar.
+
+   E nunca o que ainda não foi ao ar. Uma série em exibição lista o resto da
+   temporada com data futura, e "marcar tudo" ali dentro marcaria como visto o
+   que não existe.
+
+   Só marca. Desmarcar em massa apagaria fichas com nota dentro, e o caminho de
+   desfazer continua sendo a linha, uma a uma, que já pergunta antes de levar
+   uma nota junto. */
+const LANES_MARCAR = 4;
+
+function MarkSeason({
+  episodes,
+  mine,
+  showId,
+  showTitle,
+  showPoster,
+  genre,
+  onSaved,
+  fault,
+}: {
+  episodes: Episode[];
+  /** `${season}x${episode}` do que você já viu. */
+  mine: Set<string>;
+  showId: number;
+  showTitle: string;
+  showPoster: string | null;
+  genre: string;
+  onSaved: () => void;
+  fault: (msg: string) => void;
+}) {
+  const [marcando, setMarcando] = useState(false);
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const faltando = episodes.filter(
+    e => !mine.has(`${e.season}x${e.episode}`) && (!e.airDate || e.airDate <= hoje)
+  );
+
+  /* Sem nada a fazer, nenhuma chave: uma temporada inteira marcada não precisa
+     de um botão desabilitado dizendo isso — a fileira de checks já diz. */
+  if (!faltando.length) return null;
+
+  const marcar = async () => {
+    if (marcando) return;
+    if (
+      !confirm(
+        `Marcar ${plural(faltando.length, 'episódio', 'episódios')} desta temporada como assistido?`
+      )
+    ) {
+      return;
+    }
+    setMarcando(true);
+    const fila = [...faltando];
+    let falhou = 0;
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(LANES_MARCAR, fila.length) }, async () => {
+          while (fila.length) {
+            const ep = fila.shift()!;
+            try {
+              await showsApi.mark(showId, ep.season, ep.episode, {
+                showTitle,
+                showPoster,
+                episodeTitle: ep.title,
+                genre,
+              });
+            } catch {
+              /* Contado e seguido: um episódio que não gravou não pode custar os
+                 outros dezenove, e a releitura no fim diz a verdade sobre todos. */
+              falhou += 1;
+            }
+          }
+        })
+      );
+    } finally {
+      setMarcando(false);
+      // Uma releitura só, e no fim: uma por episódio seriam vinte recargas do
+      // acervo inteiro para desenhar a mesma lista.
+      onSaved();
+      if (falhou) fault(`${plural(falhou, 'episódio ficou', 'episódios ficaram')} sem marcar.`);
+    }
+  };
+
+  return (
+    <Key tone="flush" disabled={marcando} onClick={() => void marcar()} className="ml-1 px-3 py-1.5">
+      <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+      {marcando ? 'Marcando…' : `Marcar ${faltando.length}`}
+    </Key>
   );
 }
 

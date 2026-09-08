@@ -120,52 +120,78 @@ function toVtt(raw: string, offset: number) {
   return /^WEBVTT/.test(shifted) ? shifted : `WEBVTT\n\n${shifted}`;
 }
 
-/* ── o que vem depois ─────────────────────────────────────────────────────
-   Uma série se vê em fila, e até agora passar ao seguinte era encerrar a
-   sessão, abrir o seletor, achar a série, achar a temporada e achar o número —
-   cinco passos para a coisa mais previsível que este clube faz.
+/* ── o que vem antes e o que vem depois ───────────────────────────────────
+   Uma série se vê em fila, e até agora andar nela era encerrar a sessão, abrir
+   o seletor, achar a série, achar a temporada e achar o número — cinco passos
+   para a coisa mais previsível que este clube faz. Para trás valia o mesmo:
+   abriu o errado, ou a mesa quis rever o anterior antes de seguir.
 
-   Descoberto e não adivinhado: `episódio + 1` não existe no fim da temporada, e
-   uma temporada não termina sempre no mesmo número. Buscar a temporada responde
-   isso E deixa o episódio seguinte em cache, que é a condição de a sala poder
-   abri-lo — as duas coisas pelo preço de uma.
+   Descoberto e não adivinhado: `episódio ± 1` não existe nas pontas da
+   temporada, e uma temporada não começa nem termina sempre no mesmo número.
+   Buscar a temporada responde isso E deixa os vizinhos em cache, que é a
+   condição de a sala poder abri-los — as duas coisas pelo preço de uma.
 
-   Sem próximo é um estado e não um erro: o fim da última temporada é a resposta
-   certa, e uma falha de rede aqui só apaga um botão. */
-function useNextEpisode(movie: ScreeningMovie | null) {
-  const [next, setNext] = useState<{ season: number; episode: number; title: string } | null>(null);
+   Não ter vizinho é um estado e não um erro: o primeiro episódio da primeira
+   temporada não tem anterior, e uma falha de rede aqui só apaga um botão. */
+type Neighbour = { season: number; episode: number; title: string };
+
+const asNeighbour = (e: Episode): Neighbour => ({
+  season: e.season,
+  episode: e.episode,
+  title: e.title,
+});
+
+function useNeighbours(movie: ScreeningMovie | null) {
+  const [around, setAround] = useState<{ prev: Neighbour | null; next: Neighbour | null }>({
+    prev: null,
+    next: null,
+  });
 
   const showId = movie?.kind === 'episode' ? movie.id : null;
   const season = movie?.season ?? null;
   const episode = movie?.episode ?? null;
 
   useEffect(() => {
-    setNext(null);
+    setAround({ prev: null, next: null });
     if (showId == null || season == null || episode == null) return;
 
     let alive = true;
     void (async () => {
       const atual = await seriesApi.season(showId, season);
       const onde = atual.season.episodes.findIndex(e => e.episode === episode);
+      const antes = onde > 0 ? atual.season.episodes[onde - 1] : null;
       const depois = onde >= 0 ? atual.season.episodes[onde + 1] : null;
-      if (depois) {
-        if (alive) setNext({ season: depois.season, episode: depois.episode, title: depois.title });
-        return;
+      if (alive) {
+        setAround({
+          prev: antes ? asNeighbour(antes) : null,
+          next: depois ? asNeighbour(depois) : null,
+        });
       }
-      /* Acabou a temporada. A seguinte é a próxima da lista da série e não
-         `temporada + 1`: especiais são a zero, e uma série pode pular número. */
+      // Dentro da temporada nos dois lados: nada mais a perguntar.
+      if (antes && depois) return;
+
+      /* Uma ponta, ou as duas. A temporada vizinha é a da LISTA da série e não
+         `temporada ± 1`: especiais são a zero, e uma série pode pular número. */
       const { show } = await seriesApi.show(showId);
       const todas = show.seasons ?? [];
       const aqui = todas.findIndex(s => s.season === season);
-      const seguinte = aqui >= 0 ? todas[aqui + 1] : null;
-      if (!seguinte) return;
-      const nova = await seriesApi.season(showId, seguinte.season);
-      const primeiro = nova.season.episodes[0];
-      if (primeiro && alive) {
-        setNext({ season: primeiro.season, episode: primeiro.episode, title: primeiro.title });
+      if (aqui < 0) return;
+
+      /* A ponta de cá pega o ÚLTIMO da temporada anterior, e a de lá o primeiro
+         da seguinte — é assim que "anterior" atravessa uma virada de temporada
+         sem a pessoa ter de saber onde a outra terminou. */
+      if (!antes && todas[aqui - 1]) {
+        const r = await seriesApi.season(showId, todas[aqui - 1].season);
+        const ultimo = r.season.episodes[r.season.episodes.length - 1];
+        if (ultimo && alive) setAround(a => ({ ...a, prev: asNeighbour(ultimo) }));
+      }
+      if (!depois && todas[aqui + 1]) {
+        const r = await seriesApi.season(showId, todas[aqui + 1].season);
+        const primeiro = r.season.episodes[0];
+        if (primeiro && alive) setAround(a => ({ ...a, next: asNeighbour(primeiro) }));
       }
     })().catch(() => {
-      /* sem próximo é um estado; ver acima */
+      /* sem vizinho é um estado; ver acima */
     });
 
     return () => {
@@ -173,7 +199,7 @@ function useNextEpisode(movie: ScreeningMovie | null) {
     };
   }, [showId, season, episode]);
 
-  return next;
+  return around;
 }
 
 /** What `MediaError.code` means, said to somebody who just saw a black screen. */
@@ -222,10 +248,10 @@ export function ScreeningScreen({
      três telas assistem. Uma sala sem dono é de todo mundo — uma sessão aberta
      antes desta regra continua utilizável em vez de ficar travada. */
   const iHaveControl = !state.host || state.host.id === club.me.id;
-  /* O episódio seguinte, quando o que está tocando é um. Só na tela de quem
-     pode abri-lo: descobrir custa uma pergunta ao TMDB por episódio, e nas
-     outras três ela pagaria para acender um botão que elas não têm. */
-  const next = useNextEpisode(iHaveControl ? state.movie : null);
+  /* Os episódios em volta, quando o que está tocando é um. Só na tela de quem
+     pode abri-los: descobrir custa uma pergunta ao TMDB por episódio, e nas
+     outras três ela pagaria para acender botões que elas não têm. */
+  const { prev, next } = useNeighbours(iHaveControl ? state.movie : null);
 
   const [source, setSource] = useState<Source>({ kind: 'none' });
   /** Of the local file, once the player has read it. Half of the file's identity. */
@@ -650,10 +676,18 @@ export function ScreeningScreen({
           label={rateLabel}
           onRate={() => onRate(movie)}
         />
-        {/* Só para o dono, e pela mesma razão do botão de encerrar: passar ao
-            seguinte é trocar o que a sala inteira está vendo. */}
+        {/* Só para o dono, e pela mesma razão do botão de encerrar: andar na
+            série é trocar o que a sala inteira está vendo. O anterior primeiro,
+            porque é a ordem em que os dois números estão. */}
+        {prev && iHaveControl ? (
+          <StepKey
+            step={prev}
+            back
+            onGo={() => void openEpisode(movie.id, prev.season, prev.episode)}
+          />
+        ) : null}
         {next && iHaveControl ? (
-          <NextKey next={next} onGo={() => void openEpisode(movie.id, next.season, next.episode)} />
+          <StepKey step={next} onGo={() => void openEpisode(movie.id, next.season, next.episode)} />
         ) : null}
         {/* Encerrar é o maior dos comandos do player: apaga a sala para os
             quatro. Some da tela de quem não é o dono em vez de ficar ali para
@@ -781,10 +815,12 @@ export function ScreeningScreen({
               />
               {/* Onde a chave mais serve: os créditos subiram e a pergunta da
                   mesa é essa. Depois de avaliar, porque é essa a ordem de uma
-                  noite — o que se acabou de ver, e só então o seguinte. */}
+                  noite — o que se acabou de ver, e só então o seguinte. Sem o
+                  anterior: nos créditos ninguém volta, e a chave dele continua
+                  no alto para quem abriu o errado. */}
               {next && iHaveControl ? (
-                <NextKey
-                  next={next}
+                <StepKey
+                  step={next}
                   onGo={() => void openEpisode(movie.id, next.season, next.episode)}
                 />
               ) : null}
@@ -1439,16 +1475,10 @@ function PosterGrid({
 /* A chave diz para ONDE vai, e não só que vai: o número é o que a mesa
    pergunta ("é o seis agora?"), e ele também é a única coisa que denuncia a
    virada de temporada antes de ela acontecer. */
-function NextKey({
-  next,
-  onGo,
-}: {
-  next: { season: number; episode: number; title: string };
-  onGo: () => void;
-}) {
+function StepKey({ step, back, onGo }: { step: Neighbour; back?: boolean; onGo: () => void }) {
   return (
-    <Key onClick={onGo} title={next.title}>
-      Próximo · T{next.season}E{String(next.episode).padStart(2, '0')}
+    <Key onClick={onGo} title={step.title}>
+      {back ? 'Anterior' : 'Próximo'} · T{step.season}E{String(step.episode).padStart(2, '0')}
     </Key>
   );
 }
