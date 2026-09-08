@@ -120,6 +120,62 @@ function toVtt(raw: string, offset: number) {
   return /^WEBVTT/.test(shifted) ? shifted : `WEBVTT\n\n${shifted}`;
 }
 
+/* ── o que vem depois ─────────────────────────────────────────────────────
+   Uma série se vê em fila, e até agora passar ao seguinte era encerrar a
+   sessão, abrir o seletor, achar a série, achar a temporada e achar o número —
+   cinco passos para a coisa mais previsível que este clube faz.
+
+   Descoberto e não adivinhado: `episódio + 1` não existe no fim da temporada, e
+   uma temporada não termina sempre no mesmo número. Buscar a temporada responde
+   isso E deixa o episódio seguinte em cache, que é a condição de a sala poder
+   abri-lo — as duas coisas pelo preço de uma.
+
+   Sem próximo é um estado e não um erro: o fim da última temporada é a resposta
+   certa, e uma falha de rede aqui só apaga um botão. */
+function useNextEpisode(movie: ScreeningMovie | null) {
+  const [next, setNext] = useState<{ season: number; episode: number; title: string } | null>(null);
+
+  const showId = movie?.kind === 'episode' ? movie.id : null;
+  const season = movie?.season ?? null;
+  const episode = movie?.episode ?? null;
+
+  useEffect(() => {
+    setNext(null);
+    if (showId == null || season == null || episode == null) return;
+
+    let alive = true;
+    void (async () => {
+      const atual = await seriesApi.season(showId, season);
+      const onde = atual.season.episodes.findIndex(e => e.episode === episode);
+      const depois = onde >= 0 ? atual.season.episodes[onde + 1] : null;
+      if (depois) {
+        if (alive) setNext({ season: depois.season, episode: depois.episode, title: depois.title });
+        return;
+      }
+      /* Acabou a temporada. A seguinte é a próxima da lista da série e não
+         `temporada + 1`: especiais são a zero, e uma série pode pular número. */
+      const { show } = await seriesApi.show(showId);
+      const todas = show.seasons ?? [];
+      const aqui = todas.findIndex(s => s.season === season);
+      const seguinte = aqui >= 0 ? todas[aqui + 1] : null;
+      if (!seguinte) return;
+      const nova = await seriesApi.season(showId, seguinte.season);
+      const primeiro = nova.season.episodes[0];
+      if (primeiro && alive) {
+        setNext({ season: primeiro.season, episode: primeiro.episode, title: primeiro.title });
+      }
+    })().catch(() => {
+      /* sem próximo é um estado; ver acima */
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [showId, season, episode]);
+
+  return next;
+}
+
 /** What `MediaError.code` means, said to somebody who just saw a black screen. */
 function playbackFailure(code: number) {
   if (code === 2) return 'A fonte caiu no meio da reprodução.';
@@ -166,6 +222,10 @@ export function ScreeningScreen({
      três telas assistem. Uma sala sem dono é de todo mundo — uma sessão aberta
      antes desta regra continua utilizável em vez de ficar travada. */
   const iHaveControl = !state.host || state.host.id === club.me.id;
+  /* O episódio seguinte, quando o que está tocando é um. Só na tela de quem
+     pode abri-lo: descobrir custa uma pergunta ao TMDB por episódio, e nas
+     outras três ela pagaria para acender um botão que elas não têm. */
+  const next = useNextEpisode(iHaveControl ? state.movie : null);
 
   const [source, setSource] = useState<Source>({ kind: 'none' });
   /** Of the local file, once the player has read it. Half of the file's identity. */
@@ -193,7 +253,15 @@ export function ScreeningScreen({
     }
   }, [subSize]);
 
-  const movieId = state.movie?.id ?? null;
+  /* O que está tocando, como uma string que muda quando ele muda. Era o id do
+     filme, e isso é a mesma coisa para um filme e mentira para um episódio: o
+     id de um episódio é o da SÉRIE, então passar ao seguinte não mexia em nada
+     aqui — a sala trocava de obra e esta tela seguia com a fonte, a legenda e o
+     "já começou" do episódio anterior. */
+  const playing = state.movie;
+  const workKey = playing
+    ? `${playing.id}:${playing.season ?? ''}:${playing.episode ?? ''}`
+    : null;
   const { stop: stopTorrent } = torrent;
   const { publishLink } = screening;
   /** The last link this browser told the room about. See `share` below. */
@@ -224,7 +292,7 @@ export function ScreeningScreen({
     heldSub.current = null;
     tookSub.current = null;
     stopTorrent();
-  }, [movieId, stopTorrent]);
+  }, [workKey, stopTorrent]);
 
   /* ── what this member is playing, said in one string ─────────────────────
      The infohash is exact: two people on the same hash have the same bytes, so
@@ -582,6 +650,11 @@ export function ScreeningScreen({
           label={rateLabel}
           onRate={() => onRate(movie)}
         />
+        {/* Só para o dono, e pela mesma razão do botão de encerrar: passar ao
+            seguinte é trocar o que a sala inteira está vendo. */}
+        {next && iHaveControl ? (
+          <NextKey next={next} onGo={() => void openEpisode(movie.id, next.season, next.episode)} />
+        ) : null}
         {/* Encerrar é o maior dos comandos do player: apaga a sala para os
             quatro. Some da tela de quem não é o dono em vez de ficar ali para
             ser recusado pelo servidor. */}
@@ -704,8 +777,17 @@ export function ScreeningScreen({
               <RateKey
                 costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
                 label={rateLabel}
-          onRate={() => onRate(movie)}
+                onRate={() => onRate(movie)}
               />
+              {/* Onde a chave mais serve: os créditos subiram e a pergunta da
+                  mesa é essa. Depois de avaliar, porque é essa a ordem de uma
+                  noite — o que se acabou de ver, e só então o seguinte. */}
+              {next && iHaveControl ? (
+                <NextKey
+                  next={next}
+                  onGo={() => void openEpisode(movie.id, next.season, next.episode)}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1354,6 +1436,23 @@ function PosterGrid({
 
    Armada e não modal: um diálogo por cima de um filme que quatro pessoas ainda
    estão vendo é uma interrupção pior do que a coisa contra a qual ele avisa. */
+/* A chave diz para ONDE vai, e não só que vai: o número é o que a mesa
+   pergunta ("é o seis agora?"), e ele também é a única coisa que denuncia a
+   virada de temporada antes de ela acontecer. */
+function NextKey({
+  next,
+  onGo,
+}: {
+  next: { season: number; episode: number; title: string };
+  onGo: () => void;
+}) {
+  return (
+    <Key onClick={onGo} title={next.title}>
+      Próximo · T{next.season}E{String(next.episode).padStart(2, '0')}
+    </Key>
+  );
+}
+
 function RateKey({
   costsTheRoom,
   label,

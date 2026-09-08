@@ -36,6 +36,7 @@ import {
 } from '@/lib/api';
 import { WorldProvider, type World } from '@/lib/world';
 import {
+  EpisodeSheet,
   SeriesArchiveScreen,
   SeriesCatalogScreen,
   SeriesFeedScreen,
@@ -43,7 +44,7 @@ import {
   ShowScreen,
 } from '@/screens/Series';
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
-import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
+import { DARK, readPulse, samePulse, type ScreeningMovie, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
 import { Key, Lens, Reel } from '@/components/bits';
 import { AccountSheet, SettingsSheet } from '@/components/settings';
@@ -484,6 +485,10 @@ function SeriesClubApp({
      rodando acende do lado de filmes e um filme acende deste. Ver o porquê de
      ela morar fora da tela da sessão em `ClubApp`. */
   const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+  /* O episódio que a sessão mandou avaliar. Aqui e não na tela da sessão porque
+     a folha é uma folha: ela abre por cima de onde você está, e quem acabou de
+     ver não deve perder a sala para escrever o que achou. */
+  const [avaliando, setAvaliando] = useState<ScreeningMovie | null>(null);
 
   const fault = useCallback((msg: string) => {
     setToast(msg);
@@ -816,7 +821,10 @@ function SeriesClubApp({
                 shows={queue ?? []}
                 onRate={m =>
                   m.kind === 'episode'
-                    ? goShow(m.id)
+                    ? /* A MESMA folha da tela da série, aberta por cima da
+                         sessão: sair da sala para escrever o que achou é perder
+                         o que ainda está tocando para os outros. */
+                      setAvaliando(m)
                     : /* Um filme, aberto do outro lado: a ficha dele é de lá, e
                          a chave que a abre está na sessão daquela lente. */
                       (location.hash = clubHash(slug, 'screening', 'filmes'))
@@ -841,6 +849,45 @@ function SeriesClubApp({
           rec={recOf(pulse)}
         />
       </div>
+
+      {/* A folha da sessão. `key` na tripla para ela nascer limpa a cada
+          episódio: montada uma vez, ela abriria o segundo com as marcas do
+          primeiro ainda no formulário.
+
+          O episódio vai no mínimo que a sala conhece — a tripla e o nome. A
+          folha busca o resto sozinha, que é o que ela já fazia para saber quem
+          dirigiu. */}
+      {avaliando?.season != null && avaliando.episode != null ? (
+        <EpisodeSheet
+          key={`${avaliando.id}x${avaliando.season}x${avaliando.episode}`}
+          showId={avaliando.id}
+          showTitle={avaliando.title}
+          showPoster={avaliando.poster}
+          genre={avaliando.genre}
+          ep={{
+            season: avaliando.season,
+            episode: avaliando.episode,
+            title: avaliando.episodeTitle ?? '',
+            overview: null,
+            still: null,
+            airDate: null,
+            runtime: avaliando.runtime,
+            crowd: null,
+            kind: null,
+          }}
+          takes={(takes ?? []).filter(
+            t =>
+              t.showId === avaliando.id &&
+              t.season === avaliando.season &&
+              t.episode === avaliando.episode
+          )}
+          meId={me.id}
+          criteria={criteria?.[avaliando.genre] ?? null}
+          onClose={() => setAvaliando(null)}
+          onSaved={() => void refresh()}
+          fault={fault}
+        />
+      ) : null}
 
       {toast ? (
         <div className="fixed inset-x-0 bottom-4 z-50 mx-auto w-fit max-w-[92vw] px-4">

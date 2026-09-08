@@ -1019,7 +1019,7 @@ function whenBR(iso: string) {
    com mais dito sobre ela, e mandar a pessoa para outra tela para dizer mais
    seria a folha desistindo no meio. As duas notas se substituem, e a rápida não
    é oferecida por cima de uma criteriosa. */
-function EpisodeSheet({
+export function EpisodeSheet({
   showId,
   showTitle,
   showPoster,
@@ -1133,7 +1133,7 @@ function EpisodeSheet({
           {showTitle} · T{ep.season}E{String(ep.episode).padStart(2, '0')}
         </p>
         <h2 className="mt-2 pr-10 font-display text-[24px] leading-none tracking-[0.03em] text-beam sm:text-[28px]">
-          {ep.title}
+          {ep.title || detalhe?.title}
         </h2>
 
         {/* Quem assina, logo abaixo do nome: é o que esta ficha julga. */}
@@ -1148,8 +1148,13 @@ function EpisodeSheet({
           </p>
         ) : null}
 
-        {ep.overview ? (
-          <p className="mt-3 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">{ep.overview}</p>
+        {/* Do episódio que a lista já tinha, ou do detalhe quando ele chega: a
+            sessão abre esta folha sabendo só a tripla e o nome, e uma sinopse
+            que aparece um instante depois é melhor do que nenhuma. */}
+        {ep.overview || detalhe?.overview ? (
+          <p className="mt-3 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">
+            {ep.overview || detalhe?.overview}
+          </p>
         ) : null}
 
         {/* ── a nota ──────────────────────────────────────────────────────
