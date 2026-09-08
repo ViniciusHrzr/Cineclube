@@ -298,6 +298,57 @@ test('um episódio que ninguém abriu ainda não é uma sessão', async () => {
   }
 });
 
+/* Estar na sala é ter visto: cada tela presente marca a própria linha, e o que
+   já estava gravado não é tocado — é por ali que uma nota se perderia. */
+test('a sessão marca o episódio como visto, sem passar por cima de uma nota', async () => {
+  const ana = await newMember('Ana da Série');
+  const bruno = await newMember('Bruno da Série');
+  const serie = await cachedEpisode({ title: 'A Vista Junto' });
+  /* O acervo é do CLUBE e vem com as fichas de todo mundo, então a pergunta
+     tem de dizer de quem: sem isto, "uma linha" conta a do outro membro junto. */
+  const vistos = async who =>
+    (await req('GET', at('/shows/takes'), null, who.cookie)).body.takes.filter(
+      t => t.showId === serie.showId && t.reviewerId === who.id
+    );
+
+  // O Bruno já tinha avaliado este episódio antes da sessão.
+  assert.equal(
+    (
+      await req(
+        'PUT',
+        at(`/shows/${serie.showId}/2/5`),
+        { showTitle: serie.title, genre: 'Drama', quick: 8 },
+        bruno.cookie
+      )
+    ).status,
+    201
+  );
+
+  await req('POST', at('/screening/open'), { showId: serie.showId, season: 2, episode: 5 }, ana.cookie);
+
+  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 204);
+  assert.equal((await req('POST', at('/screening/seen'), {}, bruno.cookie)).status, 204);
+  // Duas vezes é uma vez: a segunda tela da mesma pessoa não duplica a linha.
+  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 204);
+
+  const dela = await vistos(ana);
+  assert.equal(dela.length, 1, 'uma linha por pessoa por episódio');
+  assert.equal(dela[0].season, 2);
+  assert.equal(dela[0].episode, 5);
+  assert.equal(dela[0].final, null, 'visto não é avaliado');
+
+  const dele = await vistos(bruno);
+  assert.equal(dele.length, 1);
+  assert.equal(dele[0].final, 8, 'a nota de quem já tinha avaliado continua lá');
+
+  // Num filme não há episódio para marcar, e a rota diz isso em vez de inventar.
+  const film = await queuedFilm();
+  await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie);
+  assert.equal((await req('POST', at('/screening/seen'), {}, ana.cookie)).status, 409);
+
+  await req('POST', at('/screening/close'), {}, ana.cookie);
+});
+
 /* ── commands ─────────────────────────────────────────────────────────────── */
 
 test('a command needs an open session and a real name', async () => {

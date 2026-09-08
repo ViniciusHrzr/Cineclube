@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
@@ -7,6 +8,7 @@ const screening = require('../screening');
 const turn = require('../turn');
 const live = require('../live');
 const { cleanEpisodeRef } = require('../show');
+const { GENRES } = require('../criteria');
 
 const router = express.Router({ mergeParams: true });
 
@@ -389,6 +391,56 @@ router.get('/ice', (req, res) => {
     relayed: turn.hasTurn(),
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ESTAR NA SALA É TER VISTO.
+
+   Um episódio assistido junto é um episódio assistido, e até agora cada pessoa
+   tinha de ir marcar o mesmo na tela da série depois. O clube não fazia — então
+   o progresso da sala mentia para baixo justamente nas noites em que ela mais
+   viu.
+
+   Cada tela marca a SUA linha e nunca a dos outros, e isso não é economia: a
+   linha de outra pessoa é onde a nota dela mora, e um servidor marcando por
+   todo mundo de uma vez é uma escrita em massa passando por cima de fichas que
+   ninguém mandou tocar.
+
+   `DO NOTHING` pela mesma razão: quem já avaliou este episódio já o viu, e a
+   marca automática não pode ser o caminho por onde uma nota se perde.
+
+   O episódio vem da SALA e não do corpo do pedido. É o que impede esta rota de
+   virar "marque qualquer episódio como visto sem abrir nada".
+   ══════════════════════════════════════════════════════════════════════════ */
+const seenStmt = db.prepare(`
+  INSERT INTO episode_takes
+    (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
+     season, episode, episode_title, watched_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  ON CONFLICT(club_id, reviewer_id, show_id, season, episode) DO NOTHING
+`);
+
+router.post('/seen', wrap(async (req, res) => {
+  const room = roomOf(req);
+  const playing = room.movie;
+  if (!room.open || playing?.kind !== 'episode') {
+    return res.status(409).json({ error: 'A sessão não está num episódio.' });
+  }
+
+  await seenStmt.run(
+    'e' + crypto.randomUUID(),
+    req.club.id,
+    req.session.reviewer_id,
+    playing.id,
+    playing.title,
+    playing.poster ?? null,
+    GENRES.includes(playing.genre) ? playing.genre : 'Drama',
+    playing.season,
+    playing.episode,
+    playing.episodeTitle ?? null
+  );
+  live.emit('shows', req.session.reviewer_id, req.club.id);
+  res.status(204).end();
+}));
 
 /* Whether this member can play right now, and what they are playing. The
    source tag is how the club finds out somebody opened a different file before

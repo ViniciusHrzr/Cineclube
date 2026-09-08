@@ -226,6 +226,7 @@ export function ScreeningScreen({
   watchlist,
   shows,
   onRate,
+  onSeen,
 }: {
   /** A fila de filmes do clube. Ausente na lente de séries. */
   watchlist?: WatchItem[];
@@ -233,6 +234,9 @@ export function ScreeningScreen({
   shows?: QueuedShow[];
   /** O passo seguinte a assistir, que cada lente resolve na tela dela. */
   onRate: (movie: ScreeningMovie) => void;
+  /* A sala acabou de marcar um episódio como visto no seu nome. Quem chamou
+     esta tela guarda o acervo e é quem sabe relê-lo. */
+  onSeen?: () => void;
 }) {
   const club = useWorld();
   const screening = useScreening(club.fault);
@@ -301,6 +305,29 @@ export function ScreeningScreen({
   const tookSub = useRef<number | null>(null);
   /** When this member's own picture became available; the grace runs from it. */
   const feedingSince = useRef<number | null>(null);
+
+  /* ── estar na sala é ter visto ───────────────────────────────────────────
+     Quem senta para ver um episódio junto viu aquele episódio, e ir marcar o
+     mesmo na tela da série depois era um dever de casa que o clube não fazia —
+     então o progresso da sala mentia para baixo justamente nas noites em que
+     ela mais viu.
+
+     Toda tela presente marca a SUA linha, e é isso que faz "todo mundo que
+     estava lá" acontecer sem o servidor escrever por ninguém. Vale ao chegar e
+     a cada episódio, porque `workKey` muda nos dois casos — quem entra no meio
+     da noite marca o que está tocando, e não o que a sala abriu primeiro. */
+  const { markSeen } = screening;
+  const isEpisode = state.movie?.kind === 'episode';
+  useEffect(() => {
+    if (!isEpisode || !workKey) return;
+    let alive = true;
+    void markSeen().then(marcou => {
+      if (marcou && alive) onSeen?.();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [workKey, isEpisode, markSeen, onSeen]);
 
   /* A different film is a different evening: the source, the receiver, the
      subtitles and the credits all belong to the last one. */
@@ -664,39 +691,63 @@ export function ScreeningScreen({
             </p>
           ) : null}
         </div>
-        {/* Ir avaliar é o passo seguinte a assistir, e até agora custava sair
-            da sessão, achar o filme no catálogo e abri-lo de novo. Fica aqui,
-            ao lado do filme que se está avaliando, e não junto dos controles da
-            fonte — avaliar é sobre a obra, trocar fonte é sobre esta aba. */}
-        <RateKey
-          /* Sair daqui desmonta a tela, e desmontar a tela destrói o motor.
-             Para quem semeia com gente pendurada, esse clique é o fim do filme
-             para os outros — então ele pergunta antes, e só nesse caso. */
-          costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
-          label={rateLabel}
-          onRate={() => onRate(movie)}
-        />
-        {/* Só para o dono, e pela mesma razão do botão de encerrar: andar na
-            série é trocar o que a sala inteira está vendo. O anterior primeiro,
-            porque é a ordem em que os dois números estão. */}
-        {prev && iHaveControl ? (
-          <StepKey
-            step={prev}
-            back
-            onGo={() => void openEpisode(movie.id, prev.season, prev.episode)}
-          />
-        ) : null}
-        {next && iHaveControl ? (
-          <StepKey step={next} onGo={() => void openEpisode(movie.id, next.season, next.episode)} />
-        ) : null}
-        {/* Encerrar é o maior dos comandos do player: apaga a sala para os
-            quatro. Some da tela de quem não é o dono em vez de ficar ali para
-            ser recusado pelo servidor. */}
-        {iHaveControl ? (
-          <Key tone="danger" onClick={() => void closeFilm()}>
-            Encerrar sessão
-          </Key>
-        ) : null}
+        {/* ── dois grupos, e a divisão é o que eles fazem ──────────────────
+            Andar na série troca o que a sala está vendo; avaliar e encerrar são
+            sobre esta noite. Estavam numa fileira só, e no telefone as quatro
+            chaves caíam em duas linhas de dois misturando as duas naturezas —
+            "Avaliar episódio" ao lado de "Anterior", "Próximo" ao lado de
+            "Encerrar sessão".
+
+            No telefone os grupos são linhas: o par de andar em cima, porque é o
+            que se aperta a noite toda, e o resto embaixo. No computador ficam
+            lado a lado com um fio entre eles. */}
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-start sm:gap-3">
+          {/* Só para o dono, e pela mesma razão do botão de encerrar: andar na
+              série é trocar o que a sala inteira está vendo. O anterior
+              primeiro, porque é a ordem em que os dois números estão. */}
+          {iHaveControl && (prev || next) ? (
+            <div className="flex flex-wrap gap-2 sm:border-r sm:border-house-rail sm:pr-3">
+              {prev ? (
+                <StepKey
+                  step={prev}
+                  back
+                  onGo={() => void openEpisode(movie.id, prev.season, prev.episode)}
+                />
+              ) : null}
+              {next ? (
+                <StepKey
+                  step={next}
+                  onGo={() => void openEpisode(movie.id, next.season, next.episode)}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-start gap-2">
+            {/* Ir avaliar é o passo seguinte a assistir, e até agora custava
+                sair da sessão, achar o filme no catálogo e abri-lo de novo.
+                Fica aqui, ao lado do filme que se está avaliando, e não junto
+                dos controles da fonte — avaliar é sobre a obra, trocar fonte é
+                sobre esta aba. */}
+            <RateKey
+              /* Sair daqui desmonta a tela, e desmontar a tela destrói o motor.
+                 Para quem semeia com gente pendurada, esse clique é o fim do
+                 filme para os outros — então ele pergunta antes, e só nesse
+                 caso. */
+              costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
+              label={rateLabel}
+              onRate={() => onRate(movie)}
+            />
+            {/* Encerrar é o maior dos comandos do player: apaga a sala para os
+                quatro. Some da tela de quem não é o dono em vez de ficar ali
+                para ser recusado pelo servidor. */}
+            {iHaveControl ? (
+              <Key tone="danger" onClick={() => void closeFilm()}>
+                Encerrar sessão
+              </Key>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {/* ── a tela ao vivo tem precedência sobre tudo ─────────────────────

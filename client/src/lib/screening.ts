@@ -340,6 +340,20 @@ export function useScreening(onError?: (msg: string) => void) {
     [onError]
   );
 
+  /* Estar na sala é ter visto. Marca a SUA linha no episódio que a sala está
+     tocando — o servidor lê qual da sala, não daqui — e nunca por cima de uma
+     ficha que já existe. Silencioso: ninguém pediu esta escrita, ela acontece
+     por a pessoa estar aqui, e um aviso vermelho sobre ela seria o app
+     reclamando de um trabalho que ele mesmo inventou. */
+  const markSeen = useCallback(async () => {
+    try {
+      await cpost('/screening/seen', {});
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const closeFilm = useCallback(async () => {
     try {
       await cpost('/screening/close', {});
@@ -444,6 +458,7 @@ export function useScreening(onError?: (msg: string) => void) {
       send,
       openFilm,
       openEpisode,
+      markSeen,
       closeFilm,
       setReady,
       publishLink,
@@ -464,6 +479,7 @@ export function useScreening(onError?: (msg: string) => void) {
       send,
       openFilm,
       openEpisode,
+      markSeen,
       closeFilm,
       setReady,
       publishLink,

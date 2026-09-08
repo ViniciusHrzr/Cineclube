@@ -262,13 +262,20 @@ export function Key({
            still comes through — even with a frame line burning behind it at
            full beam, the label holds 5:1.
 
-           Cream on hover, not red: `commit` fills with red and `danger` goes red
-           on hover, and the two colours the room keeps for "this writes
-           something" and "this destroys something" have to keep meaning that. */
+           Cream on hover, not red: `commit` fills with red and `danger` é
+           vermelho vazado, e as duas cores que a sala guarda para "isto grava
+           alguma coisa" e "isto destrói alguma coisa" têm de continuar
+           significando isso. */
         tone === 'flush' &&
           'bg-house-seat/70 ring-1 ring-house-rail text-ink hover:ring-beam/70 hover:text-beam',
         tone === 'ghost' && 'text-ink-dim hover:text-beam',
-        tone === 'danger' && 'ring-1 ring-house-rail text-ink-dim hover:text-dye-red-lit hover:ring-dye-red-lit/60',
+        /* Vermelho parado, e não só sob o ponteiro. Ele era cinza que ficava
+           vermelho no hover — e no dedo não existe hover: a chave mais séria da
+           tela era a mais apagada dela, lida como desligada justamente onde
+           quase todo mundo abre este app. Vazado e não cheio: cheio é `commit`,
+           e destruir não pode parecer a ação principal de nada. */
+        tone === 'danger' &&
+          'ring-1 ring-dye-red-lit/45 text-dye-red-lit hover:ring-dye-red-lit hover:text-dye-red-glow',
         className
       )}
       {...rest}
