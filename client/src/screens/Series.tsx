@@ -429,8 +429,14 @@ export function SeriesQueueScreen({
 
           "Todos" primeiro e sempre visível — um filtro que só se desliga
           apertando de novo o mesmo botão é um filtro em que dá para ficar
-          preso. Apertar o retrato aceso também desliga, para quem tentar. */}
-      {donos.length > 1 || orfas ? (
+          preso. Apertar o retrato aceso também desliga, para quem tentar.
+
+          E aparece com UMA pessoa também. A tira não é só o filtro: é onde se
+          lê de quem é a lista, e numa sala que está começando "isto aqui é
+          tudo seu" é uma resposta. Escondê-la até chegar a segunda pessoa faz
+          o recurso nascer invisível justamente para quem montou a sala — e ele
+          apareceria sozinho, num dia qualquer, sem ninguém ter pedido. */}
+      {donos.length || orfas ? (
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <ReelChip
             on={quem === null}
@@ -1587,8 +1593,14 @@ export function SeriesArchiveScreen({
           tira uma resposta antes do clique — quem está assistindo mais.
 
           "O clube" e não "Todos", porque aqui a soma é uma leitura de verdade:
-          a média de uma temporada com o clube inteiro é o veredito da sala. */}
-      {gente.length > 1 ? (
+          a média de uma temporada com o clube inteiro é o veredito da sala.
+
+          Fica de pé com uma pessoa só, e aí as duas pastilhas mostram a mesma
+          lista. Não é redundância à toa: é a sala dizendo que ainda é de um. A
+          alternativa era o filtro brotar do nada no dia em que a segunda
+          pessoa marcasse um episódio, que é pior — um acervo que muda de forma
+          sozinho é um acervo em que não se confia. */}
+      {gente.length ? (
         <div className="mb-6 flex flex-wrap items-center gap-2">
           <ReelChip
             on={quem === null}
