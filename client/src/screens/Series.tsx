@@ -25,7 +25,7 @@ import {
   Key,
   Poster,
   Reel,
-  ReelChip,
+  ReelPicker,
   SearchField,
   Skeleton,
   Strip,
@@ -423,58 +423,51 @@ export function SeriesQueueScreen({
         }
       />
 
-      {/* ── a tira de quem escolheu ──────────────────────────────────────
+      {/* ── a chave de quem escolheu ─────────────────────────────────────
           A mesma da fila de filmes, pela mesma razão: numa sala de seis, a
           primeira pergunta feita a uma lista comum é de quem é cada coisa.
 
-          "Todos" primeiro e sempre visível — um filtro que só se desliga
-          apertando de novo o mesmo botão é um filtro em que dá para ficar
-          preso. Apertar o retrato aceso também desliga, para quem tentar.
+          "Todos" primeiro: um filtro sem a porta de volta em cima é um filtro
+          em que dá para ficar preso.
 
-          E aparece com UMA pessoa também. A tira não é só o filtro: é onde se
+          E aparece com UMA pessoa também. A chave não é só o filtro: é onde se
           lê de quem é a lista, e numa sala que está começando "isto aqui é
           tudo seu" é uma resposta. Escondê-la até chegar a segunda pessoa faz
           o recurso nascer invisível justamente para quem montou a sala — e ele
           apareceria sozinho, num dia qualquer, sem ninguém ter pedido. */}
       {donos.length || orfas ? (
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          <ReelChip
-            on={quem === null}
-            onClick={() => setQuem(null)}
-            label="Todos"
-            count={shows.length}
-            hint="Ver a lista inteira"
+        <div className="mb-5">
+          <ReelPicker
+            title="Quem pôs na lista"
+            value={quem}
+            onPick={setQuem}
+            choices={[
+              { id: null, label: 'Todos', count: shows.length, hint: 'Ver a lista inteira' },
+              ...donos.map(d => ({
+                id: d.id,
+                label: d.name,
+                count: d.count,
+                hint: `Ver só o que ${d.name} pôs na lista`,
+                reel: (
+                  <Reel color={reelColor(d.dot, d.id)} src={d.avatar ?? null} size="md">
+                    {initialsOf(d.name)}
+                  </Reel>
+                ),
+              })),
+              /* Só aparece quando existe: as séries postas antes de a coluna
+                 existir, e as de quem saiu do clube. */
+              ...(orfas
+                ? [
+                    {
+                      id: NINGUEM,
+                      label: 'Sem registro',
+                      count: orfas,
+                      hint: 'Ver só o que a lista não sabe de quem é',
+                    },
+                  ]
+                : []),
+            ]}
           />
-          {donos.map(d => (
-            <ReelChip
-              key={d.id}
-              on={quem === d.id}
-              onClick={() => setQuem(v => (v === d.id ? null : d.id))}
-              label={d.name}
-              count={d.count}
-              hint={
-                quem === d.id
-                  ? `Mostrando o que ${d.name} pôs na lista. Ver a lista inteira`
-                  : `Ver só o que ${d.name} pôs na lista`
-              }
-              reel={
-                <Reel color={reelColor(d.dot, d.id)} src={d.avatar ?? null} size="md">
-                  {initialsOf(d.name)}
-                </Reel>
-              }
-            />
-          ))}
-          {/* Só aparece quando existe: as séries postas antes de a coluna
-              existir, e as de quem saiu do clube. */}
-          {orfas ? (
-            <ReelChip
-              on={quem === NINGUEM}
-              onClick={() => setQuem(v => (v === NINGUEM ? null : NINGUEM))}
-              label="Sem registro"
-              count={orfas}
-              hint="Ver só o que a lista não sabe de quem é"
-            />
-          ) : null}
         </div>
       ) : null}
 
@@ -1586,48 +1579,46 @@ export function SeriesArchiveScreen({
         note={`${plural(takes.length, 'episódio visto', 'episódios vistos')} · ${comNota} com nota`}
       />
 
-      {/* ── a tira de quem avaliou ───────────────────────────────────────
-          Eram chips de texto, e viraram a MESMA tira da fila de filmes:
-          retrato, nome e quantos. O retrato é o que faz uma sala de seis
-          pessoas ser lida sem soletrar nome nenhum, e o número é o que dá à
-          tira uma resposta antes do clique — quem está assistindo mais.
+      {/* ── a chave de quem avaliou ──────────────────────────────────────
+          Retrato, nome e quantos, a mesma da fila de filmes. O retrato é o que
+          faz uma sala de seis pessoas ser lida sem soletrar nome nenhum, e o
+          número é o que dá à lista uma resposta antes do clique — quem está
+          assistindo mais.
 
           "O clube" e não "Todos", porque aqui a soma é uma leitura de verdade:
           a média de uma temporada com o clube inteiro é o veredito da sala.
 
-          Fica de pé com uma pessoa só, e aí as duas pastilhas mostram a mesma
+          Fica de pé com uma pessoa só, e aí as duas linhas mostram a mesma
           lista. Não é redundância à toa: é a sala dizendo que ainda é de um. A
           alternativa era o filtro brotar do nada no dia em que a segunda
           pessoa marcasse um episódio, que é pior — um acervo que muda de forma
           sozinho é um acervo em que não se confia. */}
       {gente.length ? (
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <ReelChip
-            on={quem === null}
-            onClick={() => setQuem(null)}
-            label="O clube"
-            count={takes.length}
-            hint="Ver o acervo do clube inteiro"
+        <div className="mb-6">
+          <ReelPicker
+            title="Quem avaliou"
+            value={quem}
+            onPick={setQuem}
+            choices={[
+              {
+                id: null,
+                label: 'O clube',
+                count: takes.length,
+                hint: 'Ver o acervo do clube inteiro',
+              },
+              ...gente.map(p => ({
+                id: p.id,
+                label: p.name,
+                count: p.count,
+                hint: `Ver só o que ${p.name} marcou`,
+                reel: (
+                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
+                    {initialsOf(p.name)}
+                  </Reel>
+                ),
+              })),
+            ]}
           />
-          {gente.map(p => (
-            <ReelChip
-              key={p.id}
-              on={quem === p.id}
-              onClick={() => setQuem(v => (v === p.id ? null : p.id))}
-              label={p.name}
-              count={p.count}
-              hint={
-                quem === p.id
-                  ? `Mostrando o acervo de ${p.name}. Ver o do clube inteiro`
-                  : `Ver só o que ${p.name} marcou`
-              }
-              reel={
-                <Reel color={reelColor(p.dot, p.id)} src={p.avatar} size="md">
-                  {initialsOf(p.name)}
-                </Reel>
-              }
-            />
-          ))}
         </div>
       ) : null}
 

@@ -19,7 +19,7 @@ import {
   Key,
   Poster,
   Reel,
-  ReelChip,
+  ReelPicker,
   SearchField,
   Skeleton,
 } from '@/components/bits';
@@ -589,55 +589,54 @@ export function WatchlistScreen() {
         </div>
       ) : null}
 
-      {/* ── a tira de quem escolheu ──────────────────────────────────────
-          Retrato, nome e quantos. O número é o que faz a tira valer o espaço:
-          sem ele são seis botões idênticos que não dizem nada até serem
-          apertados, e com ele a tira já é a resposta para "quem está enchendo
-          a fila" antes de alguém clicar em nada.
+      {/* ── a chave de quem escolheu ─────────────────────────────────────
+          Retrato, nome e quantos. O número é o que faz a chave valer o espaço:
+          sem ele são seis nomes idênticos que não dizem nada até serem
+          apertados, e com ele a lista já é a resposta para "quem está enchendo
+          a fila" antes de alguém escolher nada.
 
-          "Todos" primeiro e sempre visível — um filtro que só se desliga
-          apertando de novo o mesmo botão é um filtro em que dá para ficar
-          preso. Apertar o retrato aceso também desliga, para quem tentar. */}
+          "Todos" primeiro: um filtro sem a porta de volta em cima é um filtro
+          em que dá para ficar preso. */}
       {owners.length > 1 || orphans ? (
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          <ReelChip
-            on={who === null}
-            onClick={() => setWho(null)}
-            label="Todos"
-            count={club.watchlist.length}
-            hint="Ver a fila inteira"
+        <div className="mb-5">
+          <ReelPicker
+            title="Quem pôs na fila"
+            value={who}
+            onPick={setWho}
+            choices={[
+              {
+                id: null,
+                label: 'Todos',
+                count: club.watchlist.length,
+                hint: 'Ver a fila inteira',
+              },
+              ...owners.map(o => ({
+                id: o.id,
+                label: o.name,
+                count: o.count,
+                hint: `Ver só o que ${o.name} pôs na fila`,
+                reel: (
+                  <Reel color={reelColor(o.dot, o.id)} src={o.avatar} size="md">
+                    {initialsOf(o.name)}
+                  </Reel>
+                ),
+              })),
+              /* Só aparece quando existe: as linhas anteriores à coluna
+                 `added_by` e as de quem saiu do clube. Um balde permanentemente
+                 vazio na lista seria a fila anunciando um problema que ela não
+                 tem. */
+              ...(orphans
+                ? [
+                    {
+                      id: NOBODY,
+                      label: 'Sem registro',
+                      count: orphans,
+                      hint: 'Ver só o que a fila não sabe de quem é',
+                    },
+                  ]
+                : []),
+            ]}
           />
-          {owners.map(o => (
-            <ReelChip
-              key={o.id}
-              on={who === o.id}
-              onClick={() => setWho(v => (v === o.id ? null : o.id))}
-              label={o.name}
-              count={o.count}
-              hint={
-                who === o.id
-                  ? `Mostrando o que ${o.name} pôs na fila. Voltar para a fila inteira`
-                  : `Ver só o que ${o.name} pôs na fila`
-              }
-              reel={
-                <Reel color={reelColor(o.dot, o.id)} src={o.avatar} size="md">
-                  {initialsOf(o.name)}
-                </Reel>
-              }
-            />
-          ))}
-          {/* Só aparece quando existe: as linhas anteriores à coluna `added_by`
-              e as de quem saiu do clube. Um balde permanentemente vazio na tira
-              seria a fila anunciando um problema que ela não tem. */}
-          {orphans ? (
-            <ReelChip
-              on={who === NOBODY}
-              onClick={() => setWho(v => (v === NOBODY ? null : NOBODY))}
-              label="Sem registro"
-              count={orphans}
-              hint="Ver só o que a fila não sabe de quem é"
-            />
-          ) : null}
         </div>
       ) : null}
 

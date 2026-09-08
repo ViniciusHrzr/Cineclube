@@ -16,7 +16,7 @@ import {
   Key,
   Poster,
   Reel,
-  ReelChip,
+  ReelPicker,
   SearchField,
 } from '@/components/bits';
 /* Voto, conversa e detalhamento saíram desta tela e viraram peça: o feed e o
@@ -162,44 +162,42 @@ export function ReviewsScreen() {
         </div>
       ) : null}
 
-      {/* ── a tira de quem avaliou ───────────────────────────────────────
+      {/* ── a chave de quem avaliou ──────────────────────────────────────
           A mesma da fila de filmes: retrato, nome e quantos. O campo de busca
           já achava um avaliador pelo nome, mas achar não é filtrar — era
           preciso saber o nome, escrever certo, e o resultado misturava as
-          fichas dela com os filmes cujo título casasse. A tira é a pergunta
+          fichas dela com os filmes cujo título casasse. A chave é a pergunta
           "o que ELA achou" com um toque, e diz de quantas fichas se trata
-          antes de alguém clicar.
+          antes de alguém escolher.
 
           Some numa sala de uma pessoa só: um filtro com uma opção é um botão
           que não tem o que escolher. */}
       {gente.length > 1 ? (
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          <ReelChip
-            on={quem === null}
-            onClick={() => setQuem(null)}
-            label="O clube"
-            count={club.reviews.length}
-            hint="Ver o arquivo do clube inteiro"
+        <div className="mb-5">
+          <ReelPicker
+            title="Quem avaliou"
+            value={quem}
+            onPick={setQuem}
+            choices={[
+              {
+                id: null,
+                label: 'O clube',
+                count: club.reviews.length,
+                hint: 'Ver o arquivo do clube inteiro',
+              },
+              ...gente.map(p => ({
+                id: p.id,
+                label: p.name,
+                count: p.count,
+                hint: `Ver só as fichas de ${p.name}`,
+                reel: (
+                  <Reel color={reelColor(p.dot, p.id)} src={p.avatar ?? null} size="md">
+                    {initialsOf(p.name)}
+                  </Reel>
+                ),
+              })),
+            ]}
           />
-          {gente.map(p => (
-            <ReelChip
-              key={p.id}
-              on={quem === p.id}
-              onClick={() => setQuem(v => (v === p.id ? null : p.id))}
-              label={p.name}
-              count={p.count}
-              hint={
-                quem === p.id
-                  ? `Mostrando as fichas de ${p.name}. Ver o arquivo inteiro`
-                  : `Ver só as fichas de ${p.name}`
-              }
-              reel={
-                <Reel color={reelColor(p.dot, p.id)} src={p.avatar ?? null} size="md">
-                  {initialsOf(p.name)}
-                </Reel>
-              }
-            />
-          ))}
         </div>
       ) : null}
 

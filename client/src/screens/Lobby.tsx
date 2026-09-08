@@ -250,34 +250,49 @@ export function Lobby({
           alguém rolou longe o bastante para querer usá-la. Sem desfoque de
           fundo, pela razão escrita na marquise. */}
       <header className="sticky top-0 z-30 flex-none border-b border-white/[0.07] bg-house/95">
-        <div className="mx-auto flex max-w-[1240px] items-center gap-x-6 px-4 py-3 sm:px-6">
-          <div className="mr-auto flex min-w-0 items-center gap-x-3 sm:gap-x-5">
-            <span className="flex-none font-display text-[26px] leading-none tracking-[0.14em] text-beam">
+        {/* ── a barra num telefone ────────────────────────────────────────
+            Ela era uma fileira de quatro peças de largura fixa numa linha que
+            não quebra, somando mais do que 412px de tela: o nome da casa, as
+            duas lentes, o sino, o retrato e a saída. Nada ali podia encolher, e
+            o que sobra de uma linha assim não é uma barra apertada — é uma
+            barra SOBREPOSTA: o sino caía em cima de "Séries".
+
+            Duas regras resolvem, e as duas dizem a mesma coisa. A direita —
+            avisos, conta, saída — é um bloco que não cede: são alvos de dedo, e
+            um alvo de dedo espremido é um alvo errado. A esquerda cede, e cede
+            pela ordem certa: as lentes ficam inteiras (é a navegação da tela) e
+            quem encolhe é o nome da casa, que já vem menor no telefone e, no
+            aperto, corta com reticências em vez de invadir o vizinho. */}
+        <div className="mx-auto flex max-w-[1240px] items-center gap-x-2 px-4 py-3 sm:gap-x-6 sm:px-6">
+          <div className="mr-auto flex min-w-0 items-center gap-x-2 sm:gap-x-5">
+            <span className="min-w-0 truncate font-display text-[18px] leading-none tracking-[0.1em] text-beam sm:text-[26px] sm:tracking-[0.14em]">
               CINECLUBE
             </span>
             <Lens on={universe} onPick={onUniverse} />
           </div>
-          {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta todas
-              as salas e diz de qual veio cada linha. */}
-          <Notices />
-          <button
-            type="button"
-            onClick={onOpenSelf}
-            title="Minha conta"
-            className="flex items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
-          >
-            <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
-              {initialsOf(me.name)}
-            </Reel>
-            <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
-          </button>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
-          >
-            Sair
-          </button>
+          <div className="flex flex-none items-center gap-x-1 sm:gap-x-4">
+            {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta
+                todas as salas e diz de qual veio cada linha. */}
+            <Notices />
+            <button
+              type="button"
+              onClick={onOpenSelf}
+              title="Minha conta"
+              className="flex flex-none items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
+            >
+              <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
+                {initialsOf(me.name)}
+              </Reel>
+              <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="flex-none rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-dye-red-lit"
+            >
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
@@ -412,7 +427,7 @@ const LENSES: { id: Universe; label: string }[] = [
 
 function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => void }) {
   return (
-    <div className="flex items-center gap-0.5" role="tablist" aria-label="Universo">
+    <div className="flex flex-none items-center gap-0.5" role="tablist" aria-label="Universo">
       {LENSES.map(o => {
         const here = on === o.id;
         return (
@@ -423,7 +438,7 @@ function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => void }) {
             aria-selected={here}
             onClick={() => onPick(o.id)}
             className={cn(
-              'relative px-2 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none',
+              'relative px-1.5 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none sm:px-2',
               'tracking-[0.12em] transition-colors duration-150 coarse:min-h-[38px]',
               here ? 'text-beam' : 'text-ink-dim hover:text-ink'
             )}
@@ -1010,8 +1025,25 @@ const tally = (n: number, one: string, many: string) =>
    reduzido) o alvo é zero e a mesma linha vira inércia que para: uma fórmula,
    dois comportamentos, um caminho só no código. */
 
-/** px de rolagem por quadro em repouso. ~27px/s: um passo de quem passeia. */
-const DRIFT = 0.45;
+/* ── a velocidade da deriva ───────────────────────────────────────────────
+   Andava a ~27px/s, que é o passo de quem passeia, e chegou como reclamação:
+   "a parede está andando sozinha". Ela ANDA sozinha de propósito — cartaz em
+   foyer não fica parado —, mas 27px/s num campo de visão periférico é a única
+   coisa se mexendo numa tela escura, e o olho vai atrás.
+
+   Dez pixels por segundo é a metade da história. A outra é que a velocidade
+   era contada POR QUADRO: num monitor de 120Hz a mesma parede andava ao dobro,
+   e é por isso que a queixa vinha de umas pessoas e não de todas. Agora tudo
+   aqui é contado por quadro de 60Hz e esticado pelo tempo que o quadro
+   realmente levou — a parede anda igual em qualquer tela. */
+/** px de rolagem por quadro de 60Hz em repouso. ~10px/s: quase parada. */
+const DRIFT = 0.17;
+/** O quadro de referência das velocidades daqui, em ms. */
+const TICK = 1000 / 60;
+/* Teto do passo de tempo. Uma aba que volta do fundo, ou um quadro perdido numa
+   máquina ocupada, entrega um intervalo enorme; sem isto a parede daria um
+   pulo para "recuperar" um tempo em que ninguém estava olhando. */
+const MAX_STEP = 3;
 /** Quanto da distância até o alvo a velocidade fecha por quadro. */
 const SETTLE = 0.045;
 /** Abaixo disto a diferença não se vê: encosta no alvo e para de calcular. */
@@ -1077,12 +1109,20 @@ function usePosterRail(live: boolean) {
       el.scrollLeft = next;
     };
 
-    const frame = () => {
+    /* `span` é quantos quadros de 60Hz couberam no quadro que acabou de passar:
+       1 numa tela de 60Hz, 0,5 numa de 120Hz. Tanto o passo quanto a
+       aproximação do alvo são esticados por ele, então a parede anda na mesma
+       velocidade e o arremesso desacelera no mesmo tempo em qualquer tela. */
+    let last = 0;
+    const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      const span = last ? Math.min(MAX_STEP, (now - last) / TICK) : 1;
+      last = now;
       if (dragging) return;
       const gap = target - velocity;
-      velocity = Math.abs(gap) < SNAP ? target : velocity + gap * SETTLE;
-      if (velocity) step(velocity);
+      velocity =
+        Math.abs(gap) < SNAP ? target : velocity + gap * (1 - Math.pow(1 - SETTLE, span));
+      if (velocity) step(velocity * span);
     };
 
     /* Puxar não é clicar: cada cartaz abre uma folha, e a mesma superfície é o
@@ -1135,7 +1175,7 @@ function usePosterRail(live: boolean) {
       step(-dx);
       /* Em px por quadro e suavizado: um evento com salto grande não pode virar
          sozinho um arremesso que a mão não deu. */
-      velocity = velocity * 0.7 + ((-dx * 16.7) / dt) * 0.3;
+      velocity = velocity * 0.7 + ((-dx * TICK) / dt) * 0.3;
     };
 
     /* Engolido na CAPTURA, antes de chegar ao cartaz. `once` desarma sozinho,
@@ -1163,8 +1203,12 @@ function usePosterRail(live: boolean) {
        caso, que é a pessoa ter rolado a página para baixo. */
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !raf) raf = requestAnimationFrame(frame);
-        else if (!entry.isIntersecting && raf) {
+        if (entry.isIntersecting && !raf) {
+          /* O relógio recomeça: entre a parada e a volta pode ter passado meia
+             hora, e o primeiro quadro do laço não pode andar meia hora. */
+          last = 0;
+          raf = requestAnimationFrame(frame);
+        } else if (!entry.isIntersecting && raf) {
           cancelAnimationFrame(raf);
           raf = 0;
         }

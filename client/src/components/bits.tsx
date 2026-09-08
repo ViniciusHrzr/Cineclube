@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play as PlayIcon, Search as SearchIcon, X as XIcon } from 'lucide-react';
+import {
+  Check as CheckIcon,
+  ChevronDown as ChevronDownIcon,
+  Play as PlayIcon,
+  Search as SearchIcon,
+  Users as UsersIcon,
+  X as XIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmt } from '@/lib/api';
 
@@ -351,59 +358,175 @@ export function Chip({
   );
 }
 
-/* ══ a tira de gente ══════════════════════════════════════════════════════
-   Retrato, nome e quantos, numa fileira de chips. O número é o que faz a tira
-   valer o espaço: sem ele são seis botões idênticos que não dizem nada até
-   serem apertados, e com ele a tira já responde "quem está enchendo isto"
-   antes de alguém clicar em nada.
+/* ══ a chave de quem ══════════════════════════════════════════════════════
+   Retrato, nome e quantos — a mesma leitura de sempre, agora dentro de uma
+   chave que abre. Era uma FILEIRA de pastilhas, uma por pessoa, e ela foi
+   desenhada para uma sala de seis: com onze, as pastilhas quebravam em três
+   linhas e o filtro passou a ocupar mais tela do que a lista que ele filtra —
+   num telefone, a lista chegava a nascer abaixo da dobra por causa dele.
 
-   Nasceu na fila de filmes e morava lá dentro. Saiu para cá quando a terceira
-   lista do produto pediu a mesma tira — o acervo de séries, a fila de séries e
-   os avaliados de filmes filtram todos por pessoa, e quatro cópias deste
-   desenho seriam quatro chances de ele divergir.
+   Fechada, a chave mostra QUEM está escolhido e quantos são, que é a única
+   coisa que a fileira dizia o tempo todo e a única que precisa estar sempre à
+   vista. Aberta, a lista cai POR CIMA do conteúdo e não empurra nada: escolher
+   é uma visita, e uma visita não reorganiza a sala.
 
-   Não é o `Chip`: aquele é uma caixa de texto com altura própria, e enfiar um
-   retrato dentro dele esticaria todos os outros chips do produto por causa
-   deste. */
-export function ReelChip({
-  on,
-  onClick,
-  label,
-  count,
-  reel,
-  hint,
-}: {
-  on: boolean;
-  onClick: () => void;
+   Uma linha por pessoa, e não pastilhas embrulhadas: nomes têm larguras
+   diferentes, e em coluna eles alinham, truncam num lugar só e o número fica
+   sempre na mesma margem. É a diferença entre ler e procurar.
+
+   Acesa (latão) quando há alguém escolhido, apagada quando é o clube inteiro:
+   o estado do filtro continua legível de longe, sem contar pastilhas.
+
+   Nasceu na fila de filmes e mora aqui porque quatro listas do produto pedem a
+   mesma chave — a fila de filmes, os avaliados de filmes, a fila de séries e os
+   avaliados de séries. Quatro cópias deste desenho seriam quatro chances de ele
+   divergir. */
+export type ReelChoice = {
+  /** `null` é a opção que não filtra nada: "Todos", "O clube". */
+  id: string | null;
   label: string;
   count: number;
+  /** O retrato, quando a opção é uma pessoa. Sem ele entra o ícone de gente. */
   reel?: React.ReactNode;
-  /** O que o leitor de tela ouve. Cada lista descreve o próprio filtro. */
+  /** O que o leitor de tela ouve nesta linha. Cada lista descreve o seu. */
   hint?: string;
+};
+
+export function ReelPicker({
+  choices,
+  value,
+  onPick,
+  title,
+}: {
+  choices: ReelChoice[];
+  /** O `id` escolhido. `null` é a opção que mostra tudo. */
+  value: string | null;
+  onPick: (id: string | null) => void;
+  /** O que esta chave filtra, para o título e para o leitor de tela. */
+  title: string;
 }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      aria-label={hint ?? (on ? `Mostrando ${label}. Ver tudo` : `Ver só ${label}`)}
-      className={cn(
-        'flex items-center gap-2 rounded-cell bg-house-seat/70 py-1 pr-2.5 ring-1 transition-colors duration-150',
-        /* No dedo o alvo cresce, como toda chave do produto. O retrato dentro
-           não muda de tamanho — o que cresce é a área de acerto. */
-        'coarse:min-h-[40px]',
-        reel ? 'pl-1' : 'pl-2.5',
-        on
-          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
-          : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
-      )}
-    >
-      {reel}
-      <span className="font-display text-[12.5px] uppercase leading-none tracking-[0.1em]">
-        {label}
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  /* Fecha ao clicar fora e no Escape, como o sino da marquise. Um painel que só
+     fecha pelo próprio botão obriga a mirar de volta no alvo que acabou de sair
+     do lugar. O foco volta para a chave: quem fechou com o teclado não pode
+     ficar sem lugar nenhum na página. */
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  /* Quem sai do clube, ou tem a última ficha apagada, pode levar embora a opção
+     escolhida entre um render e outro. A chave cai na primeira — a que mostra
+     tudo — em vez de ficar em branco anunciando um estado que não existe. */
+  const here = choices.find(c => c.id === value) ?? choices[0];
+  if (!here) return null;
+
+  const face = (c: ReelChoice) =>
+    c.reel ?? (
+      <span className="flex h-6 w-6 flex-none items-center justify-center">
+        <UsersIcon className="h-[15px] w-[15px]" strokeWidth={1.7} aria-hidden />
       </span>
-      <span className="q text-[10.5px] leading-none opacity-70">{count}</span>
-    </button>
+    );
+
+  return (
+    <div ref={box} className="relative inline-flex">
+      <button
+        ref={trigger}
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        title={title}
+        aria-label={`${title} — ${here.label}`}
+        className={cn(
+          'flex items-center gap-2 rounded-cell bg-house-seat/70 py-1 pl-1 pr-2 ring-1 transition-colors duration-150',
+          /* No dedo o alvo cresce, como toda chave do produto. O retrato dentro
+             não muda de tamanho — o que cresce é a área de acerto. */
+          'coarse:min-h-[40px]',
+          value !== null || open
+            ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.20)]'
+            : 'text-ink-dim ring-house-rail hover:text-ink hover:ring-white/25'
+        )}
+      >
+        {face(here)}
+        <span className="max-w-[46vw] truncate font-display text-[12.5px] uppercase leading-none tracking-[0.1em] sm:max-w-[220px]">
+          {here.label}
+        </span>
+        <span className="q text-[10.5px] leading-none opacity-70">{here.count}</span>
+        <ChevronDownIcon
+          aria-hidden
+          strokeWidth={1.8}
+          className={cn(
+            'h-3.5 w-3.5 flex-none opacity-70 transition-transform duration-200 ease-beam',
+            open && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {/* Ancorada à esquerda, que é onde a chave mora em todas as listas, e com
+          teto de altura: numa sala grande a lista inteira passaria da tela. A
+          largura cede para a janela menos as margens da página, para o painel
+          nunca sair pela direita num telefone. */}
+      {open ? (
+        <div
+          role="group"
+          aria-label={title}
+          className="plate absolute left-0 top-[calc(100%+6px)] z-40 max-h-[min(calc(60dvh/var(--ui-zoom)),360px)] w-[264px] max-w-[calc(100vw-2rem)] overflow-y-auto p-1"
+        >
+          {choices.map(c => {
+            const on = c.id === here.id;
+            return (
+              <button
+                key={c.id ?? 'tudo'}
+                type="button"
+                aria-pressed={on}
+                aria-label={c.hint}
+                onClick={() => {
+                  onPick(c.id);
+                  setOpen(false);
+                  trigger.current?.focus();
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-cell px-2 py-2 text-left transition-colors duration-150 coarse:min-h-[44px]',
+                  on
+                    ? 'bg-beam/[0.06] text-dye-brass'
+                    : 'text-ink-dim hover:bg-beam/[0.05] hover:text-ink'
+                )}
+              >
+                {face(c)}
+                <span className="min-w-0 flex-1 truncate font-display text-[12.5px] uppercase leading-tight tracking-[0.1em]">
+                  {c.label}
+                </span>
+                <span className="q flex-none text-[10.5px] leading-none opacity-70">{c.count}</span>
+                {/* Sempre montado, só trocando de opacidade: entrar e sair do
+                    fluxo mexeria na largura dos nomes a cada escolha. */}
+                <CheckIcon
+                  aria-hidden
+                  strokeWidth={2}
+                  className={cn('h-3.5 w-3.5 flex-none', on ? 'opacity-100' : 'opacity-0')}
+                />
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
