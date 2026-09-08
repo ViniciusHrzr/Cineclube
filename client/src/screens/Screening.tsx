@@ -1185,11 +1185,6 @@ function SourcePanel({
         <p className="font-display text-[15px] uppercase tracking-[0.14em] text-beam">
           Solte o arquivo do filme
         </p>
-        <p className="mx-auto mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ink-dim">
-          O clube inteiro recebe direto do seu navegador e a sessão começa sozinha. Ninguém precisa colar
-          link nenhum.
-        </p>
-
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
           <Key onClick={() => browse.current?.click()}>Escolher do computador</Key>
           <span className="q text-[11.5px] text-ink-dim">ou arraste até aqui</span>
@@ -1218,21 +1213,14 @@ function SourcePanel({
           — um .mkv que o navegador não decodifica, um serviço que só toca no
           player dele, um arquivo que ninguém quer distribuir.
 
-          O preço está escrito porque ele é real e é de uma pessoa só: numa
-          transmissão a imagem sai da máquina de quem compartilha, uma cópia
-          para cada pessoa da sala. */}
+          Sem legenda embaixo dos dois. O que elas explicavam — de onde vem o
+          som, o que o DRM faz, por que uma aba é diferente de uma tela — só
+          importa DEPOIS de a pessoa apertar, e é onde está agora: no seletor
+          do navegador, e no aviso que aparece se a captura vier muda. Duas
+          escolhas com um parágrafo cada viravam uma página para ler antes de
+          poder começar. */}
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-house-rail pt-4">
         <Key onClick={onShareScreen}>Compartilhar minha tela</Key>
-        {/* A instrução vem antes do erro e não depois dele. "Tela inteira, com
-            áudio do sistema" é a única combinação que leva o som de um
-            programa fora do navegador, e ela é uma caixinha desmarcada num
-            seletor que a pessoa atravessa em dois segundos. */}
-        <p className="q max-w-[48ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
-          Se o filme estiver numa aba, compartilhe a <span className="text-ink">aba</span> e marque
-          o áudio dela — é o único jeito que não leva a conversa do Discord junto. Fora do
-          navegador, use <span className="text-ink">Tela inteira</span> com o áudio do sistema. DRM
-          sai preto.
-        </p>
       </div>
 
       {shareError ? <p className="q mt-2.5 text-[11.5px] text-dye-red-lit">{shareError}</p> : null}
