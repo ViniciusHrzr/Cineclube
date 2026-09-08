@@ -2058,19 +2058,24 @@ export function SeriesFeedScreen({
       />
 
       <div className="max-w-[760px]">
-        {items.map(e => {
-          const dia = dayOf(e.at);
+        {runsOf(items).map(bloco => {
+          const primeiro = bloco[0];
+          const dia = dayOf(primeiro.at);
           const abreDia = dia !== ultimoDia;
           ultimoDia = dia;
           return (
-            <div key={e.id}>
+            <div key={primeiro.id}>
               {abreDia ? <p className="legend mb-3 mt-7 first:mt-0">{dia}</p> : null}
-              {e.kind === 'take' ? (
-                <FeedRated e={e} takes={takes} onOpenShow={onOpenShow} />
-              ) : e.kind === 'seen' ? (
-                <FeedSeen e={e} onOpenShow={onOpenShow} />
+              {primeiro.kind === 'take' ? (
+                bloco.length > 1 ? (
+                  <FeedRatedRun events={bloco} takes={takes} onOpenShow={onOpenShow} />
+                ) : (
+                  <FeedRated e={primeiro} takes={takes} onOpenShow={onOpenShow} />
+                )
+              ) : primeiro.kind === 'seen' ? (
+                <FeedSeen e={primeiro} onOpenShow={onOpenShow} />
               ) : (
-                <FeedAside e={e} takes={takes} onAimComment={onAimComment} />
+                <FeedAside e={primeiro} takes={takes} onAimComment={onAimComment} />
               )}
             </div>
           );
@@ -2083,6 +2088,47 @@ export function SeriesFeedScreen({
 /** `T1E05` sem o zero perdido, que é como um episódio é chamado por gente. */
 const epTag = (season?: number, episode?: number) =>
   `T${season ?? 0}E${String(episode ?? 0).padStart(2, '0')}`;
+
+/* ── uma maratona é um acontecimento, e não seis ──────────────────────────
+   Ver quatro episódios seguidos e avaliar os quatro enchia o mural com quatro
+   placas do mesmo pôster, do mesmo nome e da mesma noite: o mural virava a
+   lista de episódios de uma série só, e o resto do clube sumia debaixo dela.
+
+   Juntado aqui e não no servidor, ao contrário do "viu": lá o agrupamento é a
+   linha inteira — seis vistos viram uma frase e nada se perde. Aqui cada ficha
+   continua sendo uma ficha, com a nota dela, a conversa dela e o polegar dela;
+   o que se junta é a MOLDURA. Um agrupamento que apagasse isso apagaria o
+   assunto.
+
+   Três condições, e cada uma é um jeito de a junção mentir:
+
+   · **Encostadas no mural.** Uma ficha de terça e uma de sexta com coisas do
+     clube entre elas não são uma sessão, e passar por cima do que aconteceu no
+     meio é reescrever a ordem dos fatos.
+   · **Do mesmo dia.** O mural já separa por dia, e um bloco atravessando a
+     virada ficaria pendurado sob a data errada.
+   · **Da mesma pessoa e da mesma série**, que é o que "avaliou do T1E04 ao
+     T1E06" quer dizer. */
+function runsOf(items: ShowFeedEvent[]) {
+  const blocos: ShowFeedEvent[][] = [];
+  for (const e of items) {
+    const atual = blocos[blocos.length - 1];
+    const cabe =
+      atual &&
+      e.kind === 'take' &&
+      atual[0].kind === 'take' &&
+      atual[0].actor.id === e.actor.id &&
+      atual[0].showId === e.showId &&
+      dayOf(atual[0].at) === dayOf(e.at);
+    if (cabe) atual.push(e);
+    else blocos.push([e]);
+  }
+  return blocos;
+}
+
+/** Do primeiro episódio ao último, que é a ordem em que foram vistos. */
+const inOrder = (events: ShowFeedEvent[]) =>
+  [...events].sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0));
 
 /* A placa: o mesmo empilhamento do mural de filmes — corpo que desdobra,
    detalhamento, barra de ação, conversa. Um `<button>` dentro de outro não é
@@ -2268,6 +2314,183 @@ function FeedRated({
         ) : null}
       </Drawer>
     </div>
+  );
+}
+
+/* ── a noite inteira numa placa só ────────────────────────────────────────
+   Uma moldura, um pôster, um nome de série — e dentro dela uma linha por
+   episódio, cada uma com a nota, o polegar e a conversa que seriam dela numa
+   placa própria. O que a junção economiza é repetição; o que ela não pode
+   economizar é o que cada ficha diz. */
+function FeedRatedRun({
+  events,
+  takes,
+  onOpenShow,
+}: {
+  events: ShowFeedEvent[];
+  takes: EpisodeTake[] | null;
+  onOpenShow: (showId: number) => void;
+}) {
+  const emOrdem = inOrder(events);
+  const primeiro = emOrdem[0];
+  const ultimo = emOrdem[emOrdem.length - 1];
+  // O relógio é o do acontecimento mais recente, que é como o mural se ordena.
+  const hora = clockOf(events[0].at);
+
+  return (
+    <div className="plate mb-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4">
+        <PersonReel person={events[0].actor} size="sm" />
+        <PersonName
+          person={events[0].actor}
+          className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
+        />
+        <span className="text-[12.5px] text-ink-dim">
+          avaliou {plural(events.length, 'episódio', 'episódios')}
+        </span>
+        {hora ? <span className="q ml-auto text-[11px] text-ink-faint">{hora}</span> : null}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onOpenShow(events[0].showId)}
+        aria-label={`Abrir ${events[0].showTitle}`}
+        className="group flex w-full gap-4 px-4 pb-3 pt-2.5 text-left transition-colors duration-150 hover:bg-house-seat"
+      >
+        <Poster src={events[0].showPoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
+            {events[0].showTitle}
+          </span>
+          {/* O trecho, dito como o clube diz: do primeiro ao último. É o que
+              substitui o `T1E05` que cada placa carregava sozinha. */}
+          <span className="q mt-1.5 block text-[12px] text-ink-dim">
+            do {epTag(primeiro.season, primeiro.episode)} ao {epTag(ultimo.season, ultimo.episode)}
+          </span>
+        </span>
+        <ArrowUpRight
+          aria-hidden
+          className="mt-1 h-4 w-4 flex-none text-ink-faint transition-colors group-hover:text-beam"
+          strokeWidth={1.8}
+        />
+      </button>
+
+      <ul>
+        {emOrdem.map(e => (
+          <RunEpisode key={e.id} e={e} takes={takes} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* Uma ficha dentro do bloco. Tudo o que a placa solta tem, menos o que a
+   moldura já disse: sem pôster, sem nome de série e sem retrato de quem
+   escreveu — são os mesmos três em todas as linhas daqui. */
+function RunEpisode({ e, takes }: { e: ShowFeedEvent; takes: EpisodeTake[] | null }) {
+  const world = useWorld();
+  const take = takes?.find(t => t.id === e.takeId) ?? null;
+  const quem = take
+    ? { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' }
+    : null;
+  const conversa = world.comments.filter(c => c.takeId === e.takeId).length;
+
+  const [aberta, setAberta] = useState(false);
+  const [desdobrada, setDesdobrada] = useState(false);
+  const [conversando, setConversando] = useState(false);
+  const [tocada, setTocada] = useState(false);
+
+  const escrito = take?.comment?.replace(/\s+/g, ' ').trim() ?? '';
+  const cortado = !!escrito && escrito !== (e.excerpt ?? '');
+
+  return (
+    <li className="border-t border-white/[0.06]">
+      <button
+        type="button"
+        disabled={!take}
+        onClick={() => {
+          setAberta(v => !v);
+          setDesdobrada(true);
+        }}
+        aria-expanded={take ? aberta : undefined}
+        aria-label={`${aberta ? 'Fechar' : 'Abrir'} a ficha de ${epTag(e.season, e.episode)}`}
+        className="group flex w-full items-baseline gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-house-seat disabled:hover:bg-transparent"
+      >
+        <span className="q w-[52px] flex-none text-[12px] text-ink-dim">
+          {epTag(e.season, e.episode)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] text-ink transition-colors group-hover:text-beam">
+            {e.episodeTitle || '—'}
+          </span>
+          {e.excerpt ? (
+            <span className="mt-1 block break-words text-[12.5px] italic leading-relaxed text-ink-dim">
+              “{e.excerpt}”
+            </span>
+          ) : null}
+        </span>
+        <span className="flex flex-none items-center gap-2">
+          <Strip value={e.final ?? 0} cells={10} className="hidden h-[5px] w-[70px] sm:block" />
+          <span className="q text-[13px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
+        </span>
+        {take ? (
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              'h-4 w-4 flex-none self-center text-ink-faint transition-transform duration-200 group-hover:text-ink-dim',
+              aberta && 'rotate-180'
+            )}
+            strokeWidth={1.7}
+          />
+        ) : null}
+      </button>
+
+      <Drawer open={aberta}>
+        {desdobrada && take ? (
+          <div className="px-4 pb-4">
+            <Breakdown r={take} comment={cortado ? take.comment ?? undefined : undefined} />
+          </div>
+        ) : null}
+      </Drawer>
+
+      {quem ? (
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
+          <TakeVotes take={quem} />
+          <button
+            type="button"
+            aria-expanded={conversando}
+            aria-label={
+              `${conversando ? 'Fechar' : 'Abrir'} a conversa de ${epTag(e.season, e.episode)}` +
+              (conversa ? `, ${plural(conversa, 'resposta', 'respostas')}` : '')
+            }
+            title={conversando ? 'Fechar a conversa' : 'Comentar esta ficha'}
+            onClick={() => {
+              setConversando(v => !v);
+              setTocada(true);
+            }}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-cell px-2.5 ring-1 transition-colors duration-150',
+              conversando
+                ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
+                : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
+            )}
+          >
+            <MessageSquare className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
+            {conversa ? (
+              <span className="q text-[10.5px] leading-none opacity-80">{conversa}</span>
+            ) : null}
+          </button>
+        </div>
+      ) : null}
+
+      <Drawer open={conversando}>
+        {tocada && quem ? (
+          <div className="px-4 pb-4">
+            <Conversation take={quem} ruled={false} />
+          </div>
+        ) : null}
+      </Drawer>
+    </li>
   );
 }
 
