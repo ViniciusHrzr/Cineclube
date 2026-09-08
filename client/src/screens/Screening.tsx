@@ -1001,7 +1001,21 @@ function LiveScreen({
 
   return (
     <div className="mt-6">
-      <LiveVideo stream={share.stream} hostPreview={host} hostName={live.hostName} />
+      <LiveVideo
+        stream={share.stream}
+        hostPreview={host}
+        hostName={live.hostName}
+        audio={
+          host
+            ? {
+                sources: share.audioSources,
+                currentId: share.audioSourceId,
+                list: share.listAudio,
+                pick: share.pickAudio,
+              }
+            : undefined
+        }
+      />
 
       <div className="plate mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
         <span className="legend">{host ? 'Você está transmitindo' : `Tela de ${live.hostName}`}</span>

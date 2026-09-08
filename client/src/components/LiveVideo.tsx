@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Maximize2, Minimize2, Pause, Play, Volume1, Volume2, VolumeX } from 'lucide-react';
+import {
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  SlidersHorizontal,
+  Volume1,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -68,11 +77,26 @@ export function LiveVideo({
   hostPreview,
   /** Quem está com a tela, para a cabine dizer de quem é a imagem. */
   hostName,
+  /* ── o som, do lado de quem transmite ───────────────────────────────────
+     Só chega preenchido para o transmissor, e é o controle que o volume seria
+     se volume fizesse sentido ali: a tela dele já toca nas caixas dele, e o
+     que ele precisa decidir não é quão alto ouve — é O QUE o clube ouve.
+
+     Mora aqui dentro, na mesma barra, porque é um controle da transmissão e
+     não um ajuste de conta. Quem está transmitindo e percebe eco no Discord
+     tem de resolver isso sem sair da imagem. */
+  audio,
   className,
 }: {
   stream: MediaStream | null;
   hostPreview: boolean;
   hostName: string;
+  audio?: {
+    sources: MediaDeviceInfo[];
+    currentId: string | null;
+    list: () => Promise<void>;
+    pick: (deviceId: string | null) => Promise<void>;
+  };
   className?: string;
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
@@ -97,6 +121,10 @@ export function LiveVideo({
   const [ratio, setRatio] = useState(16 / 9);
   /** O ponteiro está sobre a própria cabine: ela não pode sumir. */
   const overBar = useRef(false);
+  /* Um painel aberto segura a cabine acesa. Sem isto, a barra sumiria por
+     baixo de uma lista que a pessoa está lendo — e some justamente porque ela
+     parou de mexer o ponteiro para ler. */
+  const [pinned, setPinned] = useState(false);
 
   /* `srcObject` e não `src`: um MediaStream não tem URL, e a gambiarra antiga
      de criar uma com `createObjectURL` foi removida dos navegadores. */
@@ -174,14 +202,14 @@ export function LiveVideo({
   useEffect(() => {
     /* Parado, ela fica. Uma tela pausada sem controle visível não parece uma
        escolha, parece um travamento. */
-    if (!playing || overBar.current) {
+    if (!playing || overBar.current || pinned) {
       setAwake(true);
       return;
     }
     if (!awake) return;
     const id = window.setTimeout(() => setAwake(false), IDLE_MS);
     return () => window.clearTimeout(id);
-  }, [awake, playing]);
+  }, [awake, playing, pinned]);
 
   /* ── teclado ─────────────────────────────────────────────────────────────
      Os atalhos que qualquer pessoa já tenta num player, porque tentar e não
@@ -309,13 +337,15 @@ export function LiveVideo({
           </CabinKey>
 
           {/* ── o som ────────────────────────────────────────────────────
-              Ausente na tela de quem transmite, e isso não é um controle
-              escondido: o som dela está saindo das caixas dela, e um volume
-              que não muda nada é pior do que nenhum. */}
+              Dois controles diferentes para duas perguntas diferentes. Quem
+              assiste pergunta "quão alto?", e a resposta é um volume. Quem
+              transmite não tem essa pergunta — o som dele já está nas caixas
+              dele, e um volume ali não mudaria nada para ninguém. A pergunta
+              dele é "o que o clube está ouvindo?", e a resposta é a fonte. */}
           {hostPreview ? (
-            <span className="q pl-1 text-[10.5px] text-ink-faint">
-              seu próprio som, pelas suas caixas
-            </span>
+            audio ? (
+              <AudioPicker audio={audio} onOpenChange={setPinned} />
+            ) : null
           ) : (
             <div className="flex items-center gap-1.5 sm:gap-2">
               <CabinKey
@@ -411,6 +441,134 @@ export function LiveVideo({
         </button>
       ) : null}
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A FONTE DO SOM, NA CABINE DE QUEM TRANSMITE.
+
+   Existe por um problema concreto: o clube conversa no Discord enquanto
+   assiste, e "áudio do sistema" inclui o Discord. As vozes voltam pela
+   transmissão com quase um segundo de atraso, e quem está nas duas coisas se
+   ouve falando duas vezes.
+
+   Nenhuma configuração de navegador tira um aplicativo do mix — `getDisplay-
+   Media` recebe ele pronto do sistema operacional. O que dá é mandar outra
+   coisa, e é isso que este botão escolhe.
+
+   Recolhido atrás de um ícone porque listar as entradas pede permissão de
+   microfone: perguntar isso a quem nunca vai trocar de fonte seria assustar
+   por nada. Quem abre é quem tem o problema.
+   ══════════════════════════════════════════════════════════════════════════ */
+function AudioPicker({
+  audio,
+  onOpenChange,
+}: {
+  audio: {
+    sources: MediaDeviceInfo[];
+    currentId: string | null;
+    list: () => Promise<void>;
+    pick: (deviceId: string | null) => Promise<void>;
+  };
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const abrir = async () => {
+    const indo = !open;
+    setOpen(indo);
+    onOpenChange(indo);
+    if (indo && !audio.sources.length) {
+      setBusy(true);
+      await audio.list();
+      setBusy(false);
+    }
+  };
+
+  const escolher = async (id: string | null) => {
+    setBusy(true);
+    await audio.pick(id);
+    setBusy(false);
+    setOpen(false);
+    onOpenChange(false);
+  };
+
+  return (
+    <div className="relative">
+      <CabinKey
+        onClick={() => void abrir()}
+        label="De onde sai o som que o clube ouve"
+        hint="Trocar a fonte do som — tire o Discord da transmissão"
+      >
+        <SlidersHorizontal className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+      </CabinKey>
+
+      {open ? (
+        <div className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[min(78vw,340px)] rounded-plate bg-house-seat p-3.5 ring-1 ring-white/[0.06]">
+          <span className="legend">De onde sai o som</span>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-dim">
+            O áudio do sistema carrega tudo que toca nesta máquina, o Discord incluído. Mande o som
+            do player para uma entrada separada — um cabo virtual, tipo VB-Cable — e escolha ela
+            aqui: sai só o filme, e a conversa continua nas suas caixas.
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <SourceChip on={audio.currentId === null} onClick={() => void escolher(null)}>
+              Som da captura
+            </SourceChip>
+            {audio.sources.map(d => (
+              <SourceChip
+                key={d.deviceId}
+                on={audio.currentId === d.deviceId}
+                onClick={() => void escolher(d.deviceId)}
+              >
+                {d.label || 'entrada sem nome'}
+              </SourceChip>
+            ))}
+          </div>
+
+          {busy ? <p className="q mt-2.5 text-[11px] text-ink-dim">trocando…</p> : null}
+
+          {/* O caminho que dispensa cabo virtual, dito por último porque só
+              serve quando o filme está no navegador — e aí é o mais limpo que
+              existe: áudio de aba não inclui mais nada. */}
+          <p className="q mt-2.5 text-[11px] leading-relaxed text-ink-faint">
+            Se o filme estiver numa aba, compartilhar a ABA já resolve sozinho.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* A pastilha do sistema, no tamanho `sm` e dentro de uma superfície escura.
+   Não é a `Chip` de bits.tsx porque aquela assume o fundo da sala atrás dela
+   — aqui o fundo é uma placa sobre a imagem, e a opacidade que a torna legível
+   lá desenharia uma segunda placa em cima desta. */
+function SourceChip({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        'max-w-full truncate rounded-seam px-2.5 py-1.5 text-left font-display text-[11px] uppercase leading-none tracking-[0.12em] ring-1 transition-colors duration-150',
+        on
+          ? 'text-dye-brass ring-dye-brass/70 shadow-[inset_0_0_14px_rgba(217,164,65,0.2)]'
+          : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -132,6 +132,17 @@ export type LiveShare = {
   hasAudio: boolean;
   /** O que foi escolhido no seletor: 'monitor', 'window' ou 'browser'. */
   surface: string | null;
+  /* ── de onde sai o som que o clube ouve ─────────────────────────────────
+     Entradas de áudio desta máquina, para quando o mix do sistema não serve.
+     Vazia até alguém pedir: listar exige permissão, e pedir microfone a quem
+     nunca vai trocar de fonte é assustar por nada. */
+  audioSources: MediaDeviceInfo[];
+  /** `null` é o som que veio junto com a captura da tela. */
+  audioSourceId: string | null;
+  /** Pergunta ao sistema quais entradas existem. Pede permissão uma vez. */
+  listAudio: () => Promise<void>;
+  /** Troca o som em voo, sem derrubar ninguém. */
+  pickAudio: (deviceId: string | null) => Promise<void>;
   /** Capturar a tela e assumir a transmissão da sala. */
   start: () => Promise<void>;
   /** Largar. Fecha as conexões e apaga a sala. */
@@ -213,6 +224,15 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const [detail, setDetail] = useState<string | null>(null);
   const [hasAudio, setHasAudio] = useState(false);
   const [surface, setSurface] = useState<string | null>(null);
+  const [audioSources, setAudioSources] = useState<MediaDeviceInfo[]>([]);
+  const [audioSourceId, setAudioSourceId] = useState<string | null>(null);
+  /* A faixa de áudio que veio junto com a captura da tela. Guardada mesmo
+     enquanto outra está no ar, porque voltar para ela é uma opção — e pedir a
+     captura de novo só para desfazer uma troca custaria o seletor de janelas
+     inteiro e a transmissão junto. */
+  const captureAudio = useRef<MediaStreamTrack | null>(null);
+  /** A faixa vinda de uma entrada escolhida à mão, quando há uma. */
+  const pickedAudio = useRef<MediaStreamTrack | null>(null);
 
   /** As conexões vivas, por pessoa do outro lado. */
   const peerMap = useRef(new Map<string, Peer>());
@@ -265,10 +285,17 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     setPeers(0);
     for (const track of localRef.current?.getTracks() ?? []) track.stop();
     localRef.current = null;
+    /* A faixa escolhida à mão não pertence à captura, então ela não morre
+       junto com o stream da tela — precisa ser fechada aqui, ou o indicador de
+       microfone em uso fica aceso depois de a transmissão acabar. */
+    pickedAudio.current?.stop();
+    pickedAudio.current = null;
+    captureAudio.current = null;
     setStream(null);
     setDetail(null);
     setHasAudio(false);
     setSurface(null);
+    setAudioSourceId(null);
   }, []);
 
   /* ── uma conexão, dos dois lados ─────────────────────────────────────────
@@ -375,7 +402,25 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           /* Só de quem a sala diz que está transmitindo. Sem esta linha,
              qualquer membro poderia empurrar vídeo para a tela de outro. */
           if (from !== hostId || host) return;
-          const peer = await connect(from);
+
+          /* ── uma oferta pode ser a primeira ou a segunda ─────────────────
+             A segunda acontece quando quem transmite troca a fonte de áudio
+             numa conexão que não tinha faixa de som: não há o que substituir,
+             então uma faixa é acrescentada e isso exige negociar de novo.
+
+             Montar um par novo aqui derrubaria a imagem que já está na tela
+             para receber a mesma imagem de volta. Um par vivo e em repouso
+             recebe a oferta e responde; só o que morreu é remontado. */
+          const vivo = peerMap.current.get(from);
+          const reaproveita = vivo && !DEAD.has(vivo.pc.connectionState);
+          if (reaproveita && vivo.pc.signalingState !== 'stable') {
+            /* Ofertas cruzadas. Este lado nunca oferece, então isto é uma
+               oferta chegando em cima de outra ainda em curso: a primeira
+               termina, e o laço de pedido refaz o par se não terminar. */
+            return;
+          }
+
+          const peer = reaproveita ? vivo : await connect(from);
           peer.pc.ontrack = e => {
             const [incoming] = e.streams;
             if (incoming) {
@@ -496,6 +541,10 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
        quem transmite não tem como perceber — o som continua saindo das caixas
        DELE. Por isso isto é medido e dito na tela. */
     setHasAudio(capture.getAudioTracks().length > 0);
+    /* Guardada para poder voltar a ela depois de uma troca de fonte, sem
+       precisar reabrir o seletor de janelas. */
+    captureAudio.current = capture.getAudioTracks()[0] ?? null;
+    setAudioSourceId(null);
     /* E o QUE foi escolhido, porque é isso que explica o mudo. Uma janela não
        leva som em navegador nenhum: sabendo qual superfície é, a tela para de
        dizer "sem áudio" e passa a dizer o que fazer a respeito. */
@@ -524,6 +573,121 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     drop();
     void stopLive();
   }, [drop, stopLive]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     DE ONDE SAI O SOM, E POR QUE ISTO PRECISA EXISTIR.
+
+     O clube assiste junto e conversa no Discord ao mesmo tempo. Quando quem
+     transmite manda "o áudio do sistema", o sistema inclui o Discord: as vozes
+     de todo mundo voltam pela transmissão com quase um segundo de atraso, e
+     quem está nas duas coisas se ouve falando duas vezes.
+
+     Nenhuma configuração de navegador conserta isso. `getDisplayMedia` recebe
+     o mix já pronto do sistema operacional — não existe API, em navegador
+     nenhum, para tirar um aplicativo de dentro dele. O que existe é escolher
+     OUTRA fonte, e é isso que estas duas funções fazem.
+
+     Dois caminhos limpos, e os dois passam por aqui:
+
+     · **Compartilhar a aba** em que o filme está tocando. O áudio de aba é só
+       daquela aba, e o Discord fica de fora por construção. É a resposta
+       quando o filme está no navegador, e não precisa de nada disto.
+
+     · **Uma entrada de áudio dedicada**, quando o filme está num VLC ou num
+       programa qualquer. Manda-se o som do player para um cabo virtual
+       (VB-Cable e afins), escolhe-se esse cabo aqui, e o que sai é só o filme.
+       O Discord continua tocando nas caixas de quem transmite e não entra na
+       transmissão, porque nunca passou por essa entrada.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const listAudio = useCallback(async () => {
+    try {
+      /* A permissão vem primeiro porque sem ela `enumerateDevices` devolve
+         entradas sem NOME — uma lista de identificadores opacos, onde escolher
+         "o cabo virtual" é impossível. O stream é fechado no mesmo instante:
+         o que se queria dele era o direito de ler os rótulos. */
+      const permissao = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const t of permissao.getTracks()) t.stop();
+      const todos = await navigator.mediaDevices.enumerateDevices();
+      setAudioSources(todos.filter(d => d.kind === 'audioinput' && d.deviceId));
+    } catch (e) {
+      setError('Não consegui listar as entradas de áudio: ' + (e as Error).message);
+    }
+  }, []);
+
+  const pickAudio = useCallback(
+    async (deviceId: string | null) => {
+      setError(null);
+      let faixa: MediaStreamTrack | null = null;
+
+      if (deviceId === null) {
+        faixa = captureAudio.current;
+      } else {
+        try {
+          const som = await navigator.mediaDevices.getUserMedia({
+            /* O mesmo pedido sem processamento da captura, pela mesma razão: o
+               que vem por aqui é música, e o tratamento de voz a estraga. */
+            audio: {
+              deviceId: { exact: deviceId },
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              channelCount: 2,
+              sampleRate: 48_000,
+            },
+          });
+          faixa = som.getAudioTracks()[0] ?? null;
+        } catch (e) {
+          setError('Não consegui abrir essa entrada: ' + (e as Error).message);
+          return;
+        }
+      }
+
+      /* A faixa anterior escolhida à mão morre aqui. A da captura não: ela
+         pertence ao stream da tela e é fechada junto com ele. */
+      if (pickedAudio.current && pickedAudio.current !== faixa) {
+        pickedAudio.current.stop();
+        pickedAudio.current = null;
+      }
+      if (deviceId !== null && faixa) {
+        /* `music` desliga as suposições que o codificador faz sobre voz. */
+        faixa.contentHint = 'music';
+        pickedAudio.current = faixa;
+      }
+
+      setAudioSourceId(deviceId);
+      setHasAudio(Boolean(faixa));
+
+      /* ── e agora, em voo ────────────────────────────────────────────────
+         `replaceTrack` troca o que está saindo sem renegociar nada: ninguém
+         perde a imagem, ninguém reconecta, o filme não pisca. É a razão de
+         esta troca ser um botão e não um "pare e comece de novo".
+
+         Quem não tem faixa de áudio nenhuma — uma captura de janela que veio
+         muda — é o caso que exige negociar: não há o que substituir, então a
+         faixa é acrescentada e uma oferta nova é mandada. */
+      for (const [withId, peer] of peerMap.current) {
+        const sender = peer.pc.getSenders().find(s => s.track?.kind === 'audio');
+        if (sender) {
+          await sender.replaceTrack(faixa).catch(() => {});
+          if (faixa) await tune(sender);
+          continue;
+        }
+        if (!faixa || !localRef.current) continue;
+        await tune(peer.pc.addTrack(faixa, localRef.current));
+        try {
+          const offer = await peer.pc.createOffer();
+          const dito = { type: offer.type, sdp: inStereo(offer.sdp ?? '') };
+          await peer.pc.setLocalDescription(dito);
+          void sendSignal(withId, 'offer', dito);
+        } catch {
+          /* A conexão morreu no meio da troca. O laço de pedido do outro lado
+             refaz esse par sozinho. */
+        }
+      }
+    },
+    [sendSignal]
+  );
 
   /* ── pedir imagem, e continuar pedindo ───────────────────────────────────
      O laço inteiro de quem assiste, e ele pergunta a coisa certa: não "tenho
@@ -595,5 +759,21 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           ? 'live'
           : 'waiting';
 
-  return { role, phase, stream, peers, relayed, error, detail, hasAudio, surface, start, stop };
+  return {
+    role,
+    phase,
+    stream,
+    peers,
+    relayed,
+    error,
+    detail,
+    hasAudio,
+    surface,
+    audioSources,
+    audioSourceId,
+    listAudio,
+    pickAudio,
+    start,
+    stop,
+  };
 }
