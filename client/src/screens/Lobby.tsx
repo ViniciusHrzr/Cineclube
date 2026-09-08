@@ -329,12 +329,13 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Clubes em atividade"
-            /* No universo de séries a atividade conta EPISÓDIO mexido — visto ou
-               avaliado —, porque acompanhar é a atividade principal ali e um
-               clube que assistiu uma temporada inteira sem avaliar está vivo. */
+            /* Sem legenda no universo de séries. Lá a atividade conta EPISÓDIO
+               mexido — visto ou avaliado —, e dizer isso era descrever o motor e
+               não a lista: quem olha uma fileira de clubes ordenada já entendeu
+               que os de cima são os que andaram. */
             note={
               universe === 'series'
-                ? `Episódios dos últimos ${net?.windowDays ?? 30} dias.`
+                ? undefined
                 : `Avaliações dos últimos ${net?.windowDays ?? 30} dias.`
             }
           >
@@ -356,13 +357,14 @@ export function Lobby({
           <Region
             className="mt-16"
             title="Avaliação em destaque"
-            /* A ordem é por reação, e no universo de séries ainda não existe
-               reação sobre um episódio — a conversa é uma fatia que não foi
-               construída. Dizer "a que mais moveu a rede" ali seria a legenda
-               prometendo um critério que não está sendo aplicado. */
+            /* Sem legenda no universo de séries. Do lado de filmes a linha diz
+               um critério — "a que mais moveu a rede" —, e é por isso que ela
+               existe: sem ela ninguém sabe por que é AQUELA ficha. Ali a ordem
+               ainda não é por reação, então a legenda não teria critério para
+               dizer, e sobrava explicando a própria ficha logo acima dela. */
             note={
               universe === 'series'
-                ? `Um episódio dos últimos ${net?.windowDays ?? 30} dias, com o que a pessoa escreveu.`
+                ? undefined
                 : `A avaliação que mais moveu a rede nos últimos ${net?.windowDays ?? 30} dias.`
             }
           >
