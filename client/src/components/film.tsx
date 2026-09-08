@@ -191,35 +191,25 @@ export function ProjectionSheet({
         if (e.target === ref.current) onClose();
       }}
       /* ── um rolador só, e ele é a placa ────────────────────────────────
-         O `<dialog>` também rolava, e ninguém pediu por isso: o navegador dá a
-         ele `overflow: auto` e um `max-height` próprio — `calc(100% - 6px -
-         2em)` no Chrome — bem menor que a tela. A placa aqui dentro pedia
-         `100dvh - 1rem`, que passa disso, então o conteúdo transbordava do
-         diálogo e os dois viravam caixa de rolagem, uma dentro da outra.
+         O `<dialog>` também rolava: o navegador dá a ele `overflow: auto` e um
+         `max-height` próprio, bem menor que a tela. A placa aqui dentro pedia
+         mais que isso, então o conteúdo transbordava e os dois viravam caixa de
+         rolagem, uma dentro da outra.
 
-         No mouse isso é uma barra feia a mais. No dedo é o travamento: cada
-         toque tem de ser resolvido entre dois roladores aninhados antes de
-         mover um pixel, e a folha abria pesada.
+         No mouse é uma barra feia a mais; no dedo é o travamento — cada toque
+         tem de ser resolvido entre dois roladores aninhados antes de mover um
+         pixel.
 
-         `max-h-[calc(100dvh/var(--ui-zoom))]` derruba o teto do navegador e `overflow-hidden` tira o
-         diálogo da disputa. A placa passa a ser a única que rola, e o teto dela
-         desconta o recuo do diálogo em cada tamanho — 1rem no telefone (`p-2`),
-         2rem daí para cima (`sm:p-4`). Antes descontava 1rem nos dois, e no
-         computador sobrava exatamente o rolo extra.
+         `max-h-[calc(100dvh/var(--ui-zoom))]` derruba o teto do navegador e
+         `overflow-hidden` tira o diálogo da disputa. O teto da placa desconta o
+         recuo do diálogo em cada tamanho — 1rem no telefone, 2rem daí para
+         cima. `overscroll-contain` fecha a última porta: sem ele, chegar ao fim
+         desta lista passa o gesto para a página atrás da folha.
 
-         `overscroll-contain` fecha a última porta: sem ele, chegar ao fim desta
-         lista passa o gesto para a página atrás da folha.
-
-         ── e o fundo não é desfocado ──────────────────────────────────────
-         Era `backdrop-blur-sm`, e é o mesmo erro que a marquise já tinha
-         cometido e desfeito (ver App.tsx): o `::backdrop` cobre a tela inteira,
-         e atrás dele fica a parede de celuloide, que nunca para de andar. Um
-         `backdrop-filter` sobre conteúdo que muda todo quadro é um borrão de
-         tela cheia refeito todo quadro — no telefone, o travamento que se sente
-         ao abrir a folha.
-
-         Um fundo mais opaco lê quase igual e custa zero. A parede também para
-         enquanto a folha está aberta; isso mora no index.css. */
+         E o fundo não é desfocado, pelo mesmo motivo da marquise: o
+         `::backdrop` cobre a tela inteira, e atrás dele fica a parede de
+         celuloide, que nunca para. Um `backdrop-filter` sobre conteúdo que muda
+         todo quadro é um borrão de tela cheia refeito todo quadro. */
       className={cn(
         'w-full max-w-[900px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
@@ -321,19 +311,14 @@ export function ProjectionSheet({
   );
 }
 
-/* ── onde está passando, na grade ─────────────────────────────────────────
-   The same answer as the projection sheet's, at the size a poster card can
-   afford: marks only, no names. A card is scanned rather than read — the eye is
-   going down a grid looking for something to watch tonight, and at that speed a
-   logo is faster than its own name.
+/* A mesma resposta da folha de projeção, no tamanho que um cartaz aguenta:
+   marcas, sem nomes. Um cartaz é escaneado e não lido — o olho desce a grade
+   procurando o que ver hoje, e nessa velocidade um logo é mais rápido que o
+   próprio nome.
 
-   The names are not lost, they are moved: each mark carries one as its title
-   and as the alt text, so a pointer resting on it and a screen reader reaching
-   it both get the word. The sheet behind the poster spells them out in full.
-
-   Capped at four, which is where a row of marks stops being a glance. The
-   overflow says how many are left rather than showing three more pixels of
-   logo, because "+2" is legible and a fifth 18px square is not. */
+   Os nomes não se perdem, mudam de lugar: cada marca carrega um como `title` e
+   como alt. Cortado em quatro, que é onde uma fileira de marcas deixa de ser um
+   relance — "+2" é legível e um quinto quadrado de 18px não é. */
 function OnCell({ watch }: { watch: Movie['watch'] }) {
   if (!watch?.streaming.length) return null;
   const shown = watch.streaming.slice(0, 4);
@@ -365,22 +350,16 @@ function OnCell({ watch }: { watch: Movie['watch'] }) {
 }
 
 /* ── o clube contra a multidão ────────────────────────────────────────────
-   Two averages on the same 0–10, side by side, and the distance between them
-   named out loud.
+   Duas médias na mesma régua 0–10, lado a lado, com a distância entre elas dita
+   em voz alta.
 
-   The whole product is the premise that this club's verdict has a value of its
-   own — that is why the criteria are the club's and the weights are the club's.
-   A number to disagree with is what makes that premise visible. "A gente deu
-   6,2 e o TMDB deu 8,1" is an argument waiting to happen at the table, and the
-   sheet exists to start it.
+   O produto inteiro é a premissa de que o veredito deste clube vale por si. Um
+   número de que discordar é o que torna essa premissa visível: "a gente deu 6,2
+   e o TMDB deu 8,1" é uma discussão esperando para acontecer na mesa.
 
-   Named TMDB and not "o mundo", because that is what it is: one site's voters,
-   not a verdict of humanity. The club is disagreeing with something specific
-   and should be able to see which thing.
-
-   The vote count is not decoration. A 9,0 from eleven people and a 9,0 from
-   four hundred thousand are different claims, and which one the club is
-   contradicting changes what the disagreement means. */
+   Chamado de TMDB e não "o mundo", porque é o que ele é: os votantes de um
+   site. E a contagem não é enfeite — um 9,0 de onze pessoas e um 9,0 de
+   quatrocentas mil são afirmações diferentes. */
 function Verdicts({
   club,
   clubCount,
@@ -432,32 +411,26 @@ function Verdicts({
 }
 
 /* ── onde a gente assiste isso ────────────────────────────────────────────
-   The question the club actually asks about a film it has not seen, and the
-   one thing the projection sheet could not answer. TMDB carries it, licensed
-   from JustWatch, split by how you get to the film — and that split is the
-   whole point: "está incluído em algo que você já paga" and "dá para alugar"
-   are different answers, and collapsing them into one row of logos would make
-   the sheet say something it does not know.
+   A pergunta que o clube de fato faz sobre um filme que não viu. O TMDB carrega
+   a resposta, licenciada do JustWatch, separada por COMO se chega ao filme — e
+   essa separação é o ponto: "está incluído em algo que você já paga" e "dá para
+   alugar" são respostas diferentes.
 
-   Absent on a stale film. The cache deliberately does not store this, because a
-   catalogue moves and a confident wrong answer about where a film is streaming
-   is worse than no answer.
+   Ausente num filme vindo do cache: ele deliberadamente não guarda isto, porque
+   um catálogo se move e uma resposta errada com confiança é pior que nenhuma.
 
-   The credit is not decoration: using this data obliges us to name JustWatch as
-   the source, and the link out is TMDB's own page for the film, which lands on
-   the real storefronts instead of guessing a deep link into a service the
-   reader may not even have. */
+   O crédito não é enfeite — usar estes dados obriga a nomear o JustWatch —, e o
+   link de saída é a página do próprio TMDB, que cai nas lojas de verdade em vez
+   de adivinhar um link fundo num serviço que o leitor talvez nem tenha. */
 function WatchOn({ watch }: { watch: Movie['watch'] }) {
-  /* ── três estados, e dois deles são nulos ───────────────────────────────
-     `undefined` is "nobody asked": the film came from the cache because TMDB
-     was unreachable, and this sheet knows nothing about where it streams.
-     `null` is "asked, and it streams nowhere here" — a real answer.
+  /* Três estados, e dois deles são nulos. `undefined` é "ninguém perguntou": o
+     filme veio do cache porque o TMDB estava fora. `null` é "perguntamos, e não
+     passa em lugar nenhum aqui" — uma resposta de verdade.
 
-     They were drawn the same way until a film in cinemas made the difference
-     visible: the sheet simply ended after the trailer, which reads exactly like
-     the feature not being there at all. An answer nobody can see is not an
-     answer, so the negative one gets said out loud and the unknown one stays
-     quiet, which is the only honest split. */
+     Eram desenhados igual até um filme em cartaz tornar a diferença visível: a
+     folha simplesmente terminava depois do trailer, que lê exatamente como o
+     recurso não existir. A resposta negativa é dita em voz alta e a
+     desconhecida fica calada. */
   if (watch === undefined) return null;
 
   if (!watch) {

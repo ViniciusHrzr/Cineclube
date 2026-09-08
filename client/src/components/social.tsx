@@ -8,29 +8,22 @@ import { cn, plural, whenOf } from '@/lib/utils';
 import { useWorld, type TakeRef } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A REAÇÃO A UMA FICHA
+   A REAÇÃO A UMA FICHA: concordar, discordar, escrever embaixo, curtir o que
+   alguém escreveu.
 
-   Concordar, discordar, escrever embaixo, curtir o que alguém escreveu. Isto
-   morava inteiro dentro da tela de avaliados, porque por um tempo o acervo era
-   o único lugar onde uma ficha aparecia por inteiro.
-
-   Deixou de ser: o feed é a porta de entrada do clube e é lá que a ficha é
-   lida pela primeira vez — no minuto em que ela acontece, com todo mundo
-   olhando. Uma conversa que só existe a dois cliques de distância, numa aba
-   que se abre para procurar um filme antigo, é uma conversa que não acontece.
+   Morava dentro da tela de avaliados, porque por um tempo o acervo era o único
+   lugar onde uma ficha aparecia por inteiro. Deixou de ser: o feed é a porta de
+   entrada do clube, e uma conversa que só existe a dois cliques de distância é
+   uma conversa que não acontece.
 
    Uma cópia compacta destes controles no feed teria sido o caminho curto e o
    errado: são as MESMAS regras — não votar na própria ficha, contador mudo no
-   zero, latão para o que é seu, profundidade um na resposta —, e regras
-   escritas duas vezes são regras que divergem na terceira. Então elas mudaram
-   de casa em vez de se multiplicar, e as duas telas leem daqui.
+   zero, latão para o que é seu, profundidade um na resposta.
 
-   ── e desde 07/09/2026, os dois UNIVERSOS ────────────────────────────────
-   O mesmo argumento levado até o fim. A ficha de um episódio recebe conversa e
-   voto com as mesmas regras da ficha de um filme, e estas peças passaram a ler
-   de `useWorld` em vez de `useClub`: o que elas precisam da sala é a pessoa, as
-   três coleções e as quatro escritas, e as duas lentes sabem entregar isso.
-   Elas não sabem em qual universo estão desenhando, que é o ponto.
+   E valem nos dois UNIVERSOS: estas peças leem de `useWorld` e não de
+   `useClub`, porque o que elas precisam da sala é a pessoa, as três coleções e
+   as quatro escritas — e as duas lentes sabem entregar isso. Elas não sabem em
+   qual universo estão desenhando, que é o ponto.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** O mesmo teto que routes/social.js aplica. Espelhado, nunca decidido aqui. */

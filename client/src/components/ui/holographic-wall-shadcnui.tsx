@@ -12,25 +12,19 @@ type HolographicWallProps = {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The film wall.
+   The film wall: a dark field of marks that ignite where the pointer is, with a
+   soft halo riding the cursor.
 
-   Same mechanic as the holographic-wall reference: a dark field of marks that
-   ignite where the pointer is, with a soft halo riding the cursor. Two things
-   are deliberately different.
-
-   THE CONTENT is celluloid, not hieroglyphs — a 4-perforation film strip grid
-   with frame lines, because this is a cinema and the wall should be made of
-   the thing the club is arguing about.
+   THE CONTENT is celluloid — a 4-perforation film strip grid — because this is
+   a cinema and the wall should be made of the thing the club is arguing about.
 
    THE ENGINE is CSS, not four hundred springs. The reference mounts one
-   motion.div per glyph and re-animates every one of them on every mouse move;
-   at panel size that is merely wasteful, but as a full-viewport backdrop it is
-   ~1500 spring animations per pointer event and it drops frames on contact.
-   The same image comes from three composited layers: the dark field, a warm
-   copy of the field revealed through a radial mask at the pointer, and the
-   halo. Pointer writes two CSS variables, throttled to one frame. The ignite
-   is now continuous rather than quantised per glyph, which reads better, and
-   it holds 60fps behind a scrolling page.
+   motion.div per glyph and re-animates every one on every mouse move: as a
+   full-viewport backdrop that is ~1500 spring animations per pointer event, and
+   it drops frames on contact. The same image comes from three composited
+   layers — the dark field, a warm copy revealed through a radial mask at the
+   pointer, and the halo — with the pointer writing two CSS variables, throttled
+   to one frame.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* The wall is hung at its own scale, over and above the interface's 125%: the
@@ -40,37 +34,32 @@ type HolographicWallProps = {
 const GAUGE = 1.7;
 
 /* ── the second wall, and where it cannot go ──────────────────────────────
-   The beam works by drawing the wall twice: once dark, once in tungsten, with
-   the second copy revealed only inside a mask that follows the cursor. The two
-   copies have to creep in exact step, or the light shows a wall that does not
-   line up with the wall it is lighting.
+   The beam draws the wall twice: once dark, once in tungsten, with the second
+   copy revealed only inside a mask that follows the cursor. The two copies have
+   to creep in exact step, or the light shows a wall that does not line up with
+   the wall it is lighting.
 
-   In Gecko they do not stay in step. Every strip is its own animation, and once
-   there are more of them than the engine will keep off the main thread, some
-   run on the compositor and the rest on the main thread — two clocks. The
-   copies drift apart and the wall appears doubled: same frame lines, same
-   angle, a few pixels out. The doubling and the jank are one fault seen twice,
-   which is why fixing the look and fixing the speed is the same fix.
+   In Gecko they do not. Every strip is its own animation, and once there are
+   more than the engine will keep off the main thread, some run on the
+   compositor and the rest on the main thread — two clocks. The wall appears
+   doubled: same frame lines, same angle, a few pixels out. The doubling and the
+   jank are one fault seen twice.
 
-   So on Gecko the room keeps one wall. The cursor still lights it — the halo is
-   a real light in the air — it just does not open a second length of celluloid
-   to do it. Detected by a property only Gecko implements, rather than by
-   reading the user agent string, which is a claim and not a capability. */
+   So on Gecko the room keeps one wall. Detected by a property only Gecko
+   implements, rather than by reading the user agent string, which is a claim
+   and not a capability. */
 const GECKO =
   typeof document !== 'undefined' && 'MozAppearance' in document.documentElement.style;
 
 /* ── and the same decision, for a machine with no GPU to spare ────────────
    The second wall is the most expensive thing this component builds: a masked
-   render surface with a second full set of animating strips inside it, blended
-   under a moving hole on every frame the pointer produces. With a compositor
-   that is a transform and a texture. In software it is a large area of pixels
-   composited by the CPU sixty times a second, and it is exactly what a machine
-   with hardware acceleration switched off cannot afford.
+   render surface with a second full set of animating strips inside it. With a
+   compositor that is a transform and a texture; in software it is a large area
+   of pixels composited by the CPU sixty times a second.
 
-   So it is not built there either. The room keeps one wall and the halo — the
-   cursor still lights it, the light is still real, it just no longer opens a
-   second length of celluloid to do it. index.html decides this and writes it
-   on the root before the first paint; the reasoning is there. */
+   So it is not built there either — the cursor still lights the one wall, and
+   the light is still real. index.html decides this and writes it on the root
+   before the first paint. */
 const SOFTWARE =
   typeof document !== 'undefined' &&
   document.documentElement.getAttribute('data-render') === 'software';
@@ -99,26 +88,16 @@ function geo(s: number) {
 }
 
 /* ── depth ────────────────────────────────────────────────────────────────
-   The strips hang at four distances from the room, interleaved so no two
-   neighbours share a plane. Depth is not one trick but four, all keyed to the
-   same number `s`, because a single cue reads as a mistake and four read as
-   distance:
+   The strips hang at four distances, interleaved so no two neighbours share a
+   plane. Depth is four cues keyed to the same number `s`, because a single cue
+   reads as a mistake and four read as distance:
 
-     scale     a strip further off is narrower and its frames are shorter — this
-               is the only honest one, the rest are the eye's shortcuts
-     speed     parallax: the near plane crosses more of the screen per second, so
-               the planes separate at rates that sort themselves by distance
-     light     atmospheric perspective — the far planes sit back into the dark of
-               the room rather than competing with the near ones
-     shadow    the near planes are lit from the projector and throw that shadow
-               onto whatever hangs behind them, which is the one cue that puts a
-               measurable gap between two strips instead of only sorting them
-     direction alternating strictly, and constant: a strip that runs up runs up
-               for as long as the page is open
-
-   Speed is given in pixels per second rather than as a duration, because what
-   the eye sorts by distance is the rate, and a duration hides the rate behind
-   the plane's own scale. The loop time is worked back from it. */
+     scale     a strip further off is narrower — the only honest one
+     speed     parallax: the near plane crosses more of the screen per second
+     light     atmospheric perspective, the far planes sit back into the dark
+     shadow    the near planes throw the projector's shadow onto what hangs
+               behind them, which is the cue that puts a plane BEHIND another
+               plane BEHIND another. */
 type Plane = {
   s: number;
   /** On-screen travel, px per second. The whole parallax lives in this column. */

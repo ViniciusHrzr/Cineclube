@@ -17,40 +17,25 @@ import { useClub } from '@/App';
 /* ══════════════════════════════════════════════════════════════════════════
    OS AJUSTES
 
-   Tudo o que a tela `Avaliadores` era, atrás de uma engrenagem.
+   Uma folha e não uma aba: configuração é uma interrupção com começo e fim —
+   você vem trocar a senha, troca, e volta. Uma aba faria disso um lugar, algo
+   que aparece na navegação e compete com o que o clube faz. Um `<dialog>`
+   nativo dá o cerco de foco, o Escape e a inércia do fundo de graça, e some sem
+   deixar endereço.
 
-   Aquela tela tinha o nome de uma seção e o conteúdo de um painel de
-   preferências: quatro placas empilhadas de formulário — meu nome, meu PIN,
-   cadastrar avaliador, a lista com resetar e remover. Ela ocupava uma rota
-   inteira do produto para responder perguntas que alguém faz duas vezes por
-   ano, e ocupava o lugar onde deveria estar a página sobre a pessoa.
-
-   ── por que uma folha, e não uma aba ────────────────────────────────────
-   Porque configuração é uma interrupção com começo e fim: você vem trocar o
-   PIN, troca, e volta para onde estava. Uma aba faria disso um lugar — algo que
-   se visita, que aparece na navegação, que compete com o que o clube faz. Um
-   `<dialog>` nativo dá o cerco de foco, o Escape e a inércia do fundo de graça,
-   e some sem deixar endereço.
-
-   É a segunda folha do produto, e ela segue as regras da primeira (ver a ficha
-   de projeção em components/film.tsx): o `cancel` é interceptado para o Escape
-   sair pelo mesmo caminho do botão, e um clique que pousa no próprio elemento
-   do diálogo — ou seja, fora da placa — fecha.
+   Segue as regras da primeira folha do produto (components/film.tsx): o
+   `cancel` é interceptado para o Escape sair pelo mesmo caminho do botão, e um
+   clique que pousa no próprio elemento do diálogo — fora da placa — fecha.
 
    ── duas regiões, e a segunda quase nunca existe ────────────────────────
-   **Conta** é sua: nome, retrato, bio, senha. **A sala** é do ADM do clube:
-   quem está dentro, quem pediu para entrar, e o que o clube é.
+   **Conta** é sua; **a sala** é do ADM do clube. Para quem não administra, a
+   segunda não é desenhada desabilitada — ela não existe: um controle cinza é
+   uma promessa que a interface não pode cumprir.
 
-   Para quem não administra, a segunda região não é desenhada desabilitada — ela
-   não existe. Um controle cinza é uma promessa que a interface não pode cumprir,
-   e o servidor recusa de qualquer jeito.
-
-   ── e por que a Conta não conhece o clube ───────────────────────────────
-   Porque ela é usada em dois lugares agora: dentro de uma sala, e no saguão, que
-   é onde uma pessoa sem clube nenhum ainda precisa poder trocar o próprio nome e
-   cadastrar uma senha. Um componente que chamasse `useClub()` não existiria no
-   segundo. Então ele recebe o que precisa, e quem sabe de onde aquilo veio é
-   quem o monta.
+   E a Conta não conhece o clube, porque ela é usada em dois lugares: dentro de
+   uma sala, e no saguão, onde uma pessoa sem clube nenhum ainda precisa trocar
+   o próprio nome. Um componente que chamasse `useClub()` não existiria no
+   segundo.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const FIELD =
@@ -216,14 +201,12 @@ function Note({ msg }: { msg: { ok: boolean; text: string } | null }) {
   );
 }
 
-/* ── quem eu sou aqui ─────────────────────────────────────────────────────
-   Nome, retrato e bio, e os três pela mesma regra: aparecem ao lado de tudo o
-   que a pessoa já disse neste clube, então pertencem a ela e a mais ninguém. A
-   rota não recebe id — editar outra pessoa não é algo a proibir, é algo que não
-   há como pedir. O admin não é exceção: devolver um PIN é deixar alguém entrar,
-   trocar o nome é falar pela boca dela.
+/* Nome, retrato e bio, os três pela mesma regra: aparecem ao lado de tudo o que
+   a pessoa já disse neste clube, então pertencem a ela e a mais ninguém. A rota
+   não recebe id — editar outra pessoa não é algo a proibir, é algo que não há
+   como pedir.
 
-   O retrato é cortado em quadrado no navegador antes de subir. Uma foto de
+   O retrato é cortado em quadrado no navegador antes de subir: uma foto de
    celular são quatro megabytes de uma coisa desenhada aqui com vinte pixels. */
 function Account({
   me,
@@ -434,15 +417,12 @@ function Account({
   );
 }
 
-/* ── um interruptor ───────────────────────────────────────────────────────
-   Uma linha inteira clicável, com a lâmpada à esquerda e o que ela faz escrito
-   ao lado. Não é um `checkbox` nem um seletor de arrastar: o produto já tem um
-   vocabulário para "isto está ligado", e é a lâmpada — o ponto de seis pixels
-   com o brilho, a única coisa redonda deste sistema (ver DESIGN.md).
+/* Uma linha inteira clicável, com a lâmpada à esquerda. Não é um `checkbox`: o
+   produto já tem um vocabulário para "isto está ligado", e é a lâmpada — a
+   única coisa redonda deste sistema (ver DESIGN.md).
 
-   Vermelho aceso e `ink-faint` apagado, como a lâmpada da legenda na sala de
-   projeção e a da Sessão na marquise. Um interruptor que acendesse latão diria
-   "selecionado", que é outra coisa: latão é escolha, vermelho é funcionamento. */
+   Vermelho aceso e `ink-faint` apagado. Um interruptor que acendesse latão
+   diria "selecionado": latão é escolha, vermelho é funcionamento. */
 function Switch({
   on,
   onToggle,
@@ -487,15 +467,12 @@ function Switch({
   );
 }
 
-/* ── a minha senha ────────────────────────────────────────────────────────
-   A atual é exigida quando já existe uma, então quem encontra um navegador
+/* A atual é exigida quando já existe uma, então quem encontra um navegador
    destrancado ainda não consegue trancar o dono fora da própria conta.
 
-   Quando não existe — conta que entrou pelo Google e pulou o cadastro —, o
-   campo "atual" não é desenhado desabilitado: ele simplesmente não está lá, e o
-   título diz "Cadastrar senha" em vez de "Trocar". Um campo cinza pedindo uma
-   coisa que não existe é a interface fazendo a pessoa duvidar da própria
-   memória. */
+   Quando não existe, o campo "atual" não é desenhado desabilitado: ele
+   simplesmente não está lá. Um campo cinza pedindo uma coisa que não existe é a
+   interface fazendo a pessoa duvidar da própria memória. */
 function Password() {
   const [has, setHas] = useState<boolean | null>(null);
   const [current, setCurrent] = useState('');
@@ -621,15 +598,11 @@ function NotTheAdmin() {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A sala, para quem a administra.
-
-   Três coisas, e elas são as três perguntas de um ADM: quem está pedindo para
+/* Três coisas, e elas são as três perguntas de um ADM: quem está pedindo para
    entrar, quem já está dentro, e o que este clube é.
 
-   Os pedidos vêm primeiro de propósito. É a única das três que tem alguém
-   esperando do outro lado — as outras duas ninguém está esperando.
-   ══════════════════════════════════════════════════════════════════════════ */
+   Os pedidos vêm primeiro de propósito — é a única das três que tem alguém
+   esperando do outro lado. */
 function ClubRoom() {
   const club = useClub();
   const [requests, setRequests] = useState<JoinRequest[] | null>(null);
@@ -971,22 +944,16 @@ function ClubRoom() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Encerrar o clube.
+   Encerrar o clube: a única coisa verdadeiramente destrutiva do produto, e a
+   única reservada a quem fundou — não ao ADM, que é um cargo e não um dono.
 
-   A única coisa verdadeiramente destrutiva deste produto, e a única reservada a
-   quem fundou — não ao ADM: ADMs podem ser vários e são promovidos por outro
-   ADM, e "quem administra hoje" é um cargo, não um dono.
-
-   ── por que escrever o nome ───────────────────────────────────────────────
-   Porque isto apaga o que OUTRAS pessoas escreveram. Um `confirm()` é o preço
-   de um clique distraído, e o que está do outro lado dele são as fichas, a
-   conversa e os votos de um clube inteiro. Escrever o nome não é burocracia: é o
+   Escrever o nome não é burocracia. Isto apaga o que OUTRAS pessoas
+   escreveram, e um `confirm()` é o preço de um clique distraído: escrever é o
    único jeito de a mão parar tempo suficiente para a cabeça alcançar.
 
    A conta do que se perde vem primeiro, e é a de verdade — as listas já estão
-   carregadas no cliente desde o boot, então não é uma estimativa nem um número
-   redondo. "12 fichas e 5 pessoas" é uma frase que se pesa; "esta ação não pode
-   ser desfeita" é uma que se lê sem ver.
+   carregadas desde o boot. "12 fichas e 5 pessoas" é uma frase que se pesa;
+   "esta ação não pode ser desfeita" é uma que se lê sem ver.
    ══════════════════════════════════════════════════════════════════════════ */
 function EndClub() {
   const club = useClub();

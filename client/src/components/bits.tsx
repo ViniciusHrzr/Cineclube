@@ -57,17 +57,15 @@ export function Strip({
     <div className={cn('flex gap-[2px]', className)} role="img" aria-label={`${fmt(value)} de 10`}>
       {Array.from({ length: cells }, (_, i) => (
         /* Two layers per cell, and only one number changes: the unlit cell is
-           always there underneath, and the beam is laid over it at the exact
-           fraction of that cell the score reaches.
+           always underneath, and the beam is laid over it at the exact fraction
+           of that cell the score reaches.
 
-           It was one layer before, with the class deciding the colour and an
-           inline opacity deciding the fraction — which made opacity mean two
-           different things. Leaving the partial cell dropped the inline value,
-           so opacity snapped back to 1 while the background was still 100ms
-           into fading out, and for that moment the cell sat fully opaque over a
-           half-lit colour. That was the blink, and it fired on the way up and
-           on the way back down. Here nothing switches class and nothing
-           reverts: one opacity, from 0 to 1, meaning one thing. */
+           It was one layer, with the class deciding the colour and an inline
+           opacity deciding the fraction — which made opacity mean two different
+           things. Leaving the partial cell dropped the inline value, so opacity
+           snapped back to 1 while the background was still fading, and for that
+           moment the cell sat fully opaque over a half-lit colour. That was the
+           blink. Here one opacity, from 0 to 1, meaning one thing. */
         <span key={i} className="relative flex-1 rounded-[1px] bg-white/[0.07]">
           <span
             className={cn(
@@ -83,21 +81,13 @@ export function Strip({
 }
 
 /* ── reel tag ─────────────────────────────────────────────────────────────
-   Who signed a take. A reel label, not an avatar bubble.
-
-   With a portrait it stays a reel: the frame goes square and the picture sits
-   inside it, cropped like a film cell, with the same hard 1px corner the rest
-   of the room uses. Not a circle — a circle is every other product's avatar,
-   and a round portrait next to square everything would be the one element in
-   this interface that came from somewhere else.
-
-   Without one, nothing changes: the coloured tag with initials, which is still
-   what most of the club will look like. */
-/* Both branches are listed side by side on purpose. A row where one person has
+   Who signed a take. With a portrait it stays a reel: the frame goes square and
+   the picture sits inside it, cropped like a film cell. Not a circle — a circle
+   is every other product's avatar, and a round portrait next to square
+   everything would be the one element here that came from somewhere else. */
+/* Both branches are listed side by side on purpose: a row where one person has
    a portrait and the next has initials is the ordinary case, and the two have
-   to stand the same height or the row reads as broken — so the pair of sizes
-   is decided here, once, instead of at each call site where only one of them
-   would be in front of whoever is editing. */
+   to stand the same height or the row reads as broken. */
 const REEL_SIZE = {
   /** Beside a line of text, where it is a signature and not a face. */
   sm: { photo: 'h-5 w-5', tag: 'h-5 min-w-[28px] px-1.5 text-[10.5px]' },
@@ -150,23 +140,17 @@ export function Reel({
 }
 
 /* ── the bill ─────────────────────────────────────────────────────────────
-   The board outside a cinema, naming what is playing. Every section had one and
-   every section built its own: the same five classes typed out in five files,
-   with the margin drifting to `mb-7` in one of them and the count line present
-   in three. Same role, same type, one component.
+   The board outside a cinema, naming what is playing. Every section built its
+   own — the same five classes typed out in five files, with the margin drifting
+   in one of them.
 
-   The rule is the part that is new. A single word set at 46px leaves most of a
+   The rule is the part that is new: a single word set at 46px leaves most of a
    1240px line empty, and the emptiness read as the layout not having finished
-   loading rather than as air. A hairline running from the lettering to the edge
-   of the deck closes it, and it is drawn in the beam's own colour at a fifth of
-   its strength, fading out — the light spilling off the title and falling away
-   across the board.
+   loading rather than as air.
 
-   Beam and not brass, deliberately. Brass means *selected* in this room, and
+   Beam and not brass, deliberately: brass means *selected* in this room, and
    spending it on a decoration at the top of all five screens would spend the
-   one thing that makes a chosen chip legible as chosen. Beam is light, it is
-   already the colour of the lettering it runs out of, and light has no state to
-   dilute. */
+   one thing that makes a chosen chip legible as chosen. */
 export function Bill({
   title,
   note,
@@ -212,16 +196,11 @@ export function Key({
       type="button"
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-cell px-4 py-2.5',
-        /* ── e no dedo, o piso de toque ─────────────────────────────────
-           Trinta e três pixels de altura, que é o que estas medidas dão, é
-           confortável sob um cursor de um pixel e pequeno demais para uma
-           ponta de dedo — o piso reconhecido é 44. E a diferença era ao
-           contrário do que deveria: com o zoom da interface, esta chave media
-           41px no computador e 33px no telefone, ou seja o aparelho com dedos
-           recebia o alvo menor.
-
-           Uma linha aqui conserta todo botão do produto de uma vez, que é a
-           razão de existir um componente de chave. */
+        /* Trinta e três pixels é confortável sob um cursor de um pixel e pequeno
+           demais para uma ponta de dedo — o piso reconhecido é 44. E a diferença
+           era ao contrário: com o zoom da interface, esta chave media 41px no
+           computador e 33px no telefone, ou seja o aparelho com dedos recebia o
+           alvo menor. Uma linha aqui conserta todo botão do produto de uma vez. */
         'coarse:min-h-[44px] coarse:px-5 coarse:text-[14px]',
         'font-display text-[13px] uppercase tracking-[0.14em] leading-none',
         'transition-[background-color,color,border-color,transform] duration-150 active:translate-y-px',
@@ -229,17 +208,14 @@ export function Key({
         tone === 'commit' &&
           'bg-dye-red text-beam-hot ring-1 ring-dye-red hover:bg-dye-red-hot disabled:bg-house-seat disabled:text-ink-dim disabled:ring-house-rail',
         /* The chip's surface, for the chip's reason: these keys sit on the film
-           wall too — under every poster in the bin, and at the foot of the
-           catalogue — and a ring around nothing leaves the lettering to fend for
+           wall too, and a ring around nothing leaves the lettering to fend for
            itself against a lit, moving background. Seven tenths, so the room
-           still comes through and the key stays part of it. Even with a frame
-           line burning behind it at full beam, the label holds 5:1.
+           still comes through — even with a frame line burning behind it at
+           full beam, the label holds 5:1.
 
-           Cream on hover, like the ghost keys and the icon keys it stands next
-           to. Not red: `commit` fills with red and `danger` goes red on hover,
-           and if the ordinary key did the same, the two colours the room keeps
-           for "this writes something" and "this destroys something" would stop
-           meaning anything. */
+           Cream on hover, not red: `commit` fills with red and `danger` goes red
+           on hover, and the two colours the room keeps for "this writes
+           something" and "this destroys something" have to keep meaning that. */
         tone === 'flush' &&
           'bg-house-seat/70 ring-1 ring-house-rail text-ink hover:ring-beam/70 hover:text-beam',
         tone === 'ghost' && 'text-ink-dim hover:text-beam',
@@ -283,46 +259,32 @@ export function IconKey({
 }
 
 /* ── the chip ─────────────────────────────────────────────────────────────
-   A filter that is either on or off. It carries an opaque surface, and that is
-   not decoration: these sit straight on the film wall, in tracked caps at
-   12.5px, and the wall is lit and moving underneath them — a ring alone left
-   the dim ink reading against whatever happened to be behind it that second.
-   The surface holds whatever is written on it at 8:1 or better, lit and unlit
-   alike, because it no longer lets the room through.
+   A filter that is either on or off. The opaque surface is not decoration:
+   these sit straight on the film wall, in tracked caps at 12.5px, and the wall
+   is lit and moving underneath — a ring alone left the dim ink reading against
+   whatever happened to be behind it that second.
 
    ── por que latão, e não vermelho ───────────────────────────────────────
-   The chosen chip was red until 25/08/2026 — the same dye as the marquee's
-   underline — and that was a rule being broken in the most visible place the
-   product has. Brass carries state and selection everywhere else: the focus
-   ring, the field being typed in, the genre criteria's legend, the vote you
-   cast. Red carries two other things, action and recording, and it is kept
-   scarce so those two stay legible.
+   O chip escolhido era vermelho, e isso era uma regra sendo quebrada no lugar
+   mais visível do produto. A distinção que ele precisa é: **vermelho diz ONDE
+   VOCÊ ESTÁ** — a aba acesa da seção em que se está — e **latão diz o que você
+   ESCOLHEU**. Um chip é uma escolha, não um lugar.
 
-   The distinction the product actually needs is the one it now draws: **red
-   says where you are** — the lit tab of the section you are standing in — and
-   **brass says what you chose**. A chip is a choice, not a location, so it
-   wears brass.
-
-   What survives from the red version is the reason it was made: the wash. The
-   chosen chip is opaque and glowing from the inside, not a tint that let the
-   wall show through it. Only the dye changed. */
+   O que sobreviveu da versão vermelha é a razão dela: a lavagem. O chip
+   escolhido é opaco e aceso por dentro, e não um tingimento que deixava a
+   parede aparecer através dele. */
 /* Two geometries, one control. `md` is the filter row that stands on its own
-   line — the catalogue's sort and its genres. `sm` is the same choice made
-   inline beside something else, where a full-size chip would outweigh the thing
-   it is attached to: the genre a take is being rated as, sitting on the slate
-   next to the film's own name. The state, the surface and the dye are shared;
-   only the size is not. */
-/* ── e as duas crescem no dedo ────────────────────────────────────────────
-   Estas eram as piores medidas do produto para uma mão: a `md` dava 24px de
-   altura e a `sm`, 15. Uma fileira de gêneros no catálogo é a coisa que mais se
-   toca no telefone depois das notas, e ela era uma fileira de alvos de quinze
-   pixels encostados uns nos outros — errar o gênero ao lado não era descuido de
-   ninguém, era a única coisa que dava para fazer.
+   line; `sm` is the same choice made inline beside something else, where a
+   full-size chip would outweigh the thing it is attached to. The state, the
+   surface and the dye are shared; only the size is not. */
+/* Estas eram as piores medidas do produto para uma mão: a `md` dava 24px de
+   altura e a `sm`, 15. Uma fileira de gêneros no catálogo era uma fileira de
+   alvos de quinze pixels encostados — errar o gênero ao lado não era descuido,
+   era a única coisa que dava para fazer.
 
-   A `sm` não vai a 44: ela existe justamente para não pesar mais do que aquilo
-   a que está colada, e um alvo de 44px ao lado do nome de um filme inverteria a
-   hierarquia que ela existe para manter. Vai a 34 e ganha ar em volta, que é o
-   que a torna acertável sem virar outra coisa. */
+   A `sm` não vai a 44: ela existe para não pesar mais do que aquilo a que está
+   colada, e um alvo de 44px ao lado do nome de um filme inverteria a hierarquia
+   que ela mantém. Vai a 34 e ganha ar em volta. */
 const CHIP_SIZE = {
   sm: 'rounded-[1px] px-2 py-0.5 text-[11px] tracking-[0.14em] coarse:min-h-[34px] coarse:px-3 coarse:text-[12px]',
   md: 'rounded-cell px-3 py-1.5 text-[12.5px] tracking-[0.12em] coarse:min-h-[40px] coarse:px-4 coarse:text-[13.5px]',
@@ -359,28 +321,23 @@ export function Chip({
 }
 
 /* ══ a chave de quem ══════════════════════════════════════════════════════
-   Retrato, nome e quantos — a mesma leitura de sempre, agora dentro de uma
-   chave que abre. Era uma FILEIRA de pastilhas, uma por pessoa, e ela foi
-   desenhada para uma sala de seis: com onze, as pastilhas quebravam em três
-   linhas e o filtro passou a ocupar mais tela do que a lista que ele filtra —
-   num telefone, a lista chegava a nascer abaixo da dobra por causa dele.
+   Retrato, nome e quantos, dentro de uma chave que abre. Era uma FILEIRA de
+   pastilhas, desenhada para uma sala de seis: com onze elas quebravam em três
+   linhas, e o filtro passou a ocupar mais tela do que a lista que ele filtra.
 
-   Fechada, a chave mostra QUEM está escolhido e quantos são, que é a única
-   coisa que a fileira dizia o tempo todo e a única que precisa estar sempre à
-   vista. Aberta, a lista cai POR CIMA do conteúdo e não empurra nada: escolher
-   é uma visita, e uma visita não reorganiza a sala.
+   Fechada, mostra QUEM está escolhido e quantos são. Aberta, a lista cai POR
+   CIMA do conteúdo e não empurra nada: escolher é uma visita, e uma visita não
+   reorganiza a sala.
 
-   Uma linha por pessoa, e não pastilhas embrulhadas: nomes têm larguras
-   diferentes, e em coluna eles alinham, truncam num lugar só e o número fica
-   sempre na mesma margem. É a diferença entre ler e procurar.
+   Uma linha por pessoa e não pastilhas embrulhadas: em coluna os nomes
+   alinham, truncam num lugar só e o número fica sempre na mesma margem — a
+   diferença entre ler e procurar.
 
-   Acesa (latão) quando há alguém escolhido, apagada quando é o clube inteiro:
-   o estado do filtro continua legível de longe, sem contar pastilhas.
+   Acesa (latão) quando há alguém escolhido: o estado do filtro continua legível
+   de longe, sem contar pastilhas.
 
-   Nasceu na fila de filmes e mora aqui porque quatro listas do produto pedem a
-   mesma chave — a fila de filmes, os avaliados de filmes, a fila de séries e os
-   avaliados de séries. Quatro cópias deste desenho seriam quatro chances de ele
-   divergir. */
+   Mora aqui porque quatro listas do produto pedem a mesma chave, e quatro
+   cópias seriam quatro chances de ela divergir. */
 export type ReelChoice = {
   /** `null` é a opção que não filtra nada: "Todos", "O clube". */
   id: string | null;
@@ -577,19 +534,15 @@ export function SearchField({
    Opening used to animate height from 0 to `auto`, which cannot be done without
    measuring: the panel mounts, its full height is read, and only then does the
    animation start from zero. If the browser paints in between — and it does —
-   one frame lands at full height, and everything below the panel jumps down and
-   comes straight back. That was the flick.
+   one frame lands at full height, and everything below jumps down and comes
+   straight back. That was the flick.
 
-   A grid row measured in fractions needs no measurement. `0fr` to `1fr`
-   interpolates natively, the browser resolves the content's height itself on
-   every frame, and there is never a frame at the wrong size. The content stays
-   mounted, so `visibility` is what closes it to the keyboard and to a screen
-   reader — it is transitioned rather than switched, which lets it turn visible
-   at the start of the opening and stay visible until the closing has finished.
-
-   Mora aqui, e não na tela que a inventou, porque duas telas abrem gavetas: o
-   acervo abre a ficha de alguém e o feed abre a conversa em cima dela. Uma
-   segunda cópia deste truque seria uma segunda chance de ele ser feito errado. */
+   A grid row measured in fractions needs no measurement: `0fr` to `1fr`
+   interpolates natively, and there is never a frame at the wrong size. The
+   content stays mounted, so `visibility` is what closes it to the keyboard and
+   to a screen reader — transitioned rather than switched, so it turns visible
+   at the start of the opening and stays visible until the closing has
+   finished. */
 export function Drawer({ open, children }: { open: boolean; children: React.ReactNode }) {
   return (
     <div
@@ -615,32 +568,25 @@ export function Drawer({ open, children }: { open: boolean; children: React.Reac
 }
 
 /* ══ o trailer ════════════════════════════════════════════════════════════
-   Ele era um link para fora, em quatro telas. Clicar mandava a pessoa para o
-   YouTube — outra aba, outro produto, e uma parede de recomendações do outro
-   lado convidando a ficar lá. O clube estava escolhendo um filme, e o gesto
-   que ajuda a escolher tirava todo mundo da sala.
+   Era um link para fora: clicar mandava a pessoa para o YouTube, com uma parede
+   de recomendações do outro lado convidando a ficar lá. O clube estava
+   escolhendo um filme, e o gesto que ajuda a escolher tirava todo mundo da
+   sala. Agora é uma folha por cima da ficha, e fechar devolve a pessoa
+   exatamente onde ela estava.
 
-   Agora o trailer é uma folha que abre por cima da ficha, com a moldura do
-   YouTube dentro. Fechar devolve a pessoa exatamente onde ela estava, com a
-   ficha aberta e a rolagem no mesmo lugar.
-
-   ── três decisões que este componente toma ───────────────────────────────
-   **`youtube-nocookie.com`.** O mesmo player, sem o cookie de rastreio até
-   alguém dar play. É o endereço que o YouTube publica para isso, e não custa
-   nada — é uma letra a mais numa string.
+   **`youtube-nocookie.com`**: o mesmo player, sem o cookie de rastreio até
+   alguém dar play. É o endereço que o YouTube publica para isso.
 
    **A moldura só existe enquanto a folha está aberta.** Fechar DESMONTA o
-   iframe, e é isso que para o som. Esconder com CSS deixaria o trailer tocando
-   atrás da ficha, que é o defeito clássico deste padrão.
+   iframe, e é isso que para o som — esconder com CSS deixaria o trailer tocando
+   atrás da ficha.
 
-   **A saída para o YouTube continua lá dentro.** Nem todo vídeo permite ser
-   emoldurado — o dono do canal decide isso, e quando ele diz não o player
-   mostra um aviso e mais nada. O link no rodapé da folha é o que faz esse caso
-   continuar tendo resposta em vez de virar um retângulo preto.
+   **A saída para o YouTube continua lá dentro**, porque nem todo vídeo permite
+   ser emoldurado: quando o dono do canal diz não, o player mostra um aviso e
+   mais nada, e o link no rodapé é o que faz esse caso continuar tendo resposta.
 
-   E se o endereço não for do YouTube, ou não tiver um id reconhecível, o
-   componente volta a ser o link para fora que sempre foi. Nenhuma ficha fica
-   sem trailer por causa de uma expressão regular. */
+   Sem id reconhecível, o componente volta a ser o link para fora que sempre
+   foi: nenhuma ficha fica sem trailer por causa de uma expressão regular. */
 
 /** Os três formatos que uma URL de trailer aparece: `watch?v=`, `youtu.be/` e `embed/`. */
 const YT_ID = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/;

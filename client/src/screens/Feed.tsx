@@ -19,12 +19,8 @@ import { useClub } from '@/App';
    "fulano avaliou Parasita — 8,5" seria intercambiável com qualquer app.
 
    Dois tipos de acontecimento, com pesos diferentes de propósito: a avaliação é
-   o assunto e ganha placa; o comentário é uma linha. Um feed em que tudo pesa
+   o assunto e ganha placa, o comentário é uma linha. Um feed em que tudo pesa
    igual é uma lista, e lista se lê do começo ao fim ou não se lê.
-
-   Eram quatro tipos. O voto em critério e o filme posto na fila saíram — ver
-   routes/feed.js: um voto acontece até onze vezes por ficha por pessoa, e uma
-   noite de discussão enterrava a ficha embaixo das linhas sobre ela.
 
    Tudo se faz aqui: reagir, ler os onze critérios, responder. Cada viagem ao
    acervo desmontava o feed e custava a rolagem de volta. */
@@ -148,14 +144,12 @@ export function FeedScreen() {
 
 /* Quatro coisas empilhadas, e não um botão só: o corpo (que desdobra), o
    detalhamento, a barra de ação e a conversa. Um `<button>` dentro de outro não
-   é coisa que o navegador monte, então a barra teve de sair do corpo.
-
-   A régua acima da barra diz que dali para baixo o clique faz outra coisa que
-   não abrir; sem ela os polegares pareceriam parte da superfície clicável.
+   é coisa que o navegador monte, então a barra teve de sair do corpo. A régua
+   acima dela diz que dali para baixo o clique faz outra coisa.
 
    Duas gavetas e não uma: são duas perguntas — "o que ela achou de cada coisa"
-   e "o que o clube disse disso". Juntá-las faria quem quer responder passar por
-   onze números. */
+   e "o que o clube disse disso" —, e juntá-las faria quem quer responder passar
+   por onze números. */
 function Rated({ e }: { e: FeedEvent }) {
   const club = useClub();
   /* Do acervo que o clube tem em memória desde o boot — nada é buscado. Nula só
@@ -476,4 +470,3 @@ function Who({ name, me }: { name?: string; me?: boolean }) {
   if (me) return <span className="text-dye-brass">você</span>;
   return <span className="text-ink">{name ?? 'alguém'}</span>;
 }
-

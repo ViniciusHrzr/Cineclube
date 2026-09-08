@@ -69,18 +69,15 @@ import { useWorld } from '@/lib/world';
 /* ══════════════════════════════════════════════════════════════════════════
    O UNIVERSO DE SÉRIES, DENTRO DE UM CLUBE.
 
-   O de filmes gira em torno de uma noite: escolhe-se um filme, assiste-se
-   junto, e cada um preenche a ficha quando dá. O de séries gira em torno de
-   SEMANAS, e a unidade deixa de ser a obra e passa a ser o episódio.
-
-   Isso muda o gesto principal. Lá o gesto é avaliar; aqui é MARCAR — dizer "vi
-   esse" —, e avaliar é o que se faz por cima disso quando o episódio mereceu.
-   Por isso a lista de episódios é a tela central, e por isso marcar é um toque
-   enquanto a ficha criteriosa é uma folha que se abre.
+   O de filmes gira em torno de uma noite; este gira em torno de SEMANAS, e a
+   unidade deixa de ser a obra e passa a ser o episódio. Isso muda o gesto
+   principal: lá é avaliar, aqui é MARCAR — dizer "vi esse" —, e avaliar é o que
+   se faz por cima disso quando o episódio mereceu. Por isso a lista de
+   episódios é a tela central, e marcar é um toque enquanto a ficha criteriosa é
+   uma folha que se abre.
 
    Os três estados de uma linha (visto / nota rápida / criteriosa) são um só
-   registro no banco, e a tela desenha os três com a mesma peça. Ver
-   `episode_takes` em db.js. */
+   registro no banco, e a tela desenha os três com a mesma peça. */
 
 /* ── o catálogo ───────────────────────────────────────────────────────────
    Irmão do catálogo de filmes: populares do TMDB, busca, filtro por gênero. O
@@ -217,24 +214,19 @@ const GENRES = [
 ];
 
 /* ── o cartaz de uma série ────────────────────────────────────────────────
-   A MESMA peça do catálogo de filmes, e não uma parecida: a célula de celuloide
-   que tomba na direção da mão e cujas camadas se separam. Isso não é enfeite
-   aqui — é o que faz um cartaz de série se comportar como um cartaz neste
-   produto, e um catálogo com duas físicas diferentes é o app dizendo que são
-   dois apps.
+   A MESMA peça do catálogo de filmes, e não uma parecida: um catálogo com duas
+   físicas diferentes é o app dizendo que são dois apps.
 
-   A tarja que sobe diz o que o clique entrega, e ela muda de texto porque o
-   destino é outro: num filme abre a folha de leitura, aqui abrem as temporadas.
-   Prometer "sinopse e trailer" e entregar uma lista de episódios seria a tarja
-   mentindo pela metade.
+   A tarja que sobe muda de texto porque o destino é outro — num filme abre a
+   folha de leitura, aqui abrem as temporadas. Prometer "sinopse e trailer" e
+   entregar uma lista de episódios seria a tarja mentindo pela metade.
 
-   Os controles moram na fileira de baixo, e não sobre o cartaz. Era um `+`
-   flutuando no canto do pôster — ele funcionava e brigava com as camadas em
-   relevo e com a tarja, e a fileira é onde este produto já põe as ações de uma
-   célula.
+   Os controles moram na fileira de baixo e não sobre o cartaz: era um `+`
+   flutuando no canto do pôster, brigando com as camadas em relevo e com a
+   tarja.
 
-   Sem ponteiro fino, `CardContainer` não constrói nada: nem perspectiva, nem
-   contexto 3D, nem manipuladores. No dedo isto é um cartão comum. */
+   Sem ponteiro fino, `CardContainer` não constrói nada — nem perspectiva, nem
+   contexto 3D, nem manipuladores. */
 function SeriesCell({
   show,
   inQueue,
@@ -772,18 +764,13 @@ export function ShowScreen({
   );
 }
 
-/* ── uma linha de episódio ────────────────────────────────────────────────
-   O quadro, o número, o título, e o que o clube já disse.
+/* A linha tem dois gestos, de tamanhos diferentes. **Marcar que viu** é o de
+   toda semana, e por isso o check é o próprio controle: clicar marca, clicar de
+   novo desmarca, e nada abre. Ele era um símbolo do estado — parecia um check e
+   não era —, e mudar de estado obrigava a abrir a folha e achar um botão lá
+   dentro.
 
-   A linha tem dois gestos, e são de tamanhos diferentes. **Marcar que viu** é
-   o de toda semana, e por isso o check é o próprio controle: clicar nele
-   marca, clicar de novo desmarca, e nada abre. Ele era um símbolo do estado —
-   parecia um check e não era —, e mudar de estado obrigava a abrir a folha,
-   ler nove critérios e achar um botão lá dentro para dizer uma coisa que o
-   dedo já estava em cima de dizer.
-
-   **Avaliar** é o gesto raro, e é um botão com nome ao lado do check: quem
-   quer dar nota pede a folha, e quem só viu o episódio nunca precisa dela. */
+   **Avaliar** é o gesto raro, e é um botão com nome ao lado do check. */
 function EpisodeRow({
   ep,
   takes,
@@ -1016,16 +1003,13 @@ function whenBR(iso: string) {
   return at.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/* ══ a folha do episódio ═══════════════════════════════════════════════════
-   Onde os três estados são escritos. Abre no estado em que a linha já está: sem
-   ficha, oferece o gesto barato primeiro — visto, e uma nota rápida ao lado.
+/* Abre no estado em que a linha já está: sem ficha, oferece o gesto barato
+   primeiro — visto, e uma nota rápida ao lado.
 
-   A criteriosa é uma segunda porta dentro da mesma folha, e não outra tela: ela
-   é a mesma linha com mais dito sobre ela, e mandar a pessoa para outro lugar
-   para dizer mais seria a folha desistindo no meio.
-
-   As duas notas se substituem. A rápida não é oferecida por cima de uma
-   criteriosa — nove réguas não se perdem num toque distraído. */
+   A criteriosa é uma segunda porta dentro da MESMA folha: ela é a mesma linha
+   com mais dito sobre ela, e mandar a pessoa para outra tela para dizer mais
+   seria a folha desistindo no meio. As duas notas se substituem, e a rápida não
+   é oferecida por cima de uma criteriosa. */
 function EpisodeSheet({
   showId,
   showTitle,
@@ -1276,20 +1260,15 @@ function EpisodeSheet({
   );
 }
 
-/* ══ o que os outros acharam deste episódio ═══════════════════════════════
-   Duas perguntas com uma chave entre elas.
+/* Duas perguntas com uma chave entre elas.
 
-   **Clube** é quem estava na sala com você, e sai de graça: o acervo inteiro já
-   está em memória desde o boot, e a folha recebeu as fichas deste episódio por
-   prop. Não há requisição nenhuma para desenhar isto.
+   **Clube** sai de graça: o acervo inteiro já está em memória desde o boot, e a
+   folha recebeu as fichas por prop. **Todas** é a rede, e custa uma chamada —
+   que é justamente por que não é o padrão; ela também obedece as paredes.
 
-   **Todas** é a rede, e essa custa uma chamada — que é justamente por que ela
-   não é o padrão. Ela também obedece as paredes: só aparece quem emprestou as
-   fichas assinadas, o que é a mesma regra da avaliação em destaque do saguão.
-
-   Ordenada por credibilidade do lado da rede, como todo ranking daquele lado.
-   Do lado do clube a ordem é a nota, porque numa sala de seis pessoas
-   credibilidade não separa ninguém e a pergunta real é quem gostou mais. */
+   Ordenada por credibilidade do lado da rede, como todo ranking dali. Do lado
+   do clube a ordem é a nota: numa sala de seis, credibilidade não separa
+   ninguém e a pergunta real é quem gostou mais. */
 function EpisodeVoices({
   showId,
   season,
@@ -1425,20 +1404,16 @@ function EpisodeVoices({
 }
 
 /* ══ o acervo, na forma da coisa ══════════════════════════════════════════
-   Uma lista corrida de episódios era a forma errada. O que o clube guarda aqui
-   não é uma pilha de fichas: é uma SÉRIE, feita de temporadas, feitas de
-   episódios — e a pergunta que se faz ao acervo ("o que a gente achou da
-   terceira?") só tem resposta se a tela tiver essa forma.
+   O que o clube guarda aqui não é uma pilha de fichas: é uma SÉRIE, feita de
+   temporadas, feitas de episódios — e a pergunta "o que a gente achou da
+   terceira?" só tem resposta se a tela tiver essa forma.
 
-   Três níveis, dois deles fechados. Uma série de sessenta episódios abriria
-   sessenta linhas para responder uma pergunta sobre uma temporada, e um acervo
-   que se lê rolando é um acervo que não se lê.
+   Três níveis, dois fechados: uma série de sessenta episódios abriria sessenta
+   linhas para responder uma pergunta sobre uma temporada.
 
-   ── e o filtro é por pessoa ─────────────────────────────────────────────
-   Porque a segunda pergunta do acervo é "o que ELA achou". Filtrar por avaliador
-   recorta os três níveis de uma vez: a média da temporada passa a ser a dela, e
-   uma série em que ela não avaliou nada some em vez de ficar vazia. Uma linha
-   que existe para dizer que não tem nada dentro é uma linha a rolar. */
+   O filtro é por pessoa porque a segunda pergunta do acervo é "o que ELA
+   achou". Ele recorta os três níveis de uma vez, e uma série em que ela não
+   avaliou nada some em vez de ficar vazia. */
 export function SeriesArchiveScreen({
   takes,
   roster,
@@ -1728,22 +1703,16 @@ export function SeriesArchiveScreen({
 }
 
 /* ── um episódio no acervo ────────────────────────────────────────────────
-   Era uma linha morta: número, título, e "Vinicius —" repetido em cada
-   episódio que alguém tinha marcado sem avaliar. Duas coisas estavam erradas
-   nisso, e as duas eram a mesma: a linha dizia o NOME de quem não tinha dito
-   nada, e não dizia nada de quem tinha.
+   Era uma linha morta: número, título, e "Vinicius —" repetido em cada episódio
+   marcado sem avaliar. Ela dizia o NOME de quem não tinha dito nada, e não
+   dizia nada de quem tinha. Agora são dois desenhos:
 
-   Agora ela diz as duas coisas com dois desenhos:
+   · **quem só viu** aparece como retrato, sem número e sem nome — um traço ao
+     lado de um nome fingia que havia uma nota ausente ali.
+   · **quem avaliou** vira uma pastilha com a nota, e ela ABRE.
 
-   · **quem só viu** aparece como retrato, sem número e sem nome escrito —
-     "estas pessoas viram" é a informação inteira, e um traço ao lado de um
-     nome fingia que havia uma nota ausente ali.
-   · **quem avaliou** vira uma pastilha com a nota, e ela ABRE: dentro estão os
-     nove critérios, o que a pessoa escreveu, o voto do clube e a conversa. São
-     as mesmas peças do acervo de filmes, e a razão de elas serem componentes.
-
-   A pastilha é o gesto, e não a linha inteira: numa sala de seis, um episódio
-   tem seis fichas, e abrir "o episódio" abriria as seis de uma vez. */
+   A pastilha é o gesto, e não a linha inteira: numa sala de seis, abrir "o
+   episódio" abriria as seis fichas de uma vez. */
 function ArchiveEpisode({
   numero,
   title,
@@ -1839,21 +1808,14 @@ function ArchiveEpisode({
 }
 
 /* ══ o mural do universo de séries ═════════════════════════════════════════
-   O irmão de screens/Feed.tsx, e ele desenha as MESMAS peças: a placa, a barra
-   de ação com o polegar e o balão, as duas gavetas — os nove critérios de um
-   lado, a conversa do outro. O que muda é o que este universo tem para contar.
+   Irmão de screens/Feed.tsx, desenhando as MESMAS peças. O que muda é o que
+   este universo tem para contar, em três tipos de linha:
 
-   Três tipos de linha, e o peso de cada uma é o peso do que ela conta:
-
-   · **avaliado** ganha placa, porque é o assunto. Carrega onde a pessoa se
-     entusiasmou e onde se decepcionou, que é o que dá conversa.
-   · **visto** é uma linha, e vem agrupado do servidor: "viu 6 episódios de
-     Fringe" e não seis linhas. Uma maratona é um acontecimento.
-   · **comentado** é uma linha também, e abre a ficha embaixo de si com o texto
-     anunciado já aceso.
-
-   O relógio de dois minutos é o mesmo do outro mural, e pela mesma razão: um
-   aviso é sobre você e um mural é sobre todo mundo. */
+   · **avaliado** ganha placa, porque é o assunto — carrega onde a pessoa se
+     entusiasmou e onde se decepcionou.
+   · **visto** é uma linha, agrupada pelo servidor: "viu 6 episódios de Fringe"
+     e não seis linhas. Uma maratona é um acontecimento.
+   · **comentado** abre a ficha embaixo de si com o texto anunciado já aceso. */
 const FEED_POLL_MS = 120_000;
 
 export function SeriesFeedScreen({
@@ -2300,15 +2262,12 @@ function FeedAside({
   );
 }
 
-/* ── a ficha de um episódio, aberta ───────────────────────────────────────
-   Os nove critérios, o que a pessoa escreveu, o voto do clube e a conversa —
+/* Os nove critérios, o que a pessoa escreveu, o voto do clube e a conversa —
    nesta ordem, que é a do acervo de filmes: primeiro o que a ficha DIZ, depois
    o que se faz com ela.
 
-   Nenhuma destas peças é daqui. `Breakdown`, `TakeVotes` e `Conversation` são
-   as mesmas do outro universo, com as mesmas regras: não se vota na própria
-   ficha, o contador cala no zero, a resposta tem profundidade um. Ver
-   components/social.tsx — o dia em que uma delas mudar, muda nos dois. */
+   Nenhuma destas peças é daqui: são as mesmas do outro universo, com as mesmas
+   regras. O dia em que uma delas mudar, muda nos dois. */
 function TakeCard({ take }: { take: EpisodeTake }) {
   const quem = { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' };
   return (

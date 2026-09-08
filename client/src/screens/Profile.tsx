@@ -39,16 +39,12 @@ import { useClub } from '@/App';
 
 /* ── o perfil ─────────────────────────────────────────────────────────────
    `#perfil/<id>`, e chega-se por um rosto: o seu na marquise, o de quem avaliou
-   no feed, o de quem comentou. Substituiu a tela *Avaliadores*, que era um
-   painel de formulários com nome de seção — aquilo foi para trás de uma
-   engrenagem (ver components/settings.tsx).
+   no feed, o de quem comentou.
 
    Ele não abre com uma contagem. "45 filmes · média 7,4" qualquer produto de
-   cinema sabe escrever; o que só este clube sabe é onde a pessoa se entusiasmou,
-   onde se decepcionou, o quanto se afasta do público e com quem costuma brigar.
-
-   > A ficha do gosto saiu em 30/08/2026, por decisão do dono. O cálculo foi
-   > junto (ver lib/taste.ts); o histórico tem a implementação inteira.
+   cinema sabe escrever; o que só este clube sabe é onde a pessoa se
+   entusiasmou, onde se decepcionou, o quanto se afasta do público e com quem
+   costuma brigar.
 
    Todo módulo aqui pode não aparecer, e essa é a decisão de desenho mais
    importante do arquivo: uma média tirada de duas fichas não é um gosto, e
@@ -219,20 +215,17 @@ function Header({
     <header className="relative">
       {cover.length ? (
         /* ── a capa ──────────────────────────────────────────────────────
-            Nada é recortado: a altura manda e a largura segue (`h-full w-auto`),
-            então a proporção do cartaz é a de sempre. Era `flex-1` com
-            `object-cover`, o que dava uma tira horizontal do meio de cada arte
-            com os títulos cortados na metade.
+            Nada é recortado: a altura manda e a largura segue, então a proporção
+            do cartaz é a de sempre. Era `flex-1` com `object-cover`, o que dava
+            uma tira horizontal do meio de cada arte com os títulos cortados.
 
-            Duas máscaras, uma por eixo. A vertical desmancha as bordas retas em
-            cima e embaixo — sem ela a faixa é uma tira colada sobre a página. A
-            horizontal mora no elemento de dentro para evitar `mask-composite`, e
-            existe para o caso de a fileira não chegar à borda: a capa se apaga em
-            vez de parar no meio do nada.
+            Duas máscaras, uma por eixo: a vertical desmancha as bordas retas, e
+            a horizontal mora no elemento de dentro para evitar `mask-composite`
+            — ela existe para a capa se apagar em vez de parar no meio do nada
+            quando a fileira não chega à borda.
 
-            `aria-hidden` porque a página já diz o mesmo por escrito logo abaixo,
-            e narrar catorze títulos antes do nome da pessoa é fazer quem ouve
-            esperar pelo assunto. */
+            `aria-hidden` porque a página já diz o mesmo por escrito logo
+            abaixo. */
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-[172px] overflow-hidden rounded-plate"

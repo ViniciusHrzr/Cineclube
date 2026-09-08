@@ -6,41 +6,29 @@ import { cn } from '@/lib/utils';
    O PROJETOR DA TELA AO VIVO.
 
    O irmão deste arquivo, SyncedVideo, tem seiscentas linhas porque precisa
-   fazer um vídeo local concordar com uma sala: deriva, tolerância, almofada de
-   buffer, eco de eventos. Nada disso existe aqui — o que chega já é a imagem de
-   outra pessoa, com menos de um segundo de atraso, e não há uma segunda cópia
-   para discordar dela.
-
-   O que existe aqui é uma cabine de projeção com três controles, e a decisão
-   de desenho foi qual deles é uma verdade e qual seria mentira.
+   fazer um vídeo local concordar com uma sala. Nada disso existe aqui: o que
+   chega já é a imagem de outra pessoa, e não há uma segunda cópia para
+   discordar dela. O que existe é uma cabine com três controles, e a decisão de
+   desenho foi qual deles é uma verdade e qual seria mentira.
 
    ── por que não há barra de tempo ────────────────────────────────────────
-   Porque não há para onde ir. Uma transmissão ao vivo não tem passado
-   armazenado em lugar nenhum: o que passou não está em buffer, não está no
-   servidor, e não está na máquina de quem transmite. Desenhar uma barra
-   arrastável seria oferecer um lugar que não existe, e a pessoa passaria a
-   primeira meia hora tentando voltar dois minutos.
-
-   O lugar onde estamos é sempre AGORA, e é por isso que a lâmpada vermelha
-   ocupa o canto: ela não é enfeite, é a barra de tempo desta sala inteira,
-   dizendo a única posição que existe.
+   Porque não há para onde ir: uma transmissão ao vivo não tem passado
+   armazenado em lugar nenhum. Desenhar uma barra arrastável seria oferecer um
+   lugar que não existe, e a pessoa passaria meia hora tentando voltar dois
+   minutos. O lugar é sempre AGORA, e é por isso que a lâmpada vermelha ocupa o
+   canto: ela é a barra de tempo desta sala.
 
    ── e por que também não há pausa ────────────────────────────────────────
-   Ela chegou a existir e foi tirada, o que é diferente de nunca ter sido
-   pensada. Pausar aqui não engana — não guarda nada, e voltar cai no quadro de
-   agora —, mas também não serve: o filme segue para o clube de qualquer jeito,
-   então o botão só fazia a pessoa perder um pedaço com mais passos do que
-   olhar para o outro lado.
-
-   O que sobrou é o que muda alguma coisa: quão alto, o quê, e quão grande.
+   Ela existiu e foi tirada. Pausar aqui não engana, mas também não serve: o
+   filme segue para o clube de qualquer jeito, então o botão só fazia a pessoa
+   perder um pedaço com mais passos do que olhar para o outro lado.
 
    ── a barra que some ─────────────────────────────────────────────────────
-   Ela existe sobre a imagem, então ela sai da frente. Aparece com o ponteiro,
-   com o teclado, e sempre que o filme está parado — porque uma tela pausada
-   sem nenhum controle visível é uma tela quebrada. Some sozinha depois de
-   alguns segundos de quietude, e nunca enquanto o ponteiro estiver em cima
-   dela: recolher um botão debaixo do dedo de quem está indo apertá-lo é a
-   forma mais rápida de fazer um controle parecer defeito.
+   Ela existe sobre a imagem, então sai da frente. Aparece com o ponteiro, com o
+   teclado e sempre que o filme está parado — uma tela pausada sem controle
+   visível é uma tela quebrada — e nunca some enquanto o ponteiro estiver em
+   cima dela: recolher um botão debaixo do dedo de quem ia apertá-lo é a forma
+   mais rápida de fazer um controle parecer defeito.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Quanto tempo de quietude apaga a cabine. */
@@ -99,16 +87,13 @@ export function LiveVideo({
   const [muted, setMuted] = useState(hostPreview);
   const [full, setFull] = useState(false);
   const [awake, setAwake] = useState(true);
-  /* ── a proporção real, medida e não assumida ────────────────────────────
-     O invólucro nascia travado em 16:9. Uma tela de notebook é 16:10, um
-     monitor ultrawide é 21:9, e uma janela solta é o que a pessoa deixou —
-     nenhum deles é 16:9, e o resultado era a imagem esticada ou achatada.
+  /* O invólucro nascia travado em 16:9. Um notebook é 16:10, um ultrawide é
+     21:9, e uma janela solta é o que a pessoa deixou — o resultado era a imagem
+     esticada ou achatada.
 
-     16:9 continua sendo o palpite até haver o que medir, porque um invólucro
-     de altura zero enquanto o primeiro quadro não chega faz a página inteira
-     pular quando ele chega. Assim que o elemento sabe o tamanho da fonte, a
-     medida substitui o palpite. `resize` está aqui junto com os metadados
-     porque quem transmite pode trocar de janela no meio da sessão. */
+     16:9 continua sendo o palpite até haver o que medir, porque um invólucro de
+     altura zero faz a página pular quando o primeiro quadro chega. `resize` está
+     junto dos metadados porque quem transmite pode trocar de janela no meio. */
   const [ratio, setRatio] = useState(16 / 9);
   /** O ponteiro está sobre a própria cabine: ela não pode sumir. */
   const overBar = useRef(false);
@@ -248,21 +233,16 @@ export function LiveVideo({
         onLoadedMetadata={e => medir(e.currentTarget)}
         onResize={e => medir(e.currentTarget)}
         /* Sem `controls`: a barra nativa traz uma linha do tempo arrastável, e
-           numa transmissão ao vivo ela é um lugar que não existe. A cabine
-           abaixo é a mesma função sem a promessa falsa.
+           numa transmissão ao vivo ela é um lugar que não existe.
 
            `object-contain` e nunca `cover`: cortar a borda de uma tela
            compartilhada corta legenda, corta menu, corta o que a pessoa quis
-           mostrar. Sobra tarja preta quando a proporção não fecha, e tarja
-           preta é a resposta certa — é o que um cinema faz.
+           mostrar. Tarja preta é a resposta certa — é o que um cinema faz.
 
-           ── e por que `absolute` em tela cheia ──────────────────────────
-           Porque a raiz deste app roda com `zoom: 1.25` (ver index.css), e um
+           `absolute` em tela cheia porque a raiz roda com `zoom: 1.25`, e um
            `height: 100%` dentro de um elemento em tela cheia resolve contra a
-           caixa sem zoom: o vídeo saía com 80% do monitor, centralizado, com
-           tarja preta dos quatro lados. Posicionamento absoluto não passa por
-           essa conta — ele gruda nas quatro bordas do invólucro, que é o que
-           "tela cheia" quer dizer. */
+           caixa sem zoom: o vídeo saía com 80% do monitor, com tarja dos quatro
+           lados. */
         className={cn(
           'bg-black object-contain',
           full ? 'absolute inset-0 h-full w-full' : 'h-full w-full'
@@ -425,35 +405,23 @@ export function LiveVideo({
 /* ══════════════════════════════════════════════════════════════════════════
    O ÁUDIO QUE VAI PARA O CLUBE.
 
-   ── o pedido, e a resposta honesta ───────────────────────────────────────
-   O que se quer aqui é escolher o áudio de UM APLICATIVO: manda o VLC, não
-   manda o Discord. Isso não existe na web. Nenhum navegador, em nenhum
-   sistema, expõe uma forma de escolher de qual programa vem o som — o Windows
-   tem essa API, o navegador não a oferece, e `getDisplayMedia` recebe o mix da
-   máquina inteira já pronto e misturado.
+   O que se quer é escolher o áudio de UM APLICATIVO — manda o VLC, não manda o
+   Discord —, e isso não existe na web: nenhum navegador expõe de qual programa
+   vem o som, e `getDisplayMedia` recebe o mix da máquina já pronto.
 
-   Então este painel não escolhe o aplicativo. Ele escolhe a ENTRADA por onde o
-   som chega, que é a alavanca que sobra — e é ela que faz as duas receitas
-   abaixo funcionarem. Elas resolvem o problema de verdade; só não é o
-   navegador quem separa os aplicativos, é o sistema.
+   Então este painel não escolhe o aplicativo, escolhe a ENTRADA por onde o som
+   chega — a alavanca que sobra, e a que faz as duas receitas funcionarem:
 
-   ── receita 1: o filme está numa aba ─────────────────────────────────────
-   Compartilhe a ABA em vez da tela. Áudio de aba é só daquela aba, e o Discord
-   fica de fora por construção. Não precisa deste painel nem de instalar nada,
-   e é por isso que ela é a primeira coisa que a tela diz.
+   · **o filme está numa aba**: compartilhe a ABA em vez da tela. Áudio de aba é
+     só daquela aba, e o Discord fica de fora por construção.
+   · **o filme está no VLC**: o Windows manda cada aplicativo para o dispositivo
+     de saída que se quiser, e a captura de tela só carrega o que sai pelo
+     PADRÃO. O player vai para um cabo virtual, o Discord para o fone, e é o
+     cabo que se escolhe aqui.
 
-   ── receita 2: o filme está no VLC, ou em qualquer programa ──────────────
-   Aí o sistema separa, em dois passos. O Windows manda cada aplicativo para o
-   dispositivo de saída que se quiser (Configurações · Sistema · Som · Mixer de
-   volume), e a captura de tela só carrega o que sai pelo dispositivo PADRÃO.
-   Então: o player vai para um cabo virtual, o Discord vai para o fone. O que a
-   transmissão pega é o cabo, e é aqui que ele é escolhido.
-
-   ── por que fica recolhido atrás de um ícone ─────────────────────────────
-   Listar as entradas exige a permissão de microfone do navegador — não porque
-   isto seja um microfone, mas porque é a mesma permissão que dá acesso a
-   qualquer entrada de som. Pedi-la a quem nunca vai trocar de fonte seria
-   assustar por nada, então quem abre é quem tem o problema.
+   Recolhido atrás de um ícone porque listar as entradas exige a permissão de
+   microfone — não por isto ser um microfone, mas por ser a mesma permissão. Ela
+   não é pedida a quem nunca vai trocar de fonte.
    ══════════════════════════════════════════════════════════════════════════ */
 function AudioPicker({
   audio,

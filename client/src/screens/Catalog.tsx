@@ -232,25 +232,20 @@ const REFLOW = { type: 'spring', stiffness: 520, damping: 42, mass: 0.9 } as con
 
 /* ── de quem foi a ideia ──────────────────────────────────────────────────
    A fila é do clube: qualquer um põe, qualquer um tira, e a ordem é uma só. Mas
-   quem escolheu cada filme não é detalhe administrativo — é metade do assunto.
-   "Esse aí foi o Leonardo que pôs" é a primeira coisa que alguém diz olhando a
-   fila, e até agora a resposta só existia no feed, rolando para trás até achar
-   a linha.
+   quem escolheu cada filme não é detalhe administrativo — "esse aí foi o
+   Leonardo que pôs" é a primeira coisa que alguém diz olhando a fila, e a
+   resposta só existia no feed, rolando para trás.
 
-   ── por que uma tira de retratos, e não uma seção por pessoa ────────────
-   Porque a fila é UMA fila ordenada, e essa ordem é o que ela significa: o
-   próximo filme do clube é o primeiro da lista. Quebrada em seis seções, a
-   posição 3 passa a ser "a terceira da Beren", que não é lugar nenhum na
-   próxima sessão — e arrastar um pôster de uma seção para outra teria de
-   significar ou mudar a ordem do clube ou mudar de dono, duas coisas
-   diferentes com um gesto só.
+   Uma tira de retratos e não uma seção por pessoa, porque a fila é UMA fila
+   ordenada e essa ordem é o que ela significa: quebrada em seis seções, a
+   posição 3 vira "a terceira da Beren", que não é lugar nenhum na próxima
+   sessão — e arrastar um pôster de uma seção para outra teria de significar ou
+   mudar a ordem do clube ou mudar de dono.
 
-   Então a fila continua inteira e a autoria entra por cima dela: uma marca no
-   canto de cada pôster, que responde "de quem é este" sem clique nenhum, e uma
-   tira de retratos que filtra a grade para uma pessoa. Separado é o que se vê;
-   junto é o que se ordena.
+   Então a fila continua inteira e a autoria entra por cima dela. Separado é o
+   que se vê; junto é o que se ordena.
 
-   Filtrado por pessoa a fila não se arrasta, pela mesma razão que já valia para
+   Filtrada por pessoa a fila não se arrasta, pela mesma razão que já valia para
    a busca: reordenar uma lista parcial é reordenar uma coisa que não é a
    fila. */
 type Owner = {
@@ -839,4 +834,3 @@ export function WatchlistScreen() {
     </section>
   );
 }
-

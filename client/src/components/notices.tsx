@@ -19,52 +19,42 @@ const go = (slug: string, rest: string) =>
 /* ══════════════════════════════════════════════════════════════════════════
    O sino: quem reagiu ao que é seu.
 
-   O clube discute por voz e escreve depois, em horas diferentes. Sem isto, uma
-   resposta ao seu take existe e ninguém fica sabendo — a única forma de
-   descobrir que alguém discordou da sua fotografia era abrir a própria ficha e
-   reparar num contador que antes era zero. Este é o caminho de volta.
+   O clube discute por voz e escreve depois, em horas diferentes. Sem isto, a
+   única forma de descobrir que alguém discordou da sua fotografia era abrir a
+   própria ficha e reparar num contador que antes era zero.
 
-   ── por que só um sino, e não um centro de notificações ─────────────────
-   Porque são três coisas, num clube de seis pessoas, com talvez uma dúzia de
-   eventos por semana. O que isso pede é uma lista curta que abre, mostra o que
-   houve e fecha. Uma tela própria, uma rota, filtros e estado por item seriam
-   máquina para um volume que cabe num painel.
+   Um sino e não um centro de notificações: são três coisas, num clube de seis
+   pessoas, com talvez uma dúzia de eventos por semana. Uma tela própria, uma
+   rota e estado por item seriam máquina para um volume que cabe num painel.
 
-   O feed vem derivado do servidor (routes/notifications.js) e a única coisa
-   gravada sobre ele é uma data por pessoa. Abrir o sino é o que move essa data.
+   O feed vem derivado do servidor e a única coisa gravada sobre ele é uma data
+   por pessoa. Abrir o sino é o que move essa data.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── a pergunta periódica, que agora é a rede de baixo ────────────────────
-   De um minuto e meio, e só com a aba à vista. Era o único jeito de o sino
-   saber de alguma coisa: quem respondesse você às 21h04 acendia o seu sino
-   quando desse a próxima volta do relógio, e no meio disso o painel dizia zero
-   com toda a confiança do mundo.
+/* De um minuto e meio, e só com a aba à vista. Era o único jeito de o sino
+   saber de alguma coisa; hoje o aviso ao vivo é o caminho normal, e este é o
+   que segura o produto quando aquele cai — sessão expirada, abas demais, um
+   proxy que fechou a conexão. Ao vivo é mais rápido; isto garante que nada fica
+   escondido para sempre.
 
-   O aviso ao vivo (`useLive`, abaixo) passou a ser o caminho normal, e este
-   ficou sendo o que segura o produto quando aquele cai — uma sessão que expirou,
-   abas demais, um proxy que fechou a conexão. Ao vivo é mais rápido; isto é o
-   que garante que nada fica escondido para sempre.
-
-   `visibilitychange` continua evitando que uma aba esquecida num monitor
-   secundário fique batendo no servidor a noite inteira. */
+   `visibilitychange` evita que uma aba esquecida num monitor secundário fique
+   batendo no servidor a noite inteira. */
 const POLL_MS = 90_000;
 
 /** Quanto tempo o distintivo fica pulando quando chega coisa nova. */
 const POP_MS = 700;
 
-/* ── confirme seu e-mail ──────────────────────────────────────────────────
-   O único aviso de CONTA que existe hoje, e a razão de ele morar no sino: ele
-   viveu por um dia numa faixa embaixo de "Suas salas", e uma faixa permanente
-   sobre algo que a pessoa pode não querer fazer agora não informa — cobra, toda
-   vez que a tela abre. Um sino guarda o mesmo recado e espera ser aberto.
+/* O único aviso de CONTA que existe, e a razão de ele morar no sino: viveu um
+   dia numa faixa embaixo de "Suas salas", e uma faixa permanente sobre algo que
+   a pessoa pode não querer fazer agora não informa — cobra, toda vez que a tela
+   abre.
 
-   O link já foi mandado uma vez, sozinho, no instante do cadastro. Este botão é
-   o conserto e não o caminho: primeiro envio some no spam, gente digita o
-   endereço errado, provedor cai.
+   O link já foi mandado sozinho no instante do cadastro; este botão é o
+   conserto e não o caminho.
 
-   A frase nomeia as duas coisas que a confirmação destrava. "Confirme seu
+   A frase nomeia as duas coisas que a confirmação destrava: "confirme seu
    e-mail" sozinho é uma ordem sem motivo, e um motivo não dito é um motivo que
-   a pessoa inventa — quase sempre pior que o verdadeiro. */
+   a pessoa inventa. */
 function ConfirmNotice() {
   const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
 
@@ -163,16 +153,14 @@ export function Notices() {
     };
   }, [load]);
 
-  /* ── e agora, na hora ───────────────────────────────────────────────────
-     `social` cobre comentário, resposta, curtida e voto; `reviews` cobre a
-     menção que alguém escreve no comentário da própria ficha ao avaliar — as
-     duas coisas que routes/notifications.js lê. O aviso não diz o que houve,
-     só que houve: quem monta a frase é o servidor, e ele a monta na segunda
+  /* `social` cobre comentário, resposta, curtida e voto; `reviews` cobre a
+     menção escrita no comentário da própria ficha ao avaliar. O aviso não diz o
+     que houve, só que houve: quem monta a frase é o servidor, na segunda
      pessoa, o que só pode ser feito por quem sabe quem está perguntando.
 
-     Com o painel aberto, chegar é ser visto: o item entra na lista debaixo dos
-     olhos de alguém, e um contador subindo para "1" enquanto o "1" está na tela
-     é o painel dizendo que não acredita nos próprios olhos. */
+     Com o painel aberto, chegar é ser visto: um contador subindo para "1"
+     enquanto o "1" está na tela é o painel dizendo que não acredita nos
+     próprios olhos. */
   const openRef = useRef(open);
   openRef.current = open;
   useLive(kinds => {
