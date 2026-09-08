@@ -8,7 +8,56 @@ import {
   X as XIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmt } from '@/lib/api';
+import { fmt, type Universe } from '@/lib/api';
+
+/* ── a lente ──────────────────────────────────────────────────────────────
+   Filmes ou séries: a escolha mais externa do produto, e por isso a mais alta
+   em toda tela que a desenha. Mora aqui e não no saguão porque é a mesma peça
+   em dois lugares — a barra do saguão e a marquise de dentro de um clube —, e a
+   segunda cópia divergiria da primeira na terceira mexida.
+
+   Sublinhado vermelho e não chapa de latão: pela regra do DESIGN.md, vermelho
+   marca ONDE VOCÊ ESTÁ e latão marca o que você escolheu — e isto é um lugar em
+   que se está. */
+const LENSES: { id: Universe; label: string }[] = [
+  { id: 'filmes', label: 'Filmes' },
+  { id: 'series', label: 'Séries' },
+];
+
+export function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => void }) {
+  return (
+    <div className="flex flex-none items-center gap-0.5" role="tablist" aria-label="Universo">
+      {LENSES.map(o => {
+        const here = on === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={here}
+            onClick={() => onPick(o.id)}
+            className={cn(
+              'relative px-1.5 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none sm:px-2',
+              'tracking-[0.12em] transition-colors duration-150 coarse:min-h-[38px]',
+              here ? 'text-beam' : 'text-ink-dim hover:text-ink'
+            )}
+          >
+            {o.label}
+            {/* Sempre montado, só trocando de opacidade: aparecer e sumir do
+                fluxo mudaria a altura da barra a cada troca. */}
+            <span
+              aria-hidden
+              className={cn(
+                'absolute inset-x-1 bottom-0 h-[2px] bg-dye-red transition-opacity duration-150',
+                here ? 'opacity-100' : 'opacity-0'
+              )}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ── poster ───────────────────────────────────────────────────────────────
    A film with no poster is not a hole: it is an unexposed cell, which is a

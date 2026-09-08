@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, Clock, MessageSquare, Plus, ShieldCheck, ThumbsDown, ThumbsUp, X } from 'lucide-react';
-import { Blank, Fault, IconKey, Key, Poster, Reel, SearchField, Strip, TrailerKey } from '@/components/bits';
+import { Blank, Fault, IconKey, Key, Lens, Poster, Reel, SearchField, Strip, TrailerKey } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { Notices } from '@/components/notices';
 import { PortraitGate } from '@/components/portrait';
@@ -136,6 +136,14 @@ export function Lobby({
     (slug: string, rest?: string) => onEnter(slug, rest, universe),
     [onEnter, universe]
   );
+
+  /* ── a folha aberta, seja de onde for ────────────────────────────────────
+     Morava dentro da parede, porque a parede era a única coisa desta tela que
+     abria um filme. O pódio agora abre também — e é o lugar em que a pergunta
+     "que filme é esse?" mais aparece, já que ali o cartaz vem com uma nota da
+     rede em cima e nada dizendo de onde ela saiu. Uma folha só, no saguão: duas
+     poderiam ficar abertas ao mesmo tempo, uma por cima da outra. */
+  const [aberto, setAberto] = useState<LobbyMovie | null>(null);
 
   const daRede = net?.wall ?? [];
   const live = net?.live ?? [];
@@ -295,7 +303,7 @@ export function Lobby({
           da tela. No computador esta camada não faz nada. */}
       <div className="flex flex-1 flex-col coarse:min-h-0 coarse:overflow-y-auto coarse:overscroll-contain">
         {hasWall ? (
-          <PosterWall films={wall} counts={net!.counts} universe={universe} fromTmdb={doTmdb} />
+          <PosterWall films={wall} counts={net!.counts} universe={universe} fromTmdb={doTmdb} onOpen={setAberto} />
         ) : null}
         {live.length ? <NowPlaying sessions={live} canEnter={canEnter} onEnter={go} /> : null}
 
@@ -327,7 +335,13 @@ export function Lobby({
           >
             <div className="mt-7 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-6">
               {podium.map((film, i) => (
-                <PodiumFilm key={film.id} film={film} rank={i + 1} index={i} />
+                <PodiumFilm
+                  key={film.id}
+                  film={film}
+                  rank={i + 1}
+                  index={i}
+                  onOpen={() => setAberto(film)}
+                />
               ))}
             </div>
           </Region>
@@ -392,6 +406,17 @@ export function Lobby({
         </main>
       </div>
 
+      {/* Montada só quando há filme aberto, e remontada por filme: garante que
+          ela nunca mostre a sinopse do cartaz anterior por um quadro. */}
+      {aberto ? (
+        <FilmPeek
+          key={aberto.id}
+          film={aberto}
+          universe={universe}
+          onClose={() => setAberto(null)}
+        />
+      ) : null}
+
       {founding ? (
         <FoundClub
           onClose={() => setFounding(false)}
@@ -401,52 +426,6 @@ export function Lobby({
           }}
         />
       ) : null}
-    </div>
-  );
-}
-
-/* A escolha mais externa do produto, e por isso a mais alta na tela: vem antes
-   do clube, e o clube já é o segundo nível.
-
-   Sublinhado vermelho e não chapa de latão: pela regra do DESIGN.md, vermelho
-   marca ONDE VOCÊ ESTÁ e latão marca o que você escolheu — e isto é um lugar em
-   que se está. */
-const LENSES: { id: Universe; label: string }[] = [
-  { id: 'filmes', label: 'Filmes' },
-  { id: 'series', label: 'Séries' },
-];
-
-function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => void }) {
-  return (
-    <div className="flex flex-none items-center gap-0.5" role="tablist" aria-label="Universo">
-      {LENSES.map(o => {
-        const here = on === o.id;
-        return (
-          <button
-            key={o.id}
-            type="button"
-            role="tab"
-            aria-selected={here}
-            onClick={() => onPick(o.id)}
-            className={cn(
-              'relative px-1.5 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none sm:px-2',
-              'tracking-[0.12em] transition-colors duration-150 coarse:min-h-[38px]',
-              here ? 'text-beam' : 'text-ink-dim hover:text-ink'
-            )}
-          >
-            {o.label}
-            {/* Sempre montado, só trocando de opacidade: aparecer e sumir do
-                fluxo mudaria a altura da barra a cada troca. */}
-            <span
-              aria-hidden
-              className={cn(
-                'absolute inset-x-1 bottom-0 h-[2px] bg-dye-red transition-opacity duration-150',
-                here ? 'opacity-100' : 'opacity-0'
-              )}
-            />
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -1212,16 +1191,16 @@ function PosterWall({
   counts,
   universe,
   fromTmdb,
+  onOpen,
 }: {
   films: LobbyMovie[];
   counts: LobbySnapshot['counts'] & { episodes?: number };
   universe: Universe;
   /** A parede está emprestada do TMDB porque a rede ainda não encheu a dela. */
   fromTmdb?: boolean;
+  /** A folha do filme é do saguão, e não da parede: o pódio abre a mesma. */
+  onOpen: (film: LobbyMovie) => void;
 }) {
-  /* Aqui e não no saguão inteiro porque a folha é da parede: nada mais nesta
-     tela abre um filme. */
-  const [aberto, setAberto] = useState<LobbyMovie | null>(null);
   /* A metade da pista precisa ser mais larga que qualquer tela, ou o laço mostra
      o fim da fileira e volta com um pulo. O número de cópias é sempre PAR: a
      pista viaja metade de si mesma, e a emenda só cai sobre uma cópia inteira se
@@ -1275,7 +1254,7 @@ function PosterWall({
               <button
                 type="button"
                 key={`${copy}:${film.id}`}
-                onClick={() => setAberto(film)}
+                onClick={() => onOpen(film)}
                 aria-hidden={copy > 0 || undefined}
                 tabIndex={copy > 0 ? -1 : undefined}
                 /* Sem nota quando não há nenhuma: um cartaz emprestado do TMDB
@@ -1375,16 +1354,6 @@ function PosterWall({
         )}
       </div>
 
-      {/* Montada só quando há filme aberto, e remontada por filme: garante que
-          ela nunca mostre a sinopse do cartaz anterior por um quadro. */}
-      {aberto ? (
-        <FilmPeek
-          key={aberto.id}
-          film={aberto}
-          universe={universe}
-          onClose={() => setAberto(null)}
-        />
-      ) : null}
     </section>
   );
 }
@@ -1471,14 +1440,23 @@ function NowPlaying({
    A posição é Poppins com `.q` e não display: a face de letreiro não tem
    algarismo tabular, e uma coluna de posições que se desloca é uma coluna
    quebrada. Mesma regra de toda nota. */
+/* O cartão inteiro é a porta, e não só o cartaz: o número, o título e a nota
+   são a mesma coisa que a imagem, e um alvo que começa na capa e acaba antes do
+   nome é um alvo que erra no dedo.
+
+   A folha que abre é a mesma da parede — quem avaliou, o que acharam, sinopse e
+   trailer. É a resposta da pergunta que este pódio provoca e não respondia: o
+   cartaz vinha com uma nota da rede em cima e nada dizendo de onde ela saiu. */
 function PodiumFilm({
   film,
   rank,
   index,
+  onOpen,
 }: {
   film: LobbyPodiumMovie;
   rank: number;
   index: number;
+  onOpen: () => void;
 }) {
   return (
     <motion.div
@@ -1486,23 +1464,36 @@ function PodiumFilm({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1], delay: Math.min(index, 9) * 0.045 }}
     >
-      <Poster src={film.poster} alt={film.title} className="aspect-[2/3] w-full" />
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="q flex-none text-[15px] font-semibold leading-none text-ink-dim">
-          {rank}
-        </span>
-        <span className="line-clamp-2 min-w-0 font-display text-[16px] leading-[1.12] tracking-[0.03em] text-beam">
-          {film.title}
-        </span>
-      </div>
-      <div className="mt-2.5 flex items-center gap-2">
-        <Strip value={film.average} cells={10} className="h-[5px] min-w-0 flex-1" />
-        <span className="q flex-none text-[13px] font-medium text-beam">{fmt(film.average)}</span>
-      </div>
-      <p className="q mt-1.5 text-[10.5px] text-ink-dim">
-        {plural(film.takes, 'avaliação', 'avaliações')}
-        {film.clubs > 1 ? ` · ${plural(film.clubs, 'clube', 'clubes')}` : ''}
-      </p>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${film.title} — ${fmt(film.average)} em ${plural(film.takes, 'avaliação', 'avaliações')}`}
+        className="group block w-full text-left"
+      >
+        {/* O cartaz acende sob o ponteiro, do mesmo jeito que os da parede: é o
+            que diz que a coisa toda é clicável antes de alguém tentar. */}
+        <Poster
+          src={film.poster}
+          alt={film.title}
+          className="aspect-[2/3] w-full transition duration-300 ease-beam group-hover:brightness-110"
+        />
+        <div className="mt-3 flex items-baseline gap-2">
+          <span className="q flex-none text-[15px] font-semibold leading-none text-ink-dim">
+            {rank}
+          </span>
+          <span className="line-clamp-2 min-w-0 font-display text-[16px] leading-[1.12] tracking-[0.03em] text-beam transition-colors group-hover:text-beam-hot">
+            {film.title}
+          </span>
+        </div>
+        <div className="mt-2.5 flex items-center gap-2">
+          <Strip value={film.average} cells={10} className="h-[5px] min-w-0 flex-1" />
+          <span className="q flex-none text-[13px] font-medium text-beam">{fmt(film.average)}</span>
+        </div>
+        <p className="q mt-1.5 text-[10.5px] text-ink-dim">
+          {plural(film.takes, 'avaliação', 'avaliações')}
+          {film.clubs > 1 ? ` · ${plural(film.clubs, 'clube', 'clubes')}` : ''}
+        </p>
+      </button>
     </motion.div>
   );
 }

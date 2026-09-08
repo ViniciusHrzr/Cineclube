@@ -45,7 +45,7 @@ import {
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { DARK, readPulse, samePulse, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
-import { Key, Reel } from '@/components/bits';
+import { Key, Lens, Reel } from '@/components/bits';
 import { AccountSheet, SettingsSheet } from '@/components/settings';
 import { Lobby } from '@/screens/Lobby';
 import { SetPassword, SignIn } from '@/screens/SignIn';
@@ -734,6 +734,13 @@ function SeriesClubApp({
           me={me}
           club={club}
           room={DARK}
+          universe="series"
+          /* O MESMO clube, pela outra lente. Sem seção no endereço: a aba em que
+             se estava é de séries e pode não existir do outro lado, e cair numa
+             aba que não há é pior que abrir no mural. */
+          onUniverse={u => {
+            location.hash = clubHash(slug, '', u);
+          }}
           onLobby={onLobby}
           onOpenRequests={() => {
             location.hash = clubHash(slug, 'ajustes', 'filmes');
@@ -1433,6 +1440,10 @@ function ClubApp({
           me={me}
           club={ctx.club}
           room={pulse}
+          universe={lens}
+          onUniverse={u => {
+            location.hash = clubHash(slug, '', u);
+          }}
           onLobby={onLeaveClub}
           onOpenRequests={() => setSheetOpen(true)}
         />
@@ -1740,6 +1751,8 @@ function Marquee({
   me,
   club,
   room,
+  universe,
+  onUniverse,
   onLobby,
   onOpenRequests,
 }: {
@@ -1751,6 +1764,10 @@ function Marquee({
   club: ClubRow;
   /** O que a sala está fazendo. É isto que acende a lâmpada da Sessão. */
   room: ScreeningPulse;
+  /** Por qual lente esta sala está sendo olhada agora. */
+  universe: Universe;
+  /** A outra lente, sobre o MESMO clube. Ver a nota ao lado da peça. */
+  onUniverse: (u: Universe) => void;
   onLobby: () => void;
   onOpenRequests: () => void;
 }) {
@@ -1766,26 +1783,39 @@ function Marquee({
             saber em qual está antes de ler o resto da tela. A foto vem junto
             quando existe — é o que torna a troca reconhecível sem ler. O
             conjunto é a porta de volta ao saguão. */}
-        <button
-          type="button"
-          onClick={onLobby}
-          title="Voltar ao saguão"
-          className="group mr-auto flex items-center gap-2.5 rounded-cell py-1 pr-2 text-left"
-        >
-          {club.photo ? (
-            <img
-              src={club.photo}
-              alt=""
-              className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
-            />
-          ) : null}
-          <span className="font-display text-[22px] leading-none tracking-[0.1em] text-beam transition-colors group-hover:text-beam-hot">
-            {club.name}
-          </span>
-          {club.visibility === 'private' ? (
-            <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
-          ) : null}
-        </button>
+        <div className="mr-auto flex min-w-0 items-center gap-x-1 sm:gap-x-3">
+          <button
+            type="button"
+            onClick={onLobby}
+            title="Voltar ao saguão"
+            className="group flex min-w-0 items-center gap-2.5 rounded-cell py-1 pr-1 text-left sm:pr-2"
+          >
+            {club.photo ? (
+              <img
+                src={club.photo}
+                alt=""
+                className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
+              />
+            ) : null}
+            <span className="min-w-0 truncate font-display text-[22px] leading-none tracking-[0.1em] text-beam transition-colors group-hover:text-beam-hot">
+              {club.name}
+            </span>
+            {club.visibility === 'private' ? (
+              <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
+            ) : null}
+          </button>
+          {/* ── a lente, aqui dentro também ────────────────────────────────
+              Ela só existia no saguão, o que fazia trocar de universo dentro de
+              uma sala ser: sair para o saguão, trocar lá, e achar a mesma sala
+              de novo. Um clube é um clube nos dois universos — mesma gente,
+              mesmo ADM —, então a troca guarda o clube e muda só o que se olha
+              dentro dele.
+
+              Ao lado do nome da sala, como no saguão fica ao lado do nome da
+              casa: a lente é mais externa que a seção, e ficar junto das abas a
+              faria ler como uma sexta aba. */}
+          <Lens on={universe} onPick={onUniverse} />
+        </div>
         <SectionTabs variant="marquee" tabs={tabs} tab={tab} onTab={onTab} room={room} rec={rec} />
 
         {/* `relative` porque o painel do sino se pendura AQUI, e não no sino:
