@@ -1006,16 +1006,18 @@ function LiveScreen({
       <div className="plate mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
         <span className="legend">{host ? 'Você está transmitindo' : `Tela de ${live.hostName}`}</span>
 
+        {/* O estágio por extenso, e não uma roda. "Está preto" tem três causas
+            com o mesmo desenho — não achou caminho, achou e não veio quadro,
+            ou veio quadro e a tela está certa —, e sem esta linha não há como
+            distinguir uma da outra sem abrir o console. */}
         <span className="q text-[12px] text-ink-dim">
           {share.phase === 'failed'
             ? share.error
             : host
               ? share.peers
-                ? `${plural(share.peers, 'pessoa recebendo', 'pessoas recebendo')}`
-                : 'ninguém recebendo ainda'
-              : share.phase === 'waiting'
-                ? 'abrindo caminho até a máquina dela…'
-                : 'ao vivo'}
+                ? plural(share.peers, 'pessoa recebendo', 'pessoas recebendo')
+                : (share.detail ?? 'ninguém recebendo ainda')
+              : (share.detail ?? 'ao vivo')}
         </span>
 
         {host ? (
@@ -1029,7 +1031,7 @@ function LiveScreen({
         ) : null}
       </div>
 
-      {/* ── a única falha que precisa ser dita antes de acontecer ─────────
+      {/* ── a falha que precisa ser dita antes de acontecer ───────────────
           Sem relay, quem estiver numa rede que não deixa duas máquinas se
           acharem — operadora móvel, e alguns provedores — não recebe imagem
           nenhuma. E não recebe em silêncio: a conexão fica tentando. Uma roda
@@ -1038,8 +1040,22 @@ function LiveScreen({
       {!host && share.phase === 'waiting' && !share.relayed ? (
         <p className="q mt-2.5 max-w-[60ch] text-[11.5px] text-ink-dim">
           Se a imagem não chegar em alguns segundos, é a sua rede ou a dela não deixando as duas
-          máquinas se acharem — o servidor de retransmissão não está configurado.
+          máquinas se acharem. Não há servidor de retransmissão contratado.
         </p>
+      ) : null}
+
+      {/* ── o filme mudo que só o clube percebe ───────────────────────────
+          Quem transmite não tem como notar: o som continua saindo das caixas
+          dele. Do outro lado é um filme mudo, e a pessoa vai passar meia hora
+          achando que é o volume dela. A instrução é específica porque o erro
+          é específico — o Chrome só oferece o áudio se a captura for de uma
+          ABA, e a caixinha vem desmarcada. */}
+      {host && !share.hasAudio ? (
+        <div className="mt-2.5">
+          <Fault detail="Chrome/Edge: escolha a aba do filme e marque “Compartilhar áudio da aba”. Ao compartilhar a tela inteira, marque “Compartilhar áudio do sistema”.">
+            Você está transmitindo sem som — o clube vê o filme mudo.
+          </Fault>
+        </div>
       ) : null}
 
       {host ? (
