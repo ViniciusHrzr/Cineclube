@@ -319,7 +319,7 @@ export function ProjectionSheet({
    Os nomes não se perdem, mudam de lugar: cada marca carrega um como `title` e
    como alt. Cortado em quatro, que é onde uma fileira de marcas deixa de ser um
    relance — "+2" é legível e um quinto quadrado de 18px não é. */
-function OnCell({ watch }: { watch: Movie['watch'] }) {
+export function OnCell({ watch }: { watch: Movie['watch'] }) {
   if (!watch?.streaming.length) return null;
   const shown = watch.streaming.slice(0, 4);
   const rest = watch.streaming.length - shown.length;

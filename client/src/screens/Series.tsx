@@ -32,6 +32,9 @@ import {
   TrailerKey,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
+/* A fileira de marcas do cartão de filme, e não uma cópia dela: é a mesma
+   resposta à mesma pergunta, e duas cópias divergiriam na terceira mexida. */
+import { OnCell } from '@/components/film';
 /* As mesmas peças do universo de filmes: o voto na ficha, a conversa, o
    detalhamento dos critérios, o retrato clicável. Elas leem a sala pelo
    `useWorld`, e a raiz de séries entrega uma — ver lib/world.tsx. */
@@ -278,6 +281,11 @@ function SeriesCell({
           <p className="q mt-0.5 text-[11.5px] text-ink-dim">
             {show.year ?? '—'} · {show.genre}
           </p>
+          {/* As mesmas marcas do cartão de filme, e aqui elas decidem mais: um
+              filme quase sempre dá para alugar, uma série o clube ou tem numa
+              assinatura ou não maratona. Ficam acima do progresso porque a
+              pergunta "dá para ver?" vem antes de "onde a gente parou?". */}
+          <OnCell watch={show.watch} />
           {/* O progresso do clube, e a média só quando existe: um clube que
               acompanha sem avaliar não tem nota, e imprimir 0,0 ali seria a tela
               inventando um veredito. */}
@@ -486,6 +494,7 @@ export function SeriesQueueScreen({
                 genres: [s.genre],
                 poster: s.poster,
                 crowd: null,
+                watch: s.watch,
               }}
               seen={
                 s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`

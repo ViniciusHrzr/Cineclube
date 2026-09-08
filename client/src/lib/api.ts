@@ -442,6 +442,14 @@ export type QueuedShow = {
   seen: number;
   rated: number;
   average: number | null;
+  /* Onde esta série está passando. Os mesmos três estados de `SeriesItem`, e
+     preenchido pela mesma via — ver providers.js. A lista que o clube acompanha
+     é onde "hoje a gente vê qual?" é perguntado, e essa pergunta é sobre o que
+     dá para ver hoje. */
+  watch?: {
+    link: string | null;
+    streaming: Provider[];
+  } | null;
 };
 
 /* ── a linha que é ao mesmo tempo "vi" e "achei" ──────────────────────────

@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const series = require('../series');
 const wrap = require('../wrap');
+const { providerCache } = require('../providers');
 const { GENRES, episodeCritsFor } = require('../criteria');
 const { cleanEpisodeRef } = require('../show');
 
@@ -86,69 +87,14 @@ async function cacheEpisodes(showId, episodes) {
 
 const cacheAll = results => Promise.all(results.map(cacheShow));
 
-/* Onde cada série da grade está passando: o mesmo mecanismo de
-   routes/catalog.js, sobre `shows_cache`, e o porquê de cada propriedade está
-   escrito lá.
-
-   Uma série é o caso em que isto vale MAIS do que num filme: quase todo filme
-   pode ser alugado em algum lugar, e por isso a linha de aluguel foi cortada;
-   uma série ou está incluída numa assinatura que alguém já paga, ou o clube não
-   vai maratoná-la. */
-const PROVIDERS_TTL = "-7 days";
-const PROVIDERS_LANES = 6;
-
-const freshProviders = count => db.prepare(`
-  SELECT tmdb_id, providers FROM shows_cache
-  WHERE tmdb_id IN (${Array.from({ length: count }, () => '?').join(',')})
-    AND providers IS NOT NULL
-    AND providers_at > datetime('now', '${PROVIDERS_TTL}')
-`);
-const saveProvidersStmt = db.prepare(
-  "UPDATE shows_cache SET providers = ?, providers_at = datetime('now') WHERE tmdb_id = ?"
-);
-
-/** Roda `job` sobre `items`, no máximo `lanes` de cada vez. */
-async function inLanes(items, lanes, job) {
-  const queue = [...items];
-  const workers = Array.from({ length: Math.min(lanes, queue.length) }, async () => {
-    while (queue.length) await job(queue.shift());
-  });
-  await Promise.all(workers);
-}
-
-/** Pendura `watch` em cada resultado, do cache quando ele está fresco. */
-async function fillProviders(results) {
-  if (!results.length) return results;
-
-  const known = new Map();
-  try {
-    const ids = results.map(s => s.id);
-    for (const row of await freshProviders(ids.length).all(...ids)) {
-      known.set(Number(row.tmdb_id), JSON.parse(row.providers));
-    }
-  } catch (e) {
-    // Um cache ilegível é um cache vazio, não um erro.
-    console.warn('[series] providers em cache ilegíveis:', e.message);
-  }
-
-  const missing = results.filter(s => !known.has(s.id));
-  await inLanes(missing, PROVIDERS_LANES, async s => {
-    try {
-      const watch = await series.watchProvidersFor(s.id);
-      known.set(s.id, watch);
-      /* O nulo é gravado também, de propósito: "não passa em lugar nenhum aqui"
-         é uma resposta, e não escrevê-la faria toda série que não passa custar
-         uma requisição a cada abertura de página. */
-      await saveProvidersStmt.run(JSON.stringify(watch), s.id);
-    } catch {
-      /* Fora de `known`: esta série não mostra nada e é perguntada de novo da
-         próxima vez. Uma série fora do ar não pode custar as outras dezenove. */
-    }
-  });
-
-  for (const s of results) s.watch = known.get(s.id) ?? null;
-  return results;
-}
+/* Onde cada série da grade está passando. O mecanismo é o de providers.js, e a
+   pergunta vale MAIS aqui do que num filme: quase todo filme pode ser alugado
+   em algum lugar, e por isso a linha de aluguel foi cortada; uma série ou está
+   incluída numa assinatura que alguém já paga, ou o clube não vai maratoná-la. */
+const fillProviders = providerCache({
+  table: 'shows_cache',
+  fetch: id => series.watchProvidersFor(id),
+});
 
 /* Servido por gênero porque o gênero da SÉRIE decide o vocabulário — vozes numa
    animação, estrutura num documentário — sem nunca acrescentar pergunta. Ver

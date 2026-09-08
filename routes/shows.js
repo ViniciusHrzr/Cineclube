@@ -6,6 +6,8 @@ const clubs = require('../clubs');
 const wrap = require('../wrap');
 const throttle = require('../throttle');
 const live = require('../live');
+const series = require('../series');
+const { providerCache } = require('../providers');
 const { GENRES, episodeCritsFor, episodeFinalOf, episodeAnsweredIn } = require('../criteria');
 const { cleanShow, cleanEpisodeRef, text, MAX_EPISODE_TITLE } = require('../show');
 
@@ -185,12 +187,23 @@ async function progressMap(clubId) {
   }]));
 }
 
+/* A mesma resposta da grade do catálogo, sobre a mesma tabela: ver
+   providers.js. A lista que o clube acompanha é justamente onde a pergunta
+   volta — "hoje a gente vê qual?" é escolher entre o que dá para ver hoje, e
+   sem isto a resposta morava em outra aba. */
+const fillProviders = providerCache({
+  table: 'shows_cache',
+  fetch: id => series.watchProvidersFor(id),
+});
+
 router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   const [rows, progress] = await Promise.all([
     queueStmt.all(req.club.id),
     progressMap(req.club.id),
   ]);
-  res.json({ shows: rows.map(r => queueDTO(r, progress)) });
+  const shows = rows.map(r => queueDTO(r, progress));
+  await fillProviders(shows);
+  res.json({ shows });
 }));
 
 router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(async (req, res) => {
