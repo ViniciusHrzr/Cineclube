@@ -474,12 +474,18 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     try {
       capture = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          /* Pedido explícito, porque o padrão de uma captura de tela é o que o
-             navegador achar barato. 1080p é o que um filme quer e o que a
-             malha aguenta; o `ideal` deixa uma tela menor ser ela mesma em vez
-             de ser esticada até aqui. */
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          /* ── um teto, e nunca um alvo ──────────────────────────────────
+             Era `ideal: 1920 × 1080`, e num monitor que não é 16:9 isso CORTA:
+             uma captura de tela não é uma câmera, e o Chrome atende uma
+             proporção pedida recortando a tela até ela caber — some a barra de
+             tarefas, some o rodapé do que a pessoa quis mostrar.
+
+             `max` nos dois lados diz a única coisa que este produto quer dizer:
+             não passe disto, porque a malha não aguenta e o filme não precisa.
+             Sem alvo nenhum, a proporção continua sendo a do monitor, e uma
+             tela menor continua sendo ela mesma em vez de ser esticada. */
+          width: { max: 1920 },
+          height: { max: 1080 },
           frameRate: { ideal: 30, max: 60 },
           /* Abre o seletor já na aba de telas inteiras. É preferência e não
              regra — a pessoa continua podendo escolher uma janela —, mas o
