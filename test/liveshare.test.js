@@ -192,27 +192,63 @@ test('a sinalização tem balde próprio: o aperto de mão não gasta as fichas 
   assert.equal(screening.withinSignalRate('p1', T0), true);
 });
 
-/* ── onde os navegadores se procuram ──────────────────────────────────── */
+/* ── onde os navegadores se procuram ────────────────────────────────────
+   Nenhum destes toca a rede: o caminho da Cloudflare é o único que sairia da
+   máquina, e ele é exercitado com um `fetch` trocado. O que se testa é a
+   decisão — qual credencial sai daqui, e o que acontece quando o relay não
+   responde. */
 
-test('sem nada configurado sobra o STUN público, e nenhum relay é prometido', () => {
-  delete process.env.TURN_URLS;
-  delete process.env.TURN_SECRET;
-  delete process.env.TURN_USERNAME;
-  delete process.env.TURN_PASSWORD;
+/** Zera o ambiente de relay. Chamado por todo teste desta seção. */
+function semRelay() {
+  for (const v of [
+    'TURN_URLS',
+    'TURN_SECRET',
+    'TURN_USERNAME',
+    'TURN_PASSWORD',
+    'CLOUDFLARE_TURN_KEY_ID',
+    'CLOUDFLARE_TURN_API_TOKEN',
+  ]) {
+    delete process.env[v];
+  }
+  turn.reset();
+}
 
-  const servers = turn.iceServers('p1');
+const CF_ICE = [
+  { urls: ['stun:stun.cloudflare.com:3478'] },
+  {
+    urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp'],
+    username: 'gerado',
+    credential: 'temporaria',
+  },
+];
+
+/** Um `fetch` que responde o que o teste mandar, e conta quantas vezes foi chamado. */
+function fakeFetch(responder) {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return responder();
+  };
+  return { calls, restore: () => (globalThis.fetch = original) };
+}
+
+const ok = body => ({ ok: true, status: 201, json: async () => body });
+
+test('sem nada configurado sobra o STUN público, e nenhum relay é prometido', async () => {
+  semRelay();
+  const servers = await turn.iceServers('p1');
   assert.equal(servers.length, 1);
   assert.deepEqual(servers[0].urls, turn.STUN_FALLBACK);
   assert.equal(turn.hasTurn(), false);
 });
 
-test('com segredo, a credencial expira e é assinada — e ninguém a cadastrou em lugar nenhum', () => {
+test('com segredo, a credencial expira e é assinada — e ninguém a cadastrou em lugar nenhum', async () => {
+  semRelay();
   process.env.TURN_URLS = 'turn:relay.exemplo:3478';
   process.env.TURN_SECRET = 'segredo';
-  delete process.env.TURN_USERNAME;
-  delete process.env.TURN_PASSWORD;
 
-  const [, relay] = turn.iceServers('pabc', T0);
+  const [, relay] = await turn.iceServers('pabc', T0);
   const expira = Math.floor(T0 / 1000) + turn.TTL_SECONDS;
   assert.equal(relay.username, `${expira}:pabc`);
   assert.equal(
@@ -222,31 +258,118 @@ test('com segredo, a credencial expira e é assinada — e ninguém a cadastrou 
   assert.equal(turn.hasTurn(), true);
 });
 
-test('sem segredo, usuário e senha fixos servem — é o que os serviços prontos dão', () => {
+test('sem segredo, usuário e senha fixos servem — é o que os serviços prontos dão', async () => {
+  semRelay();
   process.env.TURN_URLS = 'turn:relay.exemplo:3478';
-  delete process.env.TURN_SECRET;
   process.env.TURN_USERNAME = 'clube';
   process.env.TURN_PASSWORD = 'senha';
 
-  const [, relay] = turn.iceServers('pabc', T0);
+  const [, relay] = await turn.iceServers('pabc', T0);
   assert.equal(relay.username, 'clube');
   assert.equal(relay.credential, 'senha');
   assert.equal(turn.hasTurn(), true);
 });
 
-test('um relay sem credencial nenhuma não é oferecido: seria um endereço que recusa todo mundo', () => {
+test('um relay sem credencial nenhuma não é oferecido: seria um endereço que recusa todo mundo', async () => {
+  semRelay();
   process.env.TURN_URLS = 'turn:relay.exemplo:3478';
-  delete process.env.TURN_SECRET;
-  delete process.env.TURN_USERNAME;
-  delete process.env.TURN_PASSWORD;
-
-  assert.equal(turn.iceServers('pabc', T0).length, 1);
+  assert.equal((await turn.iceServers('pabc', T0)).length, 1);
   assert.equal(turn.hasTurn(), false);
 });
 
-test.after(() => {
-  delete process.env.TURN_URLS;
-  delete process.env.TURN_SECRET;
-  delete process.env.TURN_USERNAME;
-  delete process.env.TURN_PASSWORD;
+/* ── a Cloudflare ─────────────────────────────────────────────────────── */
+
+test('a lista da Cloudflare é servida inteira, e não costurada com a nossa', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ok({ iceServers: CF_ICE }));
+
+  try {
+    const servers = await turn.iceServers('p1', T0);
+    // Inteira: as portas 443 e 80 deles são o que atravessa rede corporativa,
+    // e substituí-las pelo nosso STUN seria jogar fora a metade que importa.
+    assert.deepEqual(servers, CF_ICE);
+    assert.equal(turn.hasTurn(), true);
+    assert.match(f.calls[0].url, /credentials\/generate-ice-servers$/);
+    assert.equal(f.calls[0].init.headers.Authorization, 'Bearer token');
+  } finally {
+    f.restore();
+  }
 });
+
+test('a credencial é pedida uma vez e reaproveitada: a API não separa quem pediu', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ok({ iceServers: CF_ICE }));
+
+  try {
+    await turn.iceServers('p1', T0);
+    await turn.iceServers('p2', T0 + 1000);
+    await turn.iceServers('p3', T0 + 2000);
+    assert.equal(f.calls.length, 1);
+  } finally {
+    f.restore();
+  }
+});
+
+test('quatro pessoas entrando juntas fazem uma chamada, não quatro', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ok({ iceServers: CF_ICE }));
+
+  try {
+    await Promise.all([0, 1, 2, 3].map(i => turn.iceServers(`p${i}`, T0)));
+    assert.equal(f.calls.length, 1);
+  } finally {
+    f.restore();
+  }
+});
+
+test('vencida a validade, uma nova é pedida', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ok({ iceServers: CF_ICE }));
+
+  try {
+    await turn.iceServers('p1', T0);
+    await turn.iceServers('p1', T0 + turn.TTL_SECONDS * 1000);
+    assert.equal(f.calls.length, 2);
+  } finally {
+    f.restore();
+  }
+});
+
+test('a Cloudflare fora do ar não derruba a tela: sobra o STUN e a tentativa continua', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ({ ok: false, status: 503, json: async () => ({}) }));
+
+  try {
+    const servers = await turn.iceServers('p1', T0);
+    assert.equal(servers.length, 1);
+    assert.deepEqual(servers[0].urls, turn.STUN_FALLBACK);
+  } finally {
+    f.restore();
+  }
+});
+
+test('uma resposta sem iceServers é tratada como falha, e não servida vazia', async () => {
+  semRelay();
+  process.env.CLOUDFLARE_TURN_KEY_ID = 'chave';
+  process.env.CLOUDFLARE_TURN_API_TOKEN = 'token';
+  const f = fakeFetch(() => ok({ erro: 'nada aqui' }));
+
+  try {
+    const servers = await turn.iceServers('p1', T0);
+    assert.deepEqual(servers[0].urls, turn.STUN_FALLBACK);
+  } finally {
+    f.restore();
+  }
+});
+
+test.after(semRelay);

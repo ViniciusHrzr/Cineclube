@@ -285,15 +285,15 @@ router.post('/signal', wrap(async (req, res) => {
 /* Onde os dois navegadores procuram um caminho um até o outro. Por pessoa
    porque a credencial de TURN é temporária e assinada com o id de quem pediu;
    ver turn.js, que também explica por que ela existe. */
-router.get('/ice', (req, res) => {
+router.get('/ice', wrap(async (req, res) => {
   res.json({
-    iceServers: turn.iceServers(req.session.reviewer_id),
+    iceServers: await turn.iceServers(req.session.reviewer_id),
     /* Para a tela poder ser honesta antes de falhar: sem relay configurado,
        quem estiver atrás de CGNAT não vai conseguir, e dizer isso é melhor do
        que uma roda girando para sempre. */
     relayed: turn.hasTurn(),
   });
-});
+}));
 
 /* Whether this member can play right now, and what they are playing. The
    source tag is how the club finds out somebody opened a different file before

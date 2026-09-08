@@ -26,31 +26,30 @@ const crypto = require('node:crypto');
    precisar dele.
 
    Sem TURN, quem estiver nessa situação simplesmente não recebe imagem. Não é
-   uma falha ruidosa — é uma conexão que fica tentando e nunca fecha —, e é
-   exatamente por isso que ele está aqui desde o primeiro dia em vez de ser um
-   remendo para quando alguém reclamar.
+   uma falha ruidosa — é uma conexão que fica tentando e nunca fecha.
 
-   ── as duas formas de credencial ────────────────────────────────────────
+   ── três jeitos de ter um, e o arquivo fala os três ─────────────────────
    Um servidor TURN aberto é um proxy aberto: qualquer um na internet mandaria
-   tráfego por ele às suas custas. Então todos pedem usuário e senha, e há duas
-   maneiras de dar isso a um navegador.
+   tráfego por ele às suas custas. Então todos pedem credencial, e cada tipo de
+   serviço dá a dele de um jeito.
 
-   · **Segredo compartilhado** (`TURN_SECRET`). O jeito certo, e o que o coturn
-     chama de `use-auth-secret`. O usuário é um prazo de validade, a senha é o
-     HMAC dele com um segredo que só o servidor e este arquivo conhecem, e o
-     TURN valida sem consultar banco nenhum. A credencial que sai daqui vale
-     algumas horas e depois não vale mais nada — o que importa porque ela vive
-     no JavaScript de uma aba, onde qualquer pessoa do clube pode lê-la.
+   · **Cloudflare** (`CLOUDFLARE_TURN_KEY_ID` + `CLOUDFLARE_TURN_API_TOKEN`).
+     O que este clube usa. A credencial não é calculada aqui: pede-se uma à API
+     deles, que devolve usuário, senha e a lista de endereços já pronta — com
+     as variantes de porta 80 e 443 que atravessam rede corporativa. É uma
+     chamada de rede, e por isso existe o cache logo abaixo.
 
-   · **Usuário e senha fixos** (`TURN_USERNAME`/`TURN_PASSWORD`). O que a maior
-     parte dos serviços prontos entrega no painel. Funciona igual, com uma
-     diferença que não é pequena: essa senha não expira, e ela sai daqui para o
-     navegador de todo mundo. Serve, e é o caminho de dez minutos; se um dia o
-     tráfego do TURN pular sem explicação, é o primeiro lugar de olhar.
+   · **Segredo compartilhado** (`TURN_SECRET`), que é o `use-auth-secret` do
+     coturn. Sem chamada nenhuma: o usuário é um prazo de validade, a senha é o
+     HMAC dele, e o servidor valida recalculando. É o caminho para um coturn
+     próprio.
 
-   Nada aqui é obrigatório. Sem variável nenhuma, sobra o STUN público e a tela
-   ao vivo funciona para quem não estiver atrás de CGNAT — que é a maioria, mas
-   nunca é todo mundo.
+   · **Usuário e senha fixos** (`TURN_USERNAME`/`TURN_PASSWORD`). O que muitos
+     painéis entregam. Funciona igual, com a diferença de que a senha não
+     expira e sai daqui para o navegador de todo mundo.
+
+   Nada é obrigatório. Sem variável nenhuma sobra o STUN público, e a tela ao
+   vivo funciona para quem não estiver atrás de CGNAT.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* Dois, de operadores diferentes, porque isto é um ponto único de falha para o
@@ -58,10 +57,21 @@ const crypto = require('node:crypto');
    perdido em vez da noite. */
 const STUN_FALLBACK = ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'];
 
-/* Quanto tempo uma credencial efêmera vale. Uma sessão cabe folgada, e o que a
-   sobra compra é a reconexão: uma pessoa que caiu no meio do filme e voltou
-   não pode esbarrar numa senha vencida enquanto o clube espera. */
+/* Quanto tempo uma credencial vale. Uma sessão cabe folgada, e a sobra compra a
+   reconexão: quem caiu no meio do filme e voltou não pode esbarrar numa senha
+   vencida enquanto o clube espera. */
 const TTL_SECONDS = 6 * 3600;
+
+/* A credencial da Cloudflare é pedida pela rede, então ela é guardada. A margem
+   é o que impede a corrida óbvia: servir, no último segundo de validade, uma
+   senha que vence antes de o navegador terminar de se conectar com ela. */
+const CACHE_MARGIN_MS = 10 * 60 * 1000;
+
+const CF_API = 'https://rtc.live.cloudflare.com/v1/turn/keys';
+/* Uma requisição a um serviço externo no caminho de alguém apertando um botão.
+   Se a Cloudflare não responder nisto, o clube fica com o STUN e tenta assim
+   mesmo — que é melhor do que a tela travar esperando. */
+const CF_TIMEOUT_MS = 6000;
 
 /** Lista separada por vírgula ou espaço. Vazia quando a variável não existe. */
 function list(name) {
@@ -71,23 +81,84 @@ function list(name) {
     .filter(Boolean);
 }
 
+const cloudflareConfigured = () =>
+  Boolean(process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN);
+
 /** Há um relay configurado? A tela usa isto para saber o que prometer. */
 function hasTurn() {
+  if (cloudflareConfigured()) return true;
   return (
     list('TURN_URLS').length > 0 &&
     Boolean(process.env.TURN_SECRET || (process.env.TURN_USERNAME && process.env.TURN_PASSWORD))
   );
 }
 
-/* O que o navegador recebe. Por pessoa e não uma constante do módulo porque a
-   credencial efêmera carrega o id de quem pediu: se um dia um clube estiver
-   torrando o relay, o log do TURN diz de quem é o tráfego. */
-function iceServers(reviewerId, now = Date.now()) {
+/* ── a credencial da Cloudflare, pedida uma vez e reaproveitada ───────────
+   Uma por instância e não uma por pessoa, de propósito. A API não separa
+   usuários — a credencial que ela devolve serve para qualquer navegador —,
+   então pedir uma por espectador seria uma chamada de rede por pessoa que abre
+   a Sessão, para receber a mesma coisa.
+
+   `pending` é o que impede a rajada: quatro pessoas entrando juntas fazem
+   quatro pedidos simultâneos, e sem isto os quatro viram quatro chamadas à
+   Cloudflare que se sobrescrevem no cache. Guardando a PROMESSA, os três
+   últimos esperam a primeira. */
+let cache = null;
+let pending = null;
+
+async function cloudflareIce(now) {
+  if (cache && cache.until > now) return cache.servers;
+  if (pending) return pending;
+
+  pending = (async () => {
+    const key = process.env.CLOUDFLARE_TURN_KEY_ID;
+    const res = await fetch(`${CF_API}/${key}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.CLOUDFLARE_TURN_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ttl: TTL_SECONDS }),
+      signal: AbortSignal.timeout(CF_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`Cloudflare TURN respondeu ${res.status}`);
+    const body = await res.json();
+    const servers = body?.iceServers;
+    if (!Array.isArray(servers) || !servers.length) throw new Error('resposta sem iceServers');
+    cache = { servers, until: now + TTL_SECONDS * 1000 - CACHE_MARGIN_MS };
+    return servers;
+  })();
+
+  try {
+    return await pending;
+  } finally {
+    pending = null;
+  }
+}
+
+/* O que o navegador recebe. Assíncrona por causa de um caminho só — o da
+   Cloudflare —, e os outros dois devolvem na hora. */
+async function iceServers(reviewerId, now = Date.now()) {
   const stun = list('STUN_URLS');
-  const servers = [{ urls: stun.length ? stun : STUN_FALLBACK }];
+  const base = [{ urls: stun.length ? stun : STUN_FALLBACK }];
+
+  if (cloudflareConfigured()) {
+    try {
+      /* A lista deles já vem com STUN dentro, e é a lista inteira que o
+         navegador deve usar: os endereços de porta 80 e 443 são o que salva
+         quem está numa rede que só deixa passar web. */
+      return await cloudflareIce(now);
+    } catch (e) {
+      /* Um relay que não respondeu é um relay a menos, não uma tela quebrada:
+         a maioria das redes se resolve com STUN, e negar a tentativa serviria
+         a ninguém. O log existe porque isto é silencioso na tela. */
+      console.warn('[turn] Cloudflare não respondeu, seguindo só com STUN:', e.message);
+      return base;
+    }
+  }
 
   const turn = list('TURN_URLS');
-  if (!turn.length) return servers;
+  if (!turn.length) return base;
 
   const secret = process.env.TURN_SECRET;
   if (secret) {
@@ -96,14 +167,19 @@ function iceServers(reviewerId, now = Date.now()) {
        base64. O servidor recalcula e compara — não existe cadastro. */
     const username = `${Math.floor(now / 1000) + TTL_SECONDS}:${reviewerId}`;
     const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
-    servers.push({ urls: turn, username, credential });
-    return servers;
+    return [...base, { urls: turn, username, credential }];
   }
 
   const username = process.env.TURN_USERNAME;
   const credential = process.env.TURN_PASSWORD;
-  if (username && credential) servers.push({ urls: turn, username, credential });
-  return servers;
+  if (username && credential) return [...base, { urls: turn, username, credential }];
+  return base;
 }
 
-module.exports = { iceServers, hasTurn, TTL_SECONDS, STUN_FALLBACK };
+/** Tests only: esquece a credencial guardada. */
+function reset() {
+  cache = null;
+  pending = null;
+}
+
+module.exports = { iceServers, hasTurn, reset, TTL_SECONDS, STUN_FALLBACK };
