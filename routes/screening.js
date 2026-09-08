@@ -6,6 +6,7 @@ const wrap = require('../wrap');
 const screening = require('../screening');
 const turn = require('../turn');
 const live = require('../live');
+const { cleanEpisodeRef } = require('../show');
 
 const router = express.Router({ mergeParams: true });
 
@@ -30,6 +31,7 @@ async function movieById(clubId, id) {
   const cached = await cachedStmt.get(id);
   if (cached) {
     return {
+      kind: 'movie',
       id: Number(cached.tmdb_id),
       title: cached.title,
       year: cached.year ?? null,
@@ -41,6 +43,7 @@ async function movieById(clubId, id) {
   const queued = await queuedStmt.get(clubId, id);
   if (queued) {
     return {
+      kind: 'movie',
       id: Number(queued.movie_id),
       title: queued.movie_title,
       year: queued.movie_year ?? null,
@@ -50,6 +53,71 @@ async function movieById(clubId, id) {
     };
   }
   return null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UM EPISÓDIO NA MESMA SALA.
+
+   Uma sala por clube, e não uma por lente: o clube é a mesma gente, e duas
+   sessões ao mesmo tempo seriam as quatro pessoas divididas entre duas salas
+   que nenhuma delas pediu. Assistir a um episódio é assistir, e a sincronia,
+   a legenda, a fonte e a tela ao vivo não sabem nem precisam saber se o que
+   está tocando tem uma temporada.
+
+   O que muda é só a identidade do que toca: um filme é um id, um episódio é
+   uma tripla. `kind` é o que a tela lê para saber qual das duas ela tem —
+   sem ele, `id` seria um id do TMDB apontando para o filme errado.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* A duração vem do episódio e não da série: é ela que limita a barra, e um
+   piloto de 70 minutos numa série de 22 é exatamente o caso em que o número da
+   série está errado. */
+const cachedEpisodeStmt = db.prepare(`
+  SELECT title, runtime FROM episodes_cache
+  WHERE show_id = ? AND season = ? AND episode = ?
+`);
+const cachedShowStmt = db.prepare(
+  'SELECT tmdb_id, title, year, genre, poster, runtime FROM shows_cache WHERE tmdb_id = ?'
+);
+const queuedShowStmt = db.prepare(
+  'SELECT show_id, show_title, show_year, show_genre, show_poster FROM show_queue WHERE club_id = ? AND show_id = ?'
+);
+
+/* O pôster é o da SÉRIE e não o still do episódio: o cabeçalho da sessão desenha
+   um retrato 2:3, e um quadro 16:9 esticado ali é a única coisa da tela que
+   parece quebrada. */
+async function episodeById(clubId, showId, season, episode) {
+  const found = await cachedEpisodeStmt.get(showId, season, episode);
+  if (!found) return null;
+
+  const show =
+    (await cachedShowStmt.get(showId)) ??
+    (await queuedShowStmt.get(clubId, showId).then(q =>
+      q
+        ? {
+            tmdb_id: q.show_id,
+            title: q.show_title,
+            year: q.show_year,
+            genre: q.show_genre,
+            poster: q.show_poster,
+            runtime: null,
+          }
+        : null
+    ));
+  if (!show) return null;
+
+  return {
+    kind: 'episode',
+    id: Number(show.tmdb_id),
+    title: show.title,
+    year: show.year ?? null,
+    genre: show.genre,
+    poster: show.poster ?? null,
+    runtime: found.runtime ?? show.runtime ?? null,
+    season,
+    episode,
+    episodeTitle: found.title ?? null,
+  };
 }
 
 router.get('/', wrap(async (req, res) => {
@@ -107,8 +175,17 @@ router.get('/stream', (req, res) => {
 });
 
 router.post('/open', wrap(async (req, res) => {
-  const movieId = Number(req.body?.movieId);
-  if (!Number.isInteger(movieId)) return res.status(400).json({ error: 'Filme inválido.' });
+  /* Um corpo ou o outro: `movieId` abre um filme, a tripla abre um episódio. A
+     escolha é pela presença de `showId` e não por um campo `tipo`, que seria uma
+     terceira coisa a poder discordar das outras duas. */
+  const asEpisode = req.body?.showId !== undefined;
+  const movieId = asEpisode ? null : Number(req.body?.movieId);
+  if (!asEpisode && !Number.isInteger(movieId)) {
+    return res.status(400).json({ error: 'Filme inválido.' });
+  }
+
+  const ref = asEpisode ? cleanEpisodeRef(req.body) : null;
+  if (ref?.error) return res.status(400).json({ error: ref.error });
 
   /* Trocar o filme por baixo de uma sessão aberta é o maior comando que existe
      — reinicia a sala em zero para os quatro — e, sem esta linha, também seria
@@ -119,8 +196,16 @@ router.post('/open', wrap(async (req, res) => {
     return res.status(403).json({ error: `${room.host.name} está com o controle da sessão.` });
   }
 
-  const movie = await movieById(req.club.id, movieId);
-  if (!movie) return res.status(404).json({ error: 'Filme não encontrado no catálogo do clube.' });
+  const movie = asEpisode
+    ? await episodeById(req.club.id, ref.ref.showId, ref.ref.season, ref.ref.episode)
+    : await movieById(req.club.id, movieId);
+  if (!movie) {
+    return res.status(404).json({
+      error: asEpisode
+        ? 'Episódio não encontrado. Abra a temporada uma vez e tente de novo.'
+        : 'Filme não encontrado no catálogo do clube.',
+    });
+  }
 
   /* Quem abre é o dono da sessão. Não há tela para escolher outro: o clube são
      quatro pessoas combinando no Discord, e um seletor de dono seria uma

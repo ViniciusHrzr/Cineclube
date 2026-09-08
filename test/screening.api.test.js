@@ -213,6 +213,91 @@ test('a film the club does not have is not a session', async () => {
   assert.equal((await req('POST', at('/screening/open'), { movieId: 'nove' }, member.cookie)).status, 400);
 });
 
+/* ── a mesma sala, com um episódio dentro ─────────────────────────────────
+   Uma sala por clube e não uma por lente: o clube é a mesma gente. O que muda é
+   só a identidade do que toca — um filme é um id, um episódio é uma tripla — e
+   `kind` é o que separa as duas para quem lê. */
+
+/** Uma série e um episódio no cache, que é de onde a rota lê. */
+async function cachedEpisode(overrides) {
+  const showId = 700000 + ++seq;
+  const show = {
+    title: 'A Série da Sessão',
+    year: 2019,
+    genre: 'Drama',
+    poster: 'https://image.tmdb.org/t/p/w342/serie.jpg',
+    ...overrides,
+  };
+  await db
+    .prepare(
+      `INSERT INTO shows_cache (tmdb_id, title, year, genre, genres, poster, runtime, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+    )
+    .run(showId, show.title, show.year, show.genre, show.genre, show.poster, 22);
+  await db
+    .prepare(
+      `INSERT INTO episodes_cache (show_id, season, episode, title, runtime, cached_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`
+    )
+    .run(showId, 2, 5, 'O Episódio', 47);
+  return { showId, ...show };
+}
+
+test('a sessão abre num episódio, e diz que é um', async () => {
+  const member = await newMember();
+  const serie = await cachedEpisode({ title: 'Fim de Temporada' });
+
+  const opened = await req(
+    'POST',
+    at('/screening/open'),
+    { showId: serie.showId, season: 2, episode: 5 },
+    member.cookie
+  );
+  assert.equal(opened.status, 201);
+  assert.equal(opened.body.movie.kind, 'episode');
+  assert.equal(opened.body.movie.id, serie.showId);
+  assert.equal(opened.body.movie.title, 'Fim de Temporada');
+  assert.equal(opened.body.movie.season, 2);
+  assert.equal(opened.body.movie.episode, 5);
+  assert.equal(opened.body.movie.episodeTitle, 'O Episódio');
+  // Do episódio e não da série: é a duração que limita a barra.
+  assert.equal(opened.body.movie.runtime, 47);
+  // O pôster é o da série: o cabeçalho desenha um retrato, e o still é 16:9.
+  assert.equal(opened.body.movie.poster, serie.poster);
+
+  // E o filme continua se dizendo filme, que é o que a tela lê para escolher.
+  const film = await queuedFilm();
+  const outro = await req('POST', at('/screening/open'), { movieId: film.id }, member.cookie);
+  assert.equal(outro.body.movie.kind, 'movie');
+  assert.equal(outro.body.movie.season, undefined);
+
+  await req('POST', at('/screening/close'), {}, member.cookie);
+});
+
+test('um episódio que ninguém abriu ainda não é uma sessão', async () => {
+  const member = await newMember();
+  const serie = await cachedEpisode();
+
+  // A temporada existe em cache, este episódio não.
+  const semCache = await req(
+    'POST',
+    at('/screening/open'),
+    { showId: serie.showId, season: 2, episode: 99 },
+    member.cookie
+  );
+  assert.equal(semCache.status, 404);
+
+  for (const corpo of [
+    { showId: serie.showId, season: 2 },
+    { showId: serie.showId, season: 2, episode: 0 },
+    { showId: serie.showId, season: -1, episode: 5 },
+    { showId: 'duas', season: 2, episode: 5 },
+  ]) {
+    const { status } = await req('POST', at('/screening/open'), corpo, member.cookie);
+    assert.equal(status, 400, JSON.stringify(corpo));
+  }
+});
+
 /* ── commands ─────────────────────────────────────────────────────────────── */
 
 test('a command needs an open session and a real name', async () => {

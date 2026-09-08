@@ -85,10 +85,7 @@ export const TABS = [
 
 /* Uma tabela própria, e não `hidden` espalhado na de cima: as duas listas
    respondem a mesma pergunta sobre mundos diferentes, e misturá-las obrigaria
-   toda leitura de rota a saber de qual das duas aquela entrada é.
-
-   Sem Sessão, e a ausência é deliberada: a sala de projeção toca filme, e uma
-   aba que leva a uma tela vazia é pior do que aba nenhuma. */
+   toda leitura de rota a saber de qual das duas aquela entrada é. */
 export const SERIES_TABS = [
   /* O feed primeiro, como no universo de filmes: um mural que não é a tela de
      chegada é um mural que ninguém lê. */
@@ -100,6 +97,10 @@ export const SERIES_TABS = [
      ainda não se viu, e aqui ela é o que o clube ACOMPANHA — uma série na lista
      costuma estar meio assistida, não esperando. */
   { id: 'watchlist', label: 'Minhas séries' },
+  /* A MESMA sala do outro universo, e por isso no mesmo lugar da fileira: um
+     clube é uma gente só, e assistir junto não muda por o que toca ter uma
+     temporada. O que muda é o que se escolhe para abrir. */
+  { id: 'screening', label: 'Sessão' },
   { id: 'reviews', label: 'Avaliados' },
   /* Uma série, com as temporadas e os episódios. Rota e não aba, pela mesma
      razão que avaliar não é aba no universo de filmes: não se escolhe "uma
@@ -479,6 +480,10 @@ function SeriesClubApp({
      pergunta toda vez que alguém entra, e "qual série a gente começa" não. */
   const [tab, setTab] = useState<TabId>(() => route.tab ?? 'feed');
   const [showId, setShowId] = useState<number | null>(() => route.show);
+  /* A lâmpada da marquise, e a sala é a MESMA das duas lentes: um episódio
+     rodando acende do lado de filmes e um filme acende deste. Ver o porquê de
+     ela morar fora da tela da sessão em `ClubApp`. */
+  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
 
   const fault = useCallback((msg: string) => {
     setToast(msg);
@@ -514,6 +519,31 @@ function SeriesClubApp({
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  /* Pergunta de fora e nunca assina o stream da sala — entrar nele é entrar na
+     sala. O erro morre em silêncio: ninguém pediu esta pergunta, e uma lâmpada
+     apagada é uma falha honesta. Ver a mesma coisa em `ClubApp`. */
+  useEffect(() => {
+    if (!club) return;
+    const read = () => {
+      void readPulse().then(
+        next => setPulse(prev => (samePulse(prev, next) ? prev : next)),
+        () => {
+          /* engolido: ver acima */
+        }
+      );
+    };
+    read();
+    const tick = () => {
+      if (document.visibilityState === 'visible') read();
+    };
+    const id = window.setInterval(tick, 90_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [club]);
 
   /* Relê só o que a escrita mexeu. Marcar um episódio muda o acervo e o
      progresso da fila, e não o clube nem os critérios. */
@@ -733,7 +763,7 @@ function SeriesClubApp({
           }}
           me={me}
           club={club}
-          room={DARK}
+          room={pulse}
           universe="series"
           /* O MESMO clube, pela outra lente. Sem seção no endereço: a aba em que
              se estava é de séries e pode não existir do outro lado, e cair numa
@@ -777,6 +807,21 @@ function SeriesClubApp({
                 onOpen={goShow}
                 fault={fault}
               />
+            ) : tab === 'screening' ? (
+              /* A tela é a mesma do outro universo. O que ela recebe daqui é o
+                 que muda entre as lentes: escolhe-se um episódio das séries do
+                 clube, e quem acaba de ver vai para a série — a ficha é de um
+                 episódio e mora lá dentro. */
+              <ScreeningScreen
+                shows={queue ?? []}
+                onRate={m =>
+                  m.kind === 'episode'
+                    ? goShow(m.id)
+                    : /* Um filme, aberto do outro lado: a ficha dele é de lá, e
+                         a chave que a abre está na sessão daquela lente. */
+                      (location.hash = clubHash(slug, 'screening', 'filmes'))
+                }
+              />
             ) : (
               <SeriesFeedScreen
                 takes={takes}
@@ -792,8 +837,8 @@ function SeriesClubApp({
           tabs={SERIES_TABS}
           tab={tab}
           onTab={goTab}
-          room={DARK}
-          rec={null}
+          room={pulse}
+          rec={recOf(pulse)}
         />
       </div>
 
@@ -1501,7 +1546,19 @@ function ClubApp({
               {/* Montada só enquanto a aba está aberta, de propósito: a tela
                   segura uma conexão SSE e, em modo torrent, um enxame. Nenhum
                   dos dois deve sobreviver ao interesse de assistir. */}
-              {tab === 'screening' && <ScreeningScreen />}
+              {tab === 'screening' && (
+                <ScreeningScreen
+                  watchlist={watchlist}
+                  /* A sala é uma só e pode estar tocando um episódio aberto do
+                     outro lado. A ficha dele mora lá, e `id` é de uma SÉRIE —
+                     mandá-lo para a tela de avaliar filme abriria outra obra. */
+                  onRate={m =>
+                    m.kind === 'episode'
+                      ? (location.hash = clubHash(slug, `show/${m.id}`, 'series'))
+                      : rateMovie(m.id)
+                  }
+                />
+              )}
               {tab === 'reviews' && <ReviewsScreen />}
               {/* Uma tela para as duas rotas: `#people` é o endereço antigo e
                   sempre quis dizer "a minha". */}

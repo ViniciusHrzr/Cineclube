@@ -3,9 +3,23 @@ import { Blank, Fault, Key, Poster, Reel, SearchField, TrailerKey } from '@/comp
 import { SyncedVideo } from '@/components/SyncedVideo';
 import { LiveVideo } from '@/components/LiveVideo';
 import { WatchOn } from '@/components/film';
-import { useClub } from '@/App';
-import { api, fmt, initialsOf, reelColor, runtimeOf, type Movie, type WatchItem } from '@/lib/api';
-import { useScreening, type ScreeningState } from '@/lib/screening';
+import { useWorld } from '@/lib/world';
+import {
+  api,
+  fmt,
+  initialsOf,
+  reelColor,
+  runtimeOf,
+  seriesApi,
+  type Episode,
+  type Movie,
+  type QueuedShow,
+  type SeasonDetail,
+  type SeriesItem,
+  type ShowDetail,
+  type WatchItem,
+} from '@/lib/api';
+import { episodeTag, useScreening, type ScreeningMovie, type ScreeningState } from '@/lib/screening';
 import { useLiveShare, type LiveShare } from '@/lib/liveshare';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
 import { cn, named, norm, plural } from '@/lib/utils';
@@ -115,8 +129,30 @@ function playbackFailure(code: number) {
   return null;
 }
 
-export function ScreeningScreen() {
-  const club = useClub();
+/* ── uma sala, duas lentes ────────────────────────────────────────────────
+   A sessão é do CLUBE e não do universo: a mesma sala, a mesma gente e o mesmo
+   motor de sincronia, com um filme ou um episódio dentro. Por isso esta tela
+   recebe por prop o pouco que muda entre as duas — o que se escolhe para abrir,
+   e para onde vai quem termina — em vez de ler um contexto que só uma delas
+   tem. O resto (quem é você, o retrato de cada um, o toast de erro) sai do
+   `World`, que as duas montam.
+
+   O seletor não é um render prop porque quem abre a sessão é esta tela: passar
+   a função de abrir para fora e receber JSX de volta seria a mesma escolha
+   escrita em dois lugares. */
+export function ScreeningScreen({
+  watchlist,
+  shows,
+  onRate,
+}: {
+  /** A fila de filmes do clube. Ausente na lente de séries. */
+  watchlist?: WatchItem[];
+  /** As séries do clube. Ausente na lente de filmes. */
+  shows?: QueuedShow[];
+  /** O passo seguinte a assistir, que cada lente resolve na tela dela. */
+  onRate: (movie: ScreeningMovie) => void;
+}) {
+  const club = useWorld();
   const screening = useScreening(club.fault);
   const torrent = useTorrent();
   /* O segundo modo da sala. Ele não conversa com o torrent nem com o motor de
@@ -477,18 +513,27 @@ export function ScreeningScreen() {
   }, []);
 
   const openFilm = screening.openFilm;
+  const openEpisode = screening.openEpisode;
   const closeFilm = screening.closeFilm;
 
   if (!state.open) {
     return (
       <section className={ROOM}>
         <Head connected={connected} viewers={state.viewers.length} />
-        <FilmPicker watchlist={club.watchlist} onPick={id => void openFilm(id)} />
+        {shows ? (
+          <EpisodePicker
+            shows={shows}
+            onPick={(showId, season, episode) => void openEpisode(showId, season, episode)}
+          />
+        ) : (
+          <FilmPicker watchlist={watchlist ?? []} onPick={id => void openFilm(id)} />
+        )}
       </section>
     );
   }
 
   const movie = state.movie!;
+  const rateLabel = movie.kind === 'episode' ? 'Avaliar episódio' : 'Avaliar filme';
   const mine = tag;
   const different = state.viewers.filter(v => v.id !== club.me.id && v.sourceTag && mine && v.sourceTag !== mine);
   const waiting = state.viewers.filter(v => !v.ready);
@@ -501,6 +546,16 @@ export function ScreeningScreen() {
         <Poster src={movie.poster} alt={movie.title} className="h-[86px] w-[58px] flex-none" />
         <div className="min-w-[16ch] flex-1">
           <h1 className="font-display text-[26px] leading-none tracking-[0.04em] text-beam">{movie.title}</h1>
+          {/* Numa série o título é o da SÉRIE, e sozinho ele não diz o que está
+              tocando: quatro pessoas sentam para ver "o quinto" e são episódios
+              diferentes. O número vem primeiro porque é ele que identifica; o
+              nome do episódio, quando há, vem atrás. */}
+          {episodeTag(movie) ? (
+            <p className="mt-1.5 text-[14px] leading-none text-beam-hot">
+              <span className="q font-semibold">{episodeTag(movie)}</span>
+              {movie.episodeTitle ? <span className="text-ink"> · {movie.episodeTitle}</span> : null}
+            </p>
+          ) : null}
           <p className="q mt-2 text-[12.5px] text-ink-dim">
             {[movie.year, movie.genre, runtimeOf(movie.runtime)].filter(Boolean).join(' · ')}
           </p>
@@ -524,7 +579,8 @@ export function ScreeningScreen() {
              Para quem semeia com gente pendurada, esse clique é o fim do filme
              para os outros — então ele pergunta antes, e só nesse caso. */
           costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
-          onRate={() => club.rateMovie(movie.id)}
+          label={rateLabel}
+          onRate={() => onRate(movie)}
         />
         {/* Encerrar é o maior dos comandos do player: apaga a sala para os
             quatro. Some da tela de quem não é o dono em vez de ficar ali para
@@ -647,14 +703,15 @@ export function ScreeningScreen() {
                   sai neste instante ainda pode cortar o fim de alguém. */}
               <RateKey
                 costsTheRoom={torrent.status.phase === 'seeding' && torrent.status.peers > 0}
-                onRate={() => club.rateMovie(movie.id)}
+                label={rateLabel}
+          onRate={() => onRate(movie)}
               />
             </div>
           ) : null}
         </div>
       )}
 
-      <AboutFilm movieId={movie.id} />
+      <AboutFilm movie={movie} />
 
       {/* ── the club, and what it is waiting for ────────────────────────────
           A plate for the same reason the booth is one: this is a list, and a
@@ -730,14 +787,53 @@ export function ScreeningScreen() {
    Falha calada de propósito: a sessão não depende desta ficha, e um aviso
    vermelho sobre uma sinopse que não carregou, no meio do filme, é o app
    chamando atenção para o que ninguém pediu. */
-function AboutFilm({ movieId }: { movieId: number }) {
-  const [movie, setMovie] = useState<Movie | null>(null);
+/* Os dois detalhes respondem as mesmas perguntas com outros nomes — quem assina
+   um filme é o diretor e quem assina uma série é quem a criou —, então a placa
+   desenha esta forma e cada lente traduz a dela. */
+type Sheet = {
+  title: string;
+  /** "dir. Fulano" ou "criação de Fulano". A linha, já escrita. */
+  credit: string | null;
+  overview: string | null;
+  cast: string[];
+  crowd: { score: number; votes: number } | null;
+  trailerUrl: string | null;
+  watch: Movie['watch'];
+};
 
+function AboutFilm({ movie: playing }: { movie: ScreeningMovie }) {
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const episode = playing.kind === 'episode';
+
+  const { id } = playing;
   useEffect(() => {
     let alive = true;
-    setMovie(null);
-    api<Movie>(`/api/catalog/movie/${movieId}`).then(
-      m => alive && setMovie(m),
+    setSheet(null);
+    /* `id` é do TMDB nas duas lentes e aponta para obras diferentes em cada uma:
+       pedir a rota de filme com o id de uma série devolve outro título, com toda
+       a confiança do mundo. É a razão de `kind` existir. */
+    const asked: Promise<Sheet> = episode
+      ? seriesApi.show(id).then(r => ({
+          title: r.show.title,
+          credit: r.show.creators.length ? `criação de ${r.show.creators.join(', ')}` : null,
+          overview: r.show.overview,
+          // O TMDB não dá elenco fixo de série na rota do detalhe.
+          cast: [],
+          crowd: r.show.crowd,
+          trailerUrl: r.show.trailerUrl,
+          watch: r.show.watch,
+        }))
+      : api<Movie>(`/api/catalog/movie/${id}`).then(m => ({
+          title: m.title,
+          credit: m.director ? `dir. ${m.director}` : null,
+          overview: m.overview ?? null,
+          cast: (m.cast ?? []).map(c => c.name),
+          crowd: m.crowd ?? null,
+          trailerUrl: m.trailerUrl ?? null,
+          watch: m.watch,
+        }));
+    asked.then(
+      s => alive && setSheet(s),
       () => {
         /* a sessão inteira funciona sem isto */
       }
@@ -745,34 +841,31 @@ function AboutFilm({ movieId }: { movieId: number }) {
     return () => {
       alive = false;
     };
-  }, [movieId]);
+  }, [id, episode]);
 
-  if (!movie) return null;
+  if (!sheet) return null;
 
-  const facts = [
-    movie.director ? `dir. ${movie.director}` : null,
-    movie.crowd ? `TMDB ${fmt(movie.crowd.score)}` : null,
-  ].filter(Boolean);
+  const facts = [sheet.credit, sheet.crowd ? `TMDB ${fmt(sheet.crowd.score)}` : null].filter(Boolean);
 
   return (
     <div className="plate mt-6 px-4 py-4">
-      <span className="legend">O filme</span>
+      <span className="legend">{episode ? 'A série' : 'O filme'}</span>
       {facts.length ? <p className="q mt-2 text-[12px] text-ink-dim">{facts.join(' · ')}</p> : null}
       <p className="mt-2.5 max-w-[66ch] text-[13px] leading-relaxed text-ink-dim">
-        {movie.overview || 'Sem sinopse no TMDB.'}
+        {sheet.overview || 'Sem sinopse no TMDB.'}
       </p>
-      {movie.cast?.length ? (
-        <p className="mt-2.5 text-[12px] text-ink-dim">
-          Elenco: {movie.cast.map(c => c.name).join(', ')}
-        </p>
+      {sheet.cast.length ? (
+        <p className="mt-2.5 text-[12px] text-ink-dim">Elenco: {sheet.cast.join(', ')}</p>
       ) : null}
-      {movie.trailerUrl ? (
-        <TrailerKey url={movie.trailerUrl} title={movie.title} className="mt-3" />
+      {sheet.trailerUrl ? (
+        <TrailerKey url={sheet.trailerUrl} title={sheet.title} className="mt-3" />
       ) : null}
       {/* A mesma resposta da folha de projeção, com o mesmo crédito ao
-          JustWatch: onde este filme está incluído em algo que alguém do clube
-          já paga. É a saída de quem entrou na sessão sem cópia nenhuma. */}
-      <WatchOn watch={movie.watch} />
+          JustWatch: onde isto está incluído em algo que alguém do clube já
+          paga. É a saída de quem entrou na sessão sem cópia nenhuma — e numa
+          série vale mais ainda: quase todo filme dá para alugar, uma série ou
+          está numa assinatura ou o clube não maratona. */}
+      <WatchOn watch={sheet.watch} />
     </div>
   );
 }
@@ -926,15 +1019,301 @@ function FilmPicker({ watchlist, onPick }: { watchlist: WatchItem[]; onPick: (id
   );
 }
 
+/* ── escolhendo o episódio ────────────────────────────────────────────────
+   Dois passos e não um, porque a coisa escolhida é uma tripla: a série, e
+   depois qual episódio dela. É a mesma pergunta em duas metades, e juntá-las
+   numa lista só seria uma lista de mil linhas por clube.
+
+   Sem busca no TMDB, ao contrário do seletor de filmes: a sessão de uma série
+   quase nunca é uma decisão de última hora — a série já está na lista do clube
+   porque alguém a pôs lá para acompanhar, e é dessa lista que se continua.
+
+   A temporada é buscada e não adivinhada, e isso é o que faz a sessão abrir:
+   `/api/series/:id/season/:n` grava os episódios em `episodes_cache`, e é de lá
+   que `/api/screening/open` lê a duração e o nome. Sem esta visita o servidor
+   responde que não conhece o episódio. */
+function EpisodePicker({
+  shows,
+  onPick,
+}: {
+  shows: QueuedShow[];
+  onPick: (showId: number, season: number, episode: number) => void;
+}) {
+  /* Só o que a segunda metade precisa: um id para buscar as temporadas e um
+     nome para escrever no cabeçalho. Uma série vinda da busca não é uma
+     `QueuedShow` — não está no clube e não tem progresso —, e exigir a forma
+     inteira aqui seria o seletor recusar tudo o que não está na lista. */
+  const [chosen, setChosen] = useState<{ id: number; title: string } | null>(null);
+  const [show, setShow] = useState<ShowDetail | null>(null);
+  const [season, setSeason] = useState<SeasonDetail | null>(null);
+  const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  /* A série escolhida traz as temporadas, e a primeira delas abre sozinha: a
+     escolha seguinte é sempre um episódio, e obrigar um clique numa lista de uma
+     ou duas linhas é um passo que não decide nada. */
+  useEffect(() => {
+    if (!chosen) return;
+    let alive = true;
+    setShow(null);
+    setSeason(null);
+    setSeasonNumber(null);
+    setFailed(null);
+    seriesApi.show(chosen.id).then(
+      r => {
+        if (!alive) return;
+        setShow(r.show);
+        const first = r.show.seasons?.[0]?.season;
+        if (first != null) setSeasonNumber(first);
+      },
+      e => alive && setFailed((e as Error).message)
+    );
+    return () => {
+      alive = false;
+    };
+  }, [chosen]);
+
+  useEffect(() => {
+    if (!chosen || seasonNumber == null) return;
+    let alive = true;
+    setSeason(null);
+    setFailed(null);
+    seriesApi.season(chosen.id, seasonNumber).then(
+      r => alive && setSeason(r.season),
+      e => alive && setFailed((e as Error).message)
+    );
+    return () => {
+      alive = false;
+    };
+  }, [chosen, seasonNumber]);
+
+  if (!chosen) {
+    return (
+      <ShowPicker shows={shows} onPick={setChosen} />
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <button
+          type="button"
+          onClick={() => setChosen(null)}
+          className="font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
+        >
+          Trocar de série
+        </button>
+        <h2 className="font-display text-[22px] leading-none tracking-[0.04em] text-beam">
+          {chosen.title}
+        </h2>
+      </div>
+
+      {failed ? (
+        <div className="mb-5 max-w-[60ch]">
+          <Fault detail={failed}>Não foi possível falar com o TMDB agora.</Fault>
+        </div>
+      ) : null}
+
+      {show?.seasons?.length ? (
+        <div className="mb-5 flex flex-wrap gap-1.5">
+          {show.seasons.map(s => (
+            <button
+              key={s.season}
+              type="button"
+              onClick={() => setSeasonNumber(s.season)}
+              className={cn(
+                'rounded-cell px-2.5 py-1.5 font-display text-[12px] uppercase tracking-[0.1em] ring-1 transition-colors',
+                s.season === seasonNumber
+                  ? 'text-beam ring-beam/60'
+                  : 'text-ink-dim ring-house-rail hover:text-beam'
+              )}
+            >
+              {s.season === 0 ? 'Especiais' : `T${s.season}`}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {season ? (
+        <ul className="flex flex-col">
+          {season.episodes.map(e => (
+            <EpisodeLine
+              key={`${e.season}x${e.episode}`}
+              episode={e}
+              onPick={() => onPick(chosen.id, e.season, e.episode)}
+            />
+          ))}
+        </ul>
+      ) : failed ? null : (
+        <p className="legend animate-flicker py-8">Abrindo a temporada</p>
+      )}
+    </div>
+  );
+}
+
+/* O primeiro passo, e é o seletor de filmes com outro acervo: a lista do clube
+   primeiro, o TMDB inteiro atrás dela. A regra é a mesma e o porquê também —
+   uma lista é uma intenção guardada, não uma permissão, e o clube decide na
+   hora com mais frequência do que uma lista admite.
+
+   O que a série escolhida não precisa é estar no clube: a temporada é buscada
+   do TMDB no passo seguinte, e é ela que grava o episódio em cache para a
+   sessão poder abrir. */
+function ShowPicker({
+  shows,
+  onPick,
+}: {
+  shows: QueuedShow[];
+  onPick: (show: { id: number; title: string }) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<SeriesItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const timer = useRef<number>();
+
+  const q = query.trim();
+  const filtering = q.length > 0;
+
+  useEffect(() => {
+    window.clearTimeout(timer.current);
+    if (!q) {
+      setFound(null);
+      setSearching(false);
+      setFailed(null);
+      return;
+    }
+    setSearching(true);
+    setFailed(null);
+    timer.current = window.setTimeout(() => {
+      seriesApi
+        .search(q)
+        .then(r => setFound(r.results))
+        .catch(e => {
+          setFound([]);
+          setFailed((e as Error).message);
+        })
+        .finally(() => setSearching(false));
+    }, 350);
+    return () => window.clearTimeout(timer.current);
+  }, [q]);
+
+  const listed = filtering
+    ? shows.filter(s => named(norm(q), s.title, s.original, s.english))
+    : shows;
+  const here = new Set(shows.map(s => String(s.id)));
+  const elsewhere = (found ?? []).filter(s => !here.has(String(s.id)));
+
+  return (
+    <div>
+      <div className="mb-5 max-w-[440px]">
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Buscar uma série para a sessão…"
+          hint={
+            filtering
+              ? searching
+                ? 'procurando no TMDB…'
+                : `${plural(listed.length, 'série', 'séries')} no clube · ${plural(
+                    elsewhere.length,
+                    'série',
+                    'séries'
+                  )} no TMDB`
+              : 'as séries do clube, ou qualquer uma do TMDB'
+          }
+        />
+      </div>
+
+      {failed ? (
+        <div className="mb-5 max-w-[60ch]">
+          <Fault detail={failed}>
+            Não foi possível buscar no TMDB. A lista do clube continua valendo.
+          </Fault>
+        </div>
+      ) : null}
+
+      {listed.length ? (
+        <>
+          {filtering ? <p className="legend mb-3">No clube</p> : null}
+          <PosterGrid
+            films={listed.map(s => ({ id: s.id, title: s.title, poster: s.poster }))}
+            onPick={id => onPick(listed.find(s => s.id === id)!)}
+            verb="Escolher"
+          />
+        </>
+      ) : null}
+
+      {filtering && elsewhere.length ? (
+        <>
+          <p className={cn('legend mb-3', listed.length && 'mt-8')}>No TMDB</p>
+          <PosterGrid
+            films={elsewhere.map(s => ({ id: s.id, title: s.title, poster: s.poster }))}
+            onPick={id => onPick(elsewhere.find(s => s.id === id)!)}
+            verb="Escolher"
+          />
+        </>
+      ) : null}
+
+      {!filtering && !shows.length ? (
+        <Blank title="Nenhuma série no clube">
+          Ponha uma em <span className="q">Minhas séries</span>, ou procure aqui em cima — a sessão
+          abre com qualquer uma.
+        </Blank>
+      ) : null}
+      {filtering && !searching && !listed.length && !elsewhere.length ? (
+        <Blank title="Nenhuma série com esse nome">
+          A busca cobre a lista do clube e o TMDB inteiro. Tente o título original, se souber.
+        </Blank>
+      ) : null}
+      {filtering && searching && !listed.length && !elsewhere.length ? (
+        <p className="legend animate-flicker py-8">Procurando</p>
+      ) : null}
+    </div>
+  );
+}
+
+/* Uma linha e não um cartão, e é a mesma decisão da lista de clubes em
+   atividade no saguão: a pergunta aqui é "qual deles", numa lista ordenada em
+   que o número na ponta responde. Vinte quadros 16:9 empilhados seriam vinte
+   imagens quase idênticas de fundo escuro. */
+function EpisodeLine({ episode, onPick }: { episode: Episode; onPick: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onPick}
+        title={`Abrir sessão de ${episode.title}`}
+        className="group flex w-full items-baseline gap-3 border-b border-house-rail py-2.5 text-left last:border-b-0"
+      >
+        <span className="q w-[52px] flex-none text-[12px] text-ink-dim">
+          T{episode.season}E{String(episode.episode).padStart(2, '0')}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink transition-colors group-hover:text-beam">
+          {episode.title}
+        </span>
+        {episode.runtime ? (
+          <span className="q flex-none text-[11px] text-ink-faint">{runtimeOf(episode.runtime)}</span>
+        ) : null}
+      </button>
+    </li>
+  );
+}
+
 /* A grade de pôsteres, uma vez. As duas listas do picker desenham a mesma
    coisa, e a diferença entre elas — de onde o filme veio — já está dita na
    legenda acima de cada uma. */
 function PosterGrid({
   films,
   onPick,
+  verb = 'Abrir sessão de',
 }: {
   films: { id: number; title: string; poster: string | null }[];
   onPick: (id: number) => void;
+  /* Num filme o pôster ABRE a sessão; numa série ele só escolhe a série, e o
+     episódio ainda vem. O `title` é a única coisa que diz isso, então ele não
+     pode mentir. */
+  verb?: string;
 }) {
   return (
     /* Nenhum parágrafo explicando o que apertar um pôster faz. Ele abre a
@@ -946,7 +1325,7 @@ function PosterGrid({
           type="button"
           onClick={() => onPick(f.id)}
           className="group text-left"
-          title={`Abrir sessão de ${f.title}`}
+          title={`${verb} ${f.title}`}
         >
           <Poster
             src={f.poster}
@@ -975,7 +1354,16 @@ function PosterGrid({
 
    Armada e não modal: um diálogo por cima de um filme que quatro pessoas ainda
    estão vendo é uma interrupção pior do que a coisa contra a qual ele avisa. */
-function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () => void }) {
+function RateKey({
+  costsTheRoom,
+  label,
+  onRate,
+}: {
+  costsTheRoom: boolean;
+  /** "Avaliar filme" ou "Avaliar episódio": é a obra que muda, não a porta. */
+  label: string;
+  onRate: () => void;
+}) {
   const [armed, setArmed] = useState(false);
 
   /* Disarms itself when the risk goes away — the last peer leaving, or the
@@ -987,14 +1375,14 @@ function RateKey({ costsTheRoom, onRate }: { costsTheRoom: boolean; onRate: () =
 
   if (!armed) {
     return (
-      <Key onClick={() => (costsTheRoom ? setArmed(true) : onRate())}>Avaliar filme</Key>
+      <Key onClick={() => (costsTheRoom ? setArmed(true) : onRate())}>{label}</Key>
     );
   }
 
   return (
     <div className="flex flex-col items-end gap-2">
       <p className="q max-w-[34ch] text-right text-[11.5px] text-ink-dim">
-        Você é a fonte. Sair daqui agora tira o filme de quem ainda está assistindo.
+        Você é a fonte. Sair daqui agora tira a imagem de quem ainda está assistindo.
       </p>
       <div className="flex items-center gap-2">
         <Key tone="ghost" onClick={() => setArmed(false)}>

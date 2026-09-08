@@ -16,15 +16,35 @@ import { capi, cpost, clubPath } from '@/lib/api';
    before anything else happens, and every derivation goes through it.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── o que está tocando ───────────────────────────────────────────────────
+   Um filme ou um episódio, na mesma sala. O clube é a mesma gente nas duas
+   lentes, e nada do que esta sala faz — sincronizar, legendar, transmitir uma
+   tela — muda por o que toca ter uma temporada.
+
+   `kind` existe porque a identidade muda: num episódio `id` é o id da SÉRIE, e
+   lê-lo como id de filme aponta para outra obra no TMDB. Toda tela que sai
+   daqui para buscar detalhe pergunta isto primeiro. */
 export type ScreeningMovie = {
+  kind?: 'movie' | 'episode';
   id: number;
   title: string;
   year: number | null;
   genre: string;
   poster: string | null;
-  /** Minutes. Null when the club's cache never learned it. */
+  /* Minutes. Num episódio é a duração DELE — um piloto de 70 numa série de 22 é
+     o caso em que o número da série está errado. Null quando o cache nunca a
+     aprendeu. */
   runtime: number | null;
+  season?: number;
+  episode?: number;
+  episodeTitle?: string | null;
 };
+
+/** `T2E05`, ou null num filme. O jeito curto de dizer qual episódio é. */
+export function episodeTag(movie: ScreeningMovie | null) {
+  if (!movie || movie.season == null || movie.episode == null) return null;
+  return `T${movie.season}E${String(movie.episode).padStart(2, '0')}`;
+}
 
 export type ScreeningViewer = {
   id: string;
@@ -306,6 +326,20 @@ export function useScreening(onError?: (msg: string) => void) {
     [onError]
   );
 
+  /* A mesma porta, com a outra identidade dentro. Não é um segundo motor: o que
+     volta pelo stream é a mesma sala, e o resto desta tela não sabe a diferença
+     — ver `ScreeningMovie`. */
+  const openEpisode = useCallback(
+    async (showId: number, season: number, episode: number) => {
+      try {
+        await cpost('/screening/open', { showId, season, episode });
+      } catch (e) {
+        onError?.('Não foi possível abrir a sessão: ' + (e as Error).message);
+      }
+    },
+    [onError]
+  );
+
   const closeFilm = useCallback(async () => {
     try {
       await cpost('/screening/close', {});
@@ -409,6 +443,7 @@ export function useScreening(onError?: (msg: string) => void) {
       expected,
       send,
       openFilm,
+      openEpisode,
       closeFilm,
       setReady,
       publishLink,
@@ -428,6 +463,7 @@ export function useScreening(onError?: (msg: string) => void) {
       expected,
       send,
       openFilm,
+      openEpisode,
       closeFilm,
       setReady,
       publishLink,
