@@ -5,25 +5,18 @@ import { cn, norm } from '@/lib/utils';
 import { useWorld } from '@/lib/world';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Chamar alguém pelo nome.
+   Chamar alguém pelo nome. Duas coisas escrevem neste produto — o comentário
+   numa conversa e o que a pessoa deixa ao avaliar — e as duas ganham o mesmo
+   campo: um `@` que funciona num e não no outro é um `@` que ninguém confia.
 
-   Duas coisas escrevem neste produto: o comentário numa conversa e o
-   comentário que a pessoa deixa ao avaliar um filme. As duas ganham o mesmo
-   campo, porque chamar alguém é a mesma ação nos dois lugares e um `@` que
-   funciona num e não no outro é um `@` que ninguém confia.
+   Uma lista e não só texto, porque o apelido não é o nome: "Beren Costa" é
+   `@beren`, e dois Brunos viram `@brunosa` e `@brunolima` — regra que o servidor
+   calcula sobre o clube inteiro (ver handles.js). Ninguém deveria ter de
+   adivinhar isso.
 
-   ── por que uma lista e não só texto ────────────────────────────────────
-   Porque o apelido não é o nome. "Beren Costa" é chamada de `@beren`, e dois
-   Brunos viram `@brunosa` e `@brunolima` — regra que o servidor calcula sobre o
-   clube inteiro (ver handles.js) e entrega pronta em cada avaliador. Ninguém
-   deveria ter de adivinhar isso, então a lista aparece e a escolha é do dedo.
-
-   ── o cursor é o assunto ────────────────────────────────────────────────
    Tudo aqui gira em torno de uma pergunta: onde o `@` que estou escrevendo
-   começa? A resposta é o último `@` antes do cursor que não tem letra colada
-   atrás dele — sem essa segunda metade, um e-mail no meio da frase abriria a
-   lista, e a pessoa levaria um menu na cara por ter escrito um endereço.
-   ══════════════════════════════════════════════════════════════════════════ */
+   começa? É o último `@` antes do cursor que não tem letra colada atrás dele —
+   sem essa segunda metade, um e-mail no meio da frase abriria a lista. */
 
 /** O `@` aberto imediatamente antes do cursor, ou null. */
 function openMention(text: string, caret: number) {

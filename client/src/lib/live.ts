@@ -2,30 +2,23 @@ import { useEffect, useRef } from 'react';
 import { clubPath, hasClub } from '@/lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A metade do navegador do clube ao vivo.
-
-   O servidor manda uma palavra — `social`, `reviews`, `watchlist`,
-   `reviewers` — e quem está ouvindo vai buscar aquela coleção pela rota que já
-   existe. O porquê de ser um aviso e não o dado está em live.js.
+   A metade do navegador do clube ao vivo. O servidor manda uma palavra e quem
+   ouve vai buscar aquela coleção pela rota que já existe; o porquê está em
+   live.js.
 
    ── uma conexão por aba, não uma por tela ────────────────────────────────
-   O sino ouve, o feed ouve e o clube inteiro ouve, e os três são coisas
-   diferentes montadas em lugares diferentes da árvore. Se cada `useLive`
-   abrisse o seu próprio `EventSource`, uma aba com o sino e o feed na tela
-   custaria três conexões — e o teto do servidor é três POR PESSOA, então a
-   segunda aba do mesmo membro seria recusada.
-
-   Então o `EventSource` mora no módulo, contado por quem está ouvindo: abre
-   quando aparece o primeiro ouvinte e fecha quando sai o último. Um quadro que
-   chega é entregue a todos eles.
+   O sino ouve, o feed ouve e o clube inteiro ouve. Se cada `useLive` abrisse o
+   próprio `EventSource`, uma aba com sino e feed custaria três conexões — e o
+   teto do servidor é três POR PESSOA, então a segunda aba do mesmo membro seria
+   recusada. Então ele mora no módulo, contado por quem está ouvindo.
 
    ── e por que a pergunta periódica continua existindo ────────────────────
-   Porque isto pode cair. O `EventSource` reconecta sozinho, mas nem sempre — um
-   429 por abas demais, uma sessão que expirou e um proxy que fecha a conexão
-   são recusas em que insistir é um laço que não resolve. Depois de algumas
-   seguidas ele desiste, e o sino e o feed voltam a ser o que eram: uma pergunta
-   a cada minuto e meio. Ao vivo é o caminho rápido, não o único caminho, e essa
-   é a diferença entre uma tela atrasada e uma tela quebrada.
+   Porque isto pode cair. O `EventSource` reconecta sozinho, mas nem sempre: um
+   429 por abas demais, uma sessão expirada e um proxy que fecha a conexão são
+   recusas em que insistir é um laço que não resolve. Depois de algumas seguidas
+   ele desiste, e o sino e o feed voltam a perguntar a cada minuto e meio. Ao
+   vivo é o caminho rápido, não o único — a diferença entre uma tela atrasada e
+   uma tela quebrada.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export type LiveKind =
@@ -114,23 +107,18 @@ function close() {
 }
 
 /* ── trocar de sala ───────────────────────────────────────────────────────
-   A conexão é de uma sala e não pode sobreviver à saída dela: quem sai do
-   Cineclube e entra no clube de terror com o cano velho aberto continuaria
-   recebendo — e buscando — o que acontece numa sala que já não está na tela.
+   A conexão é de uma sala e não pode sobreviver à saída dela: com o cano velho
+   aberto, quem troca de clube continuaria recebendo — e buscando — o que
+   acontece numa sala que já não está na tela.
 
-   ── e reabre, o que fechar sozinho não fazia ──────────────────────────────
-   Fechar era o suficiente enquanto todo ouvinte vivia dentro de uma sala: sair
-   dela desmontava o ouvinte, entrar noutra montava um novo, e o novo reabria.
+   E REABRE, o que fechar sozinho não fazia, por uma ordem que não se vê no
+   código: os efeitos dos FILHOS rodam antes dos do pai. Quem escuta monta e
+   chama `open()` enquanto o clube do módulo ainda é o anterior, e só depois o
+   pai chama `setClub` e este `resetLive` — o cano ficava fechado até alguém
+   trocar de aba e voltar.
 
-   Deixou de ser, e por uma ordem que não se vê no código: os efeitos dos FILHOS
-   rodam antes dos do pai. Quem escuta monta e chama `open()` enquanto o clube
-   do módulo ainda é o anterior — ou nenhum, vindo do saguão —, e só depois o
-   pai chama `setClub` e este `resetLive`. O resultado era o cano fechado até
-   alguém trocar de aba e voltar.
-
-   Reabrir aqui é o conserto, e é o lugar certo: esta é a única função que roda
-   DEPOIS de o clube novo estar escrito. Sem ouvinte não abre nada, e sem sala
-   `open` volta na porta. */
+   Esta é a única função que roda DEPOIS de o clube novo estar escrito. Sem
+   ouvinte não abre nada, e sem sala `open` volta na porta. */
 export function resetLive() {
   close();
   failures = 0;

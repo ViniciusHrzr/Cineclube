@@ -3,52 +3,32 @@ import type { Review, Reviewer } from '@/lib/api';
 /* ══════════════════════════════════════════════════════════════════════════
    O QUE UM HISTÓRICO SABE DIZER SOBRE UMA PESSOA
 
-   Tudo neste arquivo é derivado. Nada é gravado, nada é pedido ao servidor:
-   o acervo inteiro já está em memória desde o boot, e um clube de seis pessoas
-   com cinquenta fichas é da ordem de seiscentas notas — menos trabalho do que
-   uma requisição levaria para ser montada.
+   Tudo aqui é derivado: nada é gravado, nada é pedido ao servidor. O acervo
+   inteiro já está em memória desde o boot, e um clube de seis pessoas com
+   cinquenta fichas é da ordem de seiscentas notas — menos trabalho do que uma
+   requisição levaria para ser montada.
 
-   Derivado é também a razão de isto existir. O perfil de um app de filme
-   costuma ser uma foto, um nome e uma contagem; aqui as perguntas são sobre
-   relação — onde a pessoa se entusiasmou, o quanto ela se afasta do público lá
-   fora, com quem ela costuma brigar —, e nenhuma delas é respondível contando
-   filmes.
-
-   > **`tasteOf` saiu em 30/08/2026, por decisão do dono.** Ela era a função
-   > mais ambiciosa do arquivo: a média da pessoa nos onze critérios, com a
-   > média do clube ao lado, ordenada pela distância entre as duas. O módulo que
-   > a desenhava abria o perfil e foi cortado depois de ser visto na tela, então
-   > o cálculo saiu junto — código sem chamador é peso. `FLOOR.taste` foi com
-   > ela. O histórico tem a implementação e os quatro testes que a fixavam.
+   Derivado é também a razão de isto existir: as perguntas aqui são sobre
+   RELAÇÃO — onde a pessoa se entusiasmou, o quanto se afasta do público, com
+   quem costuma brigar —, e nenhuma delas é respondível contando filmes.
 
    ── a regra que rege o arquivo inteiro: o piso ───────────────────────────
-   Cada função aqui devolve `null` quando não tem material para responder, e
-   nunca um número fraco. Isto não é cautela, é o produto se recusando a mentir:
-   uma média tirada de duas fichas não é uma opinião, é um acidente com formato
-   de dado — e apresentada com a mesma firmeza da de quem tem cinquenta, ela
-   seria indistinguível dela.
+   Cada função devolve `null` quando não tem material, e nunca um número fraco.
+   Não é cautela, é o produto se recusando a mentir: uma média tirada de duas
+   fichas é um acidente com formato de dado, e apresentada com a firmeza da de
+   quem tem cinquenta seria indistinguível dela.
 
-   O piso já é doutrina neste código: `endsOf` no servidor se cala quando a
-   ficha não tem um ponto de distância entre o alto e o baixo, e o detalhamento
-   pede três critérios marcados antes de apontar extremos. Aqui a mesma ideia
-   vale por módulo, com o piso escolhido pelo que cada resposta afirma.
-
-   Quem chama nunca precisa saber os pisos: um `null` significa "esta página
-   não tem o que dizer sobre isso ainda", e a tela desenha o silêncio.
+   Quem chama nunca precisa saber os pisos: um `null` significa "esta página não
+   tem o que dizer sobre isso ainda", e a tela desenha o silêncio.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── os pisos, todos num lugar ────────────────────────────────────────────
-   Números diferentes porque as perguntas afirmam coisas diferentes.
+/* Números diferentes porque as perguntas afirmam coisas diferentes.
 
    `ENDS` é três porque "o que mais amou e o que mais detestou" é uma escolha
-   entre extremos existentes, não uma média: com três fichas os extremos são
-   reais, só são poucos.
-
-   `CROWD` é quatro porque a comparação com o TMDB é uma média de diferenças, e
-   um filme em que o clube discorda muito do público move demais um par.
-
-   `SHARED` é três porque afinidade é sobre duas pessoas: menos que isso e o
-   número descreve uma noite, não um gosto em comum. */
+   entre extremos existentes, não uma média. `CROWD` é quatro porque a
+   comparação com o TMDB é uma média de diferenças, e um filme em que o clube
+   discorda muito move demais um par. `SHARED` é três porque afinidade é sobre
+   duas pessoas: menos que isso descreve uma noite, não um gosto em comum. */
 export const FLOOR = { ends: 3, crowd: 4, shared: 3 } as const;
 
 const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -60,15 +40,13 @@ export function takesOf(reviews: Review[], reviewerId: string) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
-/* ── o que ela mais amou e o que mais detestou ────────────────────────────
-   As duas melhores frases de qualquer perfil, e as duas mais baratas: não são
+/* As duas melhores frases de qualquer perfil, e as duas mais baratas: não são
    médias, são as pontas de uma lista que já existe.
 
-   Empate resolvido pela ficha mais recente, porque entre dois 9,0 o que a
-   pessoa diria hoje é o de hoje. Ausente quando a ponta de cima e a de baixo
-   são a mesma ficha — uma pessoa com uma nota só não tem extremos, tem uma
-   nota — e quando não há distância entre elas, pela mesma razão que faz o feed
-   se calar: onze notas iguais não têm alto nem baixo. */
+   Empate resolvido pela ficha mais recente — entre dois 9,0, o que a pessoa
+   diria hoje é o de hoje. Ausente quando as duas pontas são a mesma ficha, e
+   quando não há distância entre elas: onze notas iguais não têm alto nem
+   baixo. */
 export function endsOf(reviews: Review[], reviewerId: string) {
   const mine = takesOf(reviews, reviewerId);
   if (mine.length < FLOOR.ends) return null;
@@ -79,16 +57,13 @@ export function endsOf(reviews: Review[], reviewerId: string) {
   return { best, worst };
 }
 
-/* ── ela contra o público do TMDB ─────────────────────────────────────────
-   A única régua externa que este produto tem. `crowd` já viaja em toda ficha —
-   é lido do cache do filme, não gravado com a avaliação — então a comparação
-   sai de graça e diz uma coisa que o clube sozinho não sabe: se esta pessoa é
-   mais dura ou mais mole que o mundo lá fora.
+/* A única régua externa que este produto tem, e ela sai de graça: `crowd` já
+   viaja em toda ficha. Diz uma coisa que o clube sozinho não sabe — se esta
+   pessoa é mais dura ou mais mole que o mundo lá fora.
 
-   Média das diferenças por filme, e não diferença das médias. As duas dão o
-   mesmo número quando todo filme tem nota do TMDB, e divergem quando não têm —
-   e é a primeira que responde "em média, o quanto ela se afasta", que é a
-   pergunta. */
+   Média das diferenças por filme, e não diferença das médias: as duas dão o
+   mesmo número quando todo filme tem nota do TMDB e divergem quando não têm, e
+   é a primeira que responde "em média, o quanto ela se afasta". */
 export function crowdGapOf(reviews: Review[], reviewerId: string) {
   const pairs = takesOf(reviews, reviewerId)
     .filter(r => r.crowd && Number.isFinite(r.crowd.score))
@@ -102,25 +77,17 @@ export function crowdGapOf(reviews: Review[], reviewerId: string) {
   return { gap, n: pairs.length, widest: widest.review, widestGap: widest.gap };
 }
 
-/* ── a régua dela ─────────────────────────────────────────────────────────
-   A distribuição das notas finais em dez faixas de um ponto. Responde uma
-   pergunta que a média esconde: esta pessoa usa a escala inteira ou mora entre
-   o 7 e o 8?
+/* A distribuição das notas finais em dez faixas de um ponto. Responde o que a
+   média esconde: duas pessoas com média 7,4 podem ser uma que dá 7 e 8 em tudo
+   e outra que dá 3 e 10, e a segunda é muito mais interessante de ter no clube.
 
-   Duas pessoas com média 7,4 podem ser completamente diferentes — uma que dá
-   7 e 8 em tudo e outra que dá 3 e 10 —, e a segunda é muito mais interessante
-   de ter no clube. A média não distingue as duas; isto distingue.
-
-   ── por que devolve os FILMES e não a contagem ──────────────────────────
-   Devolvia `number[]`, e com isso a régua só sabia desenhar alturas: quatro
-   blocos de tamanhos parecidos que ninguém consegue ler nem comparar, e nenhum
-   jeito de responder a pergunta que a própria régua provoca — "três filmes
-   entre 7 e 8, quais?".
+   Devolve os FILMES e não a contagem. Devolvendo `number[]`, a régua só sabia
+   desenhar alturas — blocos parecidos que ninguém compara — e não tinha como
+   responder a pergunta que ela mesma provoca: "três filmes entre 7 e 8, quais?"
 
    Com as fichas na mão, a faixa vira uma pilha de células (uma por filme, então
-   a contagem se lê contando em vez de estimando por altura) e passa a ter o que
-   mostrar quando alguém aponta para ela. Ordenadas da maior nota para a menor
-   dentro da faixa, que é como se lê um pequeno ranking. */
+   a contagem se lê contando) e passa a ter o que mostrar quando alguém aponta
+   para ela. */
 export function spreadOf(reviews: Review[], reviewerId: string) {
   const mine = takesOf(reviews, reviewerId);
   if (!mine.length) return null;
@@ -141,23 +108,17 @@ export function spreadOf(reviews: Review[], reviewerId: string) {
   };
 }
 
-/* ── com quem ela concorda ────────────────────────────────────────────────
-   O módulo mais social da página, e ele não existiria em nenhum outro app de
+/* O módulo mais social da página, e ele não existiria em nenhum outro app de
    filme: é uma rede social medida em gosto, não em quem segue quem.
 
    Para cada outra pessoa, a distância média entre as duas notas finais nos
-   filmes que as DUAS avaliaram. Perto de zero é acordo; longe é o par que rende
-   discussão — e discussão é o produto.
+   filmes que as DUAS avaliaram. Só o filme em comum entra — comparar a média
+   geral de duas pessoas seria comparar o que cada uma escolheu assistir, e
+   alguém que só vê terror pareceria implicante.
 
-   Só o filme em comum entra. Comparar a média geral de duas pessoas seria
-   comparar o que cada uma escolheu assistir, não o que elas acharam da mesma
-   coisa: alguém que só vê terror teria média baixa e pareceria implicante.
-
-   ── por que a distância e não a diferença com sinal ─────────────────────
-   Porque a pergunta é "vocês concordam?", e discordar para cima e para baixo
-   são a mesma discordância. Uma média com sinal cancelaria as duas: quem dá
-   dois pontos a mais num filme e dois a menos no outro apareceria em acordo
-   perfeito, que é o contrário do que aconteceu. */
+   A DISTÂNCIA e não a diferença com sinal, porque discordar para cima e para
+   baixo são a mesma discordância: com sinal, quem dá dois pontos a mais num
+   filme e dois a menos no outro apareceria em acordo perfeito. */
 export type Affinity = {
   person: Reviewer;
   /** Distância média entre as notas dos dois, nos filmes em comum. */
@@ -204,16 +165,13 @@ export function affinityOf(
   return out.sort((a, b) => a.gap - b.gap || b.shared - a.shared);
 }
 
-/* ── você e ela, ficha por ficha ──────────────────────────────────────────
-   O módulo mais ambicioso da página. Não é uma média: são os filmes que vocês
-   dois viram, com as duas notas lado a lado e a distância entre elas.
-
-   Ordenado pela distância, do maior desacordo para o menor, porque é para isso
-   que se abre isto. Ninguém compara duas fichas para descobrir onde concordou.
+/* Não é uma média: são os filmes que vocês dois viram, com as duas notas lado a
+   lado e a distância entre elas. Ordenado do maior desacordo para o menor,
+   porque é para isso que se abre isto.
 
    Devolve a lista mesmo abaixo do piso da afinidade — quem apertou "comparar"
-   já sabe com quem, e um filme em comum é um filme em comum. O piso governa se
-   o CARD é oferecido; aberto, ele mostra o que tem. */
+   já sabe com quem. O piso governa se o CARD é oferecido; aberto, ele mostra o
+   que tem. */
 export type Clash = {
   movieId: number;
   title: string;

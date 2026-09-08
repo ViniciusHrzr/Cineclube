@@ -8,25 +8,17 @@ import { cn } from '@/lib/utils';
    ONDE UM LINK DE E-MAIL CAI.
 
    Duas telas com a mesma forma: alguém abriu uma mensagem, clicou, e chegou
-   aqui com um segredo no endereço. Nenhuma das duas exige sessão — o link pode
-   ser aberto no celular enquanto a conta está aberta no computador, e é
-   justamente esse o caso de quem perdeu a senha.
+   aqui com um segredo no endereço. Nenhuma exige sessão — o link pode ser
+   aberto no celular enquanto a conta está aberta no computador, e é justamente
+   esse o caso de quem perdeu a senha.
 
-   ── por que a tela apresenta o token, e não o link ────────────────────────
-   O link do e-mail aponta para `#confirmar/<token>`, que é ESTA tela, e é ela
-   que faz o POST. A tentação é apontar direto para uma rota e resolver o
-   assunto num GET, e ela custa caro: servidores de e-mail e antivírus abrem os
-   links das mensagens antes de a pessoa ver, para conferir se são seguros. Um
-   token que se gasta ao ser aberto é um token que o scanner queima no caminho,
-   e a pessoa clica num link que já não vale sem ninguém ter errado nada.
+   A TELA apresenta o token, e não o link: servidores de e-mail e antivírus
+   abrem os links das mensagens antes de a pessoa ver, e um token que se gasta
+   ao ser aberto é um token que o scanner queima no caminho. Um POST vindo desta
+   tela não é feito por scanner nenhum.
 
-   Um POST vindo desta tela não é feito por scanner nenhum.
-
-   ── e o token sai do endereço assim que é lido ────────────────────────────
-   Um segredo na barra de endereço fica no histórico do navegador e viaja no
-   `Referer` de qualquer link que a pessoa clique depois. Ele é copiado para a
-   memória no primeiro render e o endereço é reescrito na mesma volta.
-   ══════════════════════════════════════════════════════════════════════════ */
+   E o token sai do endereço assim que é lido: um segredo na barra de endereço
+   fica no histórico e viaja no `Referer` de qualquer link clicado depois. */
 
 /* O token só é lido uma vez, e o endereço é limpo em seguida. Fora do
    componente porque isto não é estado de tela: é uma leitura destrutiva do
@@ -125,18 +117,13 @@ export function ConfirmEmail({ onDone }: { onDone: () => void }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Escolher uma senha nova.
+/* O token é gasto no ENVIO e não na abertura: quem chega com um link velho
+   descobre no botão, e não numa tela que valida ao abrir e queima o único uso
+   dele antes de a pessoa ter escolhido alguma coisa.
 
-   O token é gasto no envio, e não na abertura: quem chega aqui com um link
-   velho descobre no botão e não antes, o que é o certo — a alternativa é uma
-   tela que valida o token ao abrir e queima o único uso dele antes de a pessoa
-   ter escolhido alguma coisa.
-
-   Ao dar certo, a pessoa já entra: o servidor derruba as outras sessões da
-   conta e abre uma nova aqui. Mandá-la para a tela de entrada, para digitar a
-   senha que ela acabou de escolher, seria o formulário duvidando dela.
-   ══════════════════════════════════════════════════════════════════════════ */
+   Ao dar certo, a pessoa já entra: o servidor derruba as outras sessões e abre
+   uma nova aqui. Mandá-la para a tela de entrada, para digitar a senha que ela
+   acabou de escolher, seria o formulário duvidando dela. */
 export function ResetPassword({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');

@@ -44,23 +44,19 @@ export default {
           'red-deep': '#8c1e18',
           /* ── latão ────────────────────────────────────────────────────────
              State and selection: the focus ring, the engaged chip, the genre
-             criteria's legend, the vote you cast, the ADM mark, the field you
-             are typing in.
+             criteria's legend, the vote you cast, the field you are typing in.
 
-             This was cyan — the cool half of the Technicolor frame — until the
-             owner asked for something that reads as a cinema rather than as a
-             process. Brass is the marquee bulb, the handrail and the gilding on
-             a proscenium, which is the most literal answer there is to "sala de
-             cinema".
+             This was cyan until the owner asked for something that reads as a
+             cinema rather than as a process. Brass is the marquee bulb and the
+             gilding on a proscenium.
 
-             The cost is stated rather than hidden, because it is real: brass
-             sits in the same family as `beam`, so state and light are no longer
-             separated by hue. What separates them now is saturation and value —
-             beam is a pale, near-white cream at 92% lightness; brass is a
-             saturated metal at 55% — plus role and position, which were always
-             doing most of the work. If a selected chip ever starts reading as
-             "lit" instead of "chosen", this is the line that caused it and
-             darkening `brass` toward `brass-deep` is the fix.
+             The cost is stated rather than hidden: brass sits in the same family
+             as `beam`, so state and light are no longer separated by hue. What
+             separates them now is saturation and value — beam is a near-white
+             cream at 92% lightness, brass a saturated metal at 55%. If a
+             selected chip ever starts reading as "lit" instead of "chosen", this
+             is the line that caused it, and darkening toward `brass-deep` is the
+             fix.
 
              8,9:1 on `house`, so it clears the floor for text with room over. */
           brass: '#d9a441',
@@ -86,18 +82,14 @@ export default {
       },
       fontFamily: {
         /* Staatliches is the title card: condensed capitals with the weight and
-           the hard corners of a screen-printed poster — the voice of a marquee,
-           with more of an accent than the face it replaces.
+           the hard corners of a screen-printed poster.
 
-           It is narrow, and that is a requirement and not a preference. This
-           name is not only on the page titles: it is on every button label,
-           every chip, every tab and every small tracked caption in the room,
-           and all of those sit in boxes sized against a condensed face. Cinzel
-           was tried here first — Roman capitals, the most literal answer to
-           "make it look like cinema" — and being wide made the display type
-           the widest thing on every screen it appeared on. The lesson is that
-           this line cannot be changed alone: a display face comes with the
-           whole scale, or it comes with a rewrite of it. */
+           It is narrow, and that is a requirement and not a preference: this
+           name is on every button label, chip, tab and small tracked caption in
+           the room, all of them in boxes sized against a condensed face. Cinzel
+           was tried first, and being wide made the display type the widest thing
+           on every screen it appeared on. This line cannot be changed alone — a
+           display face comes with the whole scale, or with a rewrite of it. */
         display: ['Staatliches', '"Bebas Neue"', 'system-ui', 'sans-serif'],
         /* Poppins carries every label, control and paragraph. Geometric and
            round where the display face is condensed and hard, which is the

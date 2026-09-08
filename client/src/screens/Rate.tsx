@@ -37,18 +37,14 @@ export function RateScreen({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  /* ── which genre this film is being rated as ────────────────────────────
-     Almost no film is one genre. TMDB gave Frewaka drama, fantasy and horror,
-     and until now something had to choose — a priority list did, and it was
-     guessing at what the person watching already knows. So the choice moves to
-     them: every genre the film carries is offered, and the card follows the one
-     they pick — the two criteria the genre brings always, and for animation and
-     documentary a slot of the craft eight as well.
+  /* Quase nenhum filme é de um gênero só, e até agora algo tinha de escolher —
+     uma lista de prioridade escolhia, adivinhando o que a pessoa que assistiu já
+     sabe. Então a escolha passa a ser dela: todo gênero que o filme carrega é
+     oferecido, e a carta segue o que ela escolher.
 
-     It is held here rather than read off the film because it is a decision
-     about this take and not a fact about the film. Two members can rate the
-     same film as different things, and both are right about what they watched
-     it for. */
+     Guardado aqui e não lido do filme porque é uma decisão sobre ESTA ficha e
+     não um fato sobre o filme: dois membros podem avaliar o mesmo filme como
+     coisas diferentes, e os dois estão certos sobre o que assistiram. */
   const [genre, setGenre] = useState<string>('');
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
@@ -63,17 +59,15 @@ export function RateScreen({
       try {
         const m = await api<Movie>(`/api/catalog/movie/${id}`);
         setMovie(m);
-        /* A film this person already rated opens on the marks they gave it, not
-           on a fresh card. "Editar" led here too, and it used to hand back ten
-           fives — which is not an edit, it is the same form with the previous
-           answer thrown away, and it silently invited someone to overwrite a
-           take they only meant to adjust. Five stays the opening position for a
-           film nobody here has seen yet, and for any criterion the old take has
-           no mark for.
+        /* Um filme que esta pessoa já avaliou abre nas marcas que ela deu, e
+           não numa carta limpa. "Editar" vinha para cá também e devolvia dez
+           cincos — que não é uma edição, é o mesmo formulário com a resposta
+           anterior jogada fora, convidando em silêncio a sobrescrever uma ficha
+           que alguém só queria ajustar.
 
-           It opens on the genre of that take too, for the same reason: the
-           marks they gave answer those criteria, and opening on a different
-           genre would show their numbers under questions they never saw. */
+           Abre no gênero daquela ficha pelo mesmo motivo: as marcas respondem
+           àqueles critérios, e outro gênero mostraria os números dela sob
+           perguntas que ela nunca viu. */
         const mine = club.reviews.find(r => r.reviewerId === club.me.id && r.movieId === m.id);
         const opening = mine?.movieGenre ?? m.genre;
         setGenre(opening);

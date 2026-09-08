@@ -4,16 +4,14 @@ import { fmt, type Criterion } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ── as réguas de critério ────────────────────────────────────────────────
-   Um critério por linha: nome e nota em cima, a régua inteira embaixo, e a
-   explicação sob ela. A explicação é impressa para todo mundo em vez de ficar
-   atrás de um hover, e a régua continua sendo um `input[type=range]` nativo —
-   é o que mantém o teclado e o leitor de tela funcionando.
+   Um critério por linha: nome e nota em cima, a régua embaixo, e a explicação
+   sob ela — impressa para todo mundo em vez de ficar atrás de um hover. A régua
+   continua sendo um `input[type=range]` nativo, que é o que mantém o teclado e
+   o leitor de tela funcionando.
 
-   Saiu da tela de avaliar e virou peça no dia em que um EPISÓDIO passou a ter
-   ficha própria. As duas fichas são a mesma interação sobre listas de critérios
-   diferentes: onze para um filme, nove para um episódio. Copiar isto seria ter
-   duas réguas que divergem na terceira mexida — e esta é a interação-assinatura
-   do produto, a que não pode ter duas versões. */
+   Virou peça quando um EPISÓDIO passou a ter ficha própria: as duas fichas são
+   a mesma interação sobre listas de critérios diferentes, e esta é a
+   interação-assinatura do produto — a que não pode ter duas versões. */
 
 export function Channels({
   criteria,

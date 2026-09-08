@@ -2,23 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { capi, cpost, clubPath } from '@/lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The client half of the screening room.
+   The client half of the screening room. The server owns where the film is;
+   this file's job is to know that number as accurately as a browser can.
 
-   The server owns where the film is; this file's only job is to know that
-   number as accurately as a browser can, and to hand it to whatever is
-   playing. Two things make that harder than it sounds.
+   A message takes time to arrive, so a frame saying "we are at 00:42" is
+   already wrong when it is read: every frame carries the instant it was true,
+   and the position is derived from that instant rather than taken at face
+   value.
 
-   The first is that a message takes time to arrive, so a frame saying "we are
-   at 00:42" is already wrong when it is read. Every frame therefore carries the
-   instant it was true, and the position is derived from that instant rather
-   than taken at face value — the same trick the server uses, for the same
-   reason.
-
-   The second is that the browser's clock is not the server's. A machine set a
-   minute fast would derive every position a minute ahead and spend the whole
-   film convinced everyone else had drifted. So the offset between the two
-   clocks is measured before anything else happens, and every derivation goes
-   through it.
+   And the browser's clock is not the server's — a machine set a minute fast
+   would derive every position a minute ahead and spend the whole film convinced
+   everyone else had drifted. The offset between the two clocks is measured
+   before anything else happens, and every derivation goes through it.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export type ScreeningMovie = {
@@ -93,22 +88,17 @@ const IDLE: ScreeningState = {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A sala vista de fora.
+   A sala vista de fora: tudo acima é para quem está assistindo, isto é para
+   quem NÃO está — a marquise, que só precisa acender a lâmpada.
 
-   Tudo acima desta linha é para quem está assistindo: o relógio, a deriva, o
-   stream. Isto é para quem NÃO está — a marquise, que só precisa saber que a
-   lâmpada acende e o que dizer quando alguém passa o mouse nela.
-
-   Uma rota, e não o stream da sala, e a razão é mecânica: assinar
+   Uma rota e não o stream da sala, por uma razão mecânica: assinar
    `/api/screening/stream` chama `attach` no servidor, ou seja, entrar na sala
    pelo simples fato de ter o app aberto. O clube inteiro apareceria na lista de
-   quem está dentro, e cada aba gastaria uma das três conexões que cada pessoa
-   tem. `GET /api/screening` é a mesma verdade sem nenhuma das duas coisas.
+   quem está dentro, e cada aba gastaria uma das três conexões de cada pessoa.
 
-   Quatro campos e não o snapshot inteiro, de propósito: `position` e
-   `serverTime` mudam sozinhos e não param nunca, e guardá-los na raiz do app
-   seria redesenhar o produto todo a cada quadro para acender um ponto de oito
-   pixels.
+   Quatro campos e não o snapshot inteiro: `position` e `serverTime` mudam
+   sozinhos e não param nunca, e guardá-los na raiz do app seria redesenhar o
+   produto todo a cada quadro para acender um ponto de oito pixels.
    ══════════════════════════════════════════════════════════════════════════ */
 export type ScreeningPulse = {
   /** Há sessão aberta. Pausada continua sendo sessão aberta. */
@@ -201,15 +191,13 @@ export function useScreening(onError?: (msg: string) => void) {
 
   const serverNow = useCallback(() => Date.now() + offsetRef.current, []);
 
-  /* ── por onde o aperto de mão sai do stream ──────────────────────────────
-     Um recado de sinalização não é estado da sala: ele é endereçado, chega em
+  /* Um recado de sinalização não é estado da sala: é endereçado, chega em
      rajada e não tem nada a ver com onde o filme está. Passá-lo pelo `setState`
-     redesenharia a tela inteira a cada candidato de rede — algumas dezenas
-     deles por pessoa, nos primeiros segundos de uma conexão.
+     redesenharia a tela a cada candidato de rede — dezenas deles por pessoa,
+     nos primeiros segundos.
 
-     Então ele sai por fora, para quem tiver se inscrito. O conjunto vive numa
-     ref porque o efeito do EventSource não pode depender dele: abrir e fechar
-     o stream a cada inscrição derrubaria a sala toda vez. */
+     O conjunto vive numa ref porque o efeito do EventSource não pode depender
+     dele: abrir e fechar o stream a cada inscrição derrubaria a sala. */
   const listeners = useRef(new Set<(from: string, kind: SignalKind, data: unknown) => void>());
 
   const onSignal = useCallback((fn: (from: string, kind: SignalKind, data: unknown) => void) => {

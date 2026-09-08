@@ -588,7 +588,7 @@ export function Drawer({ open, children }: { open: boolean; children: React.Reac
    Sem id reconhecível, o componente volta a ser o link para fora que sempre
    foi: nenhuma ficha fica sem trailer por causa de uma expressão regular. */
 
-/** Os três formatos que uma URL de trailer aparece: `watch?v=`, `youtu.be/` e `embed/`. */
+/** As quatro formas de URL de trailer: `watch?v=`, `youtu.be/`, `embed/`, `shorts/`. */
 const YT_ID = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/;
 
 export function TrailerKey({

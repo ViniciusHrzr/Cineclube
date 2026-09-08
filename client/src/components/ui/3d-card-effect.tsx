@@ -28,13 +28,10 @@ export const CardContainer = ({
   const fine = useFinePointer();
 
   /* ── the card's own box, measured once ──────────────────────────────────
-     The tilt needs to know where the card is and how big it is. Reading that
-     from a client rect inside the move handler was a forced synchronous layout
-     on every mouse event — and the handler had just written a transform, so the
-     layout was always dirty and the browser always had to redo it. Read, write,
-     read, write, hundreds of times a second, over a grid of a hundred posters.
-     That is layout thrashing, and it is the kind that only shows up when
-     someone actually moves the mouse across the catalogue.
+     Reading the client rect inside the move handler was a forced synchronous
+     layout on every mouse event — and the handler had just written a transform,
+     so the layout was always dirty. Read, write, read, write, hundreds of times
+     a second, over a grid of a hundred posters.
 
      The box is measured when the pointer arrives instead, and again only if
      something that could have moved it happened while the pointer was still

@@ -65,7 +65,7 @@ export type Club = {
   showCharts?: boolean;
   photo: string | null;
   createdAt?: string | null;
-  /** Só quando você é de lá: 'admin' ou 'member'. */
+  /** Só chega quando você é de lá. */
   role?: 'admin' | 'member' | null;
   isMember?: boolean;
   /* Você fundou este clube. É a única pessoa que pode encerrá-lo, e a única que

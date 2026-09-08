@@ -30,39 +30,27 @@ import { useWorld, type TakeRef } from '@/lib/world';
 export const MAX_COMMENT = 1000;
 
 /* ── concordar com a ficha de alguém ──────────────────────────────────────
-   O voto era por critério, e o argumento era bom no papel: concordar com uma
-   pessoa inteira é raro, concordar com o 9 dela em fotografia e achar o 4 em
-   roteiro absurdo é o que acontece de verdade.
+   O voto era por critério, e o argumento era bom no papel. Na tela virou outra
+   coisa: onze polegares por ficha por pessoa não é opinião, é formulário — e o
+   detalhamento, que existe para se ler onze números de uma vez, ganhou uma
+   coluna de controles larga o bastante para expulsar a segunda coluna da grade.
+   O que o clube diz de verdade é sobre o take: "boa avaliação", "achei alto
+   demais". É um voto.
 
-   Na tela, virou outra coisa. Onze polegares por ficha por pessoa não é uma
-   opinião, é um formulário — e o detalhamento, que existe para se ler onze
-   números de uma vez, passou a ter uma coluna de controles ao lado de cada um
-   deles, larga o bastante para expulsar a segunda coluna da grade em telas
-   pequenas. O que o clube diz de verdade é sobre o take: "boa avaliação",
-   "achei alto demais". É um voto.
+   Mudo, e na fileira: o par teve rótulos escritos enquanto morava dentro da
+   gaveta, onde havia largura sobrando. Na linha da ficha, ao lado da nota, duas
+   palavras em versalete a mais empurrariam o título para fora antes do tablet —
+   e o polegar não é enigma: o `title` diz a palavra e o `aria-label` a frase.
 
-   Mudo, e na fileira. O par teve rótulos escritos enquanto morava dentro da
-   gaveta, onde havia largura sobrando; agora ele fica na linha da ficha, ao lado
-   da nota, que é onde a pessoa está olhando quando forma a opinião — e ali a
-   linha já carrega pôster, título, ficha técnica, nota e o TMDB. Duas palavras
-   em versalete a mais empurrariam o título para fora antes do tablet.
-
-   O polegar sozinho não é um enigma: para cima e para baixo é a convenção mais
-   estabelecida que existe numa tela, o `title` diz a palavra a quem parar em
-   cima, e o `aria-label` diz a frase inteira a quem lê por áudio.
-
-   O resto das regras não mudou:
+   O resto das regras:
 
    · Sem verde e sem vermelho. O que separa concordar de discordar é a palavra e
-     a direção do ícone; o que marca o SEU voto é latão, a cor de estado deste
-     sistema. Um placar que fica verde quando é positivo estaria pintando um
-     limiar, que é a outra coisa que este mundo não faz.
-   · Contador só quando existe. Um zero em cada lado de cada ficha é ruído com
+     a direção do ícone; o que marca o SEU voto é latão. Um placar que fica
+     verde no positivo estaria pintando um limiar.
+   · Contador só quando existe: um zero em cada lado de cada ficha é ruído com
      formato de dado.
-   · Na própria ficha os botões somem e só o placar fica. Não é regra moral, é
-     aritmética: um placar em que o autor pode se somar não mede mais
-     concordância do clube. O servidor recusa de qualquer jeito; o que a tela
-     faz é não oferecer o que vai ser negado. */
+   · Na própria ficha os botões somem e só o placar fica. Não é moral, é
+     aritmética: um placar em que o autor pode se somar não mede mais o clube. */
 export function TakeVotes({
   take,
   className,
@@ -247,18 +235,14 @@ export function CommentLikes({ comment }: { comment: TakeComment }) {
 /** Quantos comentários a conversa mostra antes de pedir licença. */
 const FIRST_PAGE = 3;
 
-/* ── um comentário e o que veio dele ──────────────────────────────────────
-   O comentário, as respostas dele e o campo para responder — tudo dentro de uma
-   unidade, porque é assim que se lê: ninguém lê "a terceira resposta da segunda
+/* O comentário, as respostas dele e o campo para responder, tudo numa unidade,
+   porque é assim que se lê: ninguém lê "a terceira resposta da segunda
    conversa", lê-se um argumento e o que disseram sobre ele.
 
-   As respostas ficam recolhidas atrás de "ver N respostas", como no Instagram e
-   no Facebook, e pela razão que fez os dois chegarem lá: uma discussão longa
-   dentro de um fio empurra os OUTROS fios para fora da tela, e quem abriu a
-   gaveta queria ver a conversa inteira, não uma dela.
-
-   A exceção é chegar por link: aí não se está folheando, se está indo buscar um
-   texto específico — ver `arrived`. */
+   As respostas ficam recolhidas atrás de "ver N respostas" pela razão que levou
+   Instagram e Facebook ao mesmo lugar: uma discussão longa dentro de um fio
+   empurra os OUTROS fios para fora da tela. A exceção é chegar por link — aí
+   não se está folheando, se está indo buscar um texto. */
 function Comment({
   c,
   replies,
@@ -464,18 +448,15 @@ function Comment({
   );
 }
 
-/* ── a conversa em cima de uma ficha ──────────────────────────────────────
-   O clube discute por voz e a discussão morre com a chamada. Isto é a primeira
+/* O clube discute por voz e a discussão morre com a chamada. Isto é a primeira
    coisa no produto que guarda alguma parte dela.
 
-   Pendurada na avaliação e não no filme, de propósito: o que se discute é a
-   ficha de alguém — "teu 9 em fotografia" — e é a mesma unidade em que se vota
-   logo acima. Um fio por filme juntaria as quatro conversas numa e descolaria a
-   resposta de quem foi respondido.
+   Pendurada na avaliação e não no filme: o que se discute é a ficha de alguém —
+   "teu 9 em fotografia" —, e um fio por filme juntaria as quatro conversas numa
+   e descolaria a resposta de quem foi respondido.
 
-   Não tem chave commit vermelha. A regra da lâmpada vale: no máximo uma
-   superfície vermelha por tela, e uma tela pode ter seis conversas abertas ao
-   mesmo tempo. */
+   Sem chave commit vermelha: no máximo uma superfície vermelha por tela, e uma
+   tela pode ter seis conversas abertas ao mesmo tempo. */
 export function Conversation({
   take,
   /* O acervo abre a conversa dentro de uma gaveta que já tem o detalhamento em

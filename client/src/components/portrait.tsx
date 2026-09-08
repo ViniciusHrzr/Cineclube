@@ -3,17 +3,14 @@ import { Key } from '@/components/bits';
 import { encodeCrop, loadImage, type Crop, type Loaded } from '@/lib/image';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The gate.
-
-   A square hole with the picture behind it, moved and scaled until what is in
-   the hole is what the person wants. This is what a projector's gate does, and
-   it is the same act: the film is larger than the frame, and framing is
-   choosing which part of it the light goes through.
+   The gate: a square hole with the picture behind it, moved and scaled until
+   what is in the hole is what the person wants. The film is larger than the
+   frame, and framing is choosing which part of it the light goes through.
 
    What is on screen is not a preview of the crop — it *is* the crop, at a
    larger size. The image is laid out in the frame's own coordinates and the
-   region handed to the encoder is read back out of those same numbers, so
-   there is no second calculation that could disagree with what was seen.
+   region handed to the encoder is read back out of those same numbers, so there
+   is no second calculation that could disagree with what was seen.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** The gate on screen, in CSS pixels. */

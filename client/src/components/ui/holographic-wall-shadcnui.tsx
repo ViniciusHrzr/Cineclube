@@ -140,33 +140,24 @@ const PLANES: Plane[] = [
 ];
 
 /* Celluloid, built the way the material actually is: one length of 35mm as one
-   element — a stack of frames divided by frame lines, with a column of sprocket
-   holes down both edges. Drawn as four background layers rather than a two-axis
-   grid, because an even grid reads as graph paper, which is exactly what the
-   first version of this looked like.
+   element — a stack of frames divided by frame lines, with sprocket holes down
+   both edges. Four background layers rather than a two-axis grid, because an
+   even grid reads as graph paper.
 
    A strip is its own element and not a repeat of one field, because a repeating
-   background can only ever move as one sheet, and these have to move apart.
-
-   `s` scales the whole material — width, frame height, the sprocket holes and
-   their inset — so a distant strip is the same film seen from further away and
-   not a different gauge of it.
+   background can only ever move as one sheet, and these have to move apart. `s`
+   scales the whole material, so a distant strip is the same film seen from
+   further away and not a different gauge of it.
 
    `fill` is the base the strip is printed on, and it is the reason the shadows
-   read at all. A strip made only of hairlines is very nearly a hole in the
-   wall: a shadow falling across it has nothing to darken but the black of the
-   room, which is already black — 82% of nothing is still nothing, and every
-   shadow on this wall was invisible for exactly that reason.
+   read at all: a strip made only of hairlines is very nearly a hole in the
+   wall, and a shadow falling across it has nothing to darken but the black of
+   the room. Physically it is also the right answer — film hung on a dark wall
+   reflects some light back, and being lighter than the wall is precisely the
+   condition under which a shadow becomes visible.
 
-   So the celluloid gets a body. Physically it is the right answer and not a
-   trick: film hung on a dark wall reflects some light back, which is why you
-   can see it at all, and being lighter than the wall is precisely the condition
-   under which a shadow falling across it becomes visible. The wash is what a
-   strip loses when its neighbour blocks the beam.
-
-   The wall stays far darker than the type in front of it: at full strength a
-   strip reads #101319 and, through the scrim, #0d1016 — cream text over that is
-   about 14.9:1, where the floor for body copy is 4.5:1. */
+   The wall stays far darker than the type in front of it: cream text over a
+   strip is about 14.9:1, where the floor for body copy is 4.5:1. */
 function stripFace(line: string, edge: string, perf: string, fill: string, s: number) {
   const { w: strip, cell, hole, inset } = geo(s);
   return {
@@ -316,21 +307,16 @@ function Wall({
         if (s.w === w && s.h === h) return s;
 
         /* ── a barra de endereço do celular não é um redimensionamento ────
-           No Android, rolar a página recolhe e devolve a barra de endereço, e
-           cada uma dessas vezes muda a ALTURA da janela em algumas dezenas de
-           pixels. Aqui isso chegava como um redimensionamento de verdade: a
-           parede inteira era refeita e re-rasterizada — oito faixas de
-           gradientes com sombra, do tamanho da tela — no meio de uma rolagem.
+           No Android, rolar recolhe e devolve a barra de endereço, e cada uma
+           dessas vezes muda a ALTURA da janela. Aqui isso chegava como um
+           redimensionamento de verdade: a parede inteira refeita e
+           re-rasterizada — oito faixas de gradientes com sombra, do tamanho da
+           tela — no meio de uma rolagem. Explicava dois sintomas ao mesmo
+           tempo: o app pesado ao rolar, e a barra de baixo tremendo.
 
-           Era a explicação de dois sintomas ao mesmo tempo: o app pesado ao
-           rolar no telefone, e a barra de baixo tremendo, porque o quadro em
-           que ela deveria assentar estava sendo gasto redesenhando o fundo.
-
-           A largura continua valendo à risca — girar o aparelho é um
-           redimensionamento de verdade e tem de refazer a parede. O que ganha
-           tolerância é só a altura, e só onde existe uma barra de endereço que
-           se esconde: a parede já é transbordada em 12% e as faixas são mais
-           altas que a janela, então cem pixels a mais ou a menos não mudam
+           A largura continua valendo à risca, porque girar o aparelho tem de
+           refazer a parede. A altura ganha tolerância: a parede já é
+           transbordada em 12%, então cem pixels a mais ou a menos não mudam
            nada do que se vê. */
         if (COARSE && s.w === w && Math.abs(s.h - h) < 160) return s;
 
@@ -387,24 +373,21 @@ function Wall({
        The beam used to be a mask whose centre was a CSS variable on this
        element, and the halo a full-screen gradient with the same variable in
        it. Both were wrong in the same way, and it is the fault behind the
-       report of a fast machine dropping frames on this page.
+       report of a fast machine dropping frames here.
 
        Writing a custom property on the host invalidates style for everything
        under it — the whole wall, every strip and its inline geometry — sixty
-       times a second. Then a gradient whose centre has moved is a gradient that
-       has to be rasterised again: a full-viewport repaint per frame for the
-       halo, and for the beam a full-viewport mask re-rendered over a subtree of
-       animating layers.
+       times a second. And a gradient whose centre has moved has to be
+       rasterised again: a full-viewport repaint per frame.
 
-       Nothing here is drawn where the cursor is any more; it is *carried*
-       there. The beam is a box the size of the beam with a fixed mask in the
-       middle of it, and inside that box the lit wall is pushed back by exactly
-       the distance the box was pushed forward — so the two translations cancel
-       and the celluloid stays registered with the wall behind it, to the pixel,
+       Nothing is drawn where the cursor is any more; it is *carried* there. The
+       beam is a box with a fixed mask in the middle, and inside it the lit wall
+       is pushed back by exactly the distance the box was pushed forward — the
+       two translations cancel, so the celluloid stays registered to the pixel
        while the hole moves. The halo is one gradient, rasterised once, moved.
 
-       Every one of those is a transform on a promoted layer, which is the one
-       thing a browser can do per frame for free. No style recalc, no paint. */
+       Every one of those is a transform on a promoted layer: no style recalc,
+       no paint. */
     const beamOffset = radius;
     const haloOffset = radius * 1.9;
 

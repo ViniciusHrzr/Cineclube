@@ -8,28 +8,19 @@ import { cn } from '@/lib/utils';
 /* ══════════════════════════════════════════════════════════════════════════
    Quem está entrando.
 
-   Isto era um mural de rostos: o clube inteiro na parede iluminada, você clicava
-   no seu e digitava quatro dígitos. Era a coisa certa enquanto o produto era uma
-   sala, porque a lista de rostos ERA o clube — e é a coisa errada no instante em
+   Isto era um mural de rostos, e era a coisa certa enquanto o produto era uma
+   sala — porque a lista de rostos ERA o clube. É a coisa errada no instante em
    que existem muitas salas, porque a mesma tela passaria a ser a lista de todo
-   mundo que existe na rede.
+   mundo que existe na rede. Antes de saber em que sala você entra, o produto
+   precisa saber quem você é, e isso agora é um e-mail.
 
-   Então a porta muda de natureza. Antes de saber em que sala você entra, o
-   produto precisa saber quem você é, e isso agora é um e-mail.
+   Duas portas para a mesma conta. O Google é a normal; a senha existe para a
+   porta não ser única, e é o que garante que ninguém perca o clube por um
+   motivo que não tem nada a ver com o clube.
 
-   ── duas portas para a mesma conta ─────────────────────────────────────────
-   O Google é a normal: um clique, nenhuma senha nova para inventar, e quem cuida
-   de segundo fator e de conta invadida é quem já cuida disso na vida da pessoa.
-
-   A senha existe para a porta não ser única. É pedida uma vez, logo depois da
-   primeira entrada pelo Google, e é o que garante que ninguém perca o clube por
-   um motivo que não tem nada a ver com o clube.
-
-   ── a sala continua sendo a sala ───────────────────────────────────────────
-   Nada aqui virou formulário de serviço. A parede continua atrás, o nome
-   continua em Bebas na altura de uma marquise, e as duas portas são duas chaves
-   do mesmo tamanho — não um botão grande de marca e um formulário pequeno de
-   consolação.
+   E a sala continua sendo a sala: a parede continua atrás, o nome continua em
+   Bebas na altura de uma marquise, e as duas portas são duas chaves do mesmo
+   tamanho — não um botão grande de marca e um formulário pequeno de consolação.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** O erro que a volta do Google escreve no endereço, se houver. */
@@ -319,17 +310,13 @@ function PasswordEntry({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Pedir o link de volta.
+/* A tela responde a mesma coisa exista a conta ou não, e a frase diz isso em voz
+   alta em vez de fingir sucesso: "se existir uma conta com esse endereço".
+   Fingir que mandou seria mentir para quem digitou o e-mail errado — o caso
+   comum —, e essa pessoa ficaria esperando uma mensagem que nunca vem.
 
-   A tela responde a mesma coisa exista a conta ou não, e a frase diz isso em
-   voz alta em vez de fingir sucesso: "se existir uma conta com esse endereço".
-   Fingir que mandou seria mentir para quem digitou o e-mail errado — que é o
-   caso comum — e essa pessoa ficaria esperando uma mensagem que nunca vem.
-
-   O servidor faz o mesmo pelo mesmo motivo, e lá é uma regra de segurança: uma
-   resposta diferente transformaria a rota numa lista de quem tem conta aqui.
-   ══════════════════════════════════════════════════════════════════════════ */
+   O servidor faz o mesmo, e lá é uma regra de segurança: uma resposta diferente
+   transformaria a rota numa lista de quem tem conta aqui. */
 function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () => void }) {
   const [email, setEmail] = useState(inicial);
   const [busy, setBusy] = useState(false);
@@ -395,18 +382,13 @@ function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () 
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A senha, na primeira entrada.
+/* Aparece depois do Google e antes do saguão, e é a única coisa entre a pessoa
+   e o produto — então ela diz por que existe. Um formulário que pede uma senha
+   sem explicar por quê, logo depois de a pessoa ter provado quem é, parece
+   trabalho repetido.
 
-   Aparece depois do Google e antes do saguão, e é a única coisa entre a pessoa e
-   o produto — então ela diz por que existe. Um formulário que pede uma senha sem
-   explicar por que, logo depois de a pessoa ter acabado de provar quem é, parece
-   trabalho repetido; com a frase, é a pessoa guardando uma segunda chave.
-
-   Dá para pular. Não é uma exigência do produto, é um seguro — e um seguro
-   obrigatório na porta de entrada é um pedágio. Quem pular volta a ver o convite,
-   porque o motivo dele não expira.
-   ══════════════════════════════════════════════════════════════════════════ */
+   Dá para pular: é um seguro, e um seguro obrigatório na porta de entrada é um
+   pedágio. Quem pular volta a ver o convite, porque o motivo dele não expira. */
 export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');

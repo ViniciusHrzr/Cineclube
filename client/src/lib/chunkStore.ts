@@ -1,45 +1,34 @@
 /* ── serving the film without making a second one ─────────────────────────
    By default the engine keeps every torrent in a chunk store backed by the
    origin-private filesystem, and seeding fills it by streaming the chosen file
-   into it end to end. For somebody receiving, that store is the film — there
-   is nowhere else it could live. For somebody seeding it is a duplicate: a
-   second copy of a file this disk already holds, written in full before the
-   magnet even exists, and then read back out of all evening.
+   into it end to end. For somebody receiving, that store IS the film. For
+   somebody seeding it is a duplicate, and the seeder pays three costs for it:
 
-   Three costs, and the seeder pays all of them.
-
-   A multi-gigabyte write racing the player's own reads for the same disk, at
-   exactly the moment the film is starting.
-
-   A storage quota — the origin's, shared by everything this site keeps — that
-   a couple of features will exhaust, after which the write fails mid-session.
-   Nothing here asks for persistent storage either, so what is written is
-   best-effort and the browser may evict it under disk pressure without asking.
-
-   And a store that another tab can delete underneath it. `fsa-chunk-store`
-   wipes the whole `chunks/` directory when its module is imported — its own
-   comment reads "this can be bad when multiple instances of this app are
-   running", and it is: a second tab of this site booting the engine destroys
-   the store the first tab is streaming from. Seeding out of the file instead
-   puts the seeder out of that reach entirely.
+   · a multi-gigabyte write racing the player's own reads for the same disk, at
+     exactly the moment the film is starting;
+   · a storage quota that a couple of features will exhaust, after which the
+     write fails mid-session — and nothing asks for persistent storage, so the
+     browser may evict it under disk pressure without asking;
+   · a store another tab can delete underneath it: `fsa-chunk-store` wipes the
+     whole `chunks/` directory when its module is imported, so a second tab of
+     this site booting the engine destroys the store the first is streaming
+     from.
 
    None of it buys anything. The bytes peers ask for are in the `File`, and a
    browser reads a slice of a file natively and off the main thread. So this is
-   the store: `get` is a read of the real file, `put` has nothing to do because
-   there is nothing this store could learn that it does not already have, and
-   the engine writes zero bytes anywhere.
+   the store: `get` is a read of the real file, `put` has nothing to do, and the
+   engine writes zero bytes anywhere.
 
    Handed over as a class rather than an instance because the chunk size is the
-   torrent's piece length, which is chosen while the torrent is being created —
-   the engine constructs this with the real number, and computing it here
-   instead would be a guess that corrupts what peers receive when it is wrong.
+   torrent's piece length, chosen while the torrent is being created — computing
+   it here would be a guess that corrupts what peers receive when it is wrong.
 
    ── the only part with arithmetic in it ───────────────────────────────────
    `get` is asked for a piece, and sometimes for one block inside a piece. Both
    the offset and the short final piece are places where being wrong hands a
-   peer bytes that are not the bytes it asked for — which does not fail here,
-   it fails as a hash mismatch on somebody else's machine. `chunkstore.test.js`
-   holds it to the arithmetic. */
+   peer bytes it did not ask for — which does not fail here, it fails as a hash
+   mismatch on somebody else's machine. `chunkstore.test.js` holds it to the
+   arithmetic. */
 
 /** What a chunk store answers with. Errors first, in the Node style the engine expects. */
 type Done = (err: Error | null, buf?: Uint8Array) => void;

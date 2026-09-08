@@ -8,19 +8,14 @@ export function cn(...inputs: ClassValue[]) {
 
 /* ── is there a mouse? ────────────────────────────────────────────────────
    The room answers a pointer: the wall lights where the cursor is, a poster
-   tips toward the hand reaching for it. On a touch screen none of that can ever
-   happen — and it was still being built, laid out and composited on every phone
-   that opened the site, which is most of them.
+   tips toward the hand reaching for it. On a touch screen none of that can
+   happen — and it was still being built and composited on every phone that
+   opened the site.
 
-   This is the switch that lets the interface not build what it cannot use. It
-   is a media query and not a user-agent guess, so a laptop with a touchscreen
-   keeps the mouse behaviour and a tablet with a trackpad gets it too.
-
-   One query for the whole page, not one per component. Every poster on the wall
-   asks this — a hundred cards on a loaded catalogue meant a hundred MediaQueryList
-   objects and a hundred listeners for a single fact that is the same for all of
-   them, and each one held its own copy of it in React state. The fact lives here
-   once and the components subscribe to it. */
+   A media query and not a user-agent guess, so a laptop with a touchscreen
+   keeps the mouse behaviour. One query for the whole page: every poster asks
+   this, and a hundred cards meant a hundred MediaQueryList objects and a
+   hundred listeners for a single fact that is the same for all of them. */
 const FINE = '(hover: hover) and (pointer: fine)';
 const fineQuery = typeof window === 'undefined' ? null : window.matchMedia(FINE);
 
@@ -58,20 +53,16 @@ export function norm(s: string) {
 }
 
 /* ── um filme tem mais de um nome ─────────────────────────────────────────
-   Every list the club filters locally — a fila, a sessão, o acervo — used to
-   match the Portuguese title and nothing else, which quietly made the app worse
-   at the one thing it is for. Somebody who watched Entre Facas e Segredos
-   remembers it as Knives Out; somebody hunting a copy of Parasita is typing
-   Parasite. Both were misses, and a miss on a list you are looking straight at
-   reads as the film not being there.
+   Cada lista que o clube filtra localmente casava só com o título em português.
+   Quem viu Entre Facas e Segredos lembra dele como Knives Out, e uma busca que
+   não acha numa lista que está na tela lê como o filme não estar lá.
 
-   Any name matches: the Portuguese one, the original, the English one. They
-   arrive null when they would only repeat a name already in the list, so this
-   never compares the same string twice.
+   Qualquer nome casa: o português, o original, o inglês. Eles chegam nulos
+   quando só repetiriam um nome já na lista, então isto nunca compara a mesma
+   string duas vezes.
 
-   The query is normalised once by the caller and the names once each here —
-   see `norm`. A search box is a keystroke and a full list scan, and this runs
-   on every one of them. */
+   A consulta é normalizada uma vez por quem chama e os nomes uma vez cada aqui:
+   um campo de busca é uma tecla e uma varredura da lista inteira. */
 export function named(query: string, ...names: (string | null | undefined)[]) {
   return names.some(n => n && norm(n).includes(query));
 }

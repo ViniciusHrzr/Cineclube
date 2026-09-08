@@ -4,20 +4,13 @@ import { fmt, type BreakdownRow } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A FICHA ABERTA
+   A FICHA ABERTA: os onze critérios de uma avaliação, e o que a pessoa escreveu
+   embaixo deles.
 
-   Os onze critérios de uma avaliação, e o que a pessoa escreveu embaixo deles.
-
-   Morava dentro da tela de avaliados, que por muito tempo foi o único lugar
-   onde uma ficha se abria por inteiro. Deixou de ser: o perfil abre a ficha na
-   própria página agora, porque mandar quem está explorando alguém para outra
-   aba é fazer essa pessoa perder o lugar — e quem estava percorrendo doze
-   fichas de alguém não volta.
-
-   Uma cópia teria sido o caminho curto e o errado, pelo mesmo motivo de sempre:
-   é o mesmo detalhamento, com a mesma grade e as mesmas regras de leitura, e
-   duas implementações da mesma coisa divergem na terceira vez que alguém mexe
-   numa delas.
+   Morava dentro da tela de avaliados, e saiu quando o perfil passou a abrir a
+   ficha na própria página — mandar quem está explorando alguém para outra aba é
+   fazer essa pessoa perder o lugar. Uma cópia teria sido o caminho curto e o
+   errado: é o mesmo detalhamento, com as mesmas regras de leitura.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* `r` é qualquer ficha que já chegue aberta: a de um filme, com os onze
@@ -107,19 +100,17 @@ export function Breakdown({ r, comment }: { r: { breakdown: BreakdownRow[] }; co
    DE ONDE A FICHA VEIO
 
    O acervo de uma sala é o acervo das pessoas dela: quem entra num clube novo
-   chega com o que já escreveu, em vez de chegar com a estante vazia. Uma ficha
-   assim precisa dizer onde foi escrita, ou o clube parece ter avaliado coisas
-   que nunca viu junto.
+   chega com o que já escreveu. Uma ficha assim precisa dizer onde foi escrita,
+   ou o clube parece ter avaliado coisas que nunca viu junto.
 
-   Só aparece quando a ficha veio de fora — o servidor manda `origin` nulo para o
-   que foi gravado aqui, que é o caso comum. Uma etiqueta em toda linha do acervo
-   é uma etiqueta que ninguém lê.
+   Só aparece quando a ficha veio de fora — `origin` é nulo para o que foi
+   gravado aqui, que é o caso comum, e uma etiqueta em toda linha do acervo é
+   uma etiqueta que ninguém lê.
 
-   As duas peças são a mesma informação em dois lugares: a pastilha, na fileira
-   fechada, e a frase, dentro da gaveta, onde a conversa estaria. A conversa não
-   viaja com a ficha — comentário e voto acontecem na sala onde ela foi gravada,
-   porque não têm sala própria e vazariam de um clube fechado para outro. Então
-   a gaveta diz isso em palavras, e aponta a porta.
+   Duas peças, a mesma informação em dois lugares: a pastilha na fileira fechada,
+   e a frase dentro da gaveta, onde a conversa estaria — porque a conversa NÃO
+   viaja com a ficha: comentário e voto não têm sala própria e vazariam de um
+   clube fechado para outro.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export type Origin = { name: string | null; slug: string | null };

@@ -324,7 +324,6 @@ function Invite({ movieId, className }: { movieId: number; className?: string })
   );
 }
 
-
 /* Fora do botão porque um botão dentro de outro não é coisa que o navegador
    monte. Escondida do leitor de tela: o gesto é o mesmo do botão ao lado, e um
    segundo `aria-expanded` seria a mesma frase duas vezes. */
@@ -657,18 +656,16 @@ function ByMovie({
         const avg = items.reduce((s, r) => s + r.final, 0) / items.length;
         const sorted = [...items].sort((a, b) => (desc ? b.final - a.final : a.final - b.final));
 
-        /* ── the card is closed until it is asked ─────────────────────────
-           Every take on every film, all open at once, is a wall of names
-           between one film and the next: the screen stops being a record you
-           can scan and becomes a list you scroll past. So a film arrives as a
-           film — poster, title, the club's number — and the people who gave
-           that number are one press away.
+        /* Toda ficha de todo filme aberta de uma vez é uma parede de nomes entre
+           um filme e o próximo. Então um filme chega como filme — cartaz,
+           título, o número do clube — e quem deu esse número está a um toque.
 
-           Two levels, and they mean different things. Opening the film asks
-           who; opening a person asks what they gave each criterion.
+           Dois níveis, e eles significam coisas diferentes: abrir o filme
+           pergunta QUEM, abrir uma pessoa pergunta o que ela deu em cada
+           critério.
 
-           A carta de uma ficha pedida por link também abre — pelo efeito acima,
-           não por uma condição aqui. A condição foi o defeito: dependia do
+           A carta de uma ficha pedida por link também abre, pelo efeito acima e
+           não por uma condição aqui — a condição foi o defeito: dependia do
            destaque, que apaga sozinho, e a carta fechava junto com ele. */
         const expanded = open.has(head.movieId);
 

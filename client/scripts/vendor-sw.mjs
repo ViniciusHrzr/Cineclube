@@ -1,33 +1,21 @@
 /* ══════════════════════════════════════════════════════════════════════════
    O service worker do WebTorrent, com dois defeitos costurados na saída.
 
-   Este arquivo é o que põe `sw.min.js` em `public/`. Ele existia como um
-   one-liner em `package.json` — um `copyFileSync` e nada mais — e virou um
-   script porque a cópia crua tem um bug que derrubava a sessão do clube toda
-   noite, sempre na mesma pessoa: quem soltou o filme.
+   Era um `copyFileSync` em `package.json` e virou script porque a cópia crua
+   tem um bug que derrubava a sessão do clube toda noite, sempre na mesma
+   pessoa: quem soltou o filme.
 
-   ── por que o vídeo de quem semeia trava, e o dos outros não ───────────────
-   O worker serve o vídeo por um ReadableStream. A cada `pull` — cada vez que o
-   <video> pede mais bytes — ele arma um timer de cinco segundos que mata o
-   canal com a página, e o timer só é desarmado pelo `pull` seguinte. Nunca
-   pela chegada do pedaço.
+   O worker serve o vídeo por um ReadableStream. A cada `pull` ele arma um timer
+   de cinco segundos que mata o canal com a página, e o timer só é desarmado
+   pelo `pull` seguinte — nunca pela chegada do pedaço. Ou seja: ele não mede "a
+   página demorou a responder", mede "faz cinco segundos que ninguém pede nada".
+   E um <video> para de pedir assim que enche o buffer.
 
-   Ou seja: o relógio não mede "a página demorou a responder". Mede "faz cinco
-   segundos que ninguém pede nada". E um <video> para de pedir assim que enche
-   o buffer, porque é exatamente isso que um buffer é.
-
-   Quem semeia enche o buffer na velocidade do disco. Segundos depois de o
-   filme começar o elemento tem tudo o que queria e cala a boca — e cinco
-   segundos de silêncio depois o worker desliga o canal. O que já estava
-   carregado continua tocando, então nada parece errado; o filme trava quando o
-   buffer acaba, minutos adiante, e não volta mais: os `pull` seguintes pedem
-   para um canal que a página já desmontou, e o stream nunca mais recebe um
-   byte nem termina. Não há evento de erro. A imagem só para.
-
-   Quem está baixando não passa por isso, porque baixando pela rede o buffer
-   nunca enche: o elemento pede sem parar, o timer é desarmado sem parar, e o
-   canal sobrevive. Daí a assimetria que se via da poltrona — o filme trava
-   para quem pôs o filme no ar e continua para todo mundo.
+   Quem semeia enche o buffer na velocidade do disco, o elemento cala a boca, e
+   cinco segundos depois o worker desliga o canal. O que já estava carregado
+   continua tocando, então nada parece errado: o filme trava minutos adiante e
+   não volta mais, sem evento de erro nenhum. Quem está baixando não passa por
+   isso porque o buffer nunca enche.
 
    As duas correções abaixo são a mesma ideia dita duas vezes: o timer só pode
    significar "a página parou de responder".

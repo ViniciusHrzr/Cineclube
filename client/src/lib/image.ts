@@ -1,18 +1,12 @@
 /* ── the portrait, cut down to size before it leaves the browser ──────────
-   A phone camera produces four megabytes and twelve megapixels for something
-   this interface draws at twenty pixels across. Sending that would be sending
-   four megabytes to store, to read back, and to push down the wire to every
-   member on every visit — for an image nobody will ever see at that size.
+   A phone camera produces four megabytes for something this interface draws at
+   twenty pixels across. The shrinking happens here, where the file already is,
+   and what reaches the server is tens of kilobytes — the server enforces its
+   own ceiling regardless, so this is the courtesy and not the rule.
 
-   So the shrinking happens here, where the file already is. What reaches the
-   server is tens of kilobytes. The server enforces its own ceiling regardless
-   — this is the courtesy, not the rule.
-
-   What it does *not* do any more is decide the framing. Cutting a square out
-   of the middle is a guess, and it is wrong exactly as often as a face is not
-   dead centre — which, in a photo somebody chose of themselves, is most of the
-   time. The framing is now a decision the person makes; this file only loads
-   the picture and cuts where it is told. */
+   What it does *not* do any more is decide the framing. Cutting a square out of
+   the middle is wrong exactly as often as a face is not dead centre, which in a
+   photo somebody chose of themselves is most of the time. */
 
 /** The side of the square that is stored. Twelve times what it is drawn at. */
 export const PORTRAIT_SIDE = 256;

@@ -6,37 +6,24 @@ import { useWorld } from '@/lib/world';
 /* ══════════════════════════════════════════════════════════════════════════
    O ROSTO É UMA PORTA
 
-   Este produto desenhava pessoas em oito lugares — o feed, o acervo nas duas
-   visões, a conversa, as respostas, o sino, a régua de divergência, a marquise —
-   e em nenhum deles a pessoa era clicável. Um clube inteiro de nomes pintados.
-
-   O perfil não é o que faltava; ISTO é. A página podia existir e continuar
-   inalcançável, porque não havia como chegar nela a não ser pelo próprio rosto.
-   Duas peças de meia dúzia de linhas cada, usadas em todo lugar, são o que
-   transforma o arquivo de um clube numa rede.
+   Este produto desenhava pessoas em oito lugares e em nenhum deles a pessoa era
+   clicável. O perfil podia existir e continuar inalcançável, porque não havia
+   como chegar nele a não ser pelo próprio rosto.
 
    ── por que duas peças e não uma ────────────────────────────────────────
-   Porque o retrato e o nome quase nunca são vizinhos no DOM. Numa linha da
-   conversa o retrato fica de fora e o nome mora dentro do bloco de texto; numa
-   fileira do acervo os dois estão dentro do botão que abre a gaveta. Uma peça
-   só, que desenhasse os dois juntos, obrigaria toda tela a se reorganizar em
-   volta dela — e algumas delas acabaram de ser reorganizadas.
+   Porque o retrato e o nome quase nunca são vizinhos no DOM: numa linha da
+   conversa o retrato fica de fora e o nome mora dentro do bloco de texto. Uma
+   peça só obrigaria toda tela a se reorganizar em volta dela.
 
    ── o retrato é mudo para quem lê por áudio ─────────────────────────────
    Os dois levam ao mesmo lugar, e anunciar duas vezes "abrir o perfil de Beren"
    é dizer a mesma frase seguida em cada comentário da tela. O retrato é o alvo
-   do mouse; o nome é o link de verdade, e é ele que o teclado alcança e o leitor
-   de tela lê.
-
-   É a mesma decisão que a seta da gaveta no acervo já tinha tomado, pelo mesmo
-   motivo — ver `DrawerArrow` em screens/Reviews.tsx.
+   do mouse; o nome é o link de verdade.
 
    ── nunca dentro de outro botão ─────────────────────────────────────────
-   Um `<button>` dentro de outro não é uma coisa que o navegador monte. Onde o
-   rosto morava dentro de um controle — a placa do feed, as fileiras do acervo —
-   a linha da pessoa foi puxada para FORA e virou irmã dele. É a mesma cirurgia
-   que a barra de ação do feed já tinha exigido, e ela é o preço real desta
-   costura.
+   Um `<button>` dentro de outro não é coisa que o navegador monte. Onde o rosto
+   morava dentro de um controle, a linha da pessoa foi puxada para FORA e virou
+   irmã dele — é o preço real desta costura.
    ══════════════════════════════════════════════════════════════════════════ */
 
 type Person = {
@@ -54,22 +41,17 @@ type Leaves = { onNavigate?: () => void };
    Em duas formas, e a diferença entre elas é de acessibilidade e não de
    aparência.
 
-   **Acompanhado** (o padrão): há um `PersonName` ao lado, e ele é o link de
-   verdade. O retrato é só o alvo do mouse — `aria-hidden`, fora da ordem de
-   foco —, porque anunciar dois links para o mesmo lugar é dizer a mesma frase
-   duas vezes seguidas em cada linha da tela. É a decisão que a seta da gaveta
-   do acervo já tinha tomado, pelo mesmo motivo.
+   **Acompanhado** (o padrão): há um `PersonName` ao lado e ele é o link de
+   verdade; o retrato é só o alvo do mouse — `aria-hidden`, fora da ordem de
+   foco.
 
-   **`solo`**: não existe nome clicável por perto, porque ele mora dentro do
-   botão que abre outra coisa — o caso das fileiras do acervo e das linhas do
-   sino. Ali o retrato é a ÚNICA porta, e um `aria-hidden` faria dela uma porta
-   só para quem usa mouse: teclado e leitor de tela não teriam caminho nenhum
-   até o perfil daquela pessoa. Nesses lugares ele é um botão de verdade, com a
-   frase inteira no rótulo.
+   **`solo`**: não existe nome clicável por perto porque ele mora dentro do
+   botão que abre outra coisa. Ali o retrato é a ÚNICA porta, e um `aria-hidden`
+   faria dela uma porta só para quem usa mouse — então ele é um botão de
+   verdade, com a frase inteira no rótulo.
 
-   O canto de 1px é o do próprio carretel — sem ele o anel de foco de latão
-   desenharia um retângulo de canto reto por fora de uma etiqueta que tem
-   canto. */
+   O canto de 1px é o do próprio carretel: sem ele o anel de foco desenharia um
+   retângulo de canto reto por fora de uma etiqueta que tem canto. */
 export function PersonReel({
   person,
   size = 'sm',
