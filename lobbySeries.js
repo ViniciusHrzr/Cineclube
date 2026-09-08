@@ -4,26 +4,18 @@ const { excerpt } = require('./takes');
 const { episodeAnsweredIn } = require('./criteria');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O SAGUÃO, pela lente de séries.
+   O SAGUÃO, pela lente de séries. Mesma tela, outro acervo: o de filmes lê
+   `reviews`, este lê `episode_takes`. As paredes de privacidade são importadas
+   de lobby.js — a regra de quem empresta o quê é uma só, e uma segunda cópia é
+   a que fica para trás quando um interruptor novo aparecer.
 
-   Mesma tela, mesma forma, outro acervo. O saguão de filmes lê `reviews`; este
-   lê `episode_takes`. As duas paredes de privacidade são importadas de lobby.js
-   e não reescritas — a regra de quem empresta o quê é uma só, e uma segunda
-   cópia dela é a que fica para trás quando um interruptor novo aparecer.
+   A unidade avaliada é o episódio e a que se MOSTRA é a série: um pódio de
+   episódios seria uma lista de números sem cartaz para pendurar neles. A média
+   de uma série é a dos episódios avaliados dela, então ela nunca contradiz as
+   partes — ela É as partes.
 
-   ── o que muda de verdade ─────────────────────────────────────────────────
-   A unidade avaliada é o episódio, e a unidade que se mostra é a SÉRIE. Um
-   cartaz é de série; um pódio de episódios seria uma lista de números sem
-   cartaz para pendurar neles, e a parede do saguão é feita de cartazes.
-
-   Então a média de uma série é a média dos episódios avaliados dela, que é a
-   agregação derivada que o produto escolheu: nada é declarado duas vezes, e a
-   nota da série nunca contradiz as partes porque ela É as partes.
-
-   ── e o que não existe aqui ───────────────────────────────────────────────
-   A sessão ao vivo. A sala de projeção é de filme hoje, e anunciar uma sessão
-   de série que não existe seria a tela prometendo uma porta que não abre. Volta
-   quando a sala aprender a tocar episódio.
+   Não existe sessão ao vivo aqui: a sala de projeção é de filme hoje, e
+   anunciar uma sessão de série seria prometer uma porta que não abre.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const ELIGIBLE = eligible('c');
@@ -31,10 +23,9 @@ const READABLE = readable('c');
 
 const WALL = 28;
 const PODIUM = 6;
-/* O mesmo piso do pódio de filmes, e pela mesma razão: uma média sobre uma
-   amostra de tamanho um não é um ranking, é um entusiasmo. Aqui ele conta
-   EPISÓDIOS avaliados da série, não pessoas — uma série com três episódios
-   avaliados por uma pessoa já tem uma curva, e uma com um episódio não tem. */
+/* O mesmo piso do pódio de filmes, contando EPISÓDIOS avaliados da série e não
+   pessoas: uma série com três episódios avaliados já tem uma curva, uma com um
+   episódio não tem. */
 const FLOOR = 3;
 const ACTIVE = 6;
 const WINDOW_DAYS = 30;
@@ -108,15 +99,12 @@ const activeStmt = db.prepare(`
   LIMIT ${ACTIVE}
 `);
 
-/* ── o episódio em destaque ───────────────────────────────────────────────
-   O par da avaliação em destaque do saguão de filmes, e a única coisa desta
+/* O par da avaliação em destaque do saguão de filmes, e a única coisa desta
    tela com voz humana — por isso pede a parede mais alta.
 
    A ordem é por reação, e ainda não há reação: a conversa sobre um episódio é
-   uma fatia que não foi construída. Então ela cai direto no critério de
-   desempate do outro saguão — quem escreveu alguma coisa, depois o mais
-   recente. É o mais honesto que sobra, e é o mesmo comportamento que o saguão
-   de filmes tem numa rede que ainda não reagiu a nada. */
+   uma fatia que não foi construída. Cai no desempate do outro saguão — quem
+   escreveu alguma coisa, depois o mais recente. */
 const featureStmt = db.prepare(`
   SELECT t.id, t.show_id, t.show_title, t.show_poster, t.show_genre,
          t.season, t.episode, t.episode_title,
@@ -135,11 +123,9 @@ const featureStmt = db.prepare(`
   LIMIT 1
 `);
 
-/* ── as fichas de uma série, em toda a rede ───────────────────────────────
-   O que se lê ao abrir um cartaz da parede. Mesma regra de credibilidade do
-   saguão de filmes: quem enfrentou os critérios mais vezes aparece primeiro, e
-   isso decide ORDEM e nunca peso. Uma ficha por pessoa, escolhida em JS depois
-   de ordenar — GROUP BY no SQLite escolheria uma linha arbitrária. */
+/* Mesma regra de credibilidade do saguão de filmes: decide ORDEM e nunca peso.
+   Uma ficha por pessoa, escolhida em JS depois de ordenar — GROUP BY no SQLite
+   escolheria uma linha arbitrária. */
 const showTakesStmt = db.prepare(`
   SELECT t.id, t.final, t.scores, t.show_genre, t.comment, t.watched_at,
          t.season, t.episode, t.episode_title,
@@ -182,11 +168,9 @@ const seasonsStmt = db.prepare(`
 const avatarOf = row =>
   row.actor_avatar_rev ? `/api/reviewers/${row.actor_id}/avatar?v=${row.actor_avatar_rev}` : null;
 
-/* Os extremos de uma ficha de episódio: onde a pessoa se entusiasmou e onde se
-   decepcionou. `endsOf` de takes.js resolve os onze de um filme; este resolve
-   os nove de um episódio, que é outra lista de critérios. Null quando não há
-   distância — onze notas iguais não têm extremos, e apontá-los inventaria uma
-   opinião que ninguém teve. */
+/* `endsOf` de takes.js resolve os onze de um filme; este resolve os nove de um
+   episódio. Null quando não há distância — notas iguais não têm extremos, e
+   apontá-los inventaria uma opinião que ninguém teve. */
 function endsOfEpisode(genre, scoresJson) {
   if (!scoresJson) return null;
   let scores;
@@ -248,14 +232,9 @@ async function show(showId) {
   };
 }
 
-/* ── as fichas de UM episódio, em toda a rede ─────────────────────────────
-   O que a folha de um episódio mostra quando alguém troca de "clube" para
-   "todas". Mesmas paredes, mesma ordem por credibilidade, e a mesma regra de
-   uma ficha por pessoa — a diferença é o alcance da pergunta.
-
-   Existe separado de `show` porque é outra pergunta: aquele diz o que a rede
-   achou da SÉRIE, este diz o que ela achou daquele episódio. Filtrar o primeiro
-   no cliente daria a resposta certa por acidente e só enquanto a série coubesse
+/* Existe separado de `show` porque é outra pergunta: aquele diz o que a rede
+   achou da SÉRIE, este o que ela achou daquele episódio. Filtrar o primeiro no
+   cliente daria a resposta certa por acidente, e só enquanto a série coubesse
    nas cinco fichas que ele carrega. */
 const episodeTakesStmt = db.prepare(`
   SELECT t.id, t.final, t.scores, t.show_genre, t.comment, t.watched_at,
@@ -344,7 +323,7 @@ async function snapshot() {
   cached = {
     /* As mesmas chaves do saguão de filmes, com outro conteúdo: é o que deixa
        uma tela só desenhar os dois universos. `movies` conta séries aqui, e o
-       nome fica porque a tela lê a chave e o rótulo é dela. */
+       rótulo é da tela. */
     counts: {
       reviews: Number(counts?.reviews) || 0,
       movies: Number(counts?.movies) || 0,

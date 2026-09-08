@@ -1,42 +1,29 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   The screening room.
-
-   The club watches together on Discord, each member in their own browser, and
-   until now the synchronising was a person counting "3, 2, 1, play" in the
-   chat — which holds until the first pause. This module is the thing that
-   replaces that count.
-
-   Uma sala por clube. Era uma sala só, porque o produto era um clube só, e a
-   diferença entre as duas frases é o mapa lá embaixo: cada clube tem o seu
-   quarto, com o seu filme, a sua posição e as suas pessoas dentro, e nada de um
-   atravessa para o outro.
+   The screening room. Uma sala por clube: cada uma com o seu filme, a sua
+   posição e as suas pessoas, e nada de uma atravessa para a outra.
 
    Vive em memória e não no banco: uma sessão são as duas horas em que ela está
-   acontecendo, e reiniciar o servidor acaba com ela. Isso é honesto em vez de
-   perda — na instância grátis um cold start acabaria com ela de qualquer jeito,
-   e uma tabela só registraria que uma sessão sem nenhum espectador existiu um
-   dia. A consequência boa de ser memória é que uma sala vazia simplesmente
-   deixa de existir, e um produto com mil clubes não carrega mil quartos.
+   acontecendo. Na instância grátis um cold start acabaria com ela de qualquer
+   jeito, e uma tabela só registraria que uma sessão sem espectador existiu um
+   dia. Em memória, uma sala vazia simplesmente deixa de existir.
 
    ── the one idea in here ──────────────────────────────────────────────────
    The position is never stored ticking. What is stored is a position and the
    instant it was true, and the current position is derived from those two on
-   demand. A room that stored a counter would need a timer to advance it, every
-   tick would be a chance to drift, and a client that reconnected between ticks
-   would get a stale number. Derived, there is nothing to drift: every reader
-   computes the same answer from the same two fields, and a client that has
-   been away for an hour computes it just as correctly as one that never left.
+   demand. A stored counter would need a timer, every tick would be a chance to
+   drift, and a client that reconnected between ticks would get a stale number.
+   Derived, a client that has been away for an hour computes it just as
+   correctly as one that never left.
 
-   Everything a client sends is validated here rather than on the screen. This
-   state is shared and it is broadcast: one bad request does not break one
-   browser, it breaks everybody's. A NaN written into `position` would poison
-   the derivation for the whole club at once.
+   Everything a client sends is validated HERE and not on the screen: this state
+   is shared and broadcast, so one bad request does not break one browser, it
+   breaks everybody's. A NaN in `position` poisons the derivation for the whole
+   club at once.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── ceilings ─────────────────────────────────────────────────────────────
-   Every one of these exists because the room fans out: a single request is
-   re-emitted to every open connection, so anything unbounded on the way in is
-   an amplifier on the way out. The instance this runs on has 512 MB. */
+   The room fans out: a single request is re-emitted to every open connection,
+   so anything unbounded on the way in is an amplifier on the way out. */
 
 /** Magnets, URLs and source tags. Long enough for a magnet with trackers. */
 const MAX_TEXT = 1024;
@@ -58,25 +45,20 @@ const RUNTIME_SLACK_SECONDS = 900;
 
 const COMMANDS = new Set(['play', 'pause', 'seek']);
 
-/* As quatro palavras do aperto de mão. O servidor não interpreta nenhuma: esta
-   lista existe para que o cano só carregue o que a outra ponta sabe ouvir, e
-   não qualquer coisa que um membro resolva mandar para o navegador de outro.
+/* O servidor não interpreta nenhuma: esta lista existe para que o cano só
+   carregue o que a outra ponta sabe ouvir.
 
-   `want` é a única que não é do WebRTC — é do produto. Quem quer imagem e não
-   tem pede, e quem transmite responde com uma oferta. Ver o cabeçalho de
-   client/src/lib/liveshare.ts: é o pedido vindo do espectador que faz a
+   `want` é a única que não é do WebRTC, é do produto: quem quer imagem e não
+   tem pede, e quem transmite responde com uma oferta. É isso que faz a
    reconexão ser o mesmo caminho da conexão inicial. */
 const SIGNALS = new Set(['want', 'offer', 'answer', 'ice']);
-/* Um SDP de vídeo dá uns 5 kB e um candidato ICE umas poucas centenas de
-   bytes. Isto é folgado para o primeiro e absurdo para o segundo, que é como
-   um teto deve ser: ele não está aqui para ajustar o protocolo, está para que
-   nada sem tamanho atravesse a sala. */
+/* Folgado para um SDP (~5 kB) e absurdo para um candidato ICE, que é como um
+   teto deve ser: não está aqui para ajustar o protocolo, e sim para que nada
+   sem tamanho atravesse a sala. */
 const MAX_SIGNAL = 16 * 1024;
-/* O aperto de mão é uma rajada: um navegador cospe algumas dezenas de
-   candidatos em poucos segundos, e por pessoa da sala. O teto de comandos
-   (dez em cinco segundos) mataria a conexão antes de ela existir, então a
-   sinalização tem o balde dela — largo o bastante para uma sala de seis se
-   conectando ao mesmo tempo, estreito o bastante para não ser um megafone. */
+/* O aperto de mão é uma rajada: dezenas de candidatos em poucos segundos, por
+   pessoa da sala. O teto de comandos (dez em cinco segundos) mataria a conexão
+   antes de ela existir, então a sinalização tem o balde dela. */
 const SIGNAL_WINDOW_MS = 10_000;
 const SIGNAL_MAX = 400;
 
@@ -94,12 +76,9 @@ const LINK_SCHEMES = new Set(['http:', 'https:', 'magnet:']);
    broken one. So links get their own ceiling and are refused rather than cut. */
 const MAX_LINK = 4096;
 
-/* A feature film's subtitles are 40 to 120 kB of WebVTT. This leaves room for a
-   long one with heavy formatting and still refuses anything that is plainly not
-   a subtitle file — someone's .mkv renamed, a log, a mistake. Refused whole,
-   like a link: half a subtitle file is not a shorter subtitle file. Note the
-   body parser in front of this accepts 1 MB, so the ceiling that actually
-   matters is this one. */
+/* Legendas de um longa dão 40 a 120 kB de WebVTT. Recusado inteiro, como um
+   link: meia legenda não é uma legenda menor. O body parser na frente aceita
+   1 MB, então o teto que vale é este. */
 const MAX_SUBTITLE = 512 * 1024;
 
 function blankRoom(clubId) {
@@ -123,23 +102,17 @@ function blankRoom(clubId) {
        the snapshot carries is still only a pointer; see `snapshot`. */
     subtitle: null,
     /* ── quem está transmitindo a própria tela ─────────────────────────────
-       Nulo quase sempre. Quando não é, a sala mudou de natureza: em vez de
-       quatro cópias de um arquivo andando juntas por um relógio, é UM vídeo ao
-       vivo saindo da máquina de uma pessoa para as outras por WebRTC.
+       Nulo quase sempre. Quando não é, a sala muda de natureza: em vez de
+       quatro cópias andando juntas por um relógio, é UM vídeo saindo da máquina
+       de uma pessoa para as outras por WebRTC.
 
-       O servidor não vê um quadro sequer disso — a mídia vai direto de
-       navegador a navegador. O que ele guarda é só o nome de quem está no
-       comando, porque é o que decide para quem os outros devem pedir imagem, e
-       o que a tela do clube precisa dizer. Ver `signal` mais abaixo. */
+       O servidor não vê um quadro. O que ele guarda é o nome de quem está no
+       comando, porque é o que decide para quem os outros pedem imagem. */
     live: null,
     viewers: new Map(),
-    /* As conexões desta sala. Ficavam num Set do módulo, e ali um broadcast era
-       para todo mundo que estivesse ouvindo qualquer coisa.
-
-       Um Map e não um Set porque agora existe recado com destinatário: o aperto
-       de mão do WebRTC é uma conversa entre DUAS pessoas, e mandá-la para a
-       sala inteira seria cada navegador tendo de peneirar oferta que não é
-       dele. O valor é de quem é a conexão. */
+    /* Um Map e não um Set porque existe recado com destinatário: o aperto de
+       mão do WebRTC é uma conversa entre DUAS pessoas, e mandá-la para a sala
+       inteira seria cada navegador tendo de peneirar oferta que não é dele. */
     streams: new Map(),
   };
 }
@@ -248,16 +221,12 @@ function open(room, movie, now = Date.now()) {
   broadcastState(room);
 }
 
-/* ── the source, once it can be handed over ───────────────────────────────
-   The room synchronises control, not video — but a member who arrives after
-   everyone has settled in used to face an empty picker and a question ("what
-   are you all watching?") that the room already knew the answer to. So the
-   first person to point at something shareable leaves the pointer here, and
-   everybody who arrives afterwards loads it without being told.
+/* Quem chega depois de todo mundo se acomodar encontrava um seletor vazio e uma
+   pergunta que a sala já sabia responder. O primeiro a apontar algo
+   compartilhável deixa o ponteiro aqui.
 
-   Passing `null` clears it, which is what happens when the source turns out to
-   be a file on one person's disk: there is nothing to hand over, and a stale
-   pointer is worse than none. */
+   `null` limpa, que é o que acontece quando a fonte é um arquivo no disco de
+   alguém: não há o que entregar, e um ponteiro velho é pior que nenhum. */
 function setLink(room, link, now = Date.now()) {
   if (link !== null && !isShareableLink(link)) return false;
   room.link = link === null ? null : link.trim();
@@ -266,22 +235,16 @@ function setLink(room, link, now = Date.now()) {
   return true;
 }
 
-/* ── the subtitle the club shares ─────────────────────────────────────────
-   The one thing on this screen that is small enough to travel. The film cannot
-   — it is gigabytes and it stays on the disk it came from — but the subtitles
-   are a hundred kilobytes of text, and asking four people to each go and find
-   the same .srt is the same friction as asking them to each paste the same
-   magnet.
+/* A única coisa desta tela pequena o bastante para viajar: o filme são
+   gigabytes e fica no disco de onde veio, a legenda são cem kilobytes de texto.
 
-   What is shared is the file, not the timing. The offset stays with each
-   member because it is a fact about *their* copy of the film: two people
-   watching different rips of the same title need different shifts, and one
-   person's correction applied to everybody would break the three it was not
-   measured against.
+   O que se compartilha é o ARQUIVO, não a sincronia. O ajuste fica com cada
+   membro porque é fato sobre a CÓPIA dele: duas pessoas com rips diferentes do
+   mesmo título precisam de deslocamentos diferentes, e a correção de uma
+   aplicada a todos quebraria as três contra as quais ela não foi medida.
 
-   Passing `null` clears it for everyone, which is what "Remover" now means —
-   the subtitle belongs to the room, so leaving one member's screen is not a
-   thing it can do. */
+   `null` limpa para todo mundo — a legenda é da sala, então sair só da tela de
+   um membro não é uma coisa que ela saiba fazer. */
 function setSubtitle(room, subtitle, now = Date.now()) {
   if (subtitle === null) {
     room.subtitle = null;
@@ -304,27 +267,19 @@ function setSubtitle(room, subtitle, now = Date.now()) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   A TELA DE ALGUÉM, AO VIVO.
+   A TELA DE ALGUÉM, AO VIVO — o outro modo da sala, e o oposto dele em tudo.
+   No modo arquivo cada pessoa tem a própria cópia e o que se sincroniza é um
+   relógio; aqui existe UM vídeo e todo mundo vê o mesmo quadro porque é o mesmo
+   quadro. Não há posição, não há seek, não há o que sincronizar.
 
-   O outro modo da sala, e o oposto dele em tudo. No modo arquivo cada pessoa
-   tem a própria cópia e o que se sincroniza é um relógio — daí a posição
-   derivada, a deriva, a tolerância. Aqui existe UM vídeo, saindo da placa de
-   vídeo de quem transmite, e todo mundo vê o mesmo quadro porque é o mesmo
-   quadro. Não há posição, não há seek, não há o que sincronizar: quem controla
-   é quem está com a tela, apertando play no player dele.
+   O servidor não carrega mídia: a imagem vai direto de navegador a navegador
+   por WebRTC, e o que passa por aqui são os poucos quilobytes do aperto de mão.
+   É a diferença entre uma instância de 512 MB servir um clube e não servir
+   nenhum.
 
-   ── o servidor não carrega mídia ────────────────────────────────────────
-   Nem um quadro. A imagem vai direto de navegador a navegador por WebRTC, e o
-   que passa por aqui são os poucos quilobytes do aperto de mão — a oferta, a
-   resposta e os candidatos de rede. Isso é a diferença entre uma instância de
-   512 MB servir um clube e não servir nenhum.
-
-   ── por que uma pessoa e não uma lista ──────────────────────────────────
-   Porque é uma sessão de cinema. Duas telas ao vivo ao mesmo tempo não é um
-   recurso com o dobro do valor, é a pergunta "qual das duas estamos vendo?"
-   sem resposta — e cada uma custaria a subida de quem transmite vezes o número
-   de pessoas na sala. Quem chegar segundo recebe a recusa e pode pedir a vez a
-   quem está com ela, que é a mesma conversa que aconteceria no Discord.
+   Uma pessoa e não uma lista: duas telas ao vivo ao mesmo tempo é a pergunta
+   "qual das duas estamos vendo?" sem resposta, e cada uma custaria a subida de
+   quem transmite vezes o número de pessoas na sala.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Assumir a transmissão. Falha se outra pessoa já está com ela. */
@@ -352,15 +307,12 @@ function stopLive(room, reviewerId, now = Date.now()) {
   return true;
 }
 
-/* ── o aperto de mão, encaminhado ─────────────────────────────────────────
-   O servidor é o carteiro e não o assunto: ele não lê a oferta, não sabe o que
-   é um candidato ICE, e nada disso é guardado. O que ele garante são as duas
-   coisas que um carteiro garante — que o remetente está na sala, e que o
-   destinatário também.
+/* O servidor é o carteiro e não o assunto: não lê a oferta, não sabe o que é um
+   candidato ICE, não guarda nada. Garante as duas coisas que um carteiro
+   garante — que o remetente está na sala, e que o destinatário também.
 
-   `data` viaja como veio. É SDP ou candidato, gerado pelo navegador de um
-   membro e entregue ao de outro, e o teto existe porque toda string que entra
-   aqui sai multiplicada pelas conexões abertas. */
+   `data` viaja como veio, e o teto existe porque toda string que entra aqui sai
+   multiplicada pelas conexões abertas. */
 function signal(room, fromId, toId, kind, data) {
   if (!SIGNALS.has(kind)) return false;
   if (!room.viewers.has(fromId) || !room.viewers.has(toId)) return false;
@@ -422,26 +374,17 @@ function command(room, type, position, now = Date.now()) {
 }
 
 /* ── a roda de carregar, que agora só informa ─────────────────────────────
-   A travada de um membro já foi problema de todos: a sala parava sozinha por
-   ele e voltava sozinha quando ele voltava. O argumento era o certo no papel —
-   seguir sem quem travou é a dessincronia que este módulo existe para evitar —
-   e o clube passou noites sentado no resultado.
+   A sala parava sozinha quando um membro travava e voltava sozinha quando ele
+   voltava. O argumento era certo no papel — seguir sem quem travou é a
+   dessincronia que este módulo existe para evitar — e o clube passou noites
+   sentado no resultado: é um laço de controle com quatro navegadores e um
+   enxame dentro, e um laço de controle oscila. Todo amortecedor melhorou o
+   número de vezes por noite sem mudar a natureza da coisa.
 
-   Porque é um laço de controle com quatro navegadores, um enxame e um filme
-   dentro dele, e um laço de controle oscila. Todo amortecedor que se somou
-   (carência, teto de paradas por filme, almofada medida antes de dizer que
-   voltou, "chegar não é travar") melhorou o número de vezes por noite e não
-   mudou a natureza da coisa: uma sessão que para quando ninguém pediu, e volta
-   quando ninguém pediu. Quatro pessoas num Discord resolvem isso melhor do que
-   qualquer heurística — alguém fala "peraí" e aperta pause, que é uma coisa que
-   um clube de amigos faz sem pensar.
-
-   Então a sala parou de opinar. Isto aqui só GRAVA quem está carregando e o
-   que cada um abriu, e o painel mostra — é a informação que o clube usa para
-   decidir. Nada aqui muda `status`: o filme só para quando uma pessoa para.
-
-   Quem travou não fica para trás sozinho: o corretor de deriva do player dele
-   o traz de volta para a posição da sala assim que ele conseguir tocar. */
+   Então a sala parou de opinar: isto só GRAVA quem está carregando e o que cada
+   um abriu, e o painel mostra. Nada aqui muda `status` — o filme só para quando
+   uma pessoa para. Quem travou não fica para trás: o corretor de deriva do
+   player dele o traz de volta assim que ele conseguir tocar. */
 function setReady(room, reviewerId, ready, sourceTag) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
@@ -480,17 +423,16 @@ function attach(room, session) {
   };
   room.viewers.set(session.reviewer_id, viewer);
   /* Somebody arriving is news for the people already here. Without this the
-     room only redraws on the next change, so a member who joined during a quiet
-     stretch stayed invisible until somebody pressed something — and the sync
-     frames carry no viewers, so the wait could be the whole film. Leaving
-     already announces itself in `detach`; arriving has to as well. */
+     room only redraws on the next change — and the sync frames carry no
+     viewers, so a member who joined during a quiet stretch could stay invisible
+     for the whole film. */
   broadcastState(room);
   return viewer;
 }
 
-/* Sair não mexe no filme. Havia aqui uma retomada — se a sala estava presa na
-   roda de quem saiu, a roda ia embora com ele —, e ela existia porque a sala
-   se prendia. Não se prende mais: o que sai daqui é uma pessoa do painel. */
+/* Sair não mexe no filme. Havia aqui uma retomada, porque a sala se prendia na
+   roda de quem saiu; não se prende mais. O que sai daqui é uma pessoa do
+   painel. */
 function detach(room, reviewerId) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
@@ -517,13 +459,10 @@ function snapshot(room, now = Date.now()) {
     position: positionAt(room, now),
     revision: room.revision,
     link: room.link,
-    /* The announcement, not the file. This snapshot is re-emitted on every
-       mutation the room has — every play, every seek, every buffer report from
-       every member — and a hundred kilobytes of subtitle riding on each of
-       those, multiplied by everyone connected, is precisely the fan-out the
-       ceilings at the top of this file exist to prevent. So the room says
-       *that* there is a subtitle and which one; whoever does not have it
-       fetches it once, over HTTP, from `GET /api/screening/subtitle`. */
+    /* O anúncio, não o arquivo. Este snapshot é reemitido a cada mutação da
+       sala, e cem kilobytes de legenda em cada uma, vezes todo mundo conectado,
+       é exatamente o fan-out que os tetos do topo existem para evitar. A sala
+       diz QUE há legenda e qual; quem não a tem busca uma vez, por HTTP. */
     subtitle: room.subtitle ? { id: room.subtitle.id, name: room.subtitle.name } : null,
     /* Quem está com a tela no ar, ou null. É o campo que faz cada navegador
        decidir o próprio papel sem perguntar nada: quem se vê aqui transmite,
@@ -543,14 +482,11 @@ function snapshot(room, now = Date.now()) {
 }
 
 /* ── the fan-out ──────────────────────────────────────────────────────────
-   Server-sent events rather than a socket: this needs the server to speak and
-   the client to occasionally answer, which is exactly the shape SSE has, and
-   it costs no dependency, no change to how the app is started, and nothing in
-   the tests that import it. EventSource also reconnects on its own, which
-   matters on an instance that sleeps.
-
-   A pleasant side effect: an open stream is an open request, so the free
-   instance does not idle out in the middle of a film. */
+   Server-sent events rather than a socket: the server speaks and the client
+   occasionally answers, which is the shape SSE has, and it costs no dependency.
+   EventSource also reconnects on its own, which matters on an instance that
+   sleeps — and an open stream is an open request, so the free instance does not
+   idle out in the middle of a film. */
 
 function write(res, payload) {
   try {
@@ -567,10 +503,9 @@ function broadcastState(room) {
   for (const res of room.streams.keys()) write(res, frame);
 }
 
-/* Um recado para UMA pessoa, em todas as abas que ela tiver abertas na sala.
-   Todas e não a primeira: a outra ponta não sabe em qual aba a pessoa está
-   olhando, e uma oferta entregue à aba errada é um aperto de mão que nunca
-   fecha. A aba que não estiver esperando aquele recado o descarta. */
+/* Um recado para UMA pessoa, em TODAS as abas dela: a outra ponta não sabe em
+   qual aba a pessoa está olhando, e uma oferta entregue à aba errada é um
+   aperto de mão que nunca fecha. A aba que não espera aquele recado o descarta. */
 function sendTo(room, reviewerId, payload) {
   let delivered = 0;
   for (const [res, id] of room.streams) {
@@ -588,11 +523,10 @@ function totalStreams() {
   return n;
 }
 
-/* True quando cabe mais uma conexão. Dois tetos e eles medem coisas diferentes:
-   o por pessoa é sobre abas esquecidas de um membro, e continua sendo por sala;
-   o total é sobre a memória da instância, e por isso é somado sobre TODAS as
-   salas — vinte por clube seria vinte vezes o número de clubes, que é o mesmo
-   que não ter teto nenhum. */
+/* Dois tetos que medem coisas diferentes: o por pessoa é sobre abas esquecidas
+   e continua sendo por sala; o total é sobre a memória da instância, e por isso
+   é somado sobre TODAS as salas — vinte por clube seria o mesmo que não ter
+   teto. */
 function canSubscribe(room, reviewerId) {
   if (totalStreams() >= MAX_STREAMS_TOTAL) return false;
   const viewer = room.viewers.get(reviewerId);
@@ -608,19 +542,17 @@ function unsubscribe(room, res) {
   room.streams.delete(res);
 }
 
-/* Two heartbeats with two different jobs. The comment ping is for the proxy in
-   front of the app, which closes a connection it believes has gone silent. The
-   sync frame is for the players: it is the room stating where the film is, so
-   a client that drifted, or joined late, or came back from a locked phone,
-   converges without having to ask. */
+/* Two heartbeats with two different jobs: the comment ping is for the proxy,
+   which closes a connection it believes has gone silent; the sync frame is the
+   room stating where the film is, so a client that drifted or came back from a
+   locked phone converges without having to ask. */
 let timers = null;
 
 function startTimers() {
   if (timers) return;
-  /* Um par de temporizadores para todas as salas, e não um par por sala. O
-     trabalho é proporcional a quantas conexões existem, que é o que ele sempre
-     foi; criar e destruir intervalos junto com cada quarto seria pagar
-     agendamento por clube para fazer exatamente a mesma varredura. */
+  /* Um par de temporizadores para todas as salas: o trabalho é proporcional a
+     quantas conexões existem, e criar intervalos junto com cada quarto seria
+     pagar agendamento por clube para fazer a mesma varredura. */
   timers = [
     setInterval(() => {
       for (const room of rooms.values()) {

@@ -3,43 +3,27 @@ const screening = require('./screening');
 const { excerpt, endsOf } = require('./takes');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O SAGUÃO, do lado do servidor.
+   O SAGUÃO: a única coisa do produto que lê acima da linha do clube.
 
-   O produto virou uma rede de salas e a porta de entrada continuou sendo duas
-   listas de clubes: o chaveiro de quem já chegou e a vitrine de quem está
-   olhando. Nenhuma das duas diz o que a rede ESTÁ FAZENDO — e este produto tem
-   centenas de pôsteres, milhares de notas e salas assistindo juntas agora,
-   nenhum deles à vista de quem entra.
+   Todo agregado daqui conta só o que a sala EMPRESTOU, em dois níveis:
 
-   Este arquivo é a única coisa do produto que lê acima da linha do clube. Por
-   isso ele começa pela parede, e não pelas consultas.
+   `ELIGIBLE` — sala aberta, ou o ADM ligou `show_charts`. Vale para contagem e
+   média: a parede, o pódio, as salas em atividade, o que está em cartaz. Uma
+   média de rede não diz quem deu a nota nem onde.
 
-   ── a parede ──────────────────────────────────────────────────────────────
-   Todo agregado daqui conta só o que a sala EMPRESTOU. São dois níveis, e a
-   diferença entre eles é a diferença entre um número e um texto:
+   `READABLE` — além disso, o clube deixa as fichas legíveis (`show_reviews`).
+   Vale para a ficha da semana, a única coisa daqui que mostra o que uma pessoa
+   ESCREVEU, com o nome dela em cima. Emprestar uma nota para uma média e
+   publicar um texto assinado não são o mesmo gesto.
 
-   `ELIGIBLE` — a sala é aberta, ou o ADM ligou `show_charts`. Vale para o que é
-   contagem e média: a parede de pôsteres, o pódio, as salas em atividade, o que
-   está em cartaz. Uma média de rede não diz quem deu a nota nem onde; diz que
-   alguém, em algum lugar, achou aquilo bom.
-
-   `READABLE` — além do acima, o clube precisa deixar as fichas legíveis
-   (`show_reviews`). Vale para a ficha da semana, que é a única coisa daqui que
-   mostra o que uma pessoa ESCREVEU, com o nome dela em cima. Emprestar uma nota
-   para uma média e publicar um texto assinado não são o mesmo gesto, e um
-   interruptor só não teria como dizer os dois.
-
-   Um clube fechado que não ligou nada não aparece em lugar nenhum desta tela —
-   nem no número de fichas, nem num pôster, nem num filme mais bem avaliado. O
-   que ele continua tendo é a fachada: nome, foto, descrição e quantas pessoas,
-   que já eram de todo mundo (ver clubs.js) e são o que torna possível pedir para
+   Um clube fechado que não ligou nada não aparece em lugar nenhum desta tela.
+   O que ele continua tendo é a fachada, que é o que torna possível pedir para
    entrar.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* As duas paredes como funções do apelido da tabela: a mesma regra precisa ser
-   escrita sobre `c` na consulta de fora e sobre outro apelido numa subconsulta,
-   e duas cópias da condição de privacidade são duas chances de uma delas ficar
-   para trás. */
+/* Como funções do apelido da tabela: a mesma regra é escrita sobre `c` na
+   consulta de fora e sobre outro apelido numa subconsulta, e duas cópias da
+   condição de privacidade são duas chances de uma ficar para trás. */
 const eligible = t => `(${t}.visibility = 'public' OR ${t}.show_charts = 1)`;
 const readable = t =>
   `(${t}.visibility = 'public' OR (${t}.show_charts = 1 AND ${t}.show_reviews = 1))`;
@@ -51,24 +35,19 @@ const READABLE = readable('c');
 const WALL = 28;
 /** Quantos filmes o pódio mostra. */
 const PODIUM = 6;
-/* ── o piso do pódio ──────────────────────────────────────────────────────
-   Sem um mínimo de fichas, o filme mais bem avaliado da rede é para sempre
-   aquele que uma pessoa só, uma vez, achou perfeito. É o defeito clássico
-   desta tela e ele não se corrige na interface: um ranking de médias sobre
-   amostras de tamanho um não é um ranking, é uma lista de entusiasmos.
+/* Sem um mínimo de fichas, o filme mais bem avaliado da rede é para sempre
+   aquele que uma pessoa só, uma vez, achou perfeito: um ranking de médias sobre
+   amostras de tamanho um é uma lista de entusiasmos.
 
-   Três é baixo de propósito. A rede é pequena e um piso alto deixaria o pódio
-   vazio por meses — o que também é uma mentira, só que mais silenciosa. O
-   número de fichas viaja junto de toda linha e é impresso na tela: quem lê o
-   pódio vê sobre quantas opiniões cada média foi feita. */
+   Três é baixo de propósito — a rede é pequena, e um piso alto deixaria o pódio
+   vazio por meses, que é uma mentira mais silenciosa. */
 const FLOOR = 3;
 /** Quantas salas a lista de atividade mostra, e sobre quanto tempo. */
 const ACTIVE = 6;
 const WINDOW_DAYS = 30;
 
-/* O acervo da rede em números. Salas e pessoas são contadas por inteiro — a
-   vitrine já lista toda sala pelo nome, e quantas pessoas existem não é fato de
-   sala nenhuma. Fichas e filmes só contam o que foi emprestado. */
+/* Salas e pessoas são contadas por inteiro — a vitrine já lista toda sala pelo
+   nome. Fichas e filmes só contam o que foi emprestado. */
 const countsStmt = db.prepare(`
   SELECT
     (SELECT COUNT(*) FROM reviews rv JOIN clubs c ON c.id = rv.club_id WHERE ${ELIGIBLE}) AS reviews,
@@ -77,8 +56,7 @@ const countsStmt = db.prepare(`
     (SELECT COUNT(*) FROM clubs) AS clubs
 `);
 
-/* A parede: um filme por caixa, o mais recentemente avaliado primeiro. Sem
-   pôster não entra — uma caixa de cartaz vazia numa parede de cartazes é um
+/* Sem pôster não entra: uma caixa de cartaz vazia numa parede de cartazes é um
    buraco, e não um estado. */
 const wallStmt = db.prepare(`
   SELECT rv.movie_id, rv.movie_title, rv.movie_year, rv.movie_poster,
@@ -105,15 +83,12 @@ const podiumStmt = db.prepare(`
   LIMIT ${PODIUM}
 `);
 
-/* ── salas em atividade ───────────────────────────────────────────────────
-   Fichas nos últimos trinta dias, e não desde sempre. Um ranking de total
-   histórico é um pódio que a sala mais antiga nunca perde: ela ganhou o lugar
-   por ter existido primeiro, e nenhum clube fundado hoje tem como alcançá-la.
-   Trinta dias mede vida, que é o que uma pessoa parada no saguão quer saber —
-   onde é que está acontecendo alguma coisa.
+/* Fichas nos últimos trinta dias, e não desde sempre: um ranking de total
+   histórico é um pódio que a sala mais antiga nunca perde, e nenhum clube
+   fundado hoje tem como alcançá-la. Trinta dias mede vida.
 
-   Uma sala sem nenhuma ficha no período não aparece. Não é castigo: uma lista de
-   atividade cheia de zeros é ruído com forma de dado. */
+   Sala sem ficha no período não aparece — uma lista de atividade cheia de zeros
+   é ruído com forma de dado. */
 const activeStmt = db.prepare(`
   SELECT c.id, c.name, c.slug, c.tagline, c.visibility, c.photo_rev,
          COUNT(rv.id) AS recent,
@@ -128,15 +103,12 @@ const activeStmt = db.prepare(`
   LIMIT ${ACTIVE}
 `);
 
-/* ── a ficha da semana ────────────────────────────────────────────────────
-   Uma avaliação inteira, com o texto que a pessoa escreveu. É a única coisa
-   deste arquivo que tem voz humana — todo o resto é pôster e número —, e é por
-   isso que ela pede a parede mais alta (`READABLE`).
+/* A única coisa deste arquivo que tem voz humana, e por isso a que pede a
+   parede mais alta (`READABLE`).
 
-   O critério é reação: quantas respostas e quantos votos a ficha recebeu. Sem
-   nenhuma reação em lugar nenhum, a ordem cai para quem escreveu alguma coisa e
-   depois para a mais recente — que é o mais honesto que sobra quando a rede
-   ainda não reagiu a nada, e nunca é uma escolha inventada. */
+   O critério é reação: respostas e votos. Sem reação nenhuma, a ordem cai para
+   quem escreveu alguma coisa e depois para a mais recente — o mais honesto que
+   sobra quando a rede ainda não reagiu a nada. */
 const featureStmt = db.prepare(`
   SELECT rv.id, rv.movie_id, rv.movie_title, rv.movie_year, rv.movie_poster,
          rv.movie_genre, rv.scores, rv.final, rv.comment, rv.recorded_at,
@@ -157,32 +129,18 @@ const featureStmt = db.prepare(`
 `);
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AS FICHAS DE UM FILME, EM TODA A REDE.
+   AS FICHAS DE UM FILME, EM TODA A REDE: quem já viu isto, e o que achou.
 
-   O que se lê ao abrir um cartaz da parede: quem já viu isto, e o que achou.
-
-   ── a ordem é por quem avaliou mais ───────────────────────────────────────
-   Escolhido pelo dono do produto, e o argumento dele é bom: quem tem cem fichas
-   neste app já enfrentou os onze critérios cem vezes, e um 7 dessa pessoa
-   carrega uma régua que um 7 de quem avaliou uma vez não carrega. Não é
-   qualidade de opinião — é quantidade de calibragem, que é a única coisa aqui
-   que um banco sabe medir.
+   A ordem é por quem avaliou mais. Não é qualidade de opinião — é quantidade de
+   calibragem, que é a única coisa aqui que um banco sabe medir: quem tem cem
+   fichas já enfrentou os onze critérios cem vezes.
 
    O que ela NÃO é: uma média ponderada. As notas continuam valendo todas o
-   mesmo no pódio e na média da rede. O que a credibilidade decide é quem
-   aparece primeiro numa lista de cinco, que é uma pergunta de edição e não de
-   aritmética.
+   mesmo no pódio e na média da rede; a credibilidade decide quem aparece
+   primeiro numa lista de cinco, que é edição e não aritmética.
 
    A contagem que ordena conta só as salas que emprestam — senão alguém com
-   trezentas fichas numa sala fechada lideraria uma lista da qual ele não
-   participa.
-
-   ── uma ficha por pessoa ──────────────────────────────────────────────────
-   A mesma pessoa avalia o mesmo filme em dois clubes com notas independentes, e
-   é assim que este produto funciona de propósito. Numa lista de cinco, porém,
-   ela apareceria duas vezes — e uma lista com a mesma cara duas vezes é uma
-   lista com quatro pessoas se dizendo cinco. Escolhida em JS, depois de ordenar:
-   `GROUP BY` no SQLite escolheria uma linha arbitrária da dupla.
+   trezentas fichas numa sala fechada lideraria uma lista da qual não participa.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Quantas fichas a folha de um filme mostra. */
@@ -203,9 +161,8 @@ const filmTakesStmt = db.prepare(`
   LIMIT ${TAKES * 4}
 `);
 
-/* A conta da rede sobre este filme, sob a parede mais frouxa: uma média não diz
-   quem deu a nota, então ela vale para toda sala que empresta — inclusive as que
-   não abrem as fichas assinadas. É o mesmo critério do pódio. */
+/* Sob a parede mais frouxa: uma média não diz quem deu a nota, então vale para
+   toda sala que empresta, inclusive as que não abrem as fichas assinadas. */
 const filmVerdictStmt = db.prepare(`
   SELECT AVG(rv.final) AS average, COUNT(*) AS takes, COUNT(DISTINCT rv.club_id) AS clubs
   FROM reviews rv
@@ -266,9 +223,8 @@ const eligibleClubsStmt = db.prepare(`
 
 const photoUrl = row => (row.photo_rev ? `/api/c/${row.slug}/photo?v=${row.photo_rev}` : null);
 
-/* O id vai junto do slug porque a cor de uma sala sem foto é derivada dele — a
-   mesma cor que o painel do chaveiro usa. Derivá-la do slug aqui daria à mesma
-   sala duas cores na mesma tela, o que é a tela dizendo que são duas. */
+/* O id vai junto do slug porque a cor de uma sala sem foto é derivada dele.
+   Derivá-la do slug aqui daria à mesma sala duas cores na mesma tela. */
 const clubDTO = row => ({
   id: row.id,
   name: row.name,
@@ -278,17 +234,13 @@ const clubDTO = row => ({
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Em cartaz agora.
+   Em cartaz agora. Não sai do banco: sai do `Map` de salas em memória do
+   screening — uma sala aberta com um filme dentro É a sessão, e não há tabela a
+   consultar. Por isso esta parte é recalculada a cada pedido enquanto o resto
+   do saguão fica em cache: um "agora" com um minuto de atraso não é agora.
 
-   Não sai do banco: sai do `Map` de salas em memória do screening, que é onde a
-   sessão ao vivo mora. Uma sala aberta com um filme dentro é literalmente uma
-   sessão acontecendo, e não há tabela nenhuma a consultar — é por isso que esta
-   parte é recalculada a cada pedido enquanto o resto do saguão fica em cache.
-   Um "agora" com um minuto de atraso não é agora.
-
-   `viewers` é quem está com a sala aberta neste segundo. Uma sessão com o filme
-   posto e ninguém dentro ainda conta: alguém acabou de abrir a sala e está
-   esperando o clube chegar, que é exatamente o momento em que o saguão anunciar
+   Uma sessão com o filme posto e ninguém dentro ainda conta: alguém acabou de
+   abrir a sala e está esperando o clube chegar, que é o momento em que anunciar
    isso vale mais.
    ══════════════════════════════════════════════════════════════════════════ */
 async function nowPlaying() {
@@ -311,24 +263,18 @@ async function nowPlaying() {
         poster: room.movie.poster ?? null,
       },
       watching: room.viewers.size,
-      /* 'playing' ou 'paused'. Uma sala pausada continua sendo uma sessão — o
-         clube parou para discutir, que é o que este clube faz. */
+      /* Uma sala pausada continua sendo uma sessão: o clube parou para
+         discutir, que é o que este clube faz. */
       status: room.status,
     });
   }
   return out.sort((a, b) => b.watching - a.watching);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O cache.
-
-   Seis agregações sobre a tabela de avaliações inteira, na porta de entrada do
-   produto, para uma resposta que muda quando alguém grava uma ficha — o que
-   acontece algumas vezes por noite. Um minuto de idade é invisível para quem lê
-   e é a diferença entre a porta abrir na hora e a porta pensar.
-
-   O que NÃO entra aqui é o que está em cartaz: ver acima.
-   ══════════════════════════════════════════════════════════════════════════ */
+/* Seis agregações sobre a tabela de avaliações inteira, na porta de entrada,
+   para uma resposta que muda algumas vezes por noite. Um minuto de idade é
+   invisível para quem lê e é a diferença entre a porta abrir na hora e a porta
+   pensar. O que está em cartaz não entra aqui: ver acima. */
 const TTL_MS = 60_000;
 let cached = null;
 let cachedAt = 0;
@@ -427,7 +373,7 @@ module.exports = {
   snapshot, film, invalidate, FLOOR, WINDOW_DAYS, TAKES,
   /* As duas paredes saem daqui para o saguão de séries usar as MESMAS. Uma
      segunda definição da regra de privacidade é a que fica para trás quando um
-     interruptor novo aparecer, e o modo de falhar dela é o pior deste produto:
-     nada quebra, um clube fechado só passa a aparecer numa parede bonita. */
+     interruptor novo aparecer, e o modo de falhar é o pior deste produto: nada
+     quebra, um clube fechado só passa a aparecer numa parede bonita. */
   eligible, readable, clubDTO, photoUrl,
 };

@@ -2,27 +2,16 @@ const crypto = require('node:crypto');
 const db = require('./db');
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Quem é você.
-
-   Isto era um PIN de quatro dígitos, e o PIN estava certo enquanto entrar
-   significava escolher o próprio rosto numa lista de quatro pessoas: a
-   identidade já estava na tela, e o que faltava era só provar que era você. Num
-   produto com muitos clubes essa lista é todo mundo que existe, e um mural com
-   todos os usuários da plataforma não é uma tela de entrada — é um vazamento
-   com um formulário em cima.
-
-   Então a identidade passa a ser o e-mail, e ela chega por dois caminhos:
+   Quem é você. A identidade é o e-mail, e ela chega por dois caminhos:
 
    1. **Google.** A porta normal. Não guardamos senha nenhuma nesse caminho, e
-      quem cuida de segundo fator, de conta invadida e de recuperação é o Google.
-   2. **E-mail e senha.** Cadastrada na primeira entrada pelo Google, e é o que
-      garante que ninguém fique preso a ele: o dia em que a conta Google sumir,
-      o clube continua acessível.
+      quem cuida de segundo fator e de conta invadida é o Google.
+   2. **E-mail e senha.** É o que garante que ninguém fique preso a ele: o dia
+      em que a conta Google sumir, o clube continua acessível.
 
-   Três regras seguram este arquivo, e são as mesmas de antes:
+   Três regras seguram este arquivo:
 
-   1. A senha nunca é gravada, logada ou devolvida. Só um hash scrypt e um salt
-      por conta vão para o banco.
+   1. A senha nunca é gravada, logada ou devolvida. Só um hash scrypt e um salt.
    2. Erros seguidos contam, e a conta descansa por um tempo crescente.
    3. O cookie carrega um token aleatório; o banco guarda só o SHA-256 dele. Ler
       a tabela não deixa ninguém se passar por um membro.
@@ -30,14 +19,10 @@ const db = require('./db');
 
 const SESSION_COOKIE = 'cc_session';
 
-/* ── trinta dias, e não um ────────────────────────────────────────────────
-   Vinte e quatro horas fazia sentido para um PIN de quatro dígitos digitado em
-   dois segundos: o custo de reentrar era nada. Entrar pelo Google é uma volta
-   inteira ao provedor e de volta, e cobrar isso todo dia de quem só quer ver o
-   que o clube avaliou é o produto pedindo pedágio para ser aberto.
-
-   Deslizante: cada uso empurra a validade para frente, então quem entra toda
-   semana nunca é deslogado, e quem sumiu por um mês entra de novo. */
+/* Entrar pelo Google é uma volta inteira ao provedor e de volta, e cobrar isso
+   todo dia de quem só quer ver o que o clube avaliou é o produto pedindo
+   pedágio para ser aberto. Deslizante: cada uso empurra a validade, então quem
+   entra toda semana nunca é deslogado. */
 const SESSION_DAYS = 30;
 /* Renovar só quando falta menos que isto. Uma renovação é uma escrita, e
    escrever a cada requisição seria um INSERT por clique numa aba que fica
@@ -47,11 +32,10 @@ const RENEW_UNDER_DAYS = 15;
 const MAX_ATTEMPTS = 5;
 const LOCK_SECONDS = 60; // multiplicado por quanto a conta já passou do limite
 
-/* Oito é o piso que vale a pena impor. Acima disso a força bruta on-line já não
-   é o caminho — a trava por tentativas cuida dela —, e exigir símbolo, número e
-   maiúscula produz `Senha123!` em toda conta do clube. O teto existe porque
-   scrypt trabalha sobre o que recebe, e um megabyte de senha é um jeito de
-   pedir ao servidor que pare de responder. */
+/* Oito é o piso que vale a pena impor: acima disso a força bruta on-line já não
+   é o caminho, e exigir símbolo, número e maiúscula produz `Senha123!` em toda
+   conta do clube. O teto existe porque scrypt trabalha sobre o que recebe, e um
+   megabyte de senha é um jeito de pedir ao servidor que pare de responder. */
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 200;
 
@@ -118,21 +102,14 @@ async function lockedSecondsLeft(reviewer) {
    que cria uma pessoa vinda do Google, e ela precisa nascer com a sua. */
 const DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#e0b1a4', '#9fd0c0', '#d9c07a'];
 
-/* ── uma conta criada à mão ───────────────────────────────────────────────
-   Nem todo mundo tem, ou quer usar, uma conta Google. Isso não é um caso de
-   borda — é metade das pessoas —, e um produto cuja única porta é a de outra
-   empresa é um produto que decidiu de quem os seus usuários precisam ser
+/* Nem todo mundo tem, ou quer usar, uma conta Google — e um produto cuja única
+   porta é a de outra empresa decidiu de quem os seus usuários precisam ser
    clientes.
 
-   O e-mail aqui NÃO é verificado, e é honesto dizer isso em vez de fingir: não
-   há serviço de e-mail neste app, então não há como mandar um link de
-   confirmação. A consequência é concreta e está contida: uma conta assim serve
-   para entrar e para usar o produto, e não serve para HERDAR nada. Só um e-mail
-   verificado pelo Google liga uma conta que já existia, e só ele senta na
-   cadeira de administrador da instalação — ver `accountForGoogle` e server.js.
-
-   O dia em que existir envio de e-mail, o que muda é uma coluna `email_verified`
-   e um link; nada do que está escrito acima deixa de valer. */
+   O e-mail aqui NÃO é verificado, e a consequência está contida: uma conta
+   assim serve para entrar e usar o produto, e não serve para HERDAR nada. Só um
+   e-mail verificado pelo Google liga uma conta que já existia, e só ele senta na
+   cadeira de administrador da instalação. */
 async function register({ name, email, password }) {
   const mail = String(email || '').trim().toLowerCase();
   const quem = String(name || '').trim().slice(0, 60);
@@ -158,27 +135,23 @@ async function register({ name, email, password }) {
   return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id) };
 }
 
-/* Deliberadamente frouxo. A validação séria de e-mail é mandar um e para lá, e
-   isto não manda; o que esta regra evita é `João` e ` ` virando login, não uma
-   pessoa determinada a escrever um endereço que não é dela. */
+/* Deliberadamente frouxo. A validação séria de e-mail é mandar um e para lá:
+   isto evita `João` e ` ` virando login, não uma pessoa determinada a escrever
+   um endereço que não é dela. */
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const isValidEmail = mail => typeof mail === 'string' && mail.length <= 200 && EMAIL_RE.test(mail);
 
-/* ── a conta que o Google aponta ──────────────────────────────────────────
-   Procurada por `sub` antes de por e-mail, e a ordem é a regra de segurança
-   inteira: `sub` é o identificador que o Google garante estável para sempre,
-   e o e-mail é o que a pessoa digita e o que um dia pode trocar de dono. Casar
-   por e-mail primeiro seria aceitar que quem herdar um endereço herda a conta.
+/* Procurada por `sub` ANTES de por e-mail, e a ordem é a regra de segurança
+   inteira: `sub` é o identificador que o Google garante estável para sempre, e
+   o e-mail um dia pode trocar de dono. Casar por e-mail primeiro seria aceitar
+   que quem herdar um endereço herda a conta.
 
-   O e-mail ainda serve para uma coisa, uma vez só: ligar a conta que já existia
-   antes de os clubes existirem. É o que CINECLUBE_ADMIN_EMAIL faz — sem isso, a
-   primeira entrada pelo Google criaria uma pessoa nova e as fichas antigas
-   ficariam num avaliador que ninguém consegue mais acessar. Depois de ligada, a
-   conta tem `google_sub` e esta variável não faz mais diferença nenhuma.
+   O e-mail serve para uma coisa, uma vez só: `CINECLUBE_ADMIN_EMAIL` ligar a
+   conta do dono na primeira entrada. Depois de ligada, a conta tem `google_sub`
+   e a variável não faz mais diferença.
 
    `verified` vem do próprio Google: um e-mail não verificado é uma string que
-   alguém escreveu, e ligar uma conta existente por ela seria a porta dos fundos
-   que este bloco existe para não abrir. */
+   alguém escreveu. */
 async function accountForGoogle({ sub, email, name, verified }) {
   const byGoogle = await db.prepare('SELECT * FROM reviewers WHERE google_sub = ?').get(sub);
   if (byGoogle) return { reviewer: byGoogle, created: false };
@@ -187,10 +160,9 @@ async function accountForGoogle({ sub, email, name, verified }) {
   const mail = (email || '').trim().toLowerCase();
 
   if (mail && verified) {
-    /* A conta que já existe com este e-mail, ou a conta de admin herdada. Nos
-       dois casos só serve quem AINDA NÃO tem `google_sub`: uma conta já ligada
-       pertence a outro `sub`, e sobrescrever a ligação seria entregar a conta de
-       alguém a quem chegou depois. */
+    /* Nos dois casos só serve quem AINDA NÃO tem `google_sub`: uma conta já
+       ligada pertence a outro `sub`, e sobrescrever a ligação seria entregar a
+       conta de alguém a quem chegou depois. */
     const byMail = await db
       .prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE AND google_sub IS NULL')
       .get(mail);
@@ -200,9 +172,8 @@ async function accountForGoogle({ sub, email, name, verified }) {
         ? await db.prepare('SELECT * FROM reviewers WHERE is_admin = 1 AND google_sub IS NULL ORDER BY created_at LIMIT 1').get()
         : null);
     if (heir) {
-      /* E o endereço passa a estar provado: chegar aqui exige `verified` do
-         próprio Google (ver a guarda algumas linhas acima), que é a prova que
-         este produto não tem como produzir sozinho. */
+      /* Chegar aqui exige `verified` do próprio Google, que é a prova que este
+         produto não tem como produzir sozinho. */
       await db.prepare(
         `UPDATE reviewers SET google_sub = ?, email = COALESCE(email, ?), email_verified = 1
          WHERE id = ?`
@@ -212,33 +183,24 @@ async function accountForGoogle({ sub, email, name, verified }) {
     }
   }
 
-  /* ── e o e-mail só é gravado se for confiável ───────────────────────────
-     Um endereço não verificado é uma string que alguém escreveu, e gravá-lo
-     seria pior do que inútil de duas formas: ele viraria a identidade de login
-     por senha de uma conta que ninguém provou ser sua, e — se aquele endereço já
-     for de outra pessoa — a escrita bate no índice único e a entrada inteira
-     morre num 500, do lado de fora, sem nada que o visitante possa fazer.
+  /* Um endereço não verificado não é gravado, e nulo é melhor que ele de duas
+     formas: gravado, ele viraria a identidade de login por senha de uma conta
+     que ninguém provou ser sua; e se já for de outra pessoa, a escrita bate no
+     índice único e a entrada inteira morre num 500 do lado de fora.
 
-     Nulo, então. A conta existe e é identificada pelo `sub`, que é o que o
-     Google garante; a rota de senha já sabe recusar cadastrar senha numa conta
-     sem e-mail, com uma frase que diz o porquê. Mesmo tratamento para o caso de
-     corrida em que o endereço verificado foi tomado entre a consulta acima e
-     esta escrita: melhor uma conta sem e-mail do que uma entrada quebrada. */
+     A conta existe e é identificada pelo `sub`. A rota de senha já sabe recusar
+     cadastrar senha numa conta sem e-mail, com uma frase que diz o porquê. */
   const trusted = mail && verified ? mail : null;
   const free = trusted
     ? !(await db.prepare('SELECT 1 AS x FROM reviewers WHERE email = ? COLLATE NOCASE').get(trusted))
     : false;
 
-  /* Uma pessoa nova. A cor é sorteada da mesma paleta que o resto do produto
-     usa para distinguir gente numa lista, e o nome vem do Google só como ponto
-     de partida — a pessoa troca no próprio perfil como sempre pôde. */
+  /* O nome vem do Google só como ponto de partida — a pessoa troca no próprio
+     perfil como sempre pôde. */
   const id = 'p' + crypto.randomUUID();
   const dot = DOTS[Math.floor(Math.random() * DOTS.length)];
-  /* `email_verified` acompanha o endereço e nunca o precede: ele só vale 1
-     quando o endereço gravado é o `trusted` acima — o que o Google marcou como
-     verificado. Uma conta que nasce sem e-mail nasce não verificada, porque não
-     há endereço nenhum a verificar, e o dia em que ela ganhar um pela tela de
-     conta é o dia em que ele terá de ser provado como o de qualquer outra. */
+  /* `email_verified` acompanha o endereço e nunca o precede: uma conta que
+     nasce sem e-mail nasce não verificada, porque não há endereço a verificar. */
   const verificado = free && trusted ? 1 : 0;
   await db.prepare(
     'INSERT INTO reviewers (id, name, dot, email, google_sub, email_verified) VALUES (?, ?, ?, ?, ?, ?)'
@@ -251,31 +213,20 @@ async function accountForGoogle({ sub, email, name, verified }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   FUNDIR DUAS CONTAS DA MESMA PESSOA
+   FUNDIR DUAS CONTAS DA MESMA PESSOA — uma situação que um produto com duas
+   portas de entrada produz sozinho, para sempre.
 
-   Aqui morava uma ponte: dez pessoas tinham conta quando entrar era um PIN de
-   quatro dígitos, e a tela de "você já tinha conta aqui?" deixava cada uma
-   reclamar a sua provando com o PIN que sempre usou. A ponte foi retirada — ela
-   nasceu com data para morrer, e a data chegou. O que fica é o motor dela, que
-   não é da migração: duas contas da mesma pessoa é uma situação que um produto
-   com duas portas de entrada (Google e senha) produz sozinho, para sempre.
+   Sem rota: quem chama é `scripts/merge-accounts.js`, rodado à mão com os dois
+   ids na frente. Uma fusão é irreversível e escolhe qual das duas pessoas
+   sobrevive, o que não é decisão para um botão num telefone.
 
-   Sem rota. Quem chama é `scripts/merge-accounts.js`, rodado à mão por quem
-   administra a instalação, com os dois ids na frente. Uma fusão é irreversível
-   e escolhe qual das duas pessoas sobrevive: não é uma decisão para se tomar
-   atrás de um botão, num telefone, sem olhar o que tem dos dois lados.
-
-   ── a direção ─────────────────────────────────────────────────────────────
-   A conta ANTIGA sobrevive, e a nova é dissolvida nela. É a direção certa e não
-   é arbitrária: mover as credenciais é mexer em quatro colunas de uma linha,
-   e mover o histórico seria reescrever a chave estrangeira em sete tabelas com
-   restrições de unicidade em cada uma. O que se preserva também é o que
-   importa: o nome, o retrato, a bio e as fichas são a pessoa aqui dentro; o
-   e-mail e o `google_sub` são só como ela abre a porta agora.
+   A conta ANTIGA sobrevive e a nova é dissolvida nela: mover as credenciais é
+   mexer em quatro colunas de uma linha, e mover o histórico seria reescrever a
+   chave estrangeira em sete tabelas com restrições de unicidade em cada uma.
 
    Tudo num lote, que no libSQL é uma transação: se qualquer passo falhar, a
-   conta nova não pode ficar sem as credenciais que já foram tiradas dela — isso
-   trancaria a pessoa para fora das duas.
+   conta nova não pode ficar sem as credenciais que já foram tiradas dela —
+   isso trancaria a pessoa para fora das duas.
    ══════════════════════════════════════════════════════════════════════════ */
 async function claimAccount(newId, oldId) {
   const nova = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(newId);
@@ -286,13 +237,10 @@ async function claimAccount(newId, oldId) {
        linhas não podem carregar o mesmo valor nem por um instante. */
     { sql: 'UPDATE reviewers SET email = NULL, google_sub = NULL WHERE id = ?', args: [newId] },
     {
-      /* `email_verified` acompanha o e-mail, e tem de acompanhar: a coluna
-         nasceu depois desta fusão e ficou de fora dela. O efeito era silencioso
-         e caro — a conta antiga herdava um endereço provado pelo Google e
-         continuava marcada como não confirmada, então a pessoa passava a ver o
-         aviso de confirmar e não conseguia fundar clube, por um endereço que
-         ela já tinha provado. Uma credencial que se move sem o fato que a
-         qualifica é meia credencial. */
+      /* `email_verified` acompanha o e-mail e tem de acompanhar: sem isso a
+         conta antiga herda um endereço provado pelo Google e continua marcada
+         como não confirmada, então a pessoa vê o aviso de confirmar e não
+         consegue fundar clube por um endereço que ela já provou. */
       sql: `UPDATE reviewers
             SET email = ?, google_sub = ?, password_hash = ?, password_salt = ?,
                 email_verified = ?, auth_attempts = 0, locked_until = NULL
@@ -308,11 +256,9 @@ async function claimAccount(newId, oldId) {
     },
   ];
 
-  /* O que a conta nova possa ter acumulado entre entrar e reivindicar. Espera-se
-     que seja nada, mas "espera-se" não é uma garantia que se possa escrever numa
-     migração. `OR IGNORE` porque a antiga pode já ter a mesma linha — a mesma
-     pessoa no mesmo clube, a mesma ficha do mesmo filme —, e nesse caso o que
-     vale é o que ela já tinha; o resto some junto com a linha dela. */
+  /* O que a conta nova possa ter acumulado antes da fusão. `OR IGNORE` porque a
+     antiga pode já ter a mesma linha — a mesma pessoa no mesmo clube, a mesma
+     ficha do mesmo filme —, e nesse caso vale o que ela já tinha. */
   for (const [tabela, coluna] of [
     ['club_members', 'reviewer_id'],
     ['reviews', 'reviewer_id'],
@@ -379,30 +325,19 @@ async function readSession(token) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   OS LINKS QUE CHEGAM POR E-MAIL.
+   OS LINKS QUE CHEGAM POR E-MAIL: um segredo de vida curta que só chega a quem
+   lê aquela caixa, e cuja apresentação é a prova de que o endereço é dela.
 
-   Dois usos, uma mecânica: um segredo de vida curta que só chega a quem lê
-   aquela caixa de entrada, e cuja apresentação é a prova de que o endereço é
-   dela. Confirmar um e-mail e redefinir uma senha são a mesma frase com dois
-   fins.
+   1. **256 bits de acaso**, não um código de seis dígitos: um código curto pede
+      trava por tentativa e relógio; um token deste tamanho não é adivinhado.
+   2. **O banco guarda só o SHA-256.** Um vazamento de banco não devolve um
+      único link utilizável. Sem salt, e é correto: salt existe para atrasar
+      quem adivinha senha humana, e aqui não há nada humano a adivinhar.
+   3. **Uso único, por exclusão.** Uma coluna "já usado" seria uma segunda
+      resposta, livre para discordar da primeira.
 
-   Três decisões, e as três são as das sessões, pelos mesmos motivos:
-
-   1. **256 bits de acaso**, não um código de seis dígitos. Um código curto pede
-      uma trava por tentativa e um relógio; um token deste tamanho não é
-      adivinhado, e a trava vira uma segunda linha de defesa em vez da primeira.
-   2. **O banco guarda só o SHA-256.** O token vive no e-mail e no endereço que
-      a pessoa abre. Um vazamento de banco não devolve um único link utilizável.
-      Não há salt, e é correto: um salt existe para atrasar quem adivinha uma
-      senha humana, e aqui não há nada de humano para adivinhar.
-   3. **Uso único, por exclusão.** Usar apaga a linha. Uma coluna "já usado"
-      seria uma segunda resposta, livre para discordar da primeira, para a
-      pergunta que a existência da linha já responde.
-
-   As validades são diferentes e a diferença é o que cada link pode fazer.
-   Confirmar um endereço não dá acesso a nada, então 24 horas é conveniência
-   sem custo. Redefinir uma senha É o acesso, e uma hora é o tempo de ir ao
-   e-mail e voltar.
+   As validades diferem pelo que cada link pode fazer: confirmar um endereço não
+   dá acesso a nada; redefinir uma senha É o acesso.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const TOKEN_HOURS = { verify: 24, reset: 1 };
@@ -410,9 +345,8 @@ const TOKEN_HOURS = { verify: 24, reset: 1 };
 /** Cria um link novo e apaga os anteriores do mesmo tipo para a mesma pessoa. */
 async function createEmailToken(reviewerId, kind, email) {
   const token = crypto.randomBytes(32).toString('base64url');
-  /* Pedir um link novo invalida o anterior. Sem isto, cada pedido deixaria mais
-     um segredo válido circulando por e-mail — e quem pede duas vezes é quase
-     sempre alguém que não recebeu o primeiro, não alguém que queira dois. */
+  /* Pedir um link novo invalida o anterior: quem pede duas vezes é quase sempre
+     alguém que não recebeu o primeiro, não alguém que queira dois. */
   await db.prepare('DELETE FROM email_tokens WHERE reviewer_id = ? AND kind = ?')
     .run(reviewerId, kind);
   await db.prepare(
@@ -422,10 +356,9 @@ async function createEmailToken(reviewerId, kind, email) {
   return token;
 }
 
-/* Lê e CONSOME. Devolve a conta, ou null — e um null só quer dizer uma coisa
-   para quem chama: o link não vale. Distinguir "não existe" de "expirou" de
-   "era de outro endereço" seria contar a quem apresenta um token errado alguma
-   coisa sobre os tokens certos.
+/* Lê e CONSOME. Um null só quer dizer uma coisa para quem chama: o link não
+   vale. Distinguir "não existe" de "expirou" contaria a quem apresenta um token
+   errado alguma coisa sobre os certos.
 
    `email` é comparado com o da conta AGORA: se a pessoa trocou o endereço entre
    pedir e clicar, o link antigo confirmaria um endereço que ninguém pediu. */
@@ -473,8 +406,7 @@ async function destroyAllSessions(reviewerId) {
 }
 
 /* ── cookie plumbing ──────────────────────────────────────────────────────
-   Express 4 ships no cookie parser and this needs exactly one cookie, so
-   pulling a dependency in for it would be the expensive way to read a string. */
+   Express 4 ships no cookie parser and this needs exactly one cookie. */
 
 function readCookie(req, name) {
   const raw = req.headers.cookie;
@@ -524,9 +456,8 @@ function requireSession(req, res, next) {
   next();
 }
 
-/* O administrador da INSTALAÇÃO, que é outra coisa do que o ADM de um clube.
-   Este aqui cuida de contas; quem manda dentro de uma sala é o `role` em
-   club_members, e quem cobra isso é o middleware de clube. */
+/* O administrador da INSTALAÇÃO cuida de contas. Quem manda dentro de uma sala
+   é o `role` em club_members, cobrado pelo middleware de clube. */
 function requireAdmin(req, res, next) {
   if (!req.session) return res.status(401).json({ error: SIGN_IN });
   if (!req.session.is_admin) return res.status(403).json({ error: 'Só o administrador pode fazer isso.' });

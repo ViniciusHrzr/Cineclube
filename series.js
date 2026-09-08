@@ -1,15 +1,9 @@
 const { GENRE_PRIORITY } = require('./criteria');
 
-/* ── o TMDB, do lado das séries ───────────────────────────────────────────
-   Irmão de tmdb.js e deliberadamente separado dele. O TMDB trata filme e série
-   como dois mundos: outros caminhos, outra tabela de gêneros, outros nomes de
-   campo para as mesmas coisas (`name` e não `title`, `first_air_date` e não
-   `release_date`). Um arquivo só com um `if` em cada função seria os dois
-   mundos disputando as mesmas linhas.
-
-   O que é genuinamente comum — a chave, o idioma, o tratamento de erro — mora
-   aqui de novo em quinze linhas. É menos acoplamento do que um módulo
-   compartilhado custaria. */
+/* Irmão de tmdb.js e deliberadamente separado dele: o TMDB trata filme e série
+   como dois mundos — outros caminhos, outra tabela de gêneros, outros nomes de
+   campo para as mesmas coisas (`name` e não `title`). Um arquivo só, com um
+   `if` em cada função, seria os dois mundos disputando as mesmas linhas. */
 
 const API_BASE = 'https://api.themoviedb.org/3';
 const POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
@@ -43,15 +37,12 @@ async function tmdbGet(pathname, params) {
 const posterUrl = path => (path ? POSTER_BASE + path : null);
 const stillUrl = path => (path ? STILL_BASE + path : null);
 
-/* ── os gêneros de televisão são outra lista ──────────────────────────────
-   O TMDB mantém duas taxonomias e elas não se sobrepõem: `878` é ficção
-   científica em filme e não existe em série, que usa `10765` para ficção
-   científica E fantasia juntas. Usar o mapa de filmes aqui mandaria toda série
-   para Drama, que é o balde do que não foi reconhecido.
+/* O TMDB mantém duas taxonomias que não se sobrepõem: `878` é ficção científica
+   em filme e não existe em série, que usa `10765` para ficção científica E
+   fantasia juntas. Usar o mapa de filmes aqui mandaria toda série para Drama.
 
-   O destino é a mesma taxonomia interna de nove, porque o clube não deveria
-   aprender dois vocabulários para a mesma pergunta. Onde a lista de TV é mais
-   grossa que a nossa, a escolha está anotada. */
+   O destino é a mesma taxonomia interna de nove: o clube não deveria aprender
+   dois vocabulários para a mesma pergunta. */
 const TV_GENRE_MAP = {
   10759: 'Ação', // Action & Adventure
   16: 'Animação',
@@ -70,18 +61,16 @@ const TV_GENRE_MAP = {
   37: 'Ação' // Western
 };
 
-/* O caminho de volta, para descobrir séries por gênero. Não dá para reusar o
-   GENRE_TO_TMDB de criteria.js: aquele carrega ids de FILME, e mandá-los para
-   /discover/tv devolve lixo ou nada — `878` não existe em série, e `10765` não
-   existe em filme. Construído do mapa acima para os dois nunca discordarem. */
+/* Não dá para reusar o GENRE_TO_TMDB de criteria.js: aquele carrega ids de
+   FILME, e mandá-los para /discover/tv devolve lixo. Construído do mapa acima
+   para os dois nunca discordarem. */
 const GENRE_TO_TV = {};
 for (const [id, genre] of Object.entries(TV_GENRE_MAP)) {
   (GENRE_TO_TV[genre] ||= []).push(id);
 }
 for (const genre of Object.keys(GENRE_TO_TV)) GENRE_TO_TV[genre] = GENRE_TO_TV[genre].join(',');
 
-/* A mesma regra de prioridade dos filmes, pelo mesmo motivo: a ordem em que o
-   TMDB devolve os ids é aproximadamente a ordem em que foram cadastrados, e
+/* A ordem em que o TMDB devolve os ids é aproximadamente a de cadastro, e
    tratá-la como ranking faz Drama — que é também o balde do desconhecido —
    ganhar quase sempre. */
 function genresFromTvIds(ids) {
@@ -156,10 +145,9 @@ const RESELLER = /\s(?:Amazon|Apple TV|Roku|Player|Channel)s?\s*Channel$/i;
 const WITH_ADS = /\s(?:with Ads|Ad[- ]Supported|Basic with Ads)$/i;
 const MAX_PROVIDERS = 6;
 
-/* A mesma poda de tmdb.js — as regras estão explicadas lá. Repetida e não
-   importada porque é a única coisa deste arquivo que o outro também faz, e
-   um módulo terceiro para trinta linhas puras seria mais encanamento do que
-   a duplicação custa. */
+/* A mesma poda de tmdb.js, explicada lá. Repetida e não importada porque é a
+   única coisa que os dois arquivos compartilham, e um módulo terceiro para
+   trinta linhas puras seria mais encanamento do que a duplicação custa. */
 function tidyProviders(list) {
   const kept = [];
   const clean = (list || [])
@@ -187,22 +175,17 @@ function watchIn(providers) {
   return { link: here.link || null, streaming };
 }
 
-/* ── a temporada zero ─────────────────────────────────────────────────────
-   O TMDB numera especiais, piloto não exibido e bastidores como temporada 0, e
-   quase nenhuma delas é o que o clube quer acompanhar. Ela é filtrada da lista
-   de temporadas e continua alcançável por endereço direto — quem for atrás de
-   um especial acha; quem está acompanhando a série não tropeça nele. */
+/* O TMDB numera especiais, piloto não exibido e bastidores como temporada 0.
+   Filtrada da lista e ainda alcançável por endereço direto: quem for atrás de
+   um especial acha, quem acompanha a série não tropeça nele. */
 const isRegular = s => s.season_number > 0;
 
-/* ── quem assina um EPISÓDIO ──────────────────────────────────────────────
-   A diferença mais concreta entre avaliar um filme e avaliar um episódio. Um
-   filme tem um diretor; uma série tem um por episódio, e é comum que o melhor
-   episódio da temporada seja o de alguém que dirigiu aquele e mais nenhum.
+/* Um filme tem um diretor; uma série tem um por episódio, e é comum que o
+   melhor da temporada seja de alguém que dirigiu aquele e mais nenhum.
 
-   Só direção e roteiro, e não os seis de tmdb.js: o TMDB carrega a equipe
-   completa por FILME, e por episódio carrega o que mudou naquele — quem
-   dirigiu e quem escreveu. Fotografia e montagem de uma série são a equipe da
-   temporada, e atribuí-las ao episódio seria inventar uma assinatura. */
+   Só direção e roteiro: por episódio o TMDB carrega o que mudou naquele.
+   Fotografia e montagem são a equipe da temporada, e atribuí-las ao episódio
+   inventaria uma assinatura. */
 const SIGNED_BY = {
   direcao: ['Director'],
   roteiro: ['Writer', 'Screenplay', 'Teleplay', 'Story']
@@ -244,9 +227,8 @@ async function showDetails(id) {
     english: englishOf(s, s.translations),
     year: s.first_air_date ? Number(s.first_air_date.slice(0, 4)) : null,
     endedYear: s.last_air_date ? Number(s.last_air_date.slice(0, 4)) : null,
-    /* Se ainda vem episódio. O clube que acompanha uma série no ar tem uma
-       relação diferente com ela do que com uma encerrada, e é a primeira coisa
-       que se pergunta antes de começar. */
+    /* Se ainda vem episódio: é a primeira coisa que se pergunta antes de
+       começar a acompanhar uma série. */
     status: s.status || null,
     inProduction: !!s.in_production,
     genre: genres[0],
@@ -268,16 +250,13 @@ async function showDetails(id) {
     })),
     totalEpisodes: s.number_of_episodes || null,
     /* ── as outras ordens em que esta série existe ──────────────────────
-       Um episódio é identificado por (temporada, número), e para a maioria das
-       séries essa é a única leitura possível. Para algumas não é: anime
-       exibido fora de ordem, séries relançadas em streaming com temporadas
-       recortadas, minisséries agrupadas depois. O TMDB chama isso de
-       `episode_groups` e o clube precisa escolher uma vez qual está seguindo,
-       ou duas pessoas avaliam "o quinto" e são episódios diferentes.
+       Para algumas séries (anime exibido fora de ordem, relançamentos com
+       temporadas recortadas) (temporada, número) não é a única leitura, e o
+       clube precisa escolher uma vez qual está seguindo — ou duas pessoas
+       avaliam "o quinto" e são episódios diferentes.
 
-       Só o cabeçalho de cada grupo vem aqui — nome, tipo e tamanho. Buscar o
-       conteúdo de todos custaria uma requisição por grupo para uma escolha que
-       quase nenhum clube vai fazer. */
+       Só o cabeçalho de cada grupo: buscar o conteúdo custaria uma requisição
+       por grupo para uma escolha que quase nenhum clube vai fazer. */
     orders: (s.episode_groups?.results || []).map(g => ({
       id: g.id,
       name: g.name,
