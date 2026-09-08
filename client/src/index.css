@@ -210,21 +210,21 @@
   .vol-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 5px;
-    height: 13px;
-    margin-top: -5px;
+    width: 7px;
+    height: 15px;
+    margin-top: -6px;
     border-radius: 1px;
-    background: theme(colors.beam);
+    background: #ffe9c4;
     box-shadow:
       0 2px 6px rgba(0, 0, 0, 0.75),
       0 0 10px rgba(255, 214, 150, 0.28);
   }
   .vol-range::-moz-range-thumb {
-    width: 5px;
-    height: 13px;
+    width: 7px;
+    height: 15px;
     border: 0;
     border-radius: 1px;
-    background: theme(colors.beam);
+    background: #ffe9c4;
     box-shadow:
       0 2px 6px rgba(0, 0, 0, 0.75),
       0 0 10px rgba(255, 214, 150, 0.28);
@@ -236,12 +236,12 @@
   }
   .vol-range:focus-visible::-webkit-slider-thumb {
     box-shadow:
-      0 0 0 2px theme(colors.dye-brass),
+      0 0 0 2px #d9a441,
       0 2px 6px rgba(0, 0, 0, 0.75);
   }
   .vol-range:focus-visible::-moz-range-thumb {
     box-shadow:
-      0 0 0 2px theme(colors.dye-brass),
+      0 0 0 2px #d9a441,
       0 2px 6px rgba(0, 0, 0, 0.75);
   }
 
