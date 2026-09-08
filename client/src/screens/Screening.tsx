@@ -1001,7 +1001,7 @@ function LiveScreen({
 
   return (
     <div className="mt-6">
-      <LiveVideo stream={share.stream} muted={host} />
+      <LiveVideo stream={share.stream} hostPreview={host} hostName={live.hostName} />
 
       <div className="plate mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
         <span className="legend">{host ? 'Você está transmitindo' : `Tela de ${live.hostName}`}</span>
@@ -1046,23 +1046,43 @@ function LiveScreen({
 
       {/* ── o filme mudo que só o clube percebe ───────────────────────────
           Quem transmite não tem como notar: o som continua saindo das caixas
-          dele. Do outro lado é um filme mudo, e a pessoa vai passar meia hora
-          achando que é o volume dela. A instrução é específica porque o erro
-          é específico — o Chrome só oferece o áudio se a captura for de uma
-          ABA, e a caixinha vem desmarcada. */}
+          DELE. Do outro lado é um filme mudo, e a pessoa passa meia hora
+          achando que é o volume dela.
+
+          A frase muda conforme o que foi escolhido, porque a causa muda. Uma
+          JANELA não carrega áudio em navegador nenhum — não é uma caixinha
+          esquecida, é o modo errado, e mandar procurar uma opção que não
+          existe ali seria a tela mentindo. */}
       {host && !share.hasAudio ? (
         <div className="mt-2.5">
-          <Fault detail="Chrome/Edge: escolha a aba do filme e marque “Compartilhar áudio da aba”. Ao compartilhar a tela inteira, marque “Compartilhar áudio do sistema”.">
-            Você está transmitindo sem som — o clube vê o filme mudo.
+          <Fault
+            detail={
+              share.surface === 'window'
+                ? 'Compartilhe a TELA INTEIRA e marque “Compartilhar áudio do sistema”. Aí o som do VLC, do player ou de qualquer programa vai junto.'
+                : 'Chrome/Edge: ao escolher a tela inteira, marque “Compartilhar áudio do sistema”; ao escolher uma aba, marque “Compartilhar áudio da aba”.'
+            }
+          >
+            {share.surface === 'window'
+              ? 'Compartilhamento de janela não leva som — o clube vê o filme mudo.'
+              : 'Você está transmitindo sem som — o clube vê o filme mudo.'}
           </Fault>
         </div>
       ) : null}
 
+      {/* A janela erra as duas coisas de uma vez: além de não ter som, ela tem
+          a proporção que a pessoa deixou, e a imagem chega com tarja em vez de
+          preencher. Dito uma vez, sem repetir o aviso de áudio acima. */}
+      {host && share.surface === 'window' && share.hasAudio ? (
+        <p className="q mt-2.5 max-w-[64ch] text-[11.5px] text-ink-dim">
+          Compartilhando uma janela: a imagem chega na proporção dela, com tarja nas bordas. Tela
+          inteira preenche melhor.
+        </p>
+      ) : null}
+
       {host ? (
         <p className="q mt-2.5 max-w-[64ch] text-[11.5px] text-ink-dim">
-          O clube vê o que você vê, com o som que sair da aba ou do sistema. Serviço com DRM —
-          Netflix, Prime, Disney+ — aparece preto para os outros: é o sistema operacional que
-          bloqueia, não o Cineclube.
+          O clube vê o que você vê. Serviço com DRM — Netflix, Prime, Disney+ — aparece preto para
+          os outros: é o sistema operacional que bloqueia, não o Cineclube.
         </p>
       ) : null}
     </div>
@@ -1189,9 +1209,14 @@ function SourcePanel({
           para cada pessoa da sala. */}
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-house-rail pt-4">
         <Key onClick={onShareScreen}>Compartilhar minha tela</Key>
-        <p className="q max-w-[42ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
-          O clube vê a sua tela ao vivo, com o som. Toca o que o seu computador tocar — menos
-          serviço com DRM, que sai preto.
+        {/* A instrução vem antes do erro e não depois dele. "Tela inteira, com
+            áudio do sistema" é a única combinação que leva o som de um
+            programa fora do navegador, e ela é uma caixinha desmarcada num
+            seletor que a pessoa atravessa em dois segundos. */}
+        <p className="q max-w-[46ch] flex-1 text-[11.5px] leading-relaxed text-ink-dim">
+          Escolha <span className="text-ink">Tela inteira</span> e marque{' '}
+          <span className="text-ink">compartilhar o áudio do sistema</span> — é o que leva o som do
+          VLC ou de qualquer programa. Janela não carrega áudio. DRM sai preto.
         </p>
       </div>
 

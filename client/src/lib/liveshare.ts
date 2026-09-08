@@ -84,6 +84,23 @@ const HANDSHAKE_MS = 12_000;
    uma captura de tela assume. */
 const HINT = 'motion';
 
+/* ── por que a imagem saía lavada ─────────────────────────────────────────
+   O WebRTC trata conteúdo de tela como apresentação de slides: o teto de banda
+   que ele assume sozinho para uma captura fica na casa de 2 Mbps, que é
+   generoso para um documento parado e é lama para um filme em movimento. O
+   codificador então faz a única coisa que pode com o que lhe deram — joga
+   resolução fora — e o resultado é exatamente o que se viu.
+
+   Oito megabits é folgado para 1080p30 de conteúdo real, e é um TETO, não uma
+   meta: quando a rede não sustenta, o controle de congestionamento desce
+   sozinho e a sessão continua. O que o teto muda é que a decisão passa a ser
+   da rede, e não de um palpite feito antes de a rede existir. */
+const VIDEO_BITRATE = 8_000_000;
+/* Opus com música. O padrão de uma chamada fica perto de 32 kbps porque o
+   assunto é voz; 192 kbps em estéreo é o que faz trilha sonora soar como
+   trilha sonora. */
+const AUDIO_BITRATE = 192_000;
+
 export type LivePhase =
   /** Ninguém transmitindo. */
   | 'off'
@@ -113,6 +130,8 @@ export type LiveShare = {
   detail: string | null;
   /** A captura de quem transmite tem faixa de áudio. Falso é um filme mudo. */
   hasAudio: boolean;
+  /** O que foi escolhido no seletor: 'monitor', 'window' ou 'browser'. */
+  surface: string | null;
   /** Capturar a tela e assumir a transmissão da sala. */
   start: () => Promise<void>;
   /** Largar. Fecha as conexões e apaga a sala. */
@@ -129,6 +148,58 @@ type Peer = {
 
 const DEAD = new Set(['failed', 'closed']);
 
+/* ── o que o codificador recebe de ordem ──────────────────────────────────
+   Chamado depois de a faixa entrar na conexão, e é o que separa uma imagem de
+   filme de um borrão. `degradationPreference` é a segunda metade: sob aperto,
+   `balanced` reparte a perda entre nitidez e fluidez em vez de despencar a
+   resolução, que é o comportamento padrão para conteúdo de tela. */
+async function tune(sender: RTCRtpSender) {
+  const kind = sender.track?.kind;
+  try {
+    const params = sender.getParameters();
+    /* Uma conexão recém-criada às vezes ainda não tem codificação nenhuma
+       listada; escrever por cima de um array vazio é um erro do navegador. */
+    if (!params.encodings?.length) params.encodings = [{}];
+    if (kind === 'video') {
+      params.degradationPreference = 'balanced';
+      params.encodings[0].maxBitrate = VIDEO_BITRATE;
+      params.encodings[0].maxFramerate = 30;
+      /* Explícito porque o padrão para tela é reduzir: a captura já vem no
+         tamanho certo, e encolhê-la é jogar fora o que se quis mostrar. */
+      params.encodings[0].scaleResolutionDownBy = 1;
+    } else {
+      params.encodings[0].maxBitrate = AUDIO_BITRATE;
+    }
+    await sender.setParameters(params);
+  } catch {
+    /* Um navegador que recusa este ajuste continua transmitindo com o padrão
+       dele. Pior imagem não é motivo para não haver imagem. */
+  }
+}
+
+/* ── o estéreo, que só existe se for pedido no SDP ────────────────────────
+   O Opus nasce mono numa chamada, porque o assunto de uma chamada é voz. Não
+   há API para mudar isso: a única forma é escrever no próprio SDP, na linha
+   que descreve o codec, antes de ele virar a descrição local.
+
+   Editar SDP é sempre suspeito e este é um dos poucos casos em que é a prática
+   corrente — não se inventa nada, só se preenche parâmetros que o padrão do
+   Opus define. Se a linha não estiver lá, nada é feito: um SDP meio editado é
+   pior do que um SDP intocado. */
+function inStereo(sdp: string) {
+  const rtpmap = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+  if (!rtpmap) return sdp;
+  const pt = rtpmap[1];
+  const extra = `stereo=1;sprop-stereo=1;maxaveragebitrate=${AUDIO_BITRATE}`;
+  const fmtp = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+  if (fmtp.test(sdp)) {
+    return sdp.replace(fmtp, (_all, params: string) =>
+      params.includes('stereo=') ? `a=fmtp:${pt} ${params}` : `a=fmtp:${pt} ${params};${extra}`
+    );
+  }
+  return sdp.replace(rtpmap[0], `${rtpmap[0]}\r\na=fmtp:${pt} ${extra}`);
+}
+
 export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const { state, sendSignal, onSignal, startLive, stopLive, fetchIce } = screening;
   const live = state.live;
@@ -141,6 +212,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [hasAudio, setHasAudio] = useState(false);
+  const [surface, setSurface] = useState<string | null>(null);
 
   /** As conexões vivas, por pessoa do outro lado. */
   const peerMap = useRef(new Map<string, Peer>());
@@ -196,6 +268,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     setStream(null);
     setDetail(null);
     setHasAudio(false);
+    setSurface(null);
   }, []);
 
   /* ── uma conexão, dos dois lados ─────────────────────────────────────────
@@ -274,10 +347,14 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           if (held && !DEAD.has(held.pc.connectionState)) return;
 
           const peer = await connect(from);
-          for (const track of local.getTracks()) peer.pc.addTrack(track, local);
+          for (const track of local.getTracks()) await tune(peer.pc.addTrack(track, local));
           const offer = await peer.pc.createOffer();
-          await peer.pc.setLocalDescription(offer);
-          void sendSignal(from, 'offer', offer);
+          /* O estéreo é pedido aqui, na oferta, porque é ela que declara o que
+             este lado vai mandar. Depois de `setLocalDescription` não há mais
+             o que negociar. */
+          const dito = { type: offer.type, sdp: inStereo(offer.sdp ?? '') };
+          await peer.pc.setLocalDescription(dito);
+          void sendSignal(from, 'offer', dito);
           setPeers(peerMap.current.size);
           return;
         }
@@ -309,8 +386,12 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           await peer.pc.setRemoteDescription(data as RTCSessionDescriptionInit);
           await flush(peer);
           const answer = await peer.pc.createAnswer();
-          await peer.pc.setLocalDescription(answer);
-          void sendSignal(from, 'answer', answer);
+          /* Também na resposta: ela é a declaração de que ESTE lado sabe
+             receber dois canais. Sem isso, o outro lado manda mono por
+             educação. */
+          const dito = { type: answer.type, sdp: inStereo(answer.sdp ?? '') };
+          await peer.pc.setLocalDescription(dito);
+          void sendSignal(from, 'answer', dito);
           return;
         }
 
@@ -351,11 +432,53 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     let capture: MediaStream;
     try {
       capture = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 60 } },
-        /* O áudio é o que separa "vejo o filme" de "assisto ao filme". Pedido
-           sempre; o navegador dá ou não dá, e `hasAudio` conta qual foi. */
-        audio: true,
-      });
+        video: {
+          /* Pedido explícito, porque o padrão de uma captura de tela é o que o
+             navegador achar barato. 1080p é o que um filme quer e o que a
+             malha aguenta; o `ideal` deixa uma tela menor ser ela mesma em vez
+             de ser esticada até aqui. */
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, max: 60 },
+          /* Abre o seletor já na aba de telas inteiras. É preferência e não
+             regra — a pessoa continua podendo escolher uma janela —, mas o
+             caminho que leva som é o que aparece primeiro. */
+          displaySurface: 'monitor',
+        },
+        /* ── o áudio, e por que ele é pedido assim ─────────────────────────
+           Sem tratamento nenhum. As três primeiras são o processamento de VOZ
+           que um navegador liga por padrão — cancelar eco, suprimir ruído,
+           nivelar ganho —, e as três destroem música: o supressor de ruído come
+           a cauda de um acorde, e o ganho automático abaixa o volume toda vez
+           que a trilha cresce. Numa chamada elas são o produto; num filme são
+           um estrago. */
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 2,
+          sampleRate: 48_000,
+        },
+        /* ── as dicas que só o Chrome entende ──────────────────────────────
+           Fora do tipo padrão porque não estão no `lib.dom` — e valem o
+           desconforto, porque decidem o que a pessoa vê no seletor de janelas.
+
+           `systemAudio: include` e `displaySurface: monitor` empurram a escolha
+           para TELA INTEIRA, que é o único modo em que o Chrome oferece o som
+           do sistema. É o que faz um VLC, um player de TV ou qualquer programa
+           fora do navegador ser ouvido pelo clube — compartilhar uma JANELA não
+           carrega áudio nenhum, em nenhuma plataforma, e nunca vai carregar.
+
+           `selfBrowserSurface: exclude` tira esta própria aba da lista, que
+           escolhida gera o túnel de espelhos infinito. `surfaceSwitching`
+           deixa trocar de tela sem derrubar a transmissão. */
+        ...({
+          systemAudio: 'include',
+          monitorTypeSurfaces: 'include',
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+        } as object),
+      } as DisplayMediaStreamOptions);
     } catch (e) {
       /* Fechar o seletor de janelas cai aqui, e não é erro nenhum — é a pessoa
          desistindo. Só o que não for isso vira mensagem. */
@@ -373,6 +496,13 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
        quem transmite não tem como perceber — o som continua saindo das caixas
        DELE. Por isso isto é medido e dito na tela. */
     setHasAudio(capture.getAudioTracks().length > 0);
+    /* E o QUE foi escolhido, porque é isso que explica o mudo. Uma janela não
+       leva som em navegador nenhum: sabendo qual superfície é, a tela para de
+       dizer "sem áudio" e passa a dizer o que fazer a respeito. */
+    setSurface(
+      (capture.getVideoTracks()[0]?.getSettings() as { displaySurface?: string })?.displaySurface ??
+        null
+    );
 
     /* O botão que o próprio navegador põe na tela ("Parar compartilhamento") é
        o caminho que mais gente vai usar, porque é o que ela já conhece. */
@@ -465,5 +595,5 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           ? 'live'
           : 'waiting';
 
-  return { role, phase, stream, peers, relayed, error, detail, hasAudio, start, stop };
+  return { role, phase, stream, peers, relayed, error, detail, hasAudio, surface, start, stop };
 }

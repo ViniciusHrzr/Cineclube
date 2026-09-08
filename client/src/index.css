@@ -180,6 +180,71 @@
     background: transparent;
   }
 
+  /* ── o volume, no mesmo idioma e num terço do tamanho ───────────────────
+     Irmão pequeno de `.film-range`. A porta continua sendo uma porta e a
+     película continua sendo película; o que muda é a escala, porque este
+     controle mora dentro de uma barra de 34px sobre a imagem e não numa tela
+     cujo assunto é ele.
+
+     Nativo pela mesma razão de sempre: o passo, as setas do teclado e o papel
+     que o leitor de tela anuncia são do controle, não do desenho. */
+  .vol-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+    display: block;
+  }
+  .vol-range::-webkit-slider-runnable-track {
+    height: 3px;
+    background: transparent;
+  }
+  .vol-range::-moz-range-track {
+    height: 3px;
+    background: transparent;
+  }
+  /* A porta: um retângulo de luz atravessando a fita, com a mesma sombra e o
+     mesmo brilho quente da porta grande. */
+  .vol-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 5px;
+    height: 13px;
+    margin-top: -5px;
+    border-radius: 1px;
+    background: theme(colors.beam);
+    box-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.75),
+      0 0 10px rgba(255, 214, 150, 0.28);
+  }
+  .vol-range::-moz-range-thumb {
+    width: 5px;
+    height: 13px;
+    border: 0;
+    border-radius: 1px;
+    background: theme(colors.beam);
+    box-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.75),
+      0 0 10px rgba(255, 214, 150, 0.28);
+  }
+  /* O anel de foco na porta, e não um retângulo em volta da faixa inteira —
+     a mesma regra do controle grande. */
+  .vol-range:focus-visible {
+    outline: none;
+  }
+  .vol-range:focus-visible::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 2px theme(colors.dye-brass),
+      0 2px 6px rgba(0, 0, 0, 0.75);
+  }
+  .vol-range:focus-visible::-moz-range-thumb {
+    box-shadow:
+      0 0 0 2px theme(colors.dye-brass),
+      0 2px 6px rgba(0, 0, 0, 0.75);
+  }
+
   /* Unexposed film: the strip before the beam reaches it. */
   .film-strip {
     border-radius: 1px;
