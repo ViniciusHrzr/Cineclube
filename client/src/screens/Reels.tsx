@@ -90,6 +90,11 @@ const WINDOW = 3;
    e devolve a imagem ao tamanho de assistir. */
 const COLUMN = 0.7;
 
+/* Quanto o trilho fica à vista depois do último gesto. Generoso o bastante para
+   a dica da ficha ser lida inteira na chegada, e curto o bastante para o filme
+   ficar limpo enquanto ninguém está comandando nada. */
+const HUD_MS = 3600;
+
 export function ReelsScreen({
   kind,
   rated,
@@ -130,10 +135,13 @@ export function ReelsScreen({
   const [full, setFull] = useState(false);
   const [ficha, setFicha] = useState<ReelItem | null>(null);
   const [toast, setToast] = useState('');
+  /* O trilho começa à vista e se recolhe sozinho — ver `showHud`. */
+  const [hud, setHud] = useState(true);
 
   const stage = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const alarm = useRef<number>();
+  const hudTimer = useRef<number>();
   /* O quadro de agora, para `jump` mirar sem ser refeito a cada rolagem. */
   const atRef = useRef(0);
 
@@ -283,6 +291,38 @@ export function ReelsScreen({
     if (target) box.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   }, []);
 
+  /* ── o trilho é um HUD, e um HUD se recolhe ────────────────────────────
+     Cinco teclas paradas em cima do filme são cinco pedaços de imagem que
+     ninguém vê, e o reel existe para mostrar a imagem. Elas aparecem quando a
+     pessoa demonstra querer comandar alguma coisa — o ponteiro se move no
+     computador, o dedo toca no telefone — e somem sozinhas depois disso, como
+     em qualquer player.
+
+     Começa à vista: um controle que só existe depois de um gesto que ninguém
+     ensinou é um controle que não existe. A primeira aparição dura o bastante
+     para a dica da ficha ser lida inteira antes de as duas saírem juntas. */
+  const showHud = useCallback(() => {
+    window.clearTimeout(hudTimer.current);
+    setHud(true);
+    hudTimer.current = window.setTimeout(() => setHud(false), HUD_MS);
+  }, []);
+
+  /* E a cada quadro novo, uma vez. É o que faz a dica de "já foi avaliado"
+     existir: ela mora pendurada na chave da ficha, e uma dica que só aparece
+     depois de um gesto não é uma dica. As duas entram juntas e saem juntas. */
+  useEffect(() => {
+    showHud();
+    return () => window.clearTimeout(hudTimer.current);
+  }, [active, showHud]);
+
+  /* No dedo o toque alterna, que é o que um player faz: um segundo toque sobre
+     controles à vista é a pessoa pedindo a imagem de volta. */
+  const toggleHud = useCallback(() => {
+    if (!hud) return showHud();
+    window.clearTimeout(hudTimer.current);
+    setHud(false);
+  }, [hud, showHud]);
+
   const flash = useCallback((msg: string) => {
     window.clearTimeout(alarm.current);
     setToast(msg);
@@ -363,6 +403,17 @@ export function ReelsScreen({
       >
         <div
           style={column}
+          /* O ponteiro que se move é a intenção de comandar alguma coisa; o que
+             sai da moldura desistiu dela. Só o mouse: um `pointermove` de toque
+             chega junto com a rolagem, e o trilho piscaria a cada arrasto. */
+          onPointerMove={e => {
+            if (e.pointerType === 'mouse') showHud();
+          }}
+          onPointerLeave={e => {
+            if (e.pointerType !== 'mouse') return;
+            window.clearTimeout(hudTimer.current);
+            setHud(false);
+          }}
           className={cn(
             'relative overflow-hidden bg-house',
             !immersive && 'rounded-plate ring-1 ring-white/[0.07]'
@@ -375,6 +426,10 @@ export function ReelsScreen({
             tabIndex={0}
             role="region"
             aria-label="Reel de trailers"
+            /* No próprio rolador e não na moldura: assim um toque nas teclas do
+               trilho comanda a tecla em vez de recolher o trilho debaixo do
+               dedo. */
+            onClick={toggleHud}
             className={cn(
               'absolute inset-0 snap-y snap-mandatory overflow-y-auto overscroll-contain',
               'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-dye-brass/70',
@@ -456,7 +511,13 @@ export function ReelsScreen({
               quadro, então eles ficam parados enquanto os trailers passam por
               trás. */}
           {here ? (
-            <div className="absolute bottom-14 right-3 z-[3] flex flex-col items-end gap-3">
+            <div
+              className={cn(
+                'absolute bottom-14 right-3 z-[3] flex flex-col items-end gap-3',
+                'transition-opacity duration-200',
+                hud ? 'opacity-100' : 'pointer-events-none opacity-0'
+              )}
+            >
               <RailKey
                 label={queued(here.id) ? queueLabel[1] : queueLabel[0]}
                 active={queued(here.id)}
@@ -658,10 +719,22 @@ function useGentle() {
   return gentle;
 }
 
-/** O endereço do player, com o som de agora. */
-const embedOf = (key: string, muted: boolean, loop: boolean) =>
+/* ── o endereço do player ─────────────────────────────────────────────────
+   `bare` é o reel: ali o vídeo não é um player, é a imagem projetada. Barra de
+   controle, teclado, legendas, anotações e tela cheia do YouTube saem todos —
+   quem comanda é o trilho do clube, e dois conjuntos de controle sobre a mesma
+   imagem é a pessoa tendo de escolher em qual acreditar.
+
+   O que os parâmetros não tiram, o `pointer-events: none` da moldura tira: a
+   faixa de título e a parede de "mais vídeos" do fim aparecem por PASSAGEM DE
+   PONTEIRO, e um vídeo que não recebe ponteiro nunca é passado por cima.
+
+   Na tela cheia o player volta inteiro: lá a pessoa foi assistir, e arrastar
+   pelo minuto 2:10 é exatamente o que ela quer poder fazer. */
+const embedOf = (key: string, muted: boolean, loop: boolean, bare: boolean) =>
   `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=${muted ? 1 : 0}` +
   `&rel=0&modestbranding=1&playsinline=1` +
+  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '') +
   (loop ? `&loop=1&playlist=${key}` : '');
 
 /* ── um quadro ────────────────────────────────────────────────────────────
@@ -768,12 +841,12 @@ const Frame = memo(function Frame({
                  não desliga o mudo de um player já montado, e uma chave que não
                  faz nada é pior que uma chave ausente. */
               key={muted ? 'mudo' : 'som'}
-              src={embedOf(item.trailerKey, muted, true)}
+              src={embedOf(item.trailerKey, muted, true, true)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
               referrerPolicy="strict-origin-when-cross-origin"
-              allowFullScreen
-              className="absolute inset-0 h-full w-full border-0"
+              tabIndex={-1}
+              className="pointer-events-none absolute inset-0 h-full w-full border-0"
             />
           ) : null}
           {live && gentle && !asked ? (
@@ -1059,7 +1132,7 @@ function FullTrailer({
           <div className="aspect-video w-full max-w-[min(100%,calc((100dvh/var(--ui-zoom)-190px)*16/9))] overflow-hidden bg-black ring-1 ring-white/10">
             <iframe
               key={muted ? 'mudo' : 'som'}
-              src={embedOf(item.trailerKey, muted, false)}
+              src={embedOf(item.trailerKey, muted, false, false)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               referrerPolicy="strict-origin-when-cross-origin"
