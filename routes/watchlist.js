@@ -63,9 +63,8 @@ function toDTO(row) {
     genre: row.movie_genre,
     poster: row.movie_poster,
     addedAt: row.added_at,
-    /* Quem teve a ideia. A coluna existia só para o feed, e a fila nunca a
-       mostrava: quarenta pôsteres, cada um escolhido por alguém, e nada na tela
-       dizendo por quem.
+    /* Quem teve a ideia. A fila nunca mostrava isto: quarenta pôsteres, cada um
+       escolhido por alguém, e nada na tela dizendo por quem.
 
        Só o id: o nome, a cor e o retrato são fatos sobre a pessoa e não sobre a
        linha, e o clube inteiro já está carregado no cliente desde o boot. */

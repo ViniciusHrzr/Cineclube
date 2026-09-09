@@ -1,8 +1,8 @@
-const { critsFor, episodeCritsFor, GENRES } = require('./criteria');
+const { critsFor, GENRES } = require('./criteria');
 
 /* Regras de LEITURA de uma ficha: qual é o alto e o baixo dela, e quanto do
-   que a pessoa escreveu cabe numa linha. Fora do feed porque o saguão lê as
-   mesmas fichas, e regra escrita duas vezes diverge na terceira. */
+   que a pessoa escreveu cabe numa linha. Num módulo próprio porque o saguão e a
+   rede leem as mesmas fichas, e regra escrita duas vezes diverge na terceira. */
 
 /* Meio ponto é o menor passo do controle. Exijo um ponto inteiro: abaixo disso
    o "mais alto" é ruído de arredondamento e não uma preferência. */
@@ -40,9 +40,4 @@ function endsWith(crits, genre, raw) {
 
 const endsOf = (genre, raw) => endsWith(critsFor, genre, raw);
 
-/* O mesmo, sobre os nove critérios de um episódio: ler uma ficha de episódio
-   com as onze chaves de filme faria os dois que ela não tem sumirem em
-   silêncio. */
-const episodeEndsOf = (genre, raw) => endsWith(episodeCritsFor, genre, raw);
-
-module.exports = { SPREAD, excerpt, endsOf, episodeEndsOf };
+module.exports = { SPREAD, excerpt, endsOf };

@@ -53,7 +53,7 @@ app.use(auth.attachSession);
    As travas que importam são as das rotas. Esta não sabe nada sobre
    significado: existe para o caso que nenhuma outra cobre, alguém MARTELAR a
    API. Trezentos por minuto é muito para uma pessoa e pouco para um laço — o
-   mural a cada 120s e o sino a cada 90s somam menos de duas.
+   sino a cada 90s é menos de uma.
 
    Depois de `attachSession`, para uma pessoa logada ser medida pela conta e não
    pelo endereço: duas pessoas do clube atrás do mesmo roteador são duas.
@@ -109,14 +109,12 @@ scoped.use('/reviewers', reviewerRoutes.scoped);
 scoped.use('/reviews', require('./routes/reviews'));
 scoped.use('/watchlist', require('./routes/watchlist'));
 scoped.use('/shows', require('./routes/shows'));
-/* Caminhos próprios e não um parâmetro em `/social` e `/feed`: são outras
-   tabelas, outra unidade avaliada e outras consultas. */
+/* Caminho próprio e não um parâmetro em `/social`: são outras tabelas, outra
+   unidade avaliada e outras consultas. */
 scoped.use('/shows-social', require('./routes/showsSocial'));
-scoped.use('/shows-feed', require('./routes/showsFeed'));
 scoped.use('/screening', require('./routes/screening'));
 scoped.use('/social', require('./routes/social'));
 scoped.use('/notifications', require('./routes/notifications'));
-scoped.use('/feed', require('./routes/feed'));
 scoped.use('/live', require('./routes/live'));
 /* Por último, porque ele tem uma rota em `/` e casaria antes das de cima. */
 scoped.use('/', clubRoutes.scoped);
