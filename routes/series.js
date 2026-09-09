@@ -15,13 +15,15 @@ const router = express.Router();
 const upsertShow = db.prepare(`
   INSERT INTO shows_cache
     (tmdb_id, title, original_title, english_title, year, genre, genres, poster,
-     status, seasons, episodes, runtime, tmdb_score, tmdb_votes, cached_at)
+     backdrop, overview, status, seasons, episodes, runtime, tmdb_score, tmdb_votes, cached_at)
   VALUES
     (@id, @title, @original, @english, @year, @genre, @genres, @poster,
-     @status, @seasons, @episodes, @runtime, @score, @votes, datetime('now'))
+     @backdrop, @overview, @status, @seasons, @episodes, @runtime, @score, @votes, datetime('now'))
   ON CONFLICT(tmdb_id) DO UPDATE SET
     title = excluded.title, year = excluded.year, genre = excluded.genre,
     genres = excluded.genres, poster = excluded.poster,
+    backdrop = COALESCE(excluded.backdrop, shows_cache.backdrop),
+    overview = COALESCE(excluded.overview, shows_cache.overview),
     original_title = excluded.original_title,
     -- COALESCE nos campos que só o detalhe carrega: uma página de busca
     -- escrevendo por cima desta linha não sabe nada sobre eles, e não pode
@@ -55,7 +57,8 @@ async function cacheShow(s) {
     await upsertShow.run({
       id: s.id, title: s.title, original: s.original ?? null, english: s.english ?? null,
       year: s.year ?? null, genre: s.genre, genres: (s.genres || [s.genre]).join(','),
-      poster: s.poster ?? null, status: s.status ?? null,
+      poster: s.poster ?? null, backdrop: s.backdrop ?? null,
+      overview: s.overview ?? null, status: s.status ?? null,
       seasons: s.seasons ? s.seasons.length : null,
       episodes: s.totalEpisodes ?? null, runtime: s.runtime ?? null,
       score: s.crowd?.score ?? null, votes: s.crowd?.votes ?? null,

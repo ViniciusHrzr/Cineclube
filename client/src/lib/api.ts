@@ -425,6 +425,47 @@ export const seriesApi = {
     api<{ genres: string[]; criteria: Record<string, Criterion[]> }>('/api/series/criteria'),
 };
 
+/* ── um quadro do reel ────────────────────────────────────────────────────
+   O mínimo para uma obra ocupar a tela inteira com o trailer tocando. Tudo o
+   que a ficha mostra — elenco, duração, onde assistir — é buscado quando a
+   ficha abre, e não aqui: um reel carrega vinte destes por rolagem.
+
+   `trailerKey` nunca é nulo. O servidor tira da página quem não tem vídeo, pelo
+   mesmo motivo que uma sala não projeta um filme que não chegou. */
+export type ReelItem = {
+  id: number;
+  kind: 'movie' | 'show';
+  title: string;
+  original: string | null;
+  year: number | null;
+  genre: string;
+  genres: string[];
+  poster: string | null;
+  /** O quadro deitado, que é o que fica atrás do vídeo. */
+  backdrop: string | null;
+  overview: string | null;
+  crowd: { score: number; votes: number } | null;
+  trailerKey: string;
+};
+
+export const reels = {
+  /* Perguntados ao servidor e não lidos da taxonomia do clube: as duas listas
+     têm nove nomes cada e não são a mesma lista — o TMDB não tem gênero de
+     terror em série. Um chip que o servidor não sabe descobrir mostraria tudo e
+     diria que filtrou. */
+  genres: (kind: ReelItem['kind']) =>
+    api<{ genres: string[] }>(`/api/reels/genres?kind=${kind}`),
+  page: (kind: ReelItem['kind'], genre: string | null, page = 1) =>
+    api<{ page: number; totalPages: number; results: ReelItem[] }>(
+      `/api/reels?kind=${kind}&page=${page}` + (genre ? `&genre=${encodeURIComponent(genre)}` : '')
+    ),
+  /* Na ordem em que os ids são mandados, que é a ordem em que o clube avaliou.
+     Quem decide o que abre o reel é a tela, que sabe quando cada ficha foi
+     escrita. */
+  pinned: (kind: ReelItem['kind'], ids: number[]) =>
+    api<{ results: ReelItem[] }>(`/api/reels/pinned?kind=${kind}&ids=${ids.join(',')}`),
+};
+
 /** Uma série na fila do clube, com o progresso DO CLUBE. */
 export type QueuedShow = {
   id: number;
@@ -497,37 +538,6 @@ export type TakeComment = {
 
 export type TakeVote = { takeId: string; reviewerId: string; value: 1 | -1 };
 
-/* ── o mural do universo de séries ────────────────────────────────────────
-   Três tipos de linha, e o terceiro é o que este universo tem e o outro não:
-   `seen` é marcar sem avaliar, e vem AGRUPADO por pessoa, série e dia. Uma
-   maratona é um acontecimento, não treze. Ver routes/showsFeed.js. */
-export type ShowFeedEvent = {
-  id: string;
-  kind: 'take' | 'seen' | 'comment';
-  at: string;
-  actor: { id: string; name: string; dot: string };
-  showId: number;
-  showTitle: string;
-  showPoster: string | null;
-  genre?: string;
-  /** Em `take` e `comment`: o episódio de que a linha fala. */
-  season?: number;
-  episode?: number;
-  episodeTitle?: string | null;
-  takeId?: string;
-  final?: number;
-  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
-  excerpt?: string | null;
-  /** Só em comentário. */
-  commentId?: string;
-  parentId?: string | null;
-  owner?: { id: string; name: string };
-  /** Só em `seen`: quantos episódios a sessão juntou, e de onde até onde. */
-  count?: number;
-  from?: { season: number; episode: number };
-  to?: { season: number; episode: number; title: string | null };
-};
-
 export const showsSocial = {
   all: () =>
     capi<{ comments: TakeComment[]; votes: TakeVote[]; commentLikes: CommentLike[] }>(
@@ -540,7 +550,6 @@ export const showsSocial = {
     cput<{ liked: boolean }>(`/shows-social/comments/${id}/like`, { liked }),
   vote: (takeId: string, value: 1 | -1 | 0) =>
     cput<{ vote: TakeVote | null }>(`/shows-social/takes/${takeId}/vote`, { value }),
-  feed: () => capi<{ items: ShowFeedEvent[] }>('/shows-feed'),
 };
 
 /** O que se grava num episódio. Vazio é "só vi". */
@@ -672,43 +681,6 @@ export type Notice = {
   excerpt?: string;
   /** +1 ou −1, só em voto — é o que decide a direção do polegar no painel. */
   value?: number;
-};
-
-/* O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
-   tabelas de sempre, então uma linha nunca sobrevive ao acontecimento que ela
-   anuncia.
-
-   Um tipo só para os quatro acontecimentos, com os campos que só alguns têm
-   marcados como opcionais: a união discriminada custaria quatro interfaces e um
-   `switch` de tipo em cada leitura para descrever quatro formas que
-   compartilham nove campos dos onze. */
-export type FeedEvent = {
-  id: string;
-  kind: 'review' | 'comment' | 'vote' | 'queued';
-  at: string;
-  actor: { id: string; name: string; dot: string };
-  movieId: number;
-  movieTitle: string;
-  moviePoster: string | null;
-  /** Ausente só na fila: um filme entra nela sem ninguém ter avaliado nada. */
-  reviewId?: string;
-  /* Só em comentário: o texto de que a linha fala, para o clique cair nele e não
-     na ficha inteira — e o pai, quando o texto é uma resposta a outro. */
-  commentId?: string | null;
-  parentId?: string | null;
-  /** De quem é a ficha em que se comentou ou votou. */
-  owner?: { id: string; name: string };
-  /** Só em avaliação. */
-  final?: number;
-  genre?: string;
-  /* Onde a pessoa se entusiasmou e onde se decepcionou. Null quando a ficha não
-     tem distância entre os extremos — ver `endsOf` no servidor. */
-  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
-  /** Só em voto. */
-  value?: number;
-  criterion?: string;
-  /** O que foi escrito: o comentário da ficha, ou o comentário em si. */
-  excerpt?: string | null;
 };
 
 /* O sino é de uma sala: a pessoa em três clubes tem três sinos, e cada um conta

@@ -1,4 +1,5 @@
 const { GENRE_PRIORITY } = require('./criteria');
+const { bestVideo } = require('./video');
 
 /* Irmão de tmdb.js e deliberadamente separado dele: o TMDB trata filme e série
    como dois mundos — outros caminhos, outra tabela de gêneros, outros nomes de
@@ -11,6 +12,9 @@ const POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
    cartazes: w300 é a largura em que ele é desenhado, e w780 seriam seis vezes
    os bytes para o mesmo espaço. */
 const STILL_BASE = 'https://image.tmdb.org/t/p/w300';
+/* O quadro deitado da série, atrás do trailer no reel — ver o gêmeo em
+   tmdb.js. */
+const BACKDROP_BASE = 'https://image.tmdb.org/t/p/w780';
 const LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
 const REGION = 'BR';
 
@@ -36,6 +40,7 @@ async function tmdbGet(pathname, params) {
 
 const posterUrl = path => (path ? POSTER_BASE + path : null);
 const stillUrl = path => (path ? STILL_BASE + path : null);
+const backdropUrl = path => (path ? BACKDROP_BASE + path : null);
 
 /* O TMDB mantém duas taxonomias que não se sobrepõem: `878` é ficção científica
    em filme e não existe em série, que usa `10765` para ficção científica E
@@ -106,6 +111,8 @@ function normalizeListItem(s) {
     genre: genres[0],
     genres,
     poster: posterUrl(s.poster_path),
+    backdrop: backdropUrl(s.backdrop_path),
+    overview: s.overview || null,
     crowd: crowdOf(s)
   };
 }
@@ -234,6 +241,7 @@ async function showDetails(id) {
     genre: genres[0],
     genres,
     poster: posterUrl(s.poster_path),
+    backdrop: backdropUrl(s.backdrop_path),
     overview: s.overview || null,
     crowd: crowdOf(s),
     creators: (s.created_by || []).slice(0, MAX_NAMES).map(c => c.name),
@@ -322,10 +330,21 @@ async function englishTitleFor(id) {
   return englishOf(s, s.translations);
 }
 
+/** O trailer sozinho, sem o detalhe inteiro. As regras estão em `videosFor` de
+    tmdb.js — duas línguas, e teaser só na falta de trailer. */
+async function videosFor(id) {
+  for (const language of ['pt-BR', 'en-US']) {
+    const data = await tmdbGet(`/tv/${id}/videos`, { language });
+    const v = bestVideo(data.results);
+    if (v) return v.key;
+  }
+  return null;
+}
+
 module.exports = {
   searchShows, popularShows, discoverShows,
   showDetails, seasonDetails, episodeDetails,
-  watchProvidersFor, englishTitleFor,
+  watchProvidersFor, englishTitleFor, videosFor,
   GENRE_TO_TV,
   // Exportados para os testes: são as três peças puras deste arquivo.
   genresFromTvIds, signedBy, watchIn

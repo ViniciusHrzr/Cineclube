@@ -39,7 +39,6 @@ import {
   EpisodeSheet,
   SeriesArchiveScreen,
   SeriesCatalogScreen,
-  SeriesFeedScreen,
   SeriesQueueScreen,
   ShowScreen,
 } from '@/screens/Series';
@@ -53,7 +52,7 @@ import { SetPassword, SignIn } from '@/screens/SignIn';
 import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
 
 import { cn, plural } from '@/lib/utils';
-import { FeedScreen } from '@/screens/Feed';
+import { MovieReels, SeriesReels } from '@/screens/Reels';
 import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
 import { ReviewsScreen } from '@/screens/Reviews';
@@ -61,10 +60,11 @@ import { ProfileScreen } from '@/screens/Profile';
 import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
-  /* Primeiro na fila e porta de entrada: um feed que não é a tela de chegada é
-     um feed que ninguém lê. Para trocar a porta, mover esta entrada para baixo
-     de `catalog` e mudar o `?? 'feed'` adiante. */
-  { id: 'feed', label: 'Feed' },
+  /* Primeiro na fila e porta de entrada. O id continua sendo `feed` porque ele é
+     o endereço — `#c/<slug>/feed` está colado em conversa desde que existe —, e
+     o que ele abre hoje é o reel de trailers. Para trocar a porta, mover esta
+     entrada para baixo de `catalog` e mudar o `?? 'feed'` adiante. */
+  { id: 'feed', label: 'Reels' },
   /* Rota, não aba: avaliar não se escolhe, escolhe-se um filme. `hidden` e não
      exclusão porque `rateMovie` escreve `#rate`, e um endereço que a tabela não
      reconhece derruba o Voltar e joga o recarregar no feed. */
@@ -88,9 +88,9 @@ export const TABS = [
    respondem a mesma pergunta sobre mundos diferentes, e misturá-las obrigaria
    toda leitura de rota a saber de qual das duas aquela entrada é. */
 export const SERIES_TABS = [
-  /* O feed primeiro, como no universo de filmes: um mural que não é a tela de
-     chegada é um mural que ninguém lê. */
-  { id: 'feed', label: 'Feed' },
+  /* O reel primeiro, como no universo de filmes: a porta é o que está passando,
+     não uma lista do que passou. */
+  { id: 'feed', label: 'Reels' },
   /* E o catálogo logo atrás: neste universo o gesto que se repete é achar a
      próxima série e marcar o que se viu. */
   { id: 'catalog', label: 'Catálogo' },
@@ -836,10 +836,12 @@ function SeriesClubApp({
                 onSeen={() => void refresh()}
               />
             ) : (
-              <SeriesFeedScreen
+              <SeriesReels
                 takes={takes}
-                onOpenShow={goShow}
-                onAimComment={setFocusComment}
+                meId={me.id}
+                queued={id => queued.has(id)}
+                onQueue={s => void enqueue(s)}
+                onOpen={goShow}
               />
             )}
           </div>
@@ -1589,7 +1591,7 @@ function ClubApp({
             </div>
           ) : (
             <div key={tab} className="animate-frame-in">
-              {tab === 'feed' && <FeedScreen />}
+              {tab === 'feed' && <MovieReels />}
               {tab === 'rate' && (
                 <RateScreen pendingRate={pendingRate} onConsumedPending={() => setPendingRate(null)} />
               )}

@@ -1,7 +1,12 @@
 const { genreFromTmdbIds, genresFromTmdbIds } = require('./criteria');
+const { bestVideo } = require('./video');
 
 const API_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p/w342';
+/* O quadro deitado do filme, atrás do trailer no reel. Largo porque ele cobre a
+   tela inteira desfocado; o pôster 2:3 no lugar dele deixa tarja dos dois
+   lados de um vídeo 16:9. */
+const BACKDROP_BASE = 'https://image.tmdb.org/t/p/w780';
 /* Provider logos are small square marks, not posters: w342 would be four times
    the bytes for the same 24 pixels on screen. */
 const LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -104,6 +109,10 @@ function posterUrl(path) {
   return path ? IMG_BASE + path : null;
 }
 
+function backdropUrl(path) {
+  return path ? BACKDROP_BASE + path : null;
+}
+
 /* TMDB's own average, on the same 0–10 the club uses, so the two numbers sit
    side by side without conversion.
 
@@ -161,6 +170,10 @@ function normalizeListItem(m) {
     genre: genreFromTmdbIds(m.genre_ids),
     genres: genresFromTmdbIds(m.genre_ids),
     poster: posterUrl(m.poster_path),
+    backdrop: backdropUrl(m.backdrop_path),
+    // Viaja em toda rota de lista e nunca era lida: é a linha que decide se
+    // alguém para no reel.
+    overview: m.overview || null,
     crowd: crowdOf(m)
   };
 }
@@ -256,6 +269,27 @@ async function watchProvidersFor(id) {
   return watchIn(await tmdbGet(`/movie/${id}/watch/providers`));
 }
 
+/* ── o trailer, sozinho ───────────────────────────────────────────────────
+   O detalhe já carrega vídeos, e mesmo assim isto existe: um reel são vinte
+   obras por página, e vinte detalhes são vinte payloads de elenco, sinopse e
+   tradução lidos por um campo.
+
+   Duas línguas e nesta ordem. O TMDB filtra vídeo por idioma, e em pt-BR a
+   resposta de um filme antigo costuma ser vazia — o trailer legendado nunca foi
+   subido. Cair no inglês é ter trailer em vez de não ter; o contrário seria
+   servir o dublado a quem tem o original disponível.
+
+   Qual dos vídeos é O trailer está em video.js: a resposta é a mesma para série
+   e para filme. */
+async function videosFor(id) {
+  for (const language of ['pt-BR', 'en-US']) {
+    const data = await tmdbGet(`/movie/${id}/videos`, { language });
+    const v = bestVideo(data.results);
+    if (v) return v.key;
+  }
+  return null;
+}
+
 async function movieDetails(id) {
   // `translations` rides along on a request already being made — the whole
   // reason the English name is free here and costs a request everywhere else.
@@ -277,6 +311,7 @@ async function movieDetails(id) {
     genre: genreFromTmdbIds((m.genres || []).map(g => g.id)),
     genres: genresFromTmdbIds((m.genres || []).map(g => g.id)),
     poster: posterUrl(m.poster_path),
+    backdrop: backdropUrl(m.backdrop_path),
     director: director ? director.name : null,
     // Minutes, and only from the details endpoint — search, popular and
     // discover do not carry it at all.
@@ -298,5 +333,5 @@ async function movieDetails(id) {
 // things.
 module.exports = {
   searchMovies, popularMovies, discoverMovies, movieDetails, watchProvidersFor,
-  englishTitleFor, watchIn, signedBy, englishOf
+  englishTitleFor, watchIn, signedBy, englishOf, videosFor
 };

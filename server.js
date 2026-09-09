@@ -89,6 +89,7 @@ const reviewerRoutes = require('./routes/reviewers');
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
+app.use('/api/reels', require('./routes/reels'));
 /* Fora do escopo de clube pelo mesmo motivo do catálogo de filmes: o cache de
    uma série é o mesmo em toda a rede. O que é do clube desce para
    /api/c/<slug>/shows. */

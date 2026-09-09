@@ -11,8 +11,8 @@ const router = express.Router();
    popular page writing over a cached row must not blank out the number a
    previous detail fetch put there — hence COALESCE rather than excluded. */
 const upsertCache = db.prepare(`
-  INSERT INTO movies_cache (tmdb_id, title, original_title, english_title, year, genre, genres, poster, director, runtime, tmdb_score, tmdb_votes, cached_at)
-  VALUES (@id, @title, @original, @english, @year, @genre, @genres, @poster, @director, @runtime, @score, @votes, datetime('now'))
+  INSERT INTO movies_cache (tmdb_id, title, original_title, english_title, year, genre, genres, poster, backdrop, overview, director, runtime, tmdb_score, tmdb_votes, cached_at)
+  VALUES (@id, @title, @original, @english, @year, @genre, @genres, @poster, @backdrop, @overview, @director, @runtime, @score, @votes, datetime('now'))
   ON CONFLICT(tmdb_id) DO UPDATE SET
     title = excluded.title, year = excluded.year, genre = excluded.genre,
     genres = excluded.genres,
@@ -25,6 +25,10 @@ const upsertCache = db.prepare(`
     -- name and must not blank out what a detail fetch already found.
     english_title = COALESCE(excluded.english_title, movies_cache.english_title),
     poster = excluded.poster, director = excluded.director,
+    -- O quadro deitado e a sinopse: toda rota de lista os carrega, então nenhuma
+    -- delas escreve por cima com menos do que a anterior sabia.
+    backdrop = COALESCE(excluded.backdrop, movies_cache.backdrop),
+    overview = COALESCE(excluded.overview, movies_cache.overview),
     runtime = COALESCE(excluded.runtime, movies_cache.runtime),
     tmdb_score = COALESCE(excluded.tmdb_score, movies_cache.tmdb_score),
     tmdb_votes = COALESCE(excluded.tmdb_votes, movies_cache.tmdb_votes),
@@ -46,6 +50,10 @@ function fromCache(c) {
     // choose between.
     genres: c.genres ? c.genres.split(',') : [c.genre],
     poster: c.poster,
+    backdrop: c.backdrop ?? null,
+    // Guardada desde que o reel passou a precisar dela, o que faz a ficha
+    // servida do cache ter sinopse em vez de "sem sinopse disponível".
+    overview: c.overview ?? null,
     director: c.director ?? null,
     runtime: c.runtime ?? null,
     crowd: c.tmdb_votes > 0 ? { score: c.tmdb_score, votes: c.tmdb_votes } : null,
@@ -61,6 +69,7 @@ async function cacheMovie(m) {
     await upsertCache.run({
       id: m.id, title: m.title, original: m.original ?? null, english: m.english ?? null,
       year: m.year ?? null, genre: m.genre,
+      backdrop: m.backdrop ?? null, overview: m.overview ?? null,
       genres: (m.genres || [m.genre]).join(','),
       poster: m.poster ?? null, director: m.director ?? null,
       runtime: m.runtime ?? null,

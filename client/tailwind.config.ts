@@ -151,6 +151,19 @@ export default {
           '0%, 100%': { opacity: '1', boxShadow: '0 0 10px rgba(242,86,74,0.85)' },
           '50%': { opacity: '0.66', boxShadow: '0 0 4px rgba(242,86,74,0.3)' },
         },
+        /* ── a lâmpada da marquise ────────────────────────────────────────
+           A chave da ficha, quando a obra do reel já tem ficha do clube. É um
+           brilho por dentro que respira, e não uma borda piscando: o estado
+           permanente é "tem coisa escrita aqui", e o pulso só serve para o olho
+           achá-lo enquanto passa por vinte trailers.
+
+           Termina em 100% ACESO, pela mesma razão da lâmpada de gravação: com
+           menos movimento pedido, index.css corta o laço em uma volta, e o que
+           sobra é a chave acesa e parada. */
+        bulb: {
+          '0%, 100%': { boxShadow: 'inset 0 0 18px rgba(217,164,65,0.30)' },
+          '50%': { boxShadow: 'inset 0 0 6px rgba(217,164,65,0.10)' },
+        },
         /* O badalo do sino. Amplitude pequena de propósito: a diferença entre
            um ícone que avisa e um ícone que implora são uns poucos graus. */
         nudge: {
@@ -167,6 +180,7 @@ export default {
         flicker: 'flicker 4s ease-in-out infinite',
         pop: 'pop 420ms cubic-bezier(0.16,1,0.3,1)',
         lamp: 'lamp 2.4s ease-in-out infinite',
+        bulb: 'bulb 2.8s ease-in-out infinite',
         nudge: 'nudge 640ms ease-in-out',
       },
     },

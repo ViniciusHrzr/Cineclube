@@ -967,6 +967,26 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS reviews_reviewer ON reviews(reviewer_id);
   `);
 
+  /* ── o que um reel precisa e uma grade não ────────────────────────────
+     O trailer só existe no endpoint de UMA obra, e um reel são vinte delas por
+     página: sem estas colunas, folhear o feed custaria vinte requisições ao
+     TMDB por rolagem, toda vez. O carimbo é o de sempre — um trailer removido
+     do YouTube tem de poder ser reperguntado.
+
+     `backdrop` porque um pôster 2:3 atrás de um vídeo 16:9 é uma tarja de dois
+     lados, e `overview` porque a sinopse embaixo do trailer é a única linha que
+     decide se alguém fica. As duas viajam nas rotas de lista do TMDB, então
+     custam zero requisições — só não estavam sendo lidas. */
+  for (const table of ['movies_cache', 'shows_cache']) {
+    const cols = await columnsOf(table);
+    if (!cols.includes('backdrop')) await exec(`ALTER TABLE ${table} ADD COLUMN backdrop TEXT`);
+    if (!cols.includes('overview')) await exec(`ALTER TABLE ${table} ADD COLUMN overview TEXT`);
+    if (!cols.includes('trailer')) {
+      await exec(`ALTER TABLE ${table} ADD COLUMN trailer TEXT`);
+      await exec(`ALTER TABLE ${table} ADD COLUMN trailer_at TEXT`);
+    }
+  }
+
   // Sessão vencida é peso morto e risco; some no boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
   // E pelo mesmo motivo, os links de e-mail que já não abrem nada.
