@@ -734,8 +734,79 @@ function useGentle() {
 const embedOf = (key: string, muted: boolean, loop: boolean, bare: boolean) =>
   `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=${muted ? 1 : 0}` +
   `&rel=0&modestbranding=1&playsinline=1` +
-  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '') +
+  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&enablejsapi=1' : '') +
   (loop ? `&loop=1&playlist=${key}` : '');
+
+/* ── esperar o projetor pegar ─────────────────────────────────────────────
+   Entre carregar a moldura e o filme começar a correr, o YouTube desenha a
+   própria abertura: título, canal, botões grandes e a palavra "Mais vídeos".
+   Nenhum parâmetro tira isso, porque não é a barra de controle — é a tela de
+   espera do player, e ela só existe enquanto ele está esperando.
+
+   Então o quadro parado do filme fica por cima até o player DIZER que está
+   rodando. Ele diz: com `enablejsapi`, a moldura publica o estado dela por
+   `postMessage` depois de a gente se apresentar. Estado 1 é "tocando".
+
+   Um relógio atrás disso, porque uma promessa de rede sem prazo é uma tela
+   parada para sempre: passados quatro segundos o quadro sai de qualquer jeito.
+   Ver um segundo da abertura do YouTube é melhor do que ver um cartaz parado
+   achando que o app travou. */
+const ROLLING = 1;
+const GIVE_UP_MS = 4000;
+const HELLO_MS = 260;
+
+function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>) {
+  const [rolling, setRolling] = useState(false);
+
+  useEffect(() => {
+    setRolling(false);
+    if (!on) return;
+
+    const hello = () =>
+      frame.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }),
+        '*'
+      );
+
+    const heard = (e: MessageEvent) => {
+      if (!/(^|\.)youtube(-nocookie)?\.com$/.test(hostOf(e.origin))) return;
+      let said: unknown;
+      try {
+        said = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch {
+        return;
+      }
+      /* O player fala de duas formas conforme a versão: `onStateChange` com o
+         estado solto, e `infoDelivery` com ele dentro de `info`. */
+      const box = said as { event?: string; info?: number | { playerState?: number } };
+      const state =
+        typeof box?.info === 'number' ? box.info : box?.info?.playerState;
+      if (state === ROLLING) setRolling(true);
+    };
+
+    window.addEventListener('message', heard);
+    const ping = window.setInterval(hello, HELLO_MS);
+    const giveUp = window.setTimeout(() => setRolling(true), GIVE_UP_MS);
+    hello();
+
+    return () => {
+      window.removeEventListener('message', heard);
+      window.clearInterval(ping);
+      window.clearTimeout(giveUp);
+    };
+  }, [on, frame]);
+
+  return rolling;
+}
+
+/** O host de uma origem, sem explodir num `origin` que não é URL. */
+function hostOf(origin: string) {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return '';
+  }
+}
 
 /* ── um quadro ────────────────────────────────────────────────────────────
    O trailer 16:9 no meio da coluna, a legenda deitada sobre o degradê no pé, e
@@ -783,6 +854,11 @@ const Frame = memo(function Frame({
   }, [live]);
   const playing = live && (!gentle || asked);
   const still = item.backdrop ?? item.poster;
+  /* A moldura, para se apresentar a ela e ouvir quando o filme começar. */
+  const beam = useRef<HTMLIFrameElement>(null);
+  /* A identidade da moldura, e não um booleano: trocar o som monta outro player,
+     e outro player tem outra abertura do YouTube para cobrir. */
+  const rolling = useRolling(playing ? `${item.trailerKey}:${muted}` : null, beam);
 
   if (!within) {
     return (
@@ -829,9 +905,16 @@ const Frame = memo(function Frame({
               src={still}
               alt=""
               loading="lazy"
+              /* Sai quando o filme está correndo, e não quando a moldura foi
+                 montada: entre uma coisa e outra o YouTube desenha a abertura
+                 dele, e era ela que aparecia. */
+              /* `z-[2]`: ele vem antes da moldura na árvore e precisa ficar
+                 DEPOIS dela na tela. Sem isto ele é um quadro parado atrás de
+                 um vídeo, que é o mesmo que não existir. */
               className={cn(
-                'absolute inset-0 h-full w-full object-cover transition-opacity duration-700 delay-[450ms]',
-                playing ? 'opacity-0' : 'opacity-100'
+                'pointer-events-none absolute inset-0 z-[2] h-full w-full object-cover',
+                'transition-opacity duration-500',
+                rolling ? 'opacity-0' : 'opacity-100'
               )}
             />
           ) : null}
@@ -841,6 +924,7 @@ const Frame = memo(function Frame({
                  não desliga o mudo de um player já montado, e uma chave que não
                  faz nada é pior que uma chave ausente. */
               key={muted ? 'mudo' : 'som'}
+              ref={beam}
               src={embedOf(item.trailerKey, muted, true, true)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
@@ -853,7 +937,10 @@ const Frame = memo(function Frame({
             <button
               type="button"
               onClick={() => setAsked(true)}
-              className="absolute inset-0 grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/20"
+              /* Acima do quadro parado, que sobe a `z-[2]` para cobrir a
+                 abertura do player: embaixo dele esta chave seria uma chave
+                 invisível e inclicável. */
+              className="absolute inset-0 z-[3] grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/20"
             >
               <span className="flex items-center gap-2 rounded-cell bg-house-seat/85 px-4 py-2.5 font-display text-[12px] uppercase tracking-[0.14em] ring-1 ring-house-rail">
                 <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
