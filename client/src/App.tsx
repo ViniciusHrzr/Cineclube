@@ -842,6 +842,7 @@ function SeriesClubApp({
                 queued={id => queued.has(id)}
                 onQueue={s => void enqueue(s)}
                 onOpen={goShow}
+                onTab={goTab}
               />
             )}
           </div>
@@ -1738,7 +1739,7 @@ function recOf(room: ScreeningPulse) {
 }
 
 /** A ordem da barra do dedo, por decisão do dono. A marquise segue a tabela. */
-const BAR_ORDER: readonly TabId[] = ['screening', 'catalog', 'feed', 'watchlist', 'reviews'];
+export const BAR_ORDER: readonly TabId[] = ['screening', 'catalog', 'feed', 'watchlist', 'reviews'];
 
 function SectionTabs({
   variant,

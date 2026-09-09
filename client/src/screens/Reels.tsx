@@ -3,6 +3,7 @@ import {
   Bookmark,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronUp,
   Maximize2,
   Play,
@@ -26,8 +27,8 @@ import {
   type Review,
   type ShowDetail,
 } from '@/lib/api';
-import { cn, norm, plural } from '@/lib/utils';
-import { useClub } from '@/App';
+import { cn, norm, plural, useFinePointer } from '@/lib/utils';
+import { BAR_ORDER, useClub, type TabId } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
    O REEL — A PORTA DA SALA.
@@ -87,6 +88,7 @@ export function ReelsScreen({
   onQueue,
   queueLabel,
   renderTakes,
+  onExit,
 }: {
   kind: ReelItem['kind'];
   rated: RatedTitle[];
@@ -98,6 +100,9 @@ export function ReelsScreen({
   queueLabel: [off: string, on: string];
   /** As fichas do clube sobre esta obra, desenhadas pelo universo que as tem. */
   renderTakes: (id: number) => React.ReactNode;
+  /* Para onde o gesto de sair leva, no dedo: a seção vizinha na barra. −1 é a
+     de trás, +1 a da frente. Ver `useSideSwipe`. */
+  onExit: (dir: -1 | 1) => void;
 }) {
   const [genre, setGenre] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
@@ -117,6 +122,16 @@ export function ReelsScreen({
   const stage = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const alarm = useRef<number>();
+
+  /* ── no dedo, o reel é a tela ─────────────────────────────────────────
+     Sem marquise em cima e sem barra de seções embaixo. Não é gosto: numa coluna
+     9:16 dentro de uma casca de 130px, o vídeo termina menor que a legenda que
+     fala dele — foi o que aconteceu quando esta tela nasceu encaixada. Um reel
+     ou é a tela toda ou é um cartão sobre um trailer.
+
+     No computador a casca fica: lá sobra largura, a coluna cabe inteira embaixo
+     dela, e esconder a navegação seria tirar o que ninguém pediu. */
+  const immersive = !useFinePointer();
 
   /* A lista de ids é a identidade da fixação, e não o array: `rated` é derivado
      a cada render do acervo em memória, então comparar por referência pediria a
@@ -266,13 +281,14 @@ export function ReelsScreen({
 
   const height = useReelHeight(stage);
   /* A coluna do protótipo: 9:16 quando há altura para isso, e a largura inteira
-     quando não há — no telefone ela fica mais alta que 9:16, e é assim mesmo.
+     quando não há. Na tela cheia não há o que calcular — ela É a tela.
 
      Antes da primeira medida ela é só larga: uma largura derivada de altura zero
      é uma coluna de zero pixel, ou seja um quadro em branco no primeiro pintar. */
-  const column: React.CSSProperties = height
-    ? { height: '100%', width: `min(100%, ${Math.round((height * 9) / 16)}px)` }
-    : { height: '100%', width: '100%' };
+  const column: React.CSSProperties =
+    !immersive && height
+      ? { height: '100%', width: `min(100%, ${Math.round((height * 9) / 16)}px)` }
+      : { height: '100%', width: '100%' };
 
   const save = (it: ReelItem) => {
     const on = !queued(it.id);
@@ -280,28 +296,53 @@ export function ReelsScreen({
     flash(on ? `“${it.title}” ${queueLabel[1].toLowerCase()}` : `Tirado: ${it.title}`);
   };
 
-  return (
-    <section className="flex flex-col">
-      {/* O cabeçalho do protótipo, e a marquise já disse o nome da casa: aqui
-          sobra a seção e a contagem. Fino de propósito — cada pixel que ele toma
-          sai da altura do reel, que é a tela inteira. */}
-      <div className="mb-3 flex items-baseline gap-4">
-        <span className="font-display text-[22px] uppercase leading-none tracking-[0.16em] text-beam">
-          Reels
-        </span>
-        <span
-          aria-hidden
-          className="h-px min-w-[2rem] flex-1 translate-y-[-4px] bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
-        />
-        <span className="q flex-none text-[11.5px] text-ink-faint">
-          {items.length ? `${active + 1} / ${items.length}` : '—'}
-        </span>
-      </div>
+  /* Só na tela cheia, e não com o painel de gênero aberto: lá o deslize
+     horizontal pertence a quem está rolando a lista de gêneros. */
+  const sideways = useSideSwipe(immersive && !filtering ? onExit : undefined);
 
-      <div ref={stage} style={height ? { height } : undefined} className={cn('grid place-items-center', !height && 'h-[70dvh]')}>
+  return (
+    /* Presa à janela e por cima de tudo, inclusive da marquise e da barra de
+       seções — que continuam montadas atrás e voltam inteiras quando esta tela
+       sai. Esconder é o que uma camada opaca faz; desmontar a navegação do app
+       para servir uma aba seria a aba mandando na casca. */
+    <section
+      className={cn(immersive ? 'fixed inset-0 z-40 bg-house-deep' : 'flex flex-col')}
+      onTouchStart={sideways.onTouchStart}
+      onTouchEnd={sideways.onTouchEnd}
+    >
+      {/* O cabeçalho do protótipo, e a marquise já disse o nome da casa: aqui
+          sobra a seção e a contagem. Na tela cheia ele sai inteiro — a contagem
+          se muda para a barra de dentro, e o nome da seção já estava na barra
+          que a pessoa apertou para chegar aqui. */}
+      {!immersive ? (
+        <div className="mb-3 flex items-baseline gap-4">
+          <span className="font-display text-[22px] uppercase leading-none tracking-[0.16em] text-beam">
+            Reels
+          </span>
+          <span
+            aria-hidden
+            className="h-px min-w-[2rem] flex-1 -translate-y-1 bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
+          />
+          <span className="q flex-none text-[11.5px] text-ink-faint">
+            {items.length ? `${active + 1} / ${items.length}` : '—'}
+          </span>
+        </div>
+      ) : null}
+
+      <div
+        ref={stage}
+        style={!immersive && height ? { height } : undefined}
+        className={cn(
+          immersive ? 'h-full w-full' : 'grid place-items-center',
+          !immersive && !height && 'h-[70dvh]'
+        )}
+      >
         <div
           style={column}
-          className="relative overflow-hidden rounded-plate bg-house ring-1 ring-white/[0.07]"
+          className={cn(
+            'relative overflow-hidden bg-house',
+            !immersive && 'rounded-plate ring-1 ring-white/[0.07]'
+          )}
         >
           <div
             ref={track}
@@ -347,11 +388,25 @@ export function ReelsScreen({
             )}
           </div>
 
-          {/* ── a chave do gênero ────────────────────────────────────────
-              No alto e dentro da coluna, sobre um degradê que garante contraste
-              contra qualquer quadro que passe por baixo. `pointer-events-none`
-              na faixa e `auto` na chave: a faixa é só a sombra. */}
+          {/* ── a barra de cima ──────────────────────────────────────────
+              Sobre um degradê que garante contraste contra qualquer quadro que
+              passe por baixo. `pointer-events-none` na faixa e `auto` em cada
+              chave: a faixa é só a sombra. */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] flex items-center gap-2 bg-gradient-to-b from-house-deep/90 via-house-deep/40 to-transparent p-3">
+            {immersive ? (
+              /* O gesto de sair é deslizar para o lado, e um gesto não deixa
+                 marca na tela. Esta chave é a marca: uma saída que só quem já
+                 sabe encontra não é uma saída. */
+              <button
+                type="button"
+                onClick={() => onExit(-1)}
+                title="Sair do reel"
+                aria-label="Sair do reel"
+                className="pointer-events-auto grid h-10 w-10 flex-none place-items-center rounded-cell bg-house-seat/70 text-ink-dim ring-1 ring-house-rail backdrop-blur-sm transition-colors hover:text-beam"
+              >
+                <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={1.9} />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setFiltering(true)}
@@ -363,6 +418,14 @@ export function ReelsScreen({
               <span className="text-dye-brass">{genre ?? 'Tudo'}</span>
               <ChevronDown className="h-3.5 w-3.5 text-ink-faint" strokeWidth={2} aria-hidden />
             </button>
+
+            {/* A contagem que o cabeçalho carregava, para o lugar onde ainda há
+                cabeçalho. */}
+            {immersive && items.length ? (
+              <span className="q ml-auto flex-none pr-1 text-[11px] text-ink-dim">
+                {active + 1} / {items.length}
+              </span>
+            ) : null}
           </div>
 
           {/* ── o trilho ─────────────────────────────────────────────────
@@ -525,6 +588,41 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
   }, [ref]);
 
   return height;
+}
+
+/* ── sair de lado ─────────────────────────────────────────────────────────
+   O reel toma a tela inteira no dedo, então o gesto de sair tem de ser um que
+   ele mesmo não usa: a rolagem é vertical, e o que sobra é o horizontal.
+
+   Deslizar para a DIREITA volta para a seção de trás e para a esquerda avança
+   para a da frente — a mesma ordem da barra que estava ali antes de o reel
+   cobri-la. É o que faz o gesto ter para onde ir, em vez de só "fechar" e
+   deixar a pessoa num lugar que ela não escolheu.
+
+   O limiar é generoso e é comparado com o eixo vertical: ninguém rola trailers
+   em linha reta, e um limiar apertado tiraria a pessoa da tela no meio de um
+   gesto que era para passar de filme. */
+const SIDE = 72;
+
+function useSideSwipe(onExit?: (dir: -1 | 1) => void) {
+  const from = useRef<{ x: number; y: number } | null>(null);
+
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      from.current = t ? { x: t.clientX, y: t.clientY } : null;
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const start = from.current;
+      from.current = null;
+      const t = e.changedTouches[0];
+      if (!start || !t || !onExit) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (Math.abs(dx) < SIDE || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+      onExit(dx > 0 ? -1 : 1);
+    },
+  };
 }
 
 /** Se a pessoa pediu para o mundo parar de se mexer. */
@@ -1195,6 +1293,14 @@ const showFicha = (s: ShowDetail): FichaData => ({
    Do lado dos filmes o adaptador lê o contexto grande, porque ele existe. Do
    lado das séries chega por propriedade, porque lá não há contexto nenhum — e
    inventar um segundo seria uma segunda verdade sobre a mesma sala. */
+/* A seção ao lado desta na barra do dedo, que é para onde o deslize leva. Presa
+   nas pontas: da primeira não há como ir mais para trás, e um gesto que não faz
+   nada é melhor do que um que dá a volta e some com a pessoa do outro lado. */
+function beside(dir: -1 | 1): TabId {
+  const at = BAR_ORDER.indexOf('feed');
+  return BAR_ORDER[Math.min(Math.max(at + dir, 0), BAR_ORDER.length - 1)];
+}
+
 export function MovieReels() {
   const club = useClub();
 
@@ -1240,6 +1346,7 @@ export function MovieReels() {
       }
       queueLabel={['Quero ver', 'Na fila']}
       renderTakes={id => <MovieTakes movieId={id} />}
+      onExit={dir => club.goTab(beside(dir))}
     />
   );
 }
@@ -1250,12 +1357,15 @@ export function SeriesReels({
   queued,
   onQueue,
   onOpen,
+  onTab,
 }: {
   takes: EpisodeTake[] | null;
   meId: string;
   queued: (id: number) => boolean;
   onQueue: (s: { id: number; title: string; year: number | null; genre: string; poster: string | null }) => void;
   onOpen: (showId: number) => void;
+  /** A casca de séries não tem contexto: a troca de seção chega por aqui. */
+  onTab: (t: TabId) => void;
 }) {
   /* Uma série é avaliada por EPISÓDIO, então a nota que o reel mostra é a média
      dos episódios que têm nota — a mesma conta que o acervo de séries faz. Uma
@@ -1298,6 +1408,7 @@ export function SeriesReels({
       }
       queueLabel={['Acompanhar', 'Nas minhas séries']}
       renderTakes={id => <ShowTakes showId={id} takes={takes} />}
+      onExit={dir => onTab(beside(dir))}
     />
   );
 }
