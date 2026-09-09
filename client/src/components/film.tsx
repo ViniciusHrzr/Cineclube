@@ -328,7 +328,7 @@ export function OnCell({ watch, title }: { watch: Movie['watch']; title: string 
   return (
     <div className="mt-2 flex items-center gap-1">
       {shown.map(p => (
-        <WatchLink key={p.id} provider={p.name} title={title} fallback={watch.link}>
+        <WatchLink key={p.id} provider={p.name} title={title} deep={p.url} fallback={watch.link}>
           {p.logo ? (
             <img
               src={p.logo}
@@ -363,20 +363,25 @@ export function OnCell({ watch, title }: { watch: Movie['watch']; title: string 
 function WatchLink({
   provider,
   title,
+  deep,
   fallback,
   children,
   className,
 }: {
   provider: string;
   title: string;
+  /* O endereço do título dentro do serviço, do JustWatch. Quando ele existe,
+     nada mais é consultado: é a resposta exata, e a busca por nome só existe
+     porque nem sempre há uma. */
+  deep?: string | null;
   /** O link do TMDB, para os serviços que a tabela não cobre. */
   fallback: string | null;
   children: React.ReactNode;
   className?: string;
 }) {
-  const href = watchDoor(provider, title, fallback);
+  const href = deep || watchDoor(provider, title, fallback);
   if (!href) return <span className={className}>{children}</span>;
-  const label = goesToService(provider) ? `Abrir em ${provider}` : `Onde assistir: ${provider}`;
+  const label = deep || goesToService(provider) ? `Abrir em ${provider}` : `Onde assistir: ${provider}`;
   return (
     <a
       href={href}
@@ -504,6 +509,7 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
             key={p.id}
             provider={p.name}
             title={title}
+            deep={p.url}
             fallback={watch.link}
             /* `shrink-0` so a long name never squeezes the mark next to it into
                the one after; the row wraps instead, which is what it is for. */

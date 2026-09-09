@@ -842,7 +842,16 @@ export type Movie = {
   stale?: boolean;
 };
 
-export type Provider = { id: number; name: string; logo: string | null };
+export type Provider = {
+  id: number;
+  name: string;
+  logo: string | null;
+  /* O endereço do título DENTRO deste serviço, quando o JustWatch conhece um.
+     Ausente numa linha gravada antes de isto existir, e nulo quando ele não
+     respondeu — nos dois casos a tela cai na busca do serviço. Ver
+     justwatch.js e lib/watch.ts. */
+  url?: string | null;
+};
 
 export type WatchItem = {
   id: number;

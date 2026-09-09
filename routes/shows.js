@@ -193,6 +193,7 @@ async function progressMap(clubId) {
    sem isto a resposta morava em outra aba. */
 const fillProviders = providerCache({
   table: 'shows_cache',
+  kind: 'show',
   fetch: id => series.watchProvidersFor(id),
 });
 

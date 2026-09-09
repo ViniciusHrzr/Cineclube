@@ -93,6 +93,7 @@ const cacheAll = results => Promise.all(results.map(cacheShow));
    incluída numa assinatura que alguém já paga, ou o clube não vai maratoná-la. */
 const fillProviders = providerCache({
   table: 'shows_cache',
+  kind: 'show',
   fetch: id => series.watchProvidersFor(id),
 });
 
@@ -138,6 +139,8 @@ router.get('/:id(\\d+)', wrap(async (req, res) => {
   try {
     const show = await series.showDetails(id);
     await cacheShow(show);
+    // Pelo mesmo caminho da grade, e pela mesma razão — ver routes/catalog.js.
+    await fillProviders([show]);
     res.json({ show });
   } catch (e) {
     const cached = await getShowCache.get(id);

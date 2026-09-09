@@ -76,6 +76,7 @@ const cacheAll = results => Promise.all(results.map(cacheMovie));
 /** Onde cada filme da grade está passando. As regras estão em providers.js. */
 const fillProviders = providerCache({
   table: 'movies_cache',
+  kind: 'movie',
   fetch: id => tmdb.watchProvidersFor(id),
 });
 
@@ -148,6 +149,11 @@ router.get('/movie/:id', wrap(async (req, res) => {
   try {
     const movie = await tmdb.movieDetails(id);
     await cacheMovie(movie);
+    /* O detalhe já traz `watch` de graça, e mesmo assim ele passa por aqui: é
+       este caminho que pendura o link fundo de cada serviço e que guarda a
+       resposta pelos sete dias. Uma ficha aberta duas vezes na mesma noite não
+       pode custar duas voltas ao JustWatch. */
+    await fillProviders([movie]);
     res.json(movie);
   } catch (e) {
     console.error('[catalog] detalhe falhou:', e.message);

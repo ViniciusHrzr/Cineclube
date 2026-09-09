@@ -1,4 +1,5 @@
 const db = require('./db');
+const justwatch = require('./justwatch');
 
 /* ══════════════════════════════════════════════════════════════════════════
    ONDE ISTO ESTÁ PASSANDO, EM GRADE.
@@ -45,7 +46,25 @@ async function inLanes(items, lanes, job) {
 
    `fetch` é quem sabe perguntar ao TMDB pela obra daquela tabela: um filme e
    uma série são endpoints diferentes com a mesma resposta. */
-function providerCache({ table, fetch }) {
+/* ── e o endereço de cada um ──────────────────────────────────────────────
+   O TMDB diz QUAIS serviços têm o título; o link de abrir o título DENTRO de
+   cada um vem do JustWatch e é pendurado aqui, no mesmo momento em que a linha
+   é gravada. É o que faz o atalho custar zero requisição depois: ele viaja no
+   mesmo cache de sete dias que os provedores.
+
+   Falhar não é falhar: sem link fundo o provedor fica com `url: null` e a tela
+   cai na busca do serviço, que é o que ela fazia antes de isto existir. */
+async function withDeepLinks(watch, { id, title, kind }) {
+  if (!watch?.streaming?.length) return watch;
+  const links = await justwatch.deepLinks({ tmdbId: id, title, kind });
+  if (!links.size) return watch;
+  return {
+    ...watch,
+    streaming: watch.streaming.map(p => ({ ...p, url: justwatch.urlFor(links, p.name) })),
+  };
+}
+
+function providerCache({ table, fetch, kind }) {
   /* Montado por chamada porque o número de ids varia, o que só é possível
      porque `db.prepare` aqui guarda uma string — nada é compilado antes de a
      consulta rodar. Os ids continuam sendo parâmetros; o que se interpola é
@@ -80,7 +99,7 @@ function providerCache({ table, fetch }) {
     const missing = results.filter(r => !known.has(r.id));
     await inLanes(missing, LANES, async r => {
       try {
-        const watch = await fetch(r.id);
+        const watch = await withDeepLinks(await fetch(r.id), { ...r, kind });
         known.set(r.id, watch);
         /* O nulo é gravado também, de propósito: "não passa em lugar nenhum
            aqui" é uma resposta, e não escrevê-la faria toda obra que não passa
