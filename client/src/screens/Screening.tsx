@@ -1024,7 +1024,7 @@ function AboutFilm({ movie: playing }: { movie: ScreeningMovie }) {
           paga. É a saída de quem entrou na sessão sem cópia nenhuma — e numa
           série vale mais ainda: quase todo filme dá para alugar, uma série ou
           está numa assinatura ou o clube não maratona. */}
-      <WatchOn watch={sheet.watch} />
+      <WatchOn watch={sheet.watch} title={sheet.title} />
     </div>
   );
 }

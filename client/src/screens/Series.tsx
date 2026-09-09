@@ -285,7 +285,7 @@ function SeriesCell({
               filme quase sempre dá para alugar, uma série o clube ou tem numa
               assinatura ou não maratona. Ficam acima do progresso porque a
               pergunta "dá para ver?" vem antes de "onde a gente parou?". */}
-          <OnCell watch={show.watch} />
+          <OnCell watch={show.watch} title={show.title} />
           {/* O progresso do clube, e a média só quando existe: um clube que
               acompanha sem avaliar não tem nota, e imprimir 0,0 ali seria a tela
               inventando um veredito. */}
@@ -716,7 +716,7 @@ export function ShowScreen({
               ficha aberta — onde se decide começar vinte horas — não trazia
               nada. Numa série a resposta vale mais: ou está numa assinatura que
               alguém já paga, ou o clube não maratona. */}
-          <WatchOn watch={show.watch} />
+          <WatchOn watch={show.watch} title={show.title} />
         </div>
       </header>
 

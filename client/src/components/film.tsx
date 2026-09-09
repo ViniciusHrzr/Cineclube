@@ -5,6 +5,7 @@ import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effec
 import { Fault, IconKey, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
 import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
+import { goesToService, watchDoor } from '@/lib/watch';
 
 /* ── the film cell ────────────────────────────────────────────────────────
    A film in the bin is a cell of celluloid on the wall: it tips toward the
@@ -99,7 +100,7 @@ export const FilmCell = memo(function FilmCell({
               <span className="q text-[11.5px] text-ink-dim">sem avaliação</span>
             )}
           </div>
-          <OnCell watch={movie.watch} />
+          <OnCell watch={movie.watch} title={movie.title} />
         </CardItem>
 
         <CardItem translateZ={18} className="mt-auto flex w-full gap-2 pt-3">
@@ -287,7 +288,7 @@ export function ProjectionSheet({
                 <TrailerKey url={movie.trailerUrl} title={movie.title} className="mt-3" />
               ) : null}
 
-              <WatchOn watch={movie.watch} />
+              <WatchOn watch={movie.watch} title={movie.title} />
 
               <div className="mt-6 flex flex-wrap gap-2">
                 <Key tone="commit" onClick={() => onRate(movie.id)}>
@@ -319,7 +320,7 @@ export function ProjectionSheet({
    Os nomes não se perdem, mudam de lugar: cada marca carrega um como `title` e
    como alt. Cortado em quatro, que é onde uma fileira de marcas deixa de ser um
    relance — "+2" é legível e um quinto quadrado de 18px não é. */
-export function OnCell({ watch }: { watch: Movie['watch'] }) {
+export function OnCell({ watch, title }: { watch: Movie['watch']; title: string }) {
   if (!watch?.streaming.length) return null;
   const shown = watch.streaming.slice(0, 4);
   const rest = watch.streaming.length - shown.length;
@@ -327,7 +328,7 @@ export function OnCell({ watch }: { watch: Movie['watch'] }) {
   return (
     <div className="mt-2 flex items-center gap-1">
       {shown.map(p => (
-        <WatchLink key={p.id} link={watch.link} name={p.name}>
+        <WatchLink key={p.id} provider={p.name} title={title} fallback={watch.link}>
           {p.logo ? (
             <img
               src={p.logo}
@@ -347,38 +348,42 @@ export function OnCell({ watch }: { watch: Movie['watch'] }) {
   );
 }
 
-/* ── a marca é uma porta ──────────────────────────────────────────────────
+/* ── a marca é uma porta, e ela abre no serviço ───────────────────────────
    Um logo de serviço parece clicável desde sempre, e não era: a informação
    estava ali e o passo seguinte — abrir o filme lá — continuava sendo procurar
-   o título na Netflix à mão. Agora toda marca leva.
+   o título na Netflix à mão.
 
-   Para a página DAQUELE título, e não para a casa do serviço: `watch.link` é o
-   endereço que o TMDB manda usar, e é ele que abre o filme com as lojas de
-   verdade em cima. Um link fundo dentro de cada serviço seria melhor e não
-   existe nestes dados — nem o TMDB nem o JustWatch entregam um por provedor —,
-   e adivinhá-lo com uma busca por título é como se erra o filme.
+   Agora cada marca vai para DENTRO do serviço dela, com o título já buscado.
+   Quem sabe montar esse endereço é lib/watch.ts, e o porquê de ser uma busca e
+   não a página do título está escrito lá. Serviço que a tabela não conhece cai
+   na página do TMDB, que lista as lojas de verdade.
 
-   Sem link, a marca continua sendo só uma marca: um `<a>` sem destino é uma
+   Sem destino nenhum, a marca continua sendo só uma marca: um `<a>` vazio é uma
    promessa quebrada, e a informação sozinha já valia. */
 function WatchLink({
-  link,
-  name,
+  provider,
+  title,
+  fallback,
   children,
   className,
 }: {
-  link: string | null;
-  name: string;
+  provider: string;
+  title: string;
+  /** O link do TMDB, para os serviços que a tabela não cobre. */
+  fallback: string | null;
   children: React.ReactNode;
   className?: string;
 }) {
-  if (!link) return <span className={className}>{children}</span>;
+  const href = watchDoor(provider, title, fallback);
+  if (!href) return <span className={className}>{children}</span>;
+  const label = goesToService(provider) ? `Abrir em ${provider}` : `Onde assistir: ${provider}`;
   return (
     <a
-      href={link}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
-      title={`Ver em ${name}`}
-      aria-label={`Ver em ${name}`}
+      title={label}
+      aria-label={label}
       className={cn(
         'transition-opacity duration-150 hover:opacity-80 focus-visible:opacity-80',
         className
@@ -462,7 +467,7 @@ function Verdicts({
    O crédito não é enfeite — usar estes dados obriga a nomear o JustWatch —, e o
    link de saída é a página do próprio TMDB, que cai nas lojas de verdade em vez
    de adivinhar um link fundo num serviço que o leitor talvez nem tenha. */
-export function WatchOn({ watch }: { watch: Movie['watch'] }) {
+export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string }) {
   /* Três estados, e dois deles são nulos. `undefined` é "ninguém perguntou": o
      filme veio do cache porque o TMDB estava fora. `null` é "perguntamos, e não
      passa em lugar nenhum aqui" — uma resposta de verdade.
@@ -497,8 +502,9 @@ export function WatchOn({ watch }: { watch: Movie['watch'] }) {
         {watch.streaming.map(p => (
           <WatchLink
             key={p.id}
-            link={watch.link}
-            name={p.name}
+            provider={p.name}
+            title={title}
+            fallback={watch.link}
             /* `shrink-0` so a long name never squeezes the mark next to it into
                the one after; the row wraps instead, which is what it is for. */
             className="flex shrink-0 items-center gap-2 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
