@@ -95,6 +95,25 @@ const COLUMN = 0.7;
    ficar limpo enquanto ninguém está comandando nada. */
 const HUD_MS = 3600;
 
+/* Quantas obras do clube alimentam a sugestão do servidor. O teto de verdade é
+   dele; aqui é só não mandar o acervo inteiro por uma consulta. */
+const SEEDS = 4;
+
+/* A folga entre uma obra avaliada e a próxima, no meio da descoberta. Mínimo e
+   quantos passos acima dele — dois a quatro. Elas vinham todas emendadas na
+   frente, o que fazia o reel abrir como um resumo do acervo em vez de como uma
+   sala projetando. */
+const GAP_MIN = 2;
+const GAP_SPREAD = 3;
+
+/* Uma folga que não se repete e não muda. Sorteio de verdade reembaralharia a
+   ordem a cada render — a obra debaixo do dedo trocaria sozinha —, então o
+   "acaso" sai do próprio id: sempre o mesmo para a mesma obra, e sem padrão
+   nenhum entre obras diferentes. */
+function gapOf(id: number) {
+  return GAP_MIN + ((Math.imul(id, 2654435761) >>> 0) % GAP_SPREAD);
+}
+
 export function ReelsScreen({
   kind,
   rated,
@@ -170,6 +189,20 @@ export function ReelsScreen({
 
   const scoreOf = useMemo(() => new Map(rated.map(r => [r.id, r])), [rated]);
 
+  /* O que o clube mais gostou, que é do que a sugestão é feita. Por nota e não
+     por data: o reel já abre pelo que foi avaliado por último, e sugerir a
+     partir do mais RECENTE faria uma noite ruim contaminar a semana inteira. */
+  const seeds = useMemo(
+    () =>
+      rated
+        .filter(r => r.score != null)
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, SEEDS)
+        .map(r => r.id)
+        .join(','),
+    [rated]
+  );
+
   /* A taxonomia vem do servidor e não do clube: são nove nomes de cada lado e
      não são a mesma lista — o TMDB não tem gênero de terror em série, e um chip
      que ele não sabe descobrir mostraria tudo dizendo que filtrou. */
@@ -205,8 +238,12 @@ export function ReelsScreen({
     async (want: number) => {
       setLoading(true);
       try {
-        const got = await reels.page(kind, genre, want);
-        setPages(got.totalPages);
+        const got = await reels.page(kind, genre, want, seeds ? seeds.split(',').map(Number) : []);
+        /* Uma página de sugestão não sabe quantas são — ela é montada de quatro
+           listas —, então o servidor devolve sempre "tem mais uma". Quem sabe
+           que acabou é esta linha: página vazia é o fim, e sem ela o reel
+           pediria a próxima para sempre. */
+        setPages(got.results.length ? got.totalPages : want);
         setFound(prev => (want === 1 ? got.results : prev.concat(got.results)));
         setPage(want);
         setError(null);
@@ -216,7 +253,7 @@ export function ReelsScreen({
         setLoading(false);
       }
     },
-    [kind, genre]
+    [kind, genre, seeds]
   );
 
   useEffect(() => {
@@ -228,14 +265,35 @@ export function ReelsScreen({
     void load(1);
   }, [load]);
 
-  /* Fixadas primeiro, na ordem em que o clube avaliou, e sem repetir: a mesma
-     obra pode voltar como descoberta, e vê-la duas vezes num reel é o produto
-     perdendo o fio. Com um gênero escolhido, uma fixada de outro gênero sairia
-     do filtro que a pessoa acabou de pedir. */
+  /* ── o que o clube avaliou entra ESPALHADO ─────────────────────────────
+     A primeira continua sendo uma delas: a obra avaliada por último abre o reel,
+     que é o que faz o clube ser a primeira coisa que se vê. As outras entram no
+     meio da descoberta, com folgas de dois a quatro quadros que não se repetem.
+
+     Emendadas, como estavam, o reel abria com uma sequência do acervo e só
+     depois começava a mostrar filme — o clube virava uma introdução a ser
+     passada em vez de uma presença ao longo da rolagem.
+
+     Sem repetir: a mesma obra pode voltar como descoberta, e vê-la duas vezes
+     num reel é o produto perdendo o fio. Com um gênero escolhido, uma avaliada
+     de outro gênero sairia do filtro que a pessoa acabou de pedir. */
   const items = useMemo(() => {
-    const head = genre ? pinned.filter(p => p.genres.includes(genre)) : pinned;
-    const seen = new Set(head.map(p => p.id));
-    return head.concat(found.filter(f => !seen.has(f.id)));
+    const mine = genre ? pinned.filter(p => p.genres.includes(genre)) : pinned;
+    const seen = new Set(mine.map(p => p.id));
+    const rest = found.filter(f => !seen.has(f.id));
+    if (!mine.length) return rest;
+
+    const out: ReelItem[] = [];
+    let at = 0;
+    mine.forEach((p, i) => {
+      out.push(p);
+      /* A última leva todo o resto atrás de si: uma folga aqui deixaria a
+         descoberta terminando antes do fim da página que já chegou. */
+      const gap = i === mine.length - 1 ? rest.length - at : gapOf(p.id);
+      out.push(...rest.slice(at, at + gap));
+      at += gap;
+    });
+    return out;
   }, [pinned, found, genre]);
 
   const here = items[active] ?? null;

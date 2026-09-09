@@ -19,9 +19,14 @@ const router = express.Router();
 
    Duas portas, porque são duas perguntas:
 
-   · `/` é "me dê o que passar agora", e a resposta é uma página de descoberta.
+   · `/` é "me dê o que passar agora". Com `like=<ids>` a resposta deixa de ser
+     o que está popular e passa a ser o que se parece com o que o clube gostou:
+     a tela manda as obras mais bem avaliadas da sala e recebe as vizinhas
+     delas. Sem `like`, ou quando elas não enchem a página, a descoberta comum
+     completa. Nada disso é dito na tela — o reel não explica por que sugeriu,
+     ele sugere.
    · `/pinned` é "estas aqui, nesta ordem" — as que o clube avaliou, que a tela
-     põe na frente de tudo.
+     intercala no meio do reel.
 
    ── só entra o que tem trailer ──────────────────────────────────────────
    Um quadro de reel sem vídeo não é um item mais fraco, é um buraco: a pessoa
@@ -34,6 +39,10 @@ const router = express.Router();
 const PER_PAGE = 20;
 /** Teto do que a tela pode fixar na frente. Além disto o reel virou uma lista. */
 const MAX_PINNED = 12;
+/* Quantas obras do clube alimentam a sugestão. Quatro dá variedade sem virar
+   uma média de tudo: com dez sementes o resultado converge para "popular", que
+   é exatamente o que a sugestão existe para não ser. */
+const MAX_SEEDS = 4;
 
 const fillMovieTrailers = trailerCache({ table: 'movies_cache', fetch: id => tmdb.videosFor(id) });
 const fillShowTrailers = trailerCache({ table: 'shows_cache', fetch: id => series.videosFor(id) });
@@ -58,6 +67,7 @@ const world = kind =>
         popular: page => series.popularShows(page),
         discover: (genre, page) => series.discoverShows(series.GENRE_TO_TV[genre], page),
         details: id => series.showDetails(id),
+        like: (id, page) => series.recommendations(id, page),
         fillTrailers: fillShowTrailers,
         remember: rememberShow,
         cache: db.prepare('SELECT * FROM shows_cache WHERE tmdb_id = ?'),
@@ -68,6 +78,7 @@ const world = kind =>
         popular: page => tmdb.popularMovies(page),
         discover: (genre, page) => tmdb.discoverMovies(GENRE_TO_TMDB[genre], page),
         details: id => tmdb.movieDetails(id),
+        like: (id, page) => tmdb.recommendations(id, page),
         fillTrailers: fillMovieTrailers,
         remember: rememberMovie,
         cache: db.prepare('SELECT * FROM movies_cache WHERE tmdb_id = ?'),
@@ -106,6 +117,37 @@ router.get('/genres', (req, res) => {
   res.json({ genres: world(req.query.kind).genres });
 });
 
+/* ── a sugestão sai do que o clube gostou ─────────────────────────────────
+   As sementes chegam da tela, que sabe quem avaliou o quê e com que nota, e são
+   as obras mais bem avaliadas da sala. Para cada uma, o TMDB devolve as vizinhas
+   dela; as listas voltam intercaladas em volta, uma de cada semente por vez, e
+   não emendadas — emendadas, a primeira semente dominaria os primeiros vinte
+   quadros e as outras três só apareceriam quem chegasse ao fim.
+
+   As próprias sementes saem do resultado: o clube já viu aquilo, e é justamente
+   por isso que elas estão aqui.
+
+   Uma semente que falha não derruba nada; sem nenhuma sobrando, quem responde é
+   a descoberta comum. */
+async function likeOf(w, seeds, page, genre) {
+  const lists = await Promise.all(
+    seeds.map(id => w.like(id, page).then(r => r.results).catch(() => []))
+  );
+  const out = [];
+  const seen = new Set(seeds);
+  for (let i = 0; out.length < PER_PAGE * 2; i++) {
+    if (lists.every(l => i >= l.length)) break;
+    for (const list of lists) {
+      const item = list[i];
+      if (!item || seen.has(item.id)) continue;
+      if (genre && !(item.genres || [item.genre]).includes(genre)) continue;
+      seen.add(item.id);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 router.get('/', wrap(async (req, res) => {
   const w = world(req.query.kind);
   const page = Number(req.query.page) || 1;
@@ -113,10 +155,26 @@ router.get('/', wrap(async (req, res) => {
   /* Gênero desconhecido não é erro: a tela oferece as duas taxonomias e elas não
      são a mesma lista. Cair em "tudo" é a resposta que continua sendo um reel. */
   const known = genre && w.genres.includes(genre);
+  const seeds = String(req.query.like || '')
+    .split(',')
+    .map(Number)
+    .filter(n => Number.isInteger(n) && n > 0)
+    .slice(0, MAX_SEEDS);
 
   try {
-    const data = known ? await w.discover(genre, page) : await w.popular(page);
-    const results = data.results.slice(0, PER_PAGE);
+    const suggested = seeds.length ? await likeOf(w, seeds, page, known ? genre : null) : [];
+    /* A descoberta comum entra quando a sugestão não enche a página — e quando
+       não há semente nenhuma, que é o clube que ainda não avaliou nada. */
+    const data =
+      suggested.length >= PER_PAGE
+        ? { page, totalPages: null, results: suggested }
+        : known
+          ? await w.discover(genre, page)
+          : await w.popular(page);
+    const seen = new Set(suggested.map(r => r.id));
+    const results = suggested
+      .concat(suggested.length >= PER_PAGE ? [] : data.results.filter(r => !seen.has(r.id)))
+      .slice(0, PER_PAGE);
     await w.fillTrailers(results);
     /* Gravado depois do trailer e sem esperar: é conveniência para quando o
        TMDB cair, e ninguém deve ficar olhando para uma tela preta por causa
@@ -125,8 +183,11 @@ router.get('/', wrap(async (req, res) => {
       w.remember.run(r.backdrop ?? null, r.overview ?? null, r.id).catch(() => {});
     }
     res.json({
-      page: data.page,
-      totalPages: data.totalPages,
+      page,
+      /* Sem número quando a página é de sugestão: uma lista montada de quatro
+         listas não tem um fim que se saiba de antemão, e chutar um seria a tela
+         parar de pedir mais antes da hora. */
+      totalPages: data.totalPages ?? page + 1,
       results: results.filter(r => r.trailerKey).map(r => reelDTO(r, w.kind)),
     });
   } catch (e) {

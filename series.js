@@ -325,6 +325,16 @@ async function watchProvidersFor(id) {
   return watchIn(await tmdbGet(`/tv/${id}/watch/providers`));
 }
 
+/** O gêmeo de `recommendations` em tmdb.js, do lado das séries. */
+async function recommendations(id, page = 1) {
+  const data = await tmdbGet(`/tv/${id}/recommendations`, { page });
+  return {
+    page: data.page,
+    totalPages: data.total_pages,
+    results: (data.results || []).map(normalizeListItem)
+  };
+}
+
 async function englishTitleFor(id) {
   const s = await tmdbGet(`/tv/${id}`, { append_to_response: 'translations' });
   return englishOf(s, s.translations);
@@ -344,7 +354,7 @@ async function videosFor(id) {
 module.exports = {
   searchShows, popularShows, discoverShows,
   showDetails, seasonDetails, episodeDetails,
-  watchProvidersFor, englishTitleFor, videosFor,
+  watchProvidersFor, englishTitleFor, videosFor, recommendations,
   GENRE_TO_TV,
   // Exportados para os testes: são as três peças puras deste arquivo.
   genresFromTvIds, signedBy, watchIn

@@ -455,9 +455,15 @@ export const reels = {
      diria que filtrou. */
   genres: (kind: ReelItem['kind']) =>
     api<{ genres: string[] }>(`/api/reels/genres?kind=${kind}`),
-  page: (kind: ReelItem['kind'], genre: string | null, page = 1) =>
+  /* `like` são as obras mais bem avaliadas do clube, e o que volta são as
+     vizinhas delas — a sugestão sai do gosto da sala e não do que está popular.
+     Sem elas, ou quando não enchem a página, o servidor completa com a
+     descoberta comum. */
+  page: (kind: ReelItem['kind'], genre: string | null, page = 1, like: number[] = []) =>
     api<{ page: number; totalPages: number; results: ReelItem[] }>(
-      `/api/reels?kind=${kind}&page=${page}` + (genre ? `&genre=${encodeURIComponent(genre)}` : '')
+      `/api/reels?kind=${kind}&page=${page}` +
+        (genre ? `&genre=${encodeURIComponent(genre)}` : '') +
+        (like.length ? `&like=${like.join(',')}` : '')
     ),
   /* Na ordem em que os ids são mandados, que é a ordem em que o clube avaliou.
      Quem decide o que abre o reel é a tela, que sabe quando cada ficha foi

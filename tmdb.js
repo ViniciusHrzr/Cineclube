@@ -290,6 +290,19 @@ async function videosFor(id) {
   return null;
 }
 
+/* O que o TMDB acha parecido com um filme. É a base da sugestão do reel: o
+   clube dá as obras que gostou e a rede devolve vizinhas delas. `similar` é a
+   outra porta e é pior — ela casa por gênero e palavra-chave, e devolve o
+   catálogo inteiro de terror para quem gostou de UM terror. */
+async function recommendations(id, page = 1) {
+  const data = await tmdbGet(`/movie/${id}/recommendations`, { page });
+  return {
+    page: data.page,
+    totalPages: data.total_pages,
+    results: (data.results || []).map(normalizeListItem)
+  };
+}
+
 async function movieDetails(id) {
   // `translations` rides along on a request already being made — the whole
   // reason the English name is free here and costs a request everywhere else.
@@ -333,5 +346,5 @@ async function movieDetails(id) {
 // things.
 module.exports = {
   searchMovies, popularMovies, discoverMovies, movieDetails, watchProvidersFor,
-  englishTitleFor, watchIn, signedBy, englishOf, videosFor
+  englishTitleFor, watchIn, signedBy, englishOf, videosFor, recommendations
 };
