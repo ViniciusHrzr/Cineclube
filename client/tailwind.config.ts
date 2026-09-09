@@ -160,9 +160,13 @@ export default {
            Termina em 100% ACESO, pela mesma razão da lâmpada de gravação: com
            menos movimento pedido, index.css corta o laço em uma volta, e o que
            sobra é a chave acesa e parada. */
+        /* Opacidade, e nunca `box-shadow`: uma sombra animada é repintada pelo
+           processador principal a cada quadro, e esta lâmpada fica acesa por
+           cima de um vídeo tocando. Opacidade a placa de vídeo resolve sozinha.
+           Quem pulsa é uma camada por cima da tecla, não a tecla. */
         bulb: {
-          '0%, 100%': { boxShadow: 'inset 0 0 18px rgba(217,164,65,0.30)' },
-          '50%': { boxShadow: 'inset 0 0 6px rgba(217,164,65,0.10)' },
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.28' },
         },
         /* O badalo do sino. Amplitude pequena de propósito: a diferença entre
            um ícone que avisa e um ícone que implora são uns poucos graus. */

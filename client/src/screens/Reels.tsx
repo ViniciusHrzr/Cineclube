@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bookmark,
   Check,
@@ -79,6 +79,11 @@ export type RatedTitle = {
    encostar no vazio. */
 const AHEAD = 4;
 
+/* Quantos quadros em volta do ativo existem de verdade. Três de cada lado cobre
+   qualquer rolagem que o dedo consiga fazer entre dois quadros de tela, e é o
+   que separa quarenta imagens carregadas de sete. */
+const WINDOW = 3;
+
 export function ReelsScreen({
   kind,
   rated,
@@ -113,6 +118,7 @@ export function ReelsScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  const [settled, setSettled] = useState(0);
   const [muted, setMuted] = useState(true);
   const [filtering, setFiltering] = useState(false);
   const [full, setFull] = useState(false);
@@ -200,6 +206,7 @@ export function ReelsScreen({
   useEffect(() => {
     setFound([]);
     setActive(0);
+    setSettled(0);
     track.current?.scrollTo({ top: 0 });
     void load(1);
   }, [load]);
@@ -234,6 +241,17 @@ export function ReelsScreen({
     for (const f of box.querySelectorAll<HTMLElement>('[data-frame]')) spy.observe(f);
     return () => spy.disconnect();
   }, [items.length]);
+
+  /* ── o player espera o dedo parar ──────────────────────────────────────
+     Montar o embed do YouTube é caro, e passar cinco trailers de uma vez montava
+     e destruía cinco players em meio segundo: o telefone gastava tudo o que
+     tinha carregando o que ninguém ia ver. O quadro ativo muda na hora — a
+     legenda, a luz da parede, o trilho —, e só o VÍDEO espera um instante de
+     quietude para nascer. */
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(active), 320);
+    return () => window.clearTimeout(t);
+  }, [active]);
 
   useEffect(() => {
     if (loading || page >= pages) return;
@@ -368,8 +386,9 @@ export function ReelsScreen({
                      do YouTube no ar, e o que está fora da tela tocando som. O
                      que abre por cima também desmonta, senão o trailer continua
                      atrás. */
-                  live={i === active && !ficha && !full && !filtering}
+                  live={i === settled && i === active && !ficha && !full && !filtering}
                   near={Math.abs(i - active) <= 1}
+                  within={Math.abs(i - active) <= WINDOW}
                   muted={muted}
                 />
               ))
@@ -402,7 +421,7 @@ export function ReelsScreen({
                 onClick={() => onExit(-1)}
                 title="Sair do reel"
                 aria-label="Sair do reel"
-                className="pointer-events-auto grid h-10 w-10 flex-none place-items-center rounded-cell bg-house-seat/70 text-ink-dim ring-1 ring-house-rail backdrop-blur-sm transition-colors hover:text-beam"
+                className="pointer-events-auto grid h-10 w-10 flex-none place-items-center rounded-cell bg-house-seat/85 text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
               >
                 <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={1.9} />
               </button>
@@ -412,7 +431,7 @@ export function ReelsScreen({
               onClick={() => setFiltering(true)}
               aria-expanded={filtering}
               aria-label={`Filtrar por gênero — ${genre ?? 'tudo'}`}
-              className="pointer-events-auto inline-flex items-center gap-2 rounded-cell bg-house-seat/70 px-3 py-2 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-ink-dim ring-1 ring-house-rail backdrop-blur-sm transition-colors hover:text-beam hover:ring-white/25 coarse:min-h-[40px]"
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-cell bg-house-seat/85 px-3 py-2 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam hover:ring-white/25 coarse:min-h-[40px]"
             >
               <span>Gênero</span>
               <span className="text-dye-brass">{genre ?? 'Tudo'}</span>
@@ -651,13 +670,25 @@ const embedOf = (key: string, muted: boolean, loop: boolean) =>
    a luz da projeção batendo na parede da sala.
 
    A legenda recua da direita pela largura do trilho: os controles são uma
-   coluna fixa, e texto que passa por baixo deles é texto que não se lê. */
-function Frame({
+   coluna fixa, e texto que passa por baixo deles é texto que não se lê.
+
+   ── memorizado, e vazio quando está longe ───────────────────────────────
+   Uma rolagem troca o quadro ativo, e trocar o quadro ativo redesenharia os
+   quarenta que existem: `memo` deixa passar só aqueles cujas propriedades
+   mudaram de verdade, que são três.
+
+   E quem está a mais de três quadros da tela desenha só a própria altura. A
+   altura é a mesma sempre — cada quadro é exatamente a moldura —, então a
+   rolagem não escorrega quando um deles volta a ter conteúdo, e o telefone deixa
+   de carregar quarenta imagens, quarenta legendas e quarenta camadas de luz para
+   mostrar uma. */
+const Frame = memo(function Frame({
   index,
   item,
   rated,
   live,
   near,
+  within,
   muted,
 }: {
   index: number;
@@ -666,6 +697,8 @@ function Frame({
   live: boolean;
   /** Se este quadro está à vista ou é o vizinho de quem está. */
   near: boolean;
+  /** Se vale a pena existir: fora da janela ele é só altura. */
+  within: boolean;
   muted: boolean;
 }) {
   const gentle = useGentle();
@@ -678,21 +711,35 @@ function Frame({
   const playing = live && (!gentle || asked);
   const still = item.backdrop ?? item.poster;
 
+  if (!within) {
+    return (
+      <section
+        data-frame={index}
+        aria-label={item.title}
+        className="h-full w-full snap-start snap-always bg-house-deep"
+      />
+    );
+  }
+
   return (
     <section
       data-frame={index}
       aria-label={item.title}
       className="relative h-full w-full snap-start snap-always overflow-hidden bg-house-deep"
     >
-      {/* Desenhada só perto da tela: um desfoque de tela cheia por quadro, vinte
-          vezes, são vinte camadas grandes repintadas por nada. */}
-      {still && near ? (
+      {/* Acesa só perto da tela, e a partir do CARTAZ e não do quadro deitado:
+          o custo de um desfoque é o número de pixels que ele atravessa, e o
+          cartaz é cinco vezes menor. Borrado a este ponto os dois são a mesma
+          mancha de cor. */}
+      {near ? (
         <>
-          <div
-            aria-hidden
-            className="absolute -inset-10 bg-cover bg-center opacity-[0.55] blur-3xl saturate-[.6]"
-            style={{ backgroundImage: `url(${still})` }}
-          />
+          {item.poster ?? still ? (
+            <div
+              aria-hidden
+              className="absolute -inset-10 bg-cover bg-center opacity-[0.55] blur-2xl saturate-[.6]"
+              style={{ backgroundImage: `url(${item.poster ?? still})` }}
+            />
+          ) : null}
           <div aria-hidden className="absolute inset-0 bg-house-deep/60" />
         </>
       ) : null}
@@ -782,17 +829,23 @@ function Frame({
       </div>
     </section>
   );
-}
+});
 
 /* ── uma tecla do trilho ──────────────────────────────────────────────────
-   Quadrada, de 44, sobre uma placa translúcida: elas ficam por cima de um vídeo
-   que muda todo quadro, e um anel em volta de nada deixaria o ícone se virar
-   contra o que estivesse passando naquele segundo.
+   Quadrada, de 44, sobre uma placa: elas ficam por cima de um vídeo que muda
+   todo quadro, e um anel em volta de nada deixaria o ícone se virar contra o
+   que estivesse passando naquele segundo.
+
+   **Opaca e não desfocada.** Ela já foi `backdrop-blur`, e sete destas por cima
+   de um vídeo tocando obrigam o navegador a reler e reborrar o que está atrás
+   A CADA QUADRO DO FILME — no telefone é a conta que faz o reel engasgar. Uma
+   superfície opaca diz a mesma coisa e não custa nada.
 
    `lit` é a chave da ficha quando há ficha do clube atrás dela: latão, porque a
-   regra da sala é que latão diz "isto tem alguma coisa sua". O pulso é lento e
-   termina aceso — com menos movimento pedido, index.css corta o laço em uma
-   volta e sobra a lâmpada acesa e parada. */
+   regra da sala é que latão diz "isto tem alguma coisa sua". Quem pulsa é uma
+   camada por cima, em opacidade, e não a sombra da tecla — ver `bulb` em
+   tailwind.config. Termina acesa, então com menos movimento pedido index.css
+   corta o laço em uma volta e sobra a lâmpada parada. */
 function RailKey({
   label,
   active,
@@ -814,16 +867,22 @@ function RailKey({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        'grid h-11 w-11 flex-none place-items-center rounded-cell bg-house-seat/70 backdrop-blur-sm',
+        'relative grid h-11 w-11 flex-none place-items-center rounded-cell bg-house-seat/85',
         'ring-1 transition-colors duration-150 active:translate-y-px',
         lit
-          ? 'animate-bulb bg-dye-brass/[0.14] text-dye-brass ring-dye-brass/70 hover:text-beam-hot'
+          ? 'text-dye-brass ring-dye-brass/70 hover:text-beam-hot'
           : active
             ? 'text-dye-brass ring-dye-brass/60'
             : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
       )}
     >
-      {children}
+      {lit ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-bulb rounded-cell bg-dye-brass/[0.18]"
+        />
+      ) : null}
+      <span className="relative">{children}</span>
     </button>
   );
 }
@@ -876,7 +935,7 @@ function GenrePanel({
   const all = !q || norm('Tudo').includes(q);
 
   return (
-    <div className="absolute inset-0 z-[6] flex flex-col gap-3 bg-house-deep/[0.94] p-4 backdrop-blur-md animate-frame-in">
+    <div className="absolute inset-0 z-[6] flex flex-col gap-3 bg-house-deep/[0.97] p-4 animate-frame-in">
       <div className="flex items-center justify-between gap-3">
         <span className="legend">Filtrar o reel</span>
         <IconKey aria-label="Fechar o filtro" onClick={onClose} className="flex-none">
