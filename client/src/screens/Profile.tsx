@@ -19,6 +19,8 @@ import {
   fmt,
   initialsOf,
   reelColor,
+  shows as showsApi,
+  type EpisodeTake,
   type Review,
   type Reviewer,
   type WatchItem,
@@ -54,6 +56,27 @@ import { useClub } from '@/App';
 
 export function ProfileScreen() {
   const club = useClub();
+  /* ── as duas lentes na mesma página ──────────────────────────────────────
+     O perfil era do universo de filmes porque só ele tinha ficha. Não é mais:
+     quem vê série avalia episódio, e um perfil que ignora isso diz que a pessoa
+     parou de assistir em maio.
+
+     Buscado aqui e não no boot do clube: o acervo de episódios é grande, esta é
+     uma tela entre sete, e quem nunca a abre não deve pagar por ela. Uma vez
+     por visita basta — ninguém avalia um episódio enquanto lê o próprio perfil.
+
+     Falha calada: o resto da página é sobre filmes e continua inteiro. */
+  const [episodes, setEpisodes] = useState<EpisodeTake[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    showsApi.takes().then(
+      r => alive && setEpisodes(r.takes),
+      () => alive && setEpisodes([])
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /* Aqui e não dentro da lista: quatro lugares desta página apontam para uma
      ficha — os extremos, a maior distância do TMDB, uma faixa da régua e a
@@ -128,6 +151,11 @@ export function ProfileScreen() {
         <Ends person={person} onOpenTake={showTake} />
         <Crowd person={person} mine={mine} onOpenTake={showTake} />
         <Ruler person={person} onOpenTake={showTake} />
+        {/* Depois da régua e antes da fila: séries são a outra metade do que a
+            pessoa assistiu, e não um apêndice — mas os módulos de filme são os
+            que têm régua, distância do público e extremos, então continuam
+            abrindo a página. */}
+        <Series person={person} episodes={episodes} />
         <Queued person={person} />
         <Takes
           person={person}
@@ -376,6 +404,77 @@ function EndCard({
         </span>
       </span>
     </button>
+  );
+}
+
+/* ══ o que a pessoa vê em série ═══════════════════════════════════════════
+   A outra metade do perfil, e ela conta de outro jeito. Um filme é uma noite e
+   uma nota; uma série são vinte noites e vinte notas, e a pergunta que se faz
+   sobre ela não é "qual episódio" — é "o que ela anda acompanhando, e o que
+   achou". Então a leitura é POR SÉRIE: quantos episódios, que média, e o alto
+   e o baixo dentro dela.
+
+   Só o que tem nota. Marcar visto é o gesto barato deste universo e não é uma
+   opinião — contá-lo aqui inflaria um perfil com maratonas caladas.
+
+   Sem episódio avaliado, a seção não existe: uma placa vazia dizendo "nenhuma
+   série" ocuparia, numa página feita de módulos que se calam, o lugar do que
+   tem o que dizer. */
+function Series({ person, episodes }: { person: Reviewer; episodes: EpisodeTake[] | null }) {
+  const shows = useMemo(() => {
+    const mine = (episodes ?? []).filter(t => t.reviewerId === person.id && t.final != null);
+    const byShow = new Map<
+      number,
+      { id: number; title: string; poster: string | null; notes: number[] }
+    >();
+    for (const t of mine) {
+      const held = byShow.get(t.showId);
+      if (held) held.notes.push(t.final as number);
+      else
+        byShow.set(t.showId, {
+          id: t.showId,
+          title: t.showTitle,
+          poster: t.showPoster,
+          notes: [t.final as number],
+        });
+    }
+    return [...byShow.values()]
+      .map(s => ({
+        ...s,
+        average: s.notes.reduce((a, b) => a + b, 0) / s.notes.length,
+      }))
+      /* Pela média e não pela quantidade: a pergunta é o que a pessoa achou, e
+         quem ordena por quantidade responde o que ela maratonou. */
+      .sort((a, b) => b.average - a.average);
+  }, [episodes, person.id]);
+
+  if (!shows.length) return null;
+
+  const rated = shows.reduce((n, s) => n + s.notes.length, 0);
+
+  return (
+    <Region
+      title="Séries"
+      note={`${plural(rated, 'episódio', 'episódios')} em ${plural(shows.length, 'série', 'séries')}`}
+    >
+      <ul className="flex flex-col gap-2.5">
+        {shows.map(s => (
+          <li key={s.id} className="flex items-center gap-3">
+            <Poster src={s.poster} className="h-[46px] w-[31px] flex-none" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13.5px] text-ink">{s.title}</span>
+              <span className="q block text-[11px] text-ink-dim">
+                {plural(s.notes.length, 'episódio avaliado', 'episódios avaliados')}
+              </span>
+            </span>
+            <Strip value={s.average} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />
+            <span className="q w-[34px] flex-none text-right text-[15px] text-beam">
+              {fmt(s.average)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Region>
   );
 }
 

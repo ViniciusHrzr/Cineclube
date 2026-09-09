@@ -760,9 +760,10 @@ function SeriesClubApp({
           tabs={SERIES_TABS}
           tab={tab}
           onTab={goTab}
-          /* O perfil mora na lente de filmes: ele conta o que a pessoa avaliou,
-             e hoje isso é o acervo de filmes. Mandar para lá é honesto — o
-             endereço diz `filmes` — e é melhor do que uma aba que não abre. */
+          /* Um endereço só para o perfil, e ele é o da lente de filmes. Não é
+             mais "o perfil é de filmes": a página conta as duas lentes desde
+             que ganhou o módulo de séries. É que ela é UMA, e duas portas para
+             a mesma página seriam dois endereços para o mesmo link colado. */
           onOpenSelf={() => {
             location.hash = clubHash(slug, 'perfil', 'filmes');
           }}

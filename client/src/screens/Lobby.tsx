@@ -145,6 +145,9 @@ export function Lobby({
      poderiam ficar abertas ao mesmo tempo, uma por cima da outra. */
   const [aberto, setAberto] = useState<LobbyMovie | null>(null);
 
+  /** A sala por onde o próprio rosto abre o perfil. Ver o botão na barra. */
+  const meuClube = mine?.[0]?.slug ?? null;
+
   const daRede = net?.wall ?? [];
   const live = net?.live ?? [];
   const podium = net?.podium ?? [];
@@ -275,10 +278,20 @@ export function Lobby({
             {/* O mesmo sino da marquise, e é o ponto: ele é da REDE. Junta
                 todas as salas e diz de qual veio cada linha. */}
             <Notices />
+            {/* ── o próprio rosto leva ao próprio perfil ──────────────────
+                Em toda tela dentro de um clube ele já levava, e só aqui abria
+                uma folha de ajustes de conta — o mesmo rosto, dois destinos,
+                dependendo de onde se estava.
+
+                O perfil mora dentro de uma sala (ele conta o que a pessoa
+                avaliou LÁ), então o rosto leva ao primeiro clube do chaveiro,
+                que é o de cima da lista e o mais provável. Sem clube nenhum não
+                há perfil para abrir, e aí ele continua abrindo a conta — que é
+                a única coisa que existe para quem acabou de chegar. */}
             <button
               type="button"
-              onClick={onOpenSelf}
-              title="Minha conta"
+              onClick={() => (meuClube ? onEnter(meuClube, 'perfil', 'filmes') : onOpenSelf())}
+              title={meuClube ? 'Meu perfil' : 'Minha conta'}
               className="flex flex-none items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
             >
               <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
