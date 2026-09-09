@@ -194,6 +194,10 @@ export type LobbyMovie = {
   poster: string | null;
   average: number;
   takes: number;
+  /* Só os dois acervos de filme os trazem. O saguão de séries devolve a mesma
+     forma sem eles, e uma série não tem diretor nem uma folha só. */
+  director?: string | null;
+  clubs?: number;
 };
 
 export type LobbyPodiumMovie = LobbyMovie & { genre: string; clubs: number };

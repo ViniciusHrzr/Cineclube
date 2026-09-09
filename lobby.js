@@ -60,7 +60,9 @@ const countsStmt = db.prepare(`
    buraco, e não um estado. */
 const wallStmt = db.prepare(`
   SELECT rv.movie_id, rv.movie_title, rv.movie_year, rv.movie_poster,
-         AVG(rv.final) AS average, COUNT(*) AS takes, MAX(rv.recorded_at) AS last_at
+         MAX(rv.movie_director) AS movie_director,
+         AVG(rv.final) AS average, COUNT(*) AS takes,
+         COUNT(DISTINCT rv.club_id) AS clubs, MAX(rv.recorded_at) AS last_at
   FROM reviews rv
   JOIN clubs c ON c.id = rv.club_id
   WHERE ${ELIGIBLE} AND rv.movie_poster IS NOT NULL AND rv.movie_poster <> ''
@@ -73,6 +75,7 @@ const wallStmt = db.prepare(`
    que foi visto por mais gente é o que a rede afirmou com mais força. */
 const podiumStmt = db.prepare(`
   SELECT rv.movie_id, rv.movie_title, rv.movie_year, rv.movie_poster, rv.movie_genre,
+         MAX(rv.movie_director) AS movie_director,
          AVG(rv.final) AS average, COUNT(*) AS takes, COUNT(DISTINCT rv.club_id) AS clubs
   FROM reviews rv
   JOIN clubs c ON c.id = rv.club_id
@@ -306,8 +309,10 @@ async function aggregates() {
       title: row.movie_title,
       year: row.movie_year ?? null,
       poster: row.movie_poster,
+      director: row.movie_director || null,
       average: Number(row.average),
       takes: Number(row.takes),
+      clubs: Number(row.clubs) || 0,
     })),
     podium: podium.map(row => ({
       id: Number(row.movie_id),
@@ -315,6 +320,7 @@ async function aggregates() {
       year: row.movie_year ?? null,
       poster: row.movie_poster ?? null,
       genre: row.movie_genre,
+      director: row.movie_director || null,
       average: Number(row.average),
       takes: Number(row.takes),
       clubs: Number(row.clubs),
