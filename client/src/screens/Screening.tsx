@@ -1019,11 +1019,10 @@ function AboutFilm({ movie: playing }: { movie: ScreeningMovie }) {
       {sheet.trailerUrl ? (
         <TrailerKey url={sheet.trailerUrl} title={sheet.title} className="mt-3" />
       ) : null}
-      {/* A mesma resposta da folha de projeção, com o mesmo crédito ao
-          JustWatch: onde isto está incluído em algo que alguém do clube já
-          paga. É a saída de quem entrou na sessão sem cópia nenhuma — e numa
-          série vale mais ainda: quase todo filme dá para alugar, uma série ou
-          está numa assinatura ou o clube não maratona. */}
+      {/* A mesma resposta da folha de projeção: onde isto está incluído em algo
+          que alguém do clube já paga. É a saída de quem entrou na sessão sem
+          cópia nenhuma — e numa série vale mais ainda: quase todo filme dá para
+          alugar, uma série ou está numa assinatura ou o clube não maratona. */}
       <WatchOn watch={sheet.watch} title={sheet.title} />
     </div>
   );

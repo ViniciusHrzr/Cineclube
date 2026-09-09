@@ -469,9 +469,9 @@ function Verdicts({
    Ausente num filme vindo do cache: ele deliberadamente não guarda isto, porque
    um catálogo se move e uma resposta errada com confiança é pior que nenhuma.
 
-   O crédito não é enfeite — usar estes dados obriga a nomear o JustWatch —, e o
-   link de saída é a página do próprio TMDB, que cai nas lojas de verdade em vez
-   de adivinhar um link fundo num serviço que o leitor talvez nem tenha. */
+   O rodapé de crédito ao JustWatch foi retirado a pedido do dono em 09/09/2026.
+   Fica registrado que nomear a fonte é condição de uso do dado de provedores do
+   TMDB: se ele voltar, é aqui e em `OnCell` que ele entra. */
 export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string }) {
   /* Três estados, e dois deles são nulos. `undefined` é "ninguém perguntou": o
      filme veio do cache porque o TMDB estava fora. `null` é "perguntamos, e não
@@ -488,9 +488,8 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
       <div className="mt-5 border-t border-white/[0.07] pt-4">
         <span className="legend">Onde assistir</span>
         <p className="mt-2 text-[12.5px] text-ink-dim">
-          Não está em nenhum streaming no Brasil — ainda em cartaz, ou só para alugar.
+          Não está em nenhum streaming no Brasil.
         </p>
-        <Credit link={null} />
       </div>
     );
   }
@@ -531,31 +530,7 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
           </WatchLink>
         ))}
       </div>
-      <Credit link={watch.link} />
     </div>
-  );
-}
-
-/* The attribution, on both answers. Using this data obliges us to name
-   JustWatch as its source, and "não está em nenhum streaming" is as much their
-   answer as a list of logos is — it is the same query, returning nothing. */
-function Credit({ link }: { link: string | null }) {
-  const out = 'underline underline-offset-2 transition-colors hover:text-ink-dim';
-  return (
-    <p className="q mt-3 text-[11px] text-ink-faint">
-      Disponibilidade no Brasil, por{' '}
-      <a href="https://www.justwatch.com" target="_blank" rel="noopener noreferrer" className={out}>
-        JustWatch
-      </a>
-      {link ? (
-        <>
-          {' · '}
-          <a href={link} target="_blank" rel="noopener noreferrer" className={out}>
-            ver onde
-          </a>
-        </>
-      ) : null}
-    </p>
   );
 }
 
