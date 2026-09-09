@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronDown, Play, Volume2, VolumeX, X } from 'lucide-react';
-import { Bill, Blank, Chip, Fault, IconKey, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Play,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
+import { Fault, IconKey, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
 import { WatchOn } from '@/components/film';
 import { Breakdown } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
@@ -16,7 +26,7 @@ import {
   type Review,
   type ShowDetail,
 } from '@/lib/api';
-import { cn, plural } from '@/lib/utils';
+import { cn, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -27,24 +37,27 @@ import { useClub } from '@/App';
    de verdade é "o que a gente vê hoje?", e a resposta dela não é texto — é o
    trailer tocando.
 
+   ── a forma é a do protótipo do usuário ─────────────────────────────────
+   Uma COLUNA 9:16, e tudo mora dentro dela: o filtro de gênero é uma chave no
+   alto que abre um painel por cima, a legenda deita sobre o degradê no pé, e os
+   controles são um trilho vertical na borda direita que não rola com o
+   conteúdo. Nada disso é enfeite — é o que faz o quadro inteiro ser o vídeo. A
+   primeira versão desta tela empilhava vídeo, legenda e controles em coluna, e
+   no telefone os controles caíam para fora da moldura.
+
    ── o que o clube fez continua na frente ────────────────────────────────
-   O reel abre pelo que o clube avaliou, e não pelo que o TMDB acha popular. É a
-   mesma afirmação que o mural fazia — *o grupo é visível* — dita pelo material
-   do produto em vez de por uma linha de texto: o filme que alguém acabou de
-   avaliar é o primeiro que rola, com a chave da ficha acesa e uma dica dizendo
-   que já tem nota. Quem chega encontra a conversa do clube antes da descoberta.
+   O reel abre pelo que o clube avaliou, e não pelo que o TMDB acha popular: o
+   filme que alguém acabou de avaliar é o primeiro que rola, com a chave da ficha
+   acesa e uma dica dizendo que já tem nota. É o princípio *"o grupo é visível"*
+   dito pelo material do produto em vez de por uma linha de texto.
 
    ── e o que sumiu ────────────────────────────────────────────────────────
    A lista de acontecimentos. As avaliações não se perderam: elas moram dentro
-   da ficha da obra, onde se curte e se responde cada uma — que era o que a
-   lista fazia, com a diferença de que agora estão ao lado do filme de que
-   falam.
+   da ficha da obra, onde se curte e se responde cada uma.
 
    ── uma tela, dois universos ─────────────────────────────────────────────
-   Filme e série rolam no mesmo componente. O que muda entre eles — quem já foi
-   avaliado, o que a chave de avaliar abre, e como uma ficha do clube é
-   desenhada — chega por propriedade. As duas cascas do App montam o mesmo reel
-   com adaptadores diferentes; ver `MovieTakes` e `ShowTakes` no fim do arquivo.
+   Filme e série rolam no mesmo componente. O que muda entre eles chega por
+   propriedade; ver `MovieReels` e `SeriesReels` no fim do arquivo.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Uma obra que o clube já avaliou, do jeito que o reel precisa saber disso. */
@@ -96,9 +109,14 @@ export function ReelsScreen({
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
-  const [open, setOpen] = useState<ReelItem | null>(null);
+  const [filtering, setFiltering] = useState(false);
+  const [full, setFull] = useState(false);
+  const [ficha, setFicha] = useState<ReelItem | null>(null);
+  const [toast, setToast] = useState('');
 
+  const stage = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
+  const alarm = useRef<number>();
 
   /* A lista de ids é a identidade da fixação, e não o array: `rated` é derivado
      a cada render do acervo em memória, então comparar por referência pediria a
@@ -181,6 +199,8 @@ export function ReelsScreen({
     return head.concat(found.filter(f => !seen.has(f.id)));
   }, [pinned, found, genre]);
 
+  const here = items[active] ?? null;
+
   /* ── qual quadro está na tela ──────────────────────────────────────────
      Observado e não calculado da rolagem: o mesmo sinal serve para o dedo, para
      a roda, para as setas e para o snap terminando sozinho, e nenhum deles
@@ -188,7 +208,6 @@ export function ReelsScreen({
   useEffect(() => {
     const box = track.current;
     if (!box) return;
-    const frames = Array.from(box.querySelectorAll<HTMLElement>('[data-frame]'));
     const spy = new IntersectionObserver(
       entries => {
         for (const e of entries) {
@@ -197,7 +216,7 @@ export function ReelsScreen({
       },
       { root: box, threshold: 0.6 }
     );
-    for (const f of frames) spy.observe(f);
+    for (const f of box.querySelectorAll<HTMLElement>('[data-frame]')) spy.observe(f);
     return () => spy.disconnect();
   }, [items.length]);
 
@@ -212,13 +231,30 @@ export function ReelsScreen({
     box.scrollBy({ top: delta * box.clientHeight, behavior: 'smooth' });
   }, []);
 
-  /* As setas movem o reel, e só quando nada por cima dele está escutando: com a
-     ficha aberta elas pertencem ao texto que está sendo lido. */
+  const flash = useCallback((msg: string) => {
+    window.clearTimeout(alarm.current);
+    setToast(msg);
+    alarm.current = window.setTimeout(() => setToast(''), 2400);
+  }, []);
+  useEffect(() => () => window.clearTimeout(alarm.current), []);
+
+  /* Uma camada por vez escuta o teclado, de cima para baixo: com a ficha aberta
+     as setas pertencem ao texto que está sendo lido, e o Esc fecha o que estiver
+     por cima antes de qualquer outra coisa. */
   useEffect(() => {
-    if (open) return;
+    if (ficha) return;
     const key = (e: KeyboardEvent) => {
       const el = document.activeElement;
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        if (e.key === 'Escape') setFiltering(false);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (filtering) return setFiltering(false);
+        if (full) return setFull(false);
+        return;
+      }
+      if (filtering) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         jump(e.key === 'ArrowDown' ? 1 : -1);
@@ -226,124 +262,217 @@ export function ReelsScreen({
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [jump, open]);
+  }, [jump, ficha, filtering, full]);
 
-  const height = useReelHeight(track);
+  const height = useReelHeight(stage);
+  /* A coluna do protótipo: 9:16 quando há altura para isso, e a largura inteira
+     quando não há — no telefone ela fica mais alta que 9:16, e é assim mesmo.
+
+     Antes da primeira medida ela é só larga: uma largura derivada de altura zero
+     é uma coluna de zero pixel, ou seja um quadro em branco no primeiro pintar. */
+  const column: React.CSSProperties = height
+    ? { height: '100%', width: `min(100%, ${Math.round((height * 9) / 16)}px)` }
+    : { height: '100%', width: '100%' };
+
+  const save = (it: ReelItem) => {
+    const on = !queued(it.id);
+    onQueue(it);
+    flash(on ? `“${it.title}” ${queueLabel[1].toLowerCase()}` : `Tirado: ${it.title}`);
+  };
 
   return (
-    <section>
-      <Bill
-        title="Reels"
-        note={
-          items.length
-            ? `${active + 1} de ${items.length}${pinned.length ? ' · o que o clube avaliou vem primeiro' : ''}`
-            : 'trailers do que está passando'
-        }
-      >
-        <IconKey
-          aria-label={muted ? 'Ligar o som' : 'Tirar o som'}
-          aria-pressed={!muted}
-          title={muted ? 'Ligar o som' : 'Tirar o som'}
-          onClick={() => setMuted(m => !m)}
-          className={cn(!muted && 'text-dye-brass ring-dye-brass/60')}
-        >
-          {muted ? <VolumeX className="h-4 w-4" strokeWidth={1.8} /> : <Volume2 className="h-4 w-4" strokeWidth={1.8} />}
-        </IconKey>
-      </Bill>
-
-      {/* Uma fileira que rola de lado em vez de embrulhar: dez gêneros em duas
-          linhas comeriam a altura que é o reel inteiro. */}
-      <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
-        <Chip on={genre === null} onClick={() => setGenre(null)}>
-          Tudo
-        </Chip>
-        {genres.map(g => (
-          <Chip key={g} on={genre === g} onClick={() => setGenre(g)}>
-            {g}
-          </Chip>
-        ))}
+    <section className="flex flex-col">
+      {/* O cabeçalho do protótipo, e a marquise já disse o nome da casa: aqui
+          sobra a seção e a contagem. Fino de propósito — cada pixel que ele toma
+          sai da altura do reel, que é a tela inteira. */}
+      <div className="mb-3 flex items-baseline gap-4">
+        <span className="font-display text-[22px] uppercase leading-none tracking-[0.16em] text-beam">
+          Reels
+        </span>
+        <span
+          aria-hidden
+          className="h-px min-w-[2rem] flex-1 translate-y-[-4px] bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
+        />
+        <span className="q flex-none text-[11.5px] text-ink-faint">
+          {items.length ? `${active + 1} / ${items.length}` : '—'}
+        </span>
       </div>
 
-      {error && !items.length ? (
-        <div className="max-w-[60ch]">
-          <Fault detail={error}>Não foi possível carregar os trailers.</Fault>
+      <div ref={stage} style={height ? { height } : undefined} className={cn('grid place-items-center', !height && 'h-[70dvh]')}>
+        <div
+          style={column}
+          className="relative overflow-hidden rounded-plate bg-house ring-1 ring-white/[0.07]"
+        >
+          <div
+            ref={track}
+            /* Focável porque é uma caixa de rolagem: sem isto, quem navega por
+               teclado não tem onde pousar para folhear. */
+            tabIndex={0}
+            role="region"
+            aria-label="Reel de trailers"
+            className={cn(
+              'absolute inset-0 snap-y snap-mandatory overflow-y-auto overscroll-contain',
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-dye-brass/70',
+              '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            )}
+          >
+            {items.length ? (
+              items.map((it, i) => (
+                <Frame
+                  key={`${it.kind}-${it.id}-${i}`}
+                  index={i}
+                  item={it}
+                  rated={scoreOf.get(it.id) ?? null}
+                  /* Uma moldura por vez: montar as vizinhas seriam três players
+                     do YouTube no ar, e o que está fora da tela tocando som. O
+                     que abre por cima também desmonta, senão o trailer continua
+                     atrás. */
+                  live={i === active && !ficha && !full && !filtering}
+                  near={Math.abs(i - active) <= 1}
+                  muted={muted}
+                />
+              ))
+            ) : (
+              <div className="grid h-full place-items-center px-6 text-center">
+                {loading ? (
+                  <Skeleton className="aspect-video w-full" />
+                ) : error ? (
+                  <Fault detail={error}>Não foi possível carregar os trailers.</Fault>
+                ) : (
+                  <p className="text-[13px] leading-relaxed text-ink-dim">
+                    Nenhum trailer neste gênero. Escolha outro na chave acima — ou volte para tudo.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── a chave do gênero ────────────────────────────────────────
+              No alto e dentro da coluna, sobre um degradê que garante contraste
+              contra qualquer quadro que passe por baixo. `pointer-events-none`
+              na faixa e `auto` na chave: a faixa é só a sombra. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] flex items-center gap-2 bg-gradient-to-b from-house-deep/90 via-house-deep/40 to-transparent p-3">
+            <button
+              type="button"
+              onClick={() => setFiltering(true)}
+              aria-expanded={filtering}
+              aria-label={`Filtrar por gênero — ${genre ?? 'tudo'}`}
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-cell bg-house-seat/70 px-3 py-2 font-display text-[12px] uppercase leading-none tracking-[0.12em] text-ink-dim ring-1 ring-house-rail backdrop-blur-sm transition-colors hover:text-beam hover:ring-white/25 coarse:min-h-[40px]"
+            >
+              <span>Gênero</span>
+              <span className="text-dye-brass">{genre ?? 'Tudo'}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-ink-faint" strokeWidth={2} aria-hidden />
+            </button>
+          </div>
+
+          {/* ── o trilho ─────────────────────────────────────────────────
+              Fora do rolador, de propósito: os controles são da SALA e não do
+              quadro, então eles ficam parados enquanto os trailers passam por
+              trás. */}
+          {here ? (
+            <div className="absolute bottom-14 right-3 z-[3] flex flex-col items-end gap-3">
+              <RailKey
+                label={queued(here.id) ? queueLabel[1] : queueLabel[0]}
+                active={queued(here.id)}
+                onClick={() => save(here)}
+              >
+                <Bookmark
+                  className="h-[18px] w-[18px]"
+                  fill={queued(here.id) ? 'currentColor' : 'none'}
+                  strokeWidth={1.7}
+                />
+              </RailKey>
+
+              <RailKey label="Maximizar o trailer" onClick={() => setFull(true)}>
+                <Maximize2 className="h-[17px] w-[17px]" strokeWidth={1.8} />
+              </RailKey>
+
+              {/* A chave da ficha, acesa quando há ficha do clube atrás dela, com
+                  a dica pendurada à esquerda — para dentro da coluna, que é o
+                  único lado onde ela cabe. */}
+              <div className="relative">
+                {scoreOf.has(here.id) ? <RatedTip rated={scoreOf.get(here.id)!} /> : null}
+                <RailKey
+                  label={`Abrir a ficha de ${here.title}`}
+                  lit={scoreOf.has(here.id)}
+                  onClick={() => setFicha(here)}
+                >
+                  <span className="font-display text-[10.5px] uppercase leading-none tracking-[0.1em]">
+                    Ficha
+                  </span>
+                </RailKey>
+              </div>
+
+              <RailKey
+                label={muted ? 'Ligar o som' : 'Tirar o som'}
+                active={!muted}
+                onClick={() => setMuted(m => !m)}
+              >
+                {muted ? (
+                  <VolumeX className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                ) : (
+                  <Volume2 className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                )}
+              </RailKey>
+
+              <RailKey label="Passar para o próximo" onClick={() => jump(1)}>
+                <ChevronDown className="h-[18px] w-[18px]" strokeWidth={1.9} />
+              </RailKey>
+            </div>
+          ) : null}
+
+          {filtering ? (
+            <GenrePanel
+              genres={genres}
+              value={genre}
+              onPick={g => {
+                setGenre(g);
+                setFiltering(false);
+              }}
+              onClose={() => setFiltering(false)}
+            />
+          ) : null}
+
+          {toast ? (
+            <div className="pointer-events-none absolute inset-x-3 bottom-4 z-[8] flex justify-center">
+              <span className="plate flex items-center gap-2.5 px-4 py-2.5 animate-frame-in">
+                <span className="h-1.5 w-1.5 flex-none rounded-full bg-dye-green-lit" />
+                <span className="text-[12.5px] leading-none text-ink">{toast}</span>
+              </span>
+            </div>
+          ) : null}
         </div>
+      </div>
+
+      {full && here ? (
+        <FullTrailer
+          item={here}
+          muted={muted}
+          rated={scoreOf.get(here.id) ?? null}
+          queued={queued(here.id)}
+          queueLabel={queueLabel}
+          onQueue={() => save(here)}
+          onSound={() => setMuted(m => !m)}
+          onPrev={() => jump(-1)}
+          onNext={() => jump(1)}
+          onClose={() => setFull(false)}
+        />
       ) : null}
 
-      <div
-        ref={track}
-        /* Focável porque é uma caixa de rolagem: sem isto, quem navega por
-           teclado não tem como pousar no reel para folheá-lo. As setas já
-           funcionam da página inteira; o que faltava era um lugar de parada. */
-        tabIndex={0}
-        role="region"
-        aria-label="Reel de trailers"
-        style={height ? { height } : undefined}
-        /* Um rolador só, e ele é este. `overscroll-contain` fecha a porta para o
-           gesto vazar para a página atrás no fim da lista — sem ele, chegar ao
-           último quadro dispara o "puxar para atualizar" do Android. */
-        className={cn(
-          'relative snap-y snap-mandatory overflow-y-auto overscroll-contain rounded-plate',
-          'ring-1 ring-white/[0.06] focus-visible:outline-none focus-visible:ring-dye-brass/70',
-          '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-          !height && 'h-[70dvh] min-h-[420px]'
-        )}
-      >
-        {!items.length ? (
-          loading || error ? (
-            <div className="flex h-full flex-col gap-4 p-4 lg:flex-row">
-              <Skeleton className="aspect-video w-full flex-1" />
-              <div className="flex w-full flex-col gap-3 lg:w-[340px]">
-                <Skeleton className="h-3 w-1/3" />
-                <Skeleton className="h-8 w-4/5" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-11/12" />
-              </div>
-            </div>
-          ) : (
-            <div className="grid h-full place-items-center px-6">
-              <Blank title="Nenhum trailer neste gênero">
-                O TMDB não devolveu nada com vídeo aqui. Escolha outro gênero — ou volte para tudo.
-              </Blank>
-            </div>
-          )
-        ) : (
-          items.map((it, i) => (
-            <Frame
-              key={`${it.kind}-${it.id}-${i}`}
-              index={i}
-              item={it}
-              rated={scoreOf.get(it.id) ?? null}
-              /* Uma moldura por vez: montar as vizinhas seria três players do
-                 YouTube no ar, e o que está fora da tela tocando som. A ficha
-                 aberta também desmonta, senão o trailer continua atrás dela. */
-              live={i === active && !open}
-              near={Math.abs(i - active) <= 1}
-              muted={muted}
-              queued={queued(it.id)}
-              queueLabel={queueLabel}
-              onQueue={() => onQueue(it)}
-              onFicha={() => setOpen(it)}
-              onNext={() => jump(1)}
-            />
-          ))
-        )}
-      </div>
-
-      {open ? (
+      {ficha ? (
         <Ficha
-          item={open}
-          rated={scoreOf.get(open.id) ?? null}
+          item={ficha}
+          rated={scoreOf.get(ficha.id) ?? null}
           openLabel={openLabel}
           onOpen={() => {
-            const it = open;
-            setOpen(null);
+            const it = ficha;
+            setFicha(null);
             onOpen(it);
           }}
-          queued={queued(open.id)}
+          queued={queued(ficha.id)}
           queueLabel={queueLabel}
-          onQueue={() => onQueue(open)}
-          onClose={() => setOpen(null)}
+          onQueue={() => save(ficha)}
+          onClose={() => setFicha(null)}
           renderTakes={renderTakes}
         />
       ) : null}
@@ -357,9 +486,8 @@ export function ReelsScreen({
    uma segunda barra de rolagem, com dois roladores disputando cada gesto do
    dedo — o defeito que a folha de projeção já teve e que está escrito lá.
 
-   Medido e não escrito em `calc`, porque o que está acima dele varia: a
-   marquise, a fileira de gêneros e o cabeçalho mudam de altura com a largura da
-   janela, e um número fixo aqui estaria errado em metade dos tamanhos. */
+   Medido e não escrito em `calc`, porque o que está acima dele varia com a
+   largura da janela e um número fixo estaria errado em metade dos tamanhos. */
 function useReelHeight(ref: React.RefObject<HTMLElement>) {
   const [height, setHeight] = useState(0);
 
@@ -372,8 +500,7 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
          `zoom` divide o mundo em duas unidades: `getBoundingClientRect` e
          `innerHeight` respondem em pixels da JANELA, e a altura que este
          elemento recebe é lida em pixels DELE. A conta corre toda na primeira
-         régua e converte uma vez, no fim — misturar as duas dá um reel um quarto
-         alto demais e a segunda barra de rolagem que isto existe para evitar. */
+         régua e converte uma vez, no fim. */
       const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
       const host = el.closest('main');
       const style = host ? getComputedStyle(host) : null;
@@ -384,9 +511,8 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
         host && style && style.overflowY !== 'visible'
           ? host.getBoundingClientRect().bottom
           : window.innerHeight;
-      // O respiro que o rodapé de toda tela já pede, e que aqui vem do `<main>`.
       const pad = style ? parseFloat(style.paddingBottom) || 0 : 0;
-      setHeight(Math.max(400, (bottom - el.getBoundingClientRect().top) / zoom - pad));
+      setHeight(Math.max(380, (bottom - el.getBoundingClientRect().top) / zoom - pad));
     };
     measure();
     const eye = new ResizeObserver(measure);
@@ -415,14 +541,19 @@ function useGentle() {
   return gentle;
 }
 
-/* ── um quadro ────────────────────────────────────────────────────────────
-   O trailer 16:9 no meio da sala e o que se sabe dele numa coluna ao lado. No
-   telefone a coluna desce para baixo do vídeo em vez de deitar por cima dele:
-   legenda sobre imagem em movimento é texto sem contraste garantido, e este
-   texto é o que decide se alguém quer ver o filme.
+/** O endereço do player, com o som de agora. */
+const embedOf = (key: string, muted: boolean, loop: boolean) =>
+  `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=${muted ? 1 : 0}` +
+  `&rel=0&modestbranding=1&playsinline=1` +
+  (loop ? `&loop=1&playlist=${key}` : '');
 
-   Atrás de tudo, o próprio quadro do filme desfocado — não é vidro decorativo,
-   é a luz da projeção batendo na parede da sala. */
+/* ── um quadro ────────────────────────────────────────────────────────────
+   O trailer 16:9 no meio da coluna, a legenda deitada sobre o degradê no pé, e
+   atrás de tudo o próprio quadro do filme desfocado — não é vidro decorativo, é
+   a luz da projeção batendo na parede da sala.
+
+   A legenda recua da direita pela largura do trilho: os controles são uma
+   coluna fixa, e texto que passa por baixo deles é texto que não se lê. */
 function Frame({
   index,
   item,
@@ -430,11 +561,6 @@ function Frame({
   live,
   near,
   muted,
-  queued,
-  queueLabel,
-  onQueue,
-  onFicha,
-  onNext,
 }: {
   index: number;
   item: ReelItem;
@@ -443,22 +569,15 @@ function Frame({
   /** Se este quadro está à vista ou é o vizinho de quem está. */
   near: boolean;
   muted: boolean;
-  queued: boolean;
-  queueLabel: [string, string];
-  onQueue: () => void;
-  onFicha: () => void;
-  onNext: () => void;
 }) {
   const gentle = useGentle();
   /* Sob `prefers-reduced-motion` nada começa a se mexer sozinho: o quadro fica
-     parado com a chave de tocar, e o reel continua sendo folheável. Quem apertou
-     uma vez segue querendo — a escolha vale por quadro. */
+     parado com a chave de tocar, e o reel continua sendo folheável. */
   const [asked, setAsked] = useState(false);
   useEffect(() => {
     if (!live) setAsked(false);
   }, [live]);
   const playing = live && (!gentle || asked);
-
   const still = item.backdrop ?? item.poster;
 
   return (
@@ -467,174 +586,358 @@ function Frame({
       aria-label={item.title}
       className="relative h-full w-full snap-start snap-always overflow-hidden bg-house-deep"
     >
-      {/* A parede da sala, acesa pelo próprio quadro do filme. Desenhada só
-          perto da tela: um desfoque de tela cheia por quadro, vinte vezes, é
-          vinte camadas grandes que o navegador repinta por nada. */}
+      {/* Desenhada só perto da tela: um desfoque de tela cheia por quadro, vinte
+          vezes, são vinte camadas grandes repintadas por nada. */}
       {still && near ? (
         <>
           <div
             aria-hidden
-            className="absolute -inset-12 bg-cover bg-center opacity-60 blur-3xl saturate-[.65]"
+            className="absolute -inset-10 bg-cover bg-center opacity-[0.55] blur-3xl saturate-[.6]"
             style={{ backgroundImage: `url(${still})` }}
           />
-          <div aria-hidden className="absolute inset-0 bg-house-deep/70" />
+          <div aria-hidden className="absolute inset-0 bg-house-deep/60" />
         </>
       ) : null}
 
-      <div className="relative flex h-full flex-col lg:flex-row">
-        <div className="flex min-h-0 flex-1 items-center justify-center p-3 lg:p-6">
-          <div className="relative aspect-video w-full max-h-full overflow-hidden bg-black ring-1 ring-white/10">
-            {still ? (
-              <img
-                src={still}
-                alt=""
-                loading="lazy"
-                className={cn(
-                  'absolute inset-0 h-full w-full object-cover transition-opacity duration-700',
-                  playing ? 'opacity-0' : 'opacity-100'
-                )}
-              />
-            ) : null}
-            {playing ? (
-              <iframe
-                /* `key` no som para o player renascer quando ele muda: o YouTube
-                   não desliga o mudo de um player já montado, e uma chave que
-                   não faz nada é pior que uma chave ausente. */
-                key={muted ? 'mudo' : 'som'}
-                src={`https://www.youtube-nocookie.com/embed/${item.trailerKey}?autoplay=1&mute=${muted ? 1 : 0}&rel=0&modestbranding=1&playsinline=1&loop=1&playlist=${item.trailerKey}`}
-                title={`Trailer de ${item.title}`}
-                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                referrerPolicy="strict-origin-when-cross-origin"
-                allowFullScreen
-                className="absolute inset-0 h-full w-full border-0"
-              />
-            ) : null}
-            {live && gentle && !asked ? (
-              <button
-                type="button"
-                onClick={() => setAsked(true)}
-                className="absolute inset-0 grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/25"
-              >
-                <span className="flex items-center gap-2 rounded-cell bg-house-seat/85 px-4 py-2.5 font-display text-[13px] uppercase tracking-[0.14em] ring-1 ring-house-rail">
-                  <Play className="h-4 w-4 fill-current" strokeWidth={0} aria-hidden />
-                  Tocar o trailer
-                </span>
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <aside className="flex w-full flex-none flex-col justify-center gap-3 border-t border-white/[0.07] px-4 pb-5 pt-4 lg:w-[356px] lg:border-l lg:border-t-0 lg:px-6 lg:py-8">
-          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="rounded-[1px] px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-red-lit ring-1 ring-dye-red-lit/50">
-              {item.genre}
-            </span>
-            {item.year ? <span className="q text-[11.5px] text-ink-dim">{item.year}</span> : null}
-            {item.crowd ? (
-              <span className="q text-[11.5px] text-ink-faint">TMDB {fmt(item.crowd.score)}</span>
-            ) : null}
-          </p>
-
-          <h2 className="font-display text-[30px] leading-[0.92] tracking-[0.02em] text-beam lg:text-[38px]">
-            {item.title}
-          </h2>
-          {item.original ? (
-            <p className="q -mt-1 text-[12px] text-ink-faint">{item.original}</p>
+      <div className="absolute inset-0 grid place-items-center">
+        <div
+          className={cn(
+            'relative aspect-video w-full overflow-hidden bg-black ring-1 ring-white/10',
+            live && 'animate-beam-in'
+          )}
+        >
+          {still ? (
+            <img
+              src={still}
+              alt=""
+              loading="lazy"
+              className={cn(
+                'absolute inset-0 h-full w-full object-cover transition-opacity duration-700 delay-[450ms]',
+                playing ? 'opacity-0' : 'opacity-100'
+              )}
+            />
           ) : null}
-
-          {rated ? <ClubScore rated={rated} /> : null}
-
-          {item.overview ? (
-            <p className="line-clamp-3 text-[13px] leading-relaxed text-ink-dim lg:line-clamp-5">
-              {item.overview}
-            </p>
+          {playing ? (
+            <iframe
+              /* `key` no som para o player renascer quando ele muda: o YouTube
+                 não desliga o mudo de um player já montado, e uma chave que não
+                 faz nada é pior que uma chave ausente. */
+              key={muted ? 'mudo' : 'som'}
+              src={embedOf(item.trailerKey, muted, true)}
+              title={`Trailer de ${item.title}`}
+              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full border-0"
+            />
           ) : null}
-
-          <div className="relative mt-1 flex flex-wrap items-center gap-2">
-            {rated ? <RatedTip rated={rated} /> : null}
-            <FichaKey lit={!!rated} onClick={onFicha} title={item.title} />
-            <IconKey
-              active={queued}
-              aria-pressed={queued}
-              aria-label={queued ? queueLabel[1] : queueLabel[0]}
-              title={queued ? queueLabel[1] : queueLabel[0]}
-              onClick={onQueue}
+          {live && gentle && !asked ? (
+            <button
+              type="button"
+              onClick={() => setAsked(true)}
+              className="absolute inset-0 grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/20"
             >
-              <Bookmark className="h-4 w-4" fill={queued ? 'currentColor' : 'none'} strokeWidth={1.7} />
-            </IconKey>
-            <IconKey aria-label="Próximo trailer" title="Próximo trailer" onClick={onNext} className="ml-auto">
-              <ChevronDown className="h-4 w-4" strokeWidth={1.8} />
-            </IconKey>
-          </div>
-        </aside>
+              <span className="flex items-center gap-2 rounded-cell bg-house-seat/85 px-4 py-2.5 font-display text-[12px] uppercase tracking-[0.14em] ring-1 ring-house-rail">
+                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
+                Tocar o trailer
+              </span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          'absolute inset-x-0 bottom-0 px-5 pb-6 pt-5',
+          // O recuo do trilho: 12 de margem + 44 de alvo + 12 de folga.
+          'pr-[68px]',
+          'bg-gradient-to-t from-house-deep/[0.96] via-house-deep/[0.86] to-transparent',
+          live && 'animate-frame-in'
+        )}
+      >
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="rounded-[1px] bg-dye-brass px-1.5 py-[3px] font-display text-[10.5px] uppercase leading-none tracking-[0.14em] text-house-deep">
+            {item.genre}
+          </span>
+          <span className="q text-[11px] text-ink-dim">
+            {[item.year, item.crowd ? `TMDB ${fmt(item.crowd.score)}` : null].filter(Boolean).join(' · ')}
+          </span>
+        </p>
+
+        <h2 className="mt-2 font-display text-[26px] uppercase leading-[0.92] tracking-[0.02em] text-beam sm:text-[30px]">
+          {item.title}
+        </h2>
+
+        {rated ? (
+          <span className="mt-2 flex items-center gap-2">
+            <Strip value={rated.score ?? 0} cells={10} className="h-[5px] w-[88px] flex-none" />
+            <span className="q text-[13px] text-beam">{rated.score != null ? fmt(rated.score) : '—'}</span>
+            <span className="q text-[10.5px] text-ink-faint">
+              {plural(rated.takes, 'ficha do clube', 'fichas do clube')}
+            </span>
+          </span>
+        ) : null}
+
+        {item.overview ? (
+          <p className="mt-2 line-clamp-2 text-[12.5px] leading-snug text-ink-dim">{item.overview}</p>
+        ) : null}
       </div>
     </section>
   );
 }
 
-/** A nota do clube na coluna do reel: a régua, o número e de quantos ele é. */
-function ClubScore({ rated }: { rated: RatedTitle }) {
-  if (rated.score == null) {
-    return (
-      <p className="q text-[12px] text-ink-dim">
-        {plural(rated.takes, 'ficha do clube', 'fichas do clube')}, ainda sem nota
-      </p>
-    );
-  }
-  return (
-    <div className="flex items-center gap-2.5">
-      <Strip value={rated.score} cells={10} className="h-[6px] w-[104px] flex-none" />
-      <span className="q text-[15px] text-beam">{fmt(rated.score)}</span>
-      <span className="q text-[11px] text-ink-faint">
-        /10 · {plural(rated.takes, 'ficha', 'fichas')}
-      </span>
-    </div>
-  );
-}
+/* ── uma tecla do trilho ──────────────────────────────────────────────────
+   Quadrada, de 44, sobre uma placa translúcida: elas ficam por cima de um vídeo
+   que muda todo quadro, e um anel em volta de nada deixaria o ícone se virar
+   contra o que estivesse passando naquele segundo.
 
-/* ── a chave da ficha, acesa ──────────────────────────────────────────────
-   Uma obra que o clube avaliou tem coisa escrita atrás desta chave, e o reel
-   inteiro depende de isso ser visível de relance. Latão porque é estado — a
-   regra da sala é que latão diz "isto tem alguma coisa sua" e vermelho diz onde
-   você está. O pulso é lento e para sob `prefers-reduced-motion`, que é o que
-   separa uma lâmpada de marquise de um alarme. */
-function FichaKey({ lit, onClick, title }: { lit: boolean; onClick: () => void; title: string }) {
+   `lit` é a chave da ficha quando há ficha do clube atrás dela: latão, porque a
+   regra da sala é que latão diz "isto tem alguma coisa sua". O pulso é lento e
+   termina aceso — com menos movimento pedido, index.css corta o laço em uma
+   volta e sobra a lâmpada acesa e parada. */
+function RailKey({
+  label,
+  active,
+  lit,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  lit?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <Key
-      tone="flush"
+    <button
+      type="button"
       onClick={onClick}
-      aria-label={`Abrir a ficha de ${title}`}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
       className={cn(
-        lit &&
-          'animate-bulb bg-dye-brass/[0.12] text-dye-brass ring-dye-brass/70 hover:text-beam-hot hover:ring-dye-brass'
+        'grid h-11 w-11 flex-none place-items-center rounded-cell bg-house-seat/70 backdrop-blur-sm',
+        'ring-1 transition-colors duration-150 active:translate-y-px',
+        lit
+          ? 'animate-bulb bg-dye-brass/[0.14] text-dye-brass ring-dye-brass/70 hover:text-beam-hot'
+          : active
+            ? 'text-dye-brass ring-dye-brass/60'
+            : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
       )}
     >
-      Ficha
-    </Key>
+      {children}
+    </button>
   );
 }
 
 /* ── a dica que flutua ────────────────────────────────────────────────────
-   Sobre a chave e não ao lado dela: é uma etiqueta pendurada NAQUELA chave, e ao
-   lado ela viraria mais um pedaço da fileira. Não intercepta ponteiro nenhum —
-   o que está embaixo continua clicável. */
+   Pendurada NA chave da ficha, à esquerda dela porque é o único lado que tem
+   coluna. Não intercepta ponteiro nenhum: o que está embaixo continua clicável. */
 function RatedTip({ rated }: { rated: RatedTitle }) {
   return (
     <span
       className={cn(
-        'pointer-events-none absolute bottom-[calc(100%+8px)] left-0 z-10 flex items-center gap-2',
-        'rounded-cell bg-house-seat/95 px-2.5 py-1.5 ring-1 ring-dye-brass/45',
-        'animate-frame-in motion-reduce:animate-none'
+        'pointer-events-none absolute right-[calc(100%+8px)] top-1/2 z-10 -translate-y-1/2',
+        'flex items-center gap-2 rounded-cell bg-house-seat/95 px-2.5 py-1.5 ring-1 ring-dye-brass/45',
+        'animate-frame-in'
       )}
     >
       <Check className="h-3.5 w-3.5 flex-none text-dye-brass" strokeWidth={2.2} aria-hidden />
-      <span className="whitespace-nowrap font-display text-[11px] uppercase leading-none tracking-[0.12em] text-ink">
+      <span className="whitespace-nowrap font-display text-[10.5px] uppercase leading-none tracking-[0.12em] text-ink">
         {rated.mine ? 'Você já avaliou' : 'O clube já avaliou'}
       </span>
       {rated.score != null ? (
-        <span className="q text-[11.5px] leading-none text-dye-brass">{fmt(rated.score)}</span>
+        <span className="q text-[11px] leading-none text-dye-brass">{fmt(rated.score)}</span>
       ) : null}
     </span>
+  );
+}
+
+/* ── o painel do gênero ───────────────────────────────────────────────────
+   Cai POR CIMA da coluna e não empurra nada: escolher é uma visita, e uma visita
+   não reorganiza a sala. Uma linha por gênero, em coluna, porque em coluna os
+   nomes alinham e truncam num lugar só.
+
+   Sem contagem ao lado de cada um, ao contrário do protótipo: lá o acervo era
+   uma lista fixa de dezoito filmes e dava para contar. Aqui o outro lado é o
+   TMDB inteiro, e um número inventado ao lado de um filtro é pior que nenhum. */
+function GenrePanel({
+  genres,
+  value,
+  onPick,
+  onClose,
+}: {
+  genres: string[];
+  value: string | null;
+  onPick: (g: string | null) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const q = norm(query.trim());
+  const shown = genres.filter(g => !q || norm(g).includes(q));
+  const all = !q || norm('Tudo').includes(q);
+
+  return (
+    <div className="absolute inset-0 z-[6] flex flex-col gap-3 bg-house-deep/[0.94] p-4 backdrop-blur-md animate-frame-in">
+      <div className="flex items-center justify-between gap-3">
+        <span className="legend">Filtrar o reel</span>
+        <IconKey aria-label="Fechar o filtro" onClick={onClose} className="flex-none">
+          <X className="h-4 w-4" strokeWidth={1.8} />
+        </IconKey>
+      </div>
+
+      <input
+        type="text"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Buscar gênero…"
+        aria-label="Buscar gênero"
+        className="w-full rounded-cell bg-house-seat px-3 py-2.5 text-[13px] text-ink ring-1 ring-house-rail placeholder:text-ink-faint focus:outline-none focus:ring-dye-brass/70"
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain">
+        {all ? <GenreRow label="Tudo" on={value === null} onClick={() => onPick(null)} /> : null}
+        {shown.map(g => (
+          <GenreRow key={g} label={g} on={value === g} onClick={() => onPick(g)} />
+        ))}
+        {!all && !shown.length ? (
+          <p className="mt-6 text-center text-[13px] text-ink-dim">Nenhum gênero com esse nome.</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function GenreRow({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        'flex w-full items-center justify-between gap-3 rounded-cell px-3 py-2.5 text-left',
+        'font-display text-[13px] uppercase leading-none tracking-[0.12em]',
+        'ring-1 transition-colors duration-150 coarse:min-h-[44px]',
+        on
+          ? 'bg-dye-brass/[0.14] text-dye-brass ring-dye-brass/70'
+          : 'text-ink ring-house-rail hover:ring-white/25'
+      )}
+    >
+      <span className="truncate">{label}</span>
+      {on ? <Check className="h-4 w-4 flex-none" strokeWidth={2.2} aria-hidden /> : null}
+    </button>
+  );
+}
+
+/* ── o trailer inteiro ────────────────────────────────────────────────────
+   A coluna 9:16 é o folhear; isto é o assistir. Sai da moldura e ocupa a tela,
+   com a barra de baixo carregando o mesmo trilho na horizontal — passar de
+   trailer sem sair do modo cheio é o gesto que este modo existe para servir. */
+function FullTrailer({
+  item,
+  muted,
+  rated,
+  queued,
+  queueLabel,
+  onQueue,
+  onSound,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  item: ReelItem;
+  muted: boolean;
+  rated: RatedTitle | null;
+  queued: boolean;
+  queueLabel: [string, string];
+  onQueue: () => void;
+  onSound: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    el.addEventListener('cancel', cancel);
+    return () => el.removeEventListener('cancel', cancel);
+  }, [onClose]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-label={`Trailer de ${item.title}`}
+      className="h-[calc(100dvh/var(--ui-zoom))] max-h-none w-full max-w-none border-0 bg-house-deep p-0 text-ink backdrop:bg-house-deep open:animate-beam-in"
+    >
+      <div className="flex h-full flex-col">
+        <div className="grid min-h-0 flex-1 place-items-center p-3 sm:p-5">
+          <div className="aspect-video w-full max-w-[min(100%,calc((100dvh/var(--ui-zoom)-190px)*16/9))] overflow-hidden bg-black ring-1 ring-white/10">
+            <iframe
+              key={muted ? 'mudo' : 'som'}
+              src={embedOf(item.trailerKey, muted, false)}
+              title={`Trailer de ${item.title}`}
+              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+              className="h-full w-full border-0"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-3 border-t border-house-rail bg-house px-4 py-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <p className="legend truncate">
+              {[item.genre, item.year, rated?.score != null ? `clube ${fmt(rated.score)}` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            <p className="mt-1.5 truncate font-display text-[24px] uppercase leading-none tracking-[0.03em] text-beam">
+              {item.title}
+            </p>
+          </div>
+
+          <div className="flex flex-none items-center gap-2.5">
+            <IconKey aria-label="Trailer anterior" onClick={onPrev}>
+              <ChevronUp className="h-4 w-4" strokeWidth={1.9} />
+            </IconKey>
+            <IconKey aria-label="Próximo trailer" onClick={onNext}>
+              <ChevronDown className="h-4 w-4" strokeWidth={1.9} />
+            </IconKey>
+            <IconKey
+              aria-label={muted ? 'Ligar o som' : 'Tirar o som'}
+              active={!muted}
+              onClick={onSound}
+            >
+              {muted ? (
+                <VolumeX className="h-4 w-4" strokeWidth={1.8} />
+              ) : (
+                <Volume2 className="h-4 w-4" strokeWidth={1.8} />
+              )}
+            </IconKey>
+            <IconKey
+              aria-label={queued ? queueLabel[1] : queueLabel[0]}
+              active={queued}
+              onClick={onQueue}
+            >
+              <Bookmark className="h-4 w-4" fill={queued ? 'currentColor' : 'none'} strokeWidth={1.7} />
+            </IconKey>
+            <Key tone="commit" onClick={onClose}>
+              Voltar ao reel
+            </Key>
+          </div>
+        </div>
+      </div>
+    </dialog>
   );
 }
 
