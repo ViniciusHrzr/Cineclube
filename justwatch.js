@@ -31,11 +31,12 @@ const LANGUAGE = 'pt';
    noite de JustWatch lento de virar uma noite de Cineclube lento. */
 const TIMEOUT_MS = 5000;
 
-/* Quantos resultados a busca traz antes de se procurar o id certo no meio. Três
-   é o bastante: o casamento é por id do TMDB e não por posição, então mais
-   resultados só ajudariam se o título certo estivesse fora dos três primeiros
-   de uma busca pelo nome exato dele. */
-const CANDIDATES = 3;
+/* Quantos resultados a busca traz antes de se procurar o id certo no meio. O
+   casamento é por id do TMDB e não por posição, então isto não é precisão: é
+   quantas chances o título certo tem de estar na lista. Eram três, e três é
+   pouco para um nome que muitas obras dividem — "Duna" traz o de 2021, o de
+   1984, a minissérie e dois documentários antes do que se procurava. */
+const CANDIDATES = 12;
 
 const QUERY = `
 query CineclubeOffers($country: Country!, $language: Language!, $filter: TitleFilter!, $first: Int!) {
@@ -69,12 +70,7 @@ const INCLUDED = new Set(['FLATRATE', 'FREE', 'ADS']);
    coisa que não erra, e sem ele casando o título é abandonado — um link para a
    obra errada é pior do que link nenhum.
    ══════════════════════════════════════════════════════════════════════════ */
-async function deepLinks({ tmdbId, title, kind }) {
-  const id = Number(tmdbId);
-  if (!Number.isInteger(id) || !title) return new Map();
-
-  const wanted = kind === 'show' ? 'SHOW' : 'MOVIE';
-  let data;
+async function search(searchQuery) {
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
@@ -85,24 +81,40 @@ async function deepLinks({ tmdbId, title, kind }) {
           country: COUNTRY,
           language: LANGUAGE,
           first: CANDIDATES,
-          filter: { searchQuery: title },
+          filter: { searchQuery },
         },
         query: QUERY,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) return new Map();
-    data = await res.json();
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.data?.popularTitles?.edges ?? [];
   } catch {
-    /* Sem rede, fora do ar, ou demorou: ver o cabeçalho. O mapa vazio é uma
+    /* Sem rede, fora do ar, ou demorou: ver o cabeçalho. Lista vazia é uma
        resposta e não um erro. */
-    return new Map();
+    return [];
   }
+}
 
-  const edges = data?.data?.popularTitles?.edges ?? [];
-  const found = edges.find(
-    e => e?.node?.objectType === wanted && Number(e?.node?.content?.externalIds?.tmdbId) === id
-  );
+async function deepLinks({ tmdbId, title, original, kind }) {
+  const id = Number(tmdbId);
+  if (!Number.isInteger(id) || !title) return new Map();
+
+  const wanted = kind === 'show' ? 'SHOW' : 'MOVIE';
+  const acha = edges =>
+    edges.find(
+      e => e?.node?.objectType === wanted && Number(e?.node?.content?.externalIds?.tmdbId) === id
+    );
+
+  let found = acha(await search(title));
+
+  /* Segunda tentativa pelo nome original, e só quando a primeira não achou. O
+     título em português é o que o clube lê e nem sempre é o que o JustWatch
+     indexou — um filme coreano entra lá pelo nome internacional, e uma série
+     antiga costuma estar sob o nome com que estreou. Uma requisição a mais só
+     acontece no caso em que a alternativa era não ter link. */
+  if (!found && original && original !== title) found = acha(await search(original));
   if (!found) return new Map();
 
   /* O primeiro de cada serviço vence. Um mesmo pacote aparece várias vezes na

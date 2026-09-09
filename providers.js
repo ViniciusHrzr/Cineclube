@@ -26,6 +26,19 @@ const justwatch = require('./justwatch');
    noite, curto o bastante para uma saída de catálogo estar errada por dias e
    não para sempre. */
 const TTL = '-7 days';
+
+/* ── por que a linha guardada diz de que época ela é ──────────────────────
+   O link fundo de cada serviço nasceu depois deste cache, e no dia em que
+   nasceu havia sete dias de linhas gravadas sem ele. Elas continuavam frescas,
+   então metade do catálogo abria dentro da Netflix e a outra metade caía na
+   página do TMDB — sem nada na tela explicando a diferença, o que lê como
+   "às vezes funciona".
+
+   A data sozinha não resolve: ela responde "quando foi perguntado" e a
+   pergunta aqui é outra, "isto foi gravado por um código que sabia dos links".
+   O número responde essa. Subir ele invalida o cache inteiro de uma vez, que é
+   exatamente o que se quer quando o FORMATO do que se guarda muda. */
+const VERSION = 2;
 /* Quantas requisições ficam no ar de uma vez. O TMDB aguenta muito mais, mas
    isto roda numa instância pequena e uma página de catálogo não vale vinte
    sockets simultâneos. */
@@ -54,10 +67,12 @@ async function inLanes(items, lanes, job) {
 
    Falhar não é falhar: sem link fundo o provedor fica com `url: null` e a tela
    cai na busca do serviço, que é o que ela fazia antes de isto existir. */
-async function withDeepLinks(watch, { id, title, kind }) {
+async function withDeepLinks(watch, { id, title, original, kind }) {
   if (!watch?.streaming?.length) return watch;
-  const links = await justwatch.deepLinks({ tmdbId: id, title, kind });
-  if (!links.size) return watch;
+  const links = await justwatch.deepLinks({ tmdbId: id, title, original, kind });
+  /* `url` é escrito sempre, nulo inclusive, e não só quando há link: a linha
+     guardada precisa ter uma forma só. Um campo que às vezes existe é um campo
+     que ninguém sabe ler. */
   return {
     ...watch,
     streaming: watch.streaming.map(p => ({ ...p, url: justwatch.urlFor(links, p.name) })),
@@ -89,7 +104,12 @@ function providerCache({ table, fetch, kind }) {
       // Espalhado, e não o array: um argumento só seria lido como UM parâmetro
       // posicional em vez de como a lista deles.
       for (const row of await fresh(ids.length).all(...ids)) {
-        known.set(Number(row.tmdb_id), JSON.parse(row.providers));
+        const held = JSON.parse(row.providers);
+        /* Gravada por um código anterior a este formato: fresca pela data e
+           velha pelo conteúdo. Fica de fora e é perguntada de novo — ver
+           `VERSION`. `watch` pode ser nulo aqui, e nulo é uma resposta. */
+        if (held?.v !== VERSION) continue;
+        known.set(Number(row.tmdb_id), held.watch ?? null);
       }
     } catch (e) {
       // Um cache ilegível é um cache vazio, não um erro.
@@ -104,7 +124,7 @@ function providerCache({ table, fetch, kind }) {
         /* O nulo é gravado também, de propósito: "não passa em lugar nenhum
            aqui" é uma resposta, e não escrevê-la faria toda obra que não passa
            custar uma requisição a cada abertura de página, para sempre. */
-        await save.run(JSON.stringify(watch), r.id);
+        await save.run(JSON.stringify({ v: VERSION, watch }), r.id);
       } catch {
         /* Fora de `known`: esta obra não mostra nada e é perguntada de novo da
            próxima vez. Uma indisponível não pode custar as outras dezenove. */
