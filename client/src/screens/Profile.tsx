@@ -13,7 +13,7 @@ import {
 import { Blank, Drawer, Key, Poster, Reel, Strip } from '@/components/bits';
 /* As mesmas peças do acervo e do feed: a ficha abre nesta página (ver `Takes`) e
    não pode ser uma segunda versão do que o acervo mostra. */
-import { Breakdown, OriginNote } from '@/components/take';
+import { Breakdown, OriginNote, OriginTag } from '@/components/take';
 import { Conversation, TakeVotes } from '@/components/social';
 import {
   fmt,
@@ -1033,6 +1033,10 @@ function TakeLine({
         <span className="q block text-[11px] text-ink-dim">
           {[review.movieYear ?? '—', review.movieGenre].filter(Boolean).join(' · ')}
         </span>
+        {/* Aqui a pergunta é ainda mais viva do que no acervo: um perfil mistura
+            as salas de quem se está lendo, e sem isto duas fichas do mesmo filme
+            pareciam a mesma pessoa dizendo duas coisas. */}
+        {review.origin ? <OriginTag where={review.origin} className="mt-1" /> : null}
         {!open && (talk || up || down) ? (
           <span className="mt-1 flex items-center gap-3 text-ink-faint">
             {talk ? (

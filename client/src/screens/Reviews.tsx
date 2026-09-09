@@ -387,6 +387,10 @@ function Take({
             <span className="q block text-[11px] text-ink-dim">
               {[r.movieYear ?? '—', runtimeOf(r.movieRuntime), r.movieGenre].filter(Boolean).join(' · ')}
             </span>
+            {/* Entre os fatos do filme, e não na ponta da fileira: o porquê
+                está em `OriginTag`. Uma ficha emprestada diz de que sala é sem
+                precisar ser aberta, em qualquer largura de tela. */}
+            {r.origin ? <OriginTag where={r.origin} className="mt-1" /> : null}
           </span>
           <span className="flex flex-none flex-col items-end gap-1">
             <span className="q font-display text-[24px] leading-none text-beam">{fmt(r.final)}</span>
@@ -396,7 +400,7 @@ function Take({
         {/* A ficha de fora não tem polegar: concordar é um gesto da sala onde a
             ficha foi gravada, e aqui ela é acervo, não conversa. No lugar dele,
             a pastilha que diz de onde veio. */}
-        {r.origin ? <OriginTag where={r.origin} /> : <TakeVotes take={r} />}
+        {r.origin ? null : <TakeVotes take={r} />}
         <DrawerArrow open={open} onToggle={onToggle} />
       </div>
       <Drawer open={open}>

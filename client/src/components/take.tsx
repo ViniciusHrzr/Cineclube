@@ -115,13 +115,29 @@ export function Breakdown({ r, comment }: { r: { breakdown: BreakdownRow[] }; co
 
 export type Origin = { name: string | null; slug: string | null };
 
-/** A pastilha da fileira: o nome da sala, discreto, sem competir com a nota. */
-export function OriginTag({ where }: { where: Origin }) {
-  const name = where.name ?? 'outro clube';
+/* ── de qual sala é esta ficha ────────────────────────────────────────────
+   Vive DEBAIXO do título, junto do ano e do gênero, e não na ponta da fileira.
+   Na ponta ela disputava largura com a nota, e o jeito de não disputar era
+   sumir no telefone (`hidden sm:inline-block`) — ou seja, some justamente onde
+   quase todo mundo abre este app, e a única forma de saber de que clube a ficha
+   veio era abrir a gaveta e ler a nota lá dentro.
+
+   Entre os fatos do filme não disputa com nada: o bloco já quebra linha, e uma
+   sala emprestada é um fato sobre a ficha do mesmo jeito que o ano é um fato
+   sobre o filme.
+
+   "no Fulano" e não só "Fulano": a pastilha sozinha é um nome sem função, e
+   quem não conhece o clube lê como se fosse mais um pedaço do filme. */
+export function OriginTag({ where, className }: { where: Origin; className?: string }) {
+  const name = where.name ? `no ${where.name}` : 'de outro clube';
   return (
     <span
-      title={`Avaliado no ${name}`}
-      className="hidden flex-none rounded-cell bg-house-seat/70 px-1.5 py-[3px] font-display text-[9.5px] uppercase leading-none tracking-[0.1em] text-ink-faint ring-1 ring-house-rail sm:inline-block"
+      title={where.name ? `Avaliado no ${where.name}` : 'Avaliado em outro clube'}
+      className={cn(
+        'inline-block max-w-full flex-none truncate rounded-cell bg-house-seat/70 px-1.5 py-[3px]',
+        'font-display text-[9.5px] uppercase leading-none tracking-[0.1em] text-dye-brass ring-1 ring-house-rail',
+        className
+      )}
     >
       {name}
     </span>
