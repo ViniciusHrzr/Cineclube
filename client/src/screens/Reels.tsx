@@ -84,6 +84,12 @@ const AHEAD = 4;
    que separa quarenta imagens carregadas de sete. */
 const WINDOW = 3;
 
+/* A largura da coluna contra a altura dela. 9:16 é o formato do reel e é
+   estreito demais num monitor: numa coluna de 850px de altura sobra um trailer
+   de 269px, que é um filme visto de longe. Sete décimos guarda o gesto vertical
+   e devolve a imagem ao tamanho de assistir. */
+const COLUMN = 0.7;
+
 export function ReelsScreen({
   kind,
   rated,
@@ -128,6 +134,8 @@ export function ReelsScreen({
   const stage = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const alarm = useRef<number>();
+  /* O quadro de agora, para `jump` mirar sem ser refeito a cada rolagem. */
+  const atRef = useRef(0);
 
   /* ── no dedo, o reel é a tela ─────────────────────────────────────────
      Sem marquise em cima e sem barra de seções embaixo. Não é gosto: numa coluna
@@ -207,6 +215,7 @@ export function ReelsScreen({
     setFound([]);
     setActive(0);
     setSettled(0);
+    atRef.current = 0;
     track.current?.scrollTo({ top: 0 });
     void load(1);
   }, [load]);
@@ -233,7 +242,10 @@ export function ReelsScreen({
     const spy = new IntersectionObserver(
       entries => {
         for (const e of entries) {
-          if (e.isIntersecting) setActive(Number((e.target as HTMLElement).dataset.frame));
+          if (!e.isIntersecting) continue;
+          const at = Number((e.target as HTMLElement).dataset.frame);
+          atRef.current = at;
+          setActive(at);
         }
       },
       { root: box, threshold: 0.6 }
@@ -258,10 +270,17 @@ export function ReelsScreen({
     if (active >= items.length - AHEAD) void load(page + 1);
   }, [active, items.length, loading, page, pages, load]);
 
+  /* Mira o quadro de destino pelo topo dele, e não um deslocamento relativo:
+     `scrollBy` suave dentro de um rolador com encaixe obrigatório é disputado
+     pelo próprio encaixe, que recalcula o alvo no meio da animação e devolve a
+     rolagem para onde ela estava — a chave de passar não fazia nada, e só o
+     dedo andava. Um destino absoluto não tem o que ser recalculado. */
   const jump = useCallback((delta: number) => {
     const box = track.current;
     if (!box) return;
-    box.scrollBy({ top: delta * box.clientHeight, behavior: 'smooth' });
+    const frames = box.querySelectorAll<HTMLElement>('[data-frame]');
+    const target = frames[Math.min(Math.max(atRef.current + delta, 0), frames.length - 1)];
+    if (target) box.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   }, []);
 
   const flash = useCallback((msg: string) => {
@@ -305,7 +324,7 @@ export function ReelsScreen({
      é uma coluna de zero pixel, ou seja um quadro em branco no primeiro pintar. */
   const column: React.CSSProperties =
     !immersive && height
-      ? { height: '100%', width: `min(100%, ${Math.round((height * 9) / 16)}px)` }
+      ? { height: '100%', width: `min(100%, ${Math.round(height * COLUMN)}px)` }
       : { height: '100%', width: '100%' };
 
   const save = (it: ReelItem) => {
@@ -328,30 +347,17 @@ export function ReelsScreen({
       onTouchStart={sideways.onTouchStart}
       onTouchEnd={sideways.onTouchEnd}
     >
-      {/* O cabeçalho do protótipo, e a marquise já disse o nome da casa: aqui
-          sobra a seção e a contagem. Na tela cheia ele sai inteiro — a contagem
-          se muda para a barra de dentro, e o nome da seção já estava na barra
-          que a pessoa apertou para chegar aqui. */}
-      {!immersive ? (
-        <div className="mb-3 flex items-baseline gap-4">
-          <span className="font-display text-[22px] uppercase leading-none tracking-[0.16em] text-beam">
-            Reels
-          </span>
-          <span
-            aria-hidden
-            className="h-px min-w-[2rem] flex-1 -translate-y-1 bg-gradient-to-r from-beam/25 via-beam/[0.07] to-transparent"
-          />
-          <span className="q flex-none text-[11.5px] text-ink-faint">
-            {items.length ? `${active + 1} / ${items.length}` : '—'}
-          </span>
-        </div>
-      ) : null}
-
+      {/* Os recuos do `<main>` são devolvidos: a coluna começa colada na
+          marquise e termina colada no fim da janela, que é a altura inteira que
+          sobrou. Um respiro em volta de uma tela de projeção é tela que ela
+          deixou de ter. */}
       <div
         ref={stage}
         style={!immersive && height ? { height } : undefined}
         className={cn(
-          immersive ? 'h-full w-full' : 'grid place-items-center',
+          immersive
+            ? 'h-full w-full'
+            : 'grid place-items-center -mt-7 -mb-20 sm:-mt-10',
           !immersive && !height && 'h-[70dvh]'
         )}
       >
@@ -438,9 +444,7 @@ export function ReelsScreen({
               <ChevronDown className="h-3.5 w-3.5 text-ink-faint" strokeWidth={2} aria-hidden />
             </button>
 
-            {/* A contagem que o cabeçalho carregava, para o lugar onde ainda há
-                cabeçalho. */}
-            {immersive && items.length ? (
+            {items.length ? (
               <span className="q ml-auto flex-none pr-1 text-[11px] text-ink-dim">
                 {active + 1} / {items.length}
               </span>
@@ -473,7 +477,9 @@ export function ReelsScreen({
                   a dica pendurada à esquerda — para dentro da coluna, que é o
                   único lado onde ela cabe. */}
               <div className="relative">
-                {scoreOf.has(here.id) ? <RatedTip rated={scoreOf.get(here.id)!} /> : null}
+                {scoreOf.has(here.id) ? (
+                  <RatedTip key={here.id} rated={scoreOf.get(here.id)!} />
+                ) : null}
                 <RailKey
                   label={`Abrir a ficha de ${here.title}`}
                   lit={scoreOf.has(here.id)}
@@ -584,17 +590,11 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
          elemento recebe é lida em pixels DELE. A conta corre toda na primeira
          régua e converte uma vez, no fim. */
       const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
-      const host = el.closest('main');
-      const style = host ? getComputedStyle(host) : null;
-      /* No dedo é o `<main>` que rola, e ele tem altura definida — ali o fim é a
-         borda dele, e não a da janela, que ainda tem a barra de seções embaixo.
-         No computador quem rola é a página, e o fim é a janela mesmo. */
-      const bottom =
-        host && style && style.overflowY !== 'visible'
-          ? host.getBoundingClientRect().bottom
-          : window.innerHeight;
-      const pad = style ? parseFloat(style.paddingBottom) || 0 : 0;
-      setHeight(Math.max(380, (bottom - el.getBoundingClientRect().top) / zoom - pad));
+      /* Até o fim da janela, sem descontar nada: o recuo do `<main>` é anulado
+         por margem negativa na própria moldura, então ele não está mais aqui
+         para ser descontado. Isto só vale para o ponteiro fino — no dedo a tela
+         é a camada presa à janela, que não mede nada. */
+      setHeight(Math.max(380, (window.innerHeight - el.getBoundingClientRect().top) / zoom));
     };
     measure();
     const eye = new ResizeObserver(measure);
@@ -889,14 +889,32 @@ function RailKey({
 
 /* ── a dica que flutua ────────────────────────────────────────────────────
    Pendurada NA chave da ficha, à esquerda dela porque é o único lado que tem
-   coluna. Não intercepta ponteiro nenhum: o que está embaixo continua clicável. */
+   coluna. Não intercepta ponteiro nenhum: o que está embaixo continua clicável.
+
+   E ela vai embora sozinha. Uma dica é uma apresentação, não um rótulo: dita
+   uma vez ela cumpriu o que tinha para dizer, e ficar pendurada sobre o filme
+   até o fim do reel é a interface repetindo a mesma frase para sempre. O que
+   fica é a chave acesa, que é o mesmo fato dito pelo tamanho certo.
+
+   Montada com `key` no id da obra lá em cima, então cada quadro novo recomeça
+   o relógio dela. */
+const TIP_MS = 3200;
+
 function RatedTip({ rated }: { rated: RatedTitle }) {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), TIP_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
   return (
     <span
+      aria-hidden={gone}
       className={cn(
         'pointer-events-none absolute right-[calc(100%+8px)] top-1/2 z-10 -translate-y-1/2',
         'flex items-center gap-2 rounded-cell bg-house-seat/95 px-2.5 py-1.5 ring-1 ring-dye-brass/45',
-        'animate-frame-in'
+        'animate-frame-in transition-opacity duration-500',
+        gone && 'opacity-0'
       )}
     >
       <Check className="h-3.5 w-3.5 flex-none text-dye-brass" strokeWidth={2.2} aria-hidden />
