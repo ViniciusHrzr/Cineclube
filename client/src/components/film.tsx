@@ -326,26 +326,66 @@ export function OnCell({ watch }: { watch: Movie['watch'] }) {
 
   return (
     <div className="mt-2 flex items-center gap-1">
-      {shown.map(p =>
-        p.logo ? (
-          <img
-            key={p.id}
-            src={p.logo}
-            alt={p.name}
-            title={p.name}
-            width={18}
-            height={18}
-            loading="lazy"
-            className="h-[18px] w-[18px] flex-none rounded-[2px] ring-1 ring-white/10"
-          />
-        ) : (
-          <span key={p.id} className="q text-[10.5px] text-ink-dim">
-            {p.name}
-          </span>
-        )
-      )}
+      {shown.map(p => (
+        <WatchLink key={p.id} link={watch.link} name={p.name}>
+          {p.logo ? (
+            <img
+              src={p.logo}
+              alt={p.name}
+              width={18}
+              height={18}
+              loading="lazy"
+              className="h-[18px] w-[18px] flex-none rounded-[2px] ring-1 ring-white/10"
+            />
+          ) : (
+            <span className="q text-[10.5px] text-ink-dim">{p.name}</span>
+          )}
+        </WatchLink>
+      ))}
       {rest > 0 ? <span className="q text-[10.5px] text-ink-faint">+{rest}</span> : null}
     </div>
+  );
+}
+
+/* ── a marca é uma porta ──────────────────────────────────────────────────
+   Um logo de serviço parece clicável desde sempre, e não era: a informação
+   estava ali e o passo seguinte — abrir o filme lá — continuava sendo procurar
+   o título na Netflix à mão. Agora toda marca leva.
+
+   Para a página DAQUELE título, e não para a casa do serviço: `watch.link` é o
+   endereço que o TMDB manda usar, e é ele que abre o filme com as lojas de
+   verdade em cima. Um link fundo dentro de cada serviço seria melhor e não
+   existe nestes dados — nem o TMDB nem o JustWatch entregam um por provedor —,
+   e adivinhá-lo com uma busca por título é como se erra o filme.
+
+   Sem link, a marca continua sendo só uma marca: um `<a>` sem destino é uma
+   promessa quebrada, e a informação sozinha já valia. */
+function WatchLink({
+  link,
+  name,
+  children,
+  className,
+}: {
+  link: string | null;
+  name: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (!link) return <span className={className}>{children}</span>;
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Ver em ${name}`}
+      aria-label={`Ver em ${name}`}
+      className={cn(
+        'transition-opacity duration-150 hover:opacity-80 focus-visible:opacity-80',
+        className
+      )}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -455,8 +495,10 @@ export function WatchOn({ watch }: { watch: Movie['watch'] }) {
       <span className="legend">Onde assistir</span>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {watch.streaming.map(p => (
-          <span
+          <WatchLink
             key={p.id}
+            link={watch.link}
+            name={p.name}
             /* `shrink-0` so a long name never squeezes the mark next to it into
                the one after; the row wraps instead, which is what it is for. */
             className="flex shrink-0 items-center gap-2 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
@@ -474,7 +516,7 @@ export function WatchOn({ watch }: { watch: Movie['watch'] }) {
               />
             ) : null}
             <span className="whitespace-nowrap text-[11.5px] leading-none text-ink">{p.name}</span>
-          </span>
+          </WatchLink>
         ))}
       </div>
       <Credit link={watch.link} />
