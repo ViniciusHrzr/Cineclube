@@ -794,13 +794,65 @@ function useGentle() {
    faixa de título e a parede de "mais vídeos" do fim aparecem por PASSAGEM DE
    PONTEIRO, e um vídeo que não recebe ponteiro nunca é passado por cima.
 
-   Na tela cheia o player volta inteiro: lá a pessoa foi assistir, e arrastar
+   ── e ele NASCE MUDO, nos dois lugares ───────────────────────────────────
+   Autoplay mudo é o único que navegador nenhum bloqueia. Um player montado com
+   `mute=0&autoplay=1` é recusado, e o que o YouTube desenha ao recusar é a
+   abertura inteira dele — cartaz, título, canal, botão grande de tocar —, que
+   numa moldura sem ponteiro nem podia ser apertado. Quem liga o som depois é
+   `useSound`, num player já tocando.
+
+   Na tela cheia a barra de controle volta: lá a pessoa foi assistir, e arrastar
    pelo minuto 2:10 é exatamente o que ela quer poder fazer. */
-const embedOf = (key: string, muted: boolean, loop: boolean, bare: boolean) =>
-  `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=${muted ? 1 : 0}` +
-  `&rel=0&modestbranding=1&playsinline=1` +
-  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&enablejsapi=1' : '') +
+const embedOf = (key: string, loop: boolean, bare: boolean) =>
+  `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=1` +
+  `&rel=0&modestbranding=1&playsinline=1&enablejsapi=1` +
+  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '') +
   (loop ? `&loop=1&playlist=${key}` : '');
+
+/** Uma ordem para um player já montado. Ver `embedOf`. */
+function command(frame: React.RefObject<HTMLIFrameElement>, func: string, args: unknown[] = []) {
+  frame.current?.contentWindow?.postMessage(
+    JSON.stringify({ event: 'command', func, args }),
+    '*'
+  );
+}
+
+/* ── as legendas ──────────────────────────────────────────────────────────
+   `cc_load_policy=0` promete não LIGAR a legenda e não promete desligar a que o
+   YouTube liga sozinho por conta do idioma do navegador — e era o que aparecia:
+   duas linhas de texto branco sobre tarja preta atravessando o quadro, no lugar
+   exato onde a legenda do próprio reel escreve o nome do filme.
+
+   Descarregar o módulo é o único jeito que funciona nos dois players que o
+   embed serve, e os dois nomes existem conforme a versão. Mandar os dois é mais
+   barato do que descobrir qual é. */
+function hushCaptions(frame: React.RefObject<HTMLIFrameElement>) {
+  command(frame, 'unloadModule', ['captions']);
+  command(frame, 'unloadModule', ['cc']);
+}
+
+/* ── o som ────────────────────────────────────────────────────────────────
+   Dito ao player, não escrito no endereço dele: o endereço só é lido no
+   nascimento, e nascer com som é nascer recusado (ver `embedOf`).
+
+   Amarrado a `rolling` e não só a `muted`, porque todo quadro novo nasce mudo
+   por obrigação: é ao começar a correr que ele descobre que a chave do trilho
+   já estava ligada. */
+function useSound(frame: React.RefObject<HTMLIFrameElement>, muted: boolean, rolling: boolean) {
+  useEffect(() => {
+    if (!rolling) return;
+    command(frame, muted ? 'mute' : 'unMute');
+  }, [frame, muted, rolling]);
+}
+
+/* Junto do som porque tem a mesma condição — um player que já está tocando — e o
+   mesmo motivo: nada do YouTube desenha por cima deste quadro. */
+function useHush(frame: React.RefObject<HTMLIFrameElement>, rolling: boolean) {
+  useEffect(() => {
+    if (!rolling) return;
+    hushCaptions(frame);
+  }, [frame, rolling]);
+}
 
 /* ── esperar o projetor pegar ─────────────────────────────────────────────
    Entre carregar a moldura e o filme começar a correr, o YouTube desenha a
@@ -812,19 +864,21 @@ const embedOf = (key: string, muted: boolean, loop: boolean, bare: boolean) =>
    rodando. Ele diz: com `enablejsapi`, a moldura publica o estado dela por
    `postMessage` depois de a gente se apresentar. Estado 1 é "tocando".
 
-   Um relógio atrás disso, porque uma promessa de rede sem prazo é uma tela
-   parada para sempre: passados quatro segundos o quadro sai de qualquer jeito.
-   Ver um segundo da abertura do YouTube é melhor do que ver um cartaz parado
-   achando que o app travou. */
+   ── e o cartaz NÃO sai por decurso de prazo ─────────────────────────────
+   Ele saía, e o que aparecia era exatamente a abertura do YouTube que ele
+   existia para esconder. O prazo continua, com outro desfecho: acende a NOSSA
+   chave de tocar por cima do cartaz. */
 const ROLLING = 1;
-const GIVE_UP_MS = 4000;
+const STALL_MS = 4000;
 const HELLO_MS = 260;
 
 function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>) {
   const [rolling, setRolling] = useState(false);
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     setRolling(false);
+    setStalled(false);
     if (!on) return;
 
     const hello = () =>
@@ -846,22 +900,24 @@ function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>
       const box = said as { event?: string; info?: number | { playerState?: number } };
       const state =
         typeof box?.info === 'number' ? box.info : box?.info?.playerState;
-      if (state === ROLLING) setRolling(true);
+      if (state !== ROLLING) return;
+      setRolling(true);
+      setStalled(false);
     };
 
     window.addEventListener('message', heard);
     const ping = window.setInterval(hello, HELLO_MS);
-    const giveUp = window.setTimeout(() => setRolling(true), GIVE_UP_MS);
+    const stall = window.setTimeout(() => setStalled(true), STALL_MS);
     hello();
 
     return () => {
       window.removeEventListener('message', heard);
       window.clearInterval(ping);
-      window.clearTimeout(giveUp);
+      window.clearTimeout(stall);
     };
   }, [on, frame]);
 
-  return rolling;
+  return { rolling, stalled: stalled && !rolling };
 }
 
 /** O host de uma origem, sem explodir num `origin` que não é URL. */
@@ -919,11 +975,15 @@ const Frame = memo(function Frame({
   }, [live]);
   const playing = live && (!gentle || asked);
   const still = item.backdrop ?? item.poster;
-  /* A moldura, para se apresentar a ela e ouvir quando o filme começar. */
+  /* A moldura, para ouvir quando o filme começar e mandar nela depois. */
   const beam = useRef<HTMLIFrameElement>(null);
-  /* A identidade da moldura, e não um booleano: trocar o som monta outro player,
-     e outro player tem outra abertura do YouTube para cobrir. */
-  const rolling = useRolling(playing ? `${item.trailerKey}:${muted}` : null, beam);
+  const { rolling, stalled } = useRolling(playing ? item.trailerKey : null, beam);
+  useSound(beam, muted, rolling);
+  useHush(beam, rolling);
+  /* Dois motivos que não se sobrepõem: quem pediu para o mundo parar de se
+     mexer não tem nada começando sozinho, e um player que não pegou precisa de
+     uma porta. */
+  const offer = playing ? stalled : gentle && !asked;
 
   if (!within) {
     return (
@@ -985,12 +1045,11 @@ const Frame = memo(function Frame({
           ) : null}
           {playing ? (
             <iframe
-              /* `key` no som para o player renascer quando ele muda: o YouTube
-                 não desliga o mudo de um player já montado, e uma chave que não
-                 faz nada é pior que uma chave ausente. */
-              key={muted ? 'mudo' : 'som'}
+              /* Sem `key` no som: remontar fazia o player renascer com
+                 `mute=0`, e todo trailer depois do primeiro nascia recusado —
+                 parado, com a abertura do YouTube por cima. Ver `useSound`. */
               ref={beam}
-              src={embedOf(item.trailerKey, muted, true, true)}
+              src={embedOf(item.trailerKey, true, true)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
               referrerPolicy="strict-origin-when-cross-origin"
@@ -998,10 +1057,16 @@ const Frame = memo(function Frame({
               className="pointer-events-none absolute inset-0 h-full w-full border-0"
             />
           ) : null}
-          {live && gentle && !asked ? (
+          {live && offer ? (
             <button
               type="button"
-              onClick={() => setAsked(true)}
+              /* Serve às duas causas: monta a moldura para quem pediu
+                 silêncio do mundo, e manda tocar no player que não pegou — um
+                 toque de gente é a única permissão que o navegador aceita. */
+              onClick={() => {
+                setAsked(true);
+                command(beam, 'playVideo');
+              }}
               /* Acima do quadro parado, que sobe a `z-[2]` para cobrir a
                  abertura do player: embaixo dele esta chave seria uma chave
                  invisível e inclicável. */
@@ -1257,6 +1322,11 @@ function FullTrailer({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  /* A barra de controle do YouTube fica aqui, de propósito: quem abriu a tela
+     cheia foi assistir. O que não fica é o autoplay recusado. */
+  const beam = useRef<HTMLIFrameElement>(null);
+  const { rolling } = useRolling(item.trailerKey, beam);
+  useSound(beam, muted, rolling);
 
   useEffect(() => {
     ref.current?.showModal();
@@ -1283,8 +1353,8 @@ function FullTrailer({
         <div className="grid min-h-0 flex-1 place-items-center p-3 sm:p-5">
           <div className="aspect-video w-full max-w-[min(100%,calc((100dvh/var(--ui-zoom)-190px)*16/9))] overflow-hidden bg-black ring-1 ring-white/10">
             <iframe
-              key={muted ? 'mudo' : 'som'}
-              src={embedOf(item.trailerKey, muted, false, false)}
+              ref={beam}
+              src={embedOf(item.trailerKey, false, false)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               referrerPolicy="strict-origin-when-cross-origin"
