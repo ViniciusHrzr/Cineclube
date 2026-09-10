@@ -134,7 +134,7 @@ test('mas o conteúdo de um clube fechado é só de quem é dele', async () => {
   const sala = await kit.makeClub({ name: `Fechado ${++seq}`, owner: dono.id });
   await req('POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 8) }, dono.cookie);
 
-  for (const rota of ['/reviews', '/social', '/watchlist', '/reviewers', '/members']) {
+  for (const rota of ['/reviews', '/feed', '/social', '/watchlist', '/reviewers', '/members']) {
     const res = await req('GET', at(sala, rota), null, fora.cookie);
     assert.equal(res.status, 403, `${rota} deveria estar atrás da porta`);
   }
@@ -174,7 +174,7 @@ async function salaComConteudo(nome, politica = {}) {
 
 test('nenhum interruptor ligado: nada é legível de fora', async () => {
   const { fora, sala } = await salaComConteudo('Trancado');
-  for (const rota of ['/reviews', '/social', '/watchlist', '/reviewers']) {
+  for (const rota of ['/reviews', '/social', '/feed', '/watchlist', '/reviewers']) {
     assert.equal((await req('GET', at(sala, rota), null, fora.cookie)).status, 403, rota);
   }
 });
@@ -192,6 +192,12 @@ test('só avaliações: as fichas abrem, a conversa não', async () => {
      clube escreveu vê quem escreveu e o que ele pretende assistir. */
   assert.equal((await req('GET', at(sala, '/watchlist'), null, fora.cookie)).status, 200);
   assert.equal((await req('GET', at(sala, '/reviewers'), null, fora.cookie)).status, 200);
+
+  // E o mural fica com metade das linhas.
+  const mural = await req('GET', at(sala, '/feed'), null, fora.cookie);
+  assert.equal(mural.status, 200);
+  assert.ok(mural.body.items.some(i => i.kind === 'review'));
+  assert.ok(!mural.body.items.some(i => i.kind === 'comment'), 'o mural não pode vazar pelo lado');
 });
 
 test('só comentários: a conversa abre, as fichas não', async () => {
@@ -200,6 +206,10 @@ test('só comentários: a conversa abre, as fichas não', async () => {
   assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 200);
   assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 403);
   assert.equal((await req('GET', at(sala, '/reviews/averages'), null, fora.cookie)).status, 403);
+
+  const mural = await req('GET', at(sala, '/feed'), null, fora.cookie);
+  assert.ok(mural.body.items.some(i => i.kind === 'comment'));
+  assert.ok(!mural.body.items.some(i => i.kind === 'review'));
 });
 
 test('as duas ligadas: fechado apenas na porta', async () => {
@@ -208,7 +218,7 @@ test('as duas ligadas: fechado apenas na porta', async () => {
     showComments: true,
   });
 
-  for (const rota of ['/reviews', '/social', '/watchlist', '/reviewers']) {
+  for (const rota of ['/reviews', '/social', '/feed', '/watchlist', '/reviewers']) {
     assert.equal((await req('GET', at(sala, rota), null, fora.cookie)).status, 200, rota);
   }
   // Até deslogado.

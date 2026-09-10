@@ -327,9 +327,8 @@ async function migrate() {
     await exec('ALTER TABLE reviews ADD COLUMN movie_runtime INTEGER');
   }
 
-  /* A hora, e não só o dia: `date` é YYYY-MM-DD, e um dia inteiro empatado é uma
-     pilha sem ordem, mudando a cada consulta — o saguão, o sino e o reel todos
-     leem as fichas por tempo.
+  /* A hora, e não só o dia: `date` é YYYY-MM-DD, e no mural um dia inteiro
+     empatado é uma pilha sem ordem, mudando a cada consulta.
 
      Linhas antigas recebem o `date` que já tinham — comparado como texto,
      '2026-08-20' vem antes de '2026-08-20 10:00:00', então caem no começo do

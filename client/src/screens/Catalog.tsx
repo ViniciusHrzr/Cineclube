@@ -24,6 +24,7 @@ import {
   Skeleton,
 } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
+import { SuggestionsKey } from '@/screens/Reels';
 import { api, del, initialsOf, reelColor, type Movie, type WatchItem } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
@@ -140,13 +141,19 @@ export function CatalogScreen() {
         }
       />
 
-      <div className="mb-5 max-w-[440px]">
-        <SearchField
-          value={query}
-          onChange={setQuery}
-          placeholder="Buscar um filme no TMDB…"
-          hint={searchMode ? 'buscando no acervo do TMDB, não só nesta página' : undefined}
-        />
+      {/* As duas maneiras de achar um filme, na mesma linha: quem sabe o nome
+          escreve, quem não sabe pede que sugiram. Embrulha em vez de espremer a
+          busca. */}
+      <div className="mb-5 flex flex-wrap items-start gap-3">
+        <div className="min-w-[240px] max-w-[440px] flex-1">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar um filme no TMDB…"
+            hint={searchMode ? 'buscando no acervo do TMDB, não só nesta página' : undefined}
+          />
+        </div>
+        <SuggestionsKey onOpen={() => club.goTab('sugestoes')} />
       </div>
 
       {/* While a search is open the browse filters would lie about what is on

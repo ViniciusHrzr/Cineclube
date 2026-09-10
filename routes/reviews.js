@@ -65,7 +65,7 @@ const upsertStmt = db.prepare(`
   INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
   VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
   ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
-    -- Regravar é um acontecimento: o saguão e o sino mostram a ficha na hora em
+    -- Regravar é um acontecimento: o mural mostra a ficha de novo, na hora em
     -- que ela mudou, em vez de escondê-la no dia em que foi criada.
     recorded_at = datetime('now'),
     club_id = excluded.club_id,

@@ -28,15 +28,18 @@ import {
   type ShowDetail,
 } from '@/lib/api';
 import { cn, norm, plural, useFinePointer } from '@/lib/utils';
-import { BAR_ORDER, useClub, type TabId } from '@/App';
+import { useClub, type TabId } from '@/App';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   O REEL — A PORTA DA SALA.
+   SUGESTÕES — O REEL DE TRAILERS.
 
-   Era uma lista de acontecimentos em ordem de tempo, e ela respondia bem a uma
-   pergunta que ninguém faz ao abrir o app: "o que houve por aqui?". A pergunta
-   de verdade é "o que a gente vê hoje?", e a resposta dela não é texto — é o
-   trailer tocando.
+   A pergunta que ela responde é "o que a gente vê hoje?", e a resposta não é
+   texto: é o trailer tocando.
+
+   ── ela é destino, não porta ─────────────────────────────────────────────
+   Chega-se aqui pela chave no alto do catálogo. Foi a porta da sala por um dia,
+   e ser a tela de chegada custava a resposta à pergunta de quem volta — o que
+   aconteceu por aqui —, que é do mural e continua sendo.
 
    ── a forma é a do protótipo do usuário ─────────────────────────────────
    Uma COLUNA 9:16, e tudo mora dentro dela: o filtro de gênero é uma chave no
@@ -51,10 +54,6 @@ import { BAR_ORDER, useClub, type TabId } from '@/App';
    filme que alguém acabou de avaliar é o primeiro que rola, com a chave da ficha
    acesa e uma dica dizendo que já tem nota. É o princípio *"o grupo é visível"*
    dito pelo material do produto em vez de por uma linha de texto.
-
-   ── e o que sumiu ────────────────────────────────────────────────────────
-   A lista de acontecimentos. As avaliações não se perderam: elas moram dentro
-   da ficha da obra, onde se curte e se responde cada uma.
 
    ── uma tela, dois universos ─────────────────────────────────────────────
    Filme e série rolam no mesmo componente. O que muda entre eles chega por
@@ -135,9 +134,8 @@ export function ReelsScreen({
   queueLabel: [off: string, on: string];
   /** As fichas do clube sobre esta obra, desenhadas pelo universo que as tem. */
   renderTakes: (id: number) => React.ReactNode;
-  /* Para onde o gesto de sair leva, no dedo: a seção vizinha na barra. −1 é a
-     de trás, +1 a da frente. Ver `useSideSwipe`. */
-  onExit: (dir: -1 | 1) => void;
+  /** Fechar as sugestões e voltar ao catálogo, que é a porta por onde se entrou. */
+  onExit: () => void;
 }) {
   const [genre, setGenre] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
@@ -483,7 +481,7 @@ export function ReelsScreen({
                teclado não tem onde pousar para folhear. */
             tabIndex={0}
             role="region"
-            aria-label="Reel de trailers"
+            aria-label="Sugestões — o reel de trailers"
             /* No próprio rolador e não na moldura: assim um toque nas teclas do
                trilho comanda a tecla em vez de recolher o trilho debaixo do
                dedo. */
@@ -531,20 +529,30 @@ export function ReelsScreen({
               passe por baixo. `pointer-events-none` na faixa e `auto` em cada
               chave: a faixa é só a sombra. */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] flex items-center gap-2 bg-gradient-to-b from-house-deep/90 via-house-deep/40 to-transparent p-3">
-            {immersive ? (
-              /* O gesto de sair é deslizar para o lado, e um gesto não deixa
-                 marca na tela. Esta chave é a marca: uma saída que só quem já
-                 sabe encontra não é uma saída. */
-              <button
-                type="button"
-                onClick={() => onExit(-1)}
-                title="Sair do reel"
-                aria-label="Sair do reel"
-                className="pointer-events-auto grid h-10 w-10 flex-none place-items-center rounded-cell bg-house-seat/85 text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam"
-              >
-                <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={1.9} />
-              </button>
-            ) : null}
+            {/* Em qualquer largura: esta é rota escondida, nenhuma aba da
+                marquise fica acesa nela, e sem esta chave o computador não teria
+                porta de volta. No dedo ela é também a marca do deslize, que não
+                deixa nenhuma. A palavra cai lá, onde a faixa corre por cima do
+                vídeo — o `title` e o rótulo acessível continuam dizendo aonde
+                vai. */}
+            <button
+              type="button"
+              onClick={onExit}
+              title="Voltar ao catálogo"
+              aria-label="Fechar as sugestões e voltar ao catálogo"
+              className={cn(
+                'pointer-events-auto flex flex-none items-center rounded-cell bg-house-seat/85',
+                'text-ink-dim ring-1 ring-house-rail transition-colors hover:text-beam hover:ring-white/25',
+                immersive ? 'h-10 w-10 justify-center' : 'gap-2 px-3 py-2'
+              )}
+            >
+              <ChevronLeft className="h-[18px] w-[18px] flex-none" strokeWidth={1.9} aria-hidden />
+              {!immersive ? (
+                <span className="font-display text-[12px] uppercase leading-none tracking-[0.12em]">
+                  Catálogo
+                </span>
+              ) : null}
+            </button>
             <button
               type="button"
               onClick={() => setFiltering(true)}
@@ -732,17 +740,16 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
    O reel toma a tela inteira no dedo, então o gesto de sair tem de ser um que
    ele mesmo não usa: a rolagem é vertical, e o que sobra é o horizontal.
 
-   Deslizar para a DIREITA volta para a seção de trás e para a esquerda avança
-   para a da frente — a mesma ordem da barra que estava ali antes de o reel
-   cobri-la. É o que faz o gesto ter para onde ir, em vez de só "fechar" e
-   deixar a pessoa num lugar que ela não escolheu.
+   Para os dois lados, e os dois chegam ao catálogo: as sugestões têm uma porta
+   só, e um gesto que caísse na seção vizinha da barra deixaria a pessoa num
+   lugar que ela não escolheu nem sabe como fechar.
 
    O limiar é generoso e é comparado com o eixo vertical: ninguém rola trailers
    em linha reta, e um limiar apertado tiraria a pessoa da tela no meio de um
    gesto que era para passar de filme. */
 const SIDE = 72;
 
-function useSideSwipe(onExit?: (dir: -1 | 1) => void) {
+function useSideSwipe(onExit?: () => void) {
   const from = useRef<{ x: number; y: number } | null>(null);
 
   return {
@@ -758,7 +765,7 @@ function useSideSwipe(onExit?: (dir: -1 | 1) => void) {
       const dx = t.clientX - start.x;
       const dy = t.clientY - start.y;
       if (Math.abs(dx) < SIDE || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-      onExit(dx > 0 ? -1 : 1);
+      onExit();
     },
   };
 }
@@ -1581,6 +1588,25 @@ const showFicha = (s: ShowDetail): FichaData => ({
   watch: s.watch,
 });
 
+/* A chave que abre isto, no alto dos dois catálogos. Mora aqui e não em
+   components/bits: a porta é da tela que ela abre, e as duas cascas do App a
+   montam sem saber uma da outra. */
+export function SuggestionsKey({ onOpen }: { onOpen: () => void }) {
+  return (
+    <Key
+      tone="flush"
+      onClick={onOpen}
+      title="Trailers do que ver, por gênero — começando pelo que o clube já avaliou"
+      className="flex-none"
+    >
+      {/* Cheio, como o triângulo que toca um trailer na folha: nesta sala um
+          preenchimento quer dizer ligado. */}
+      <Play className="h-3 w-3 fill-current" strokeWidth={0} aria-hidden />
+      Sugestões
+    </Key>
+  );
+}
+
 /* ══ as duas montagens ════════════════════════════════════════════════════
    O reel é um só; o que muda é de onde vem "o clube já avaliou isto" e o que a
    chave principal abre. Cada casca do App monta a sua e não sabe da outra.
@@ -1588,14 +1614,6 @@ const showFicha = (s: ShowDetail): FichaData => ({
    Do lado dos filmes o adaptador lê o contexto grande, porque ele existe. Do
    lado das séries chega por propriedade, porque lá não há contexto nenhum — e
    inventar um segundo seria uma segunda verdade sobre a mesma sala. */
-/* A seção ao lado desta na barra do dedo, que é para onde o deslize leva. Presa
-   nas pontas: da primeira não há como ir mais para trás, e um gesto que não faz
-   nada é melhor do que um que dá a volta e some com a pessoa do outro lado. */
-function beside(dir: -1 | 1): TabId {
-  const at = BAR_ORDER.indexOf('feed');
-  return BAR_ORDER[Math.min(Math.max(at + dir, 0), BAR_ORDER.length - 1)];
-}
-
 export function MovieReels() {
   const club = useClub();
 
@@ -1641,7 +1659,7 @@ export function MovieReels() {
       }
       queueLabel={['Quero ver', 'Na fila']}
       renderTakes={id => <MovieTakes movieId={id} />}
-      onExit={dir => club.goTab(beside(dir))}
+      onExit={() => club.goTab('catalog')}
     />
   );
 }
@@ -1703,7 +1721,7 @@ export function SeriesReels({
       }
       queueLabel={['Acompanhar', 'Nas minhas séries']}
       renderTakes={id => <ShowTakes showId={id} takes={takes} />}
-      onExit={dir => onTab(beside(dir))}
+      onExit={() => onTab('catalog')}
     />
   );
 }

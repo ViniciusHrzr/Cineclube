@@ -75,8 +75,8 @@ async function resolve(req, res, next) {
    sala em que ninguém consegue pedir para entrar, e um clube fechado quer ser
    achado; o que ele não quer é ser lido.
 
-   **O CONTEÚDO** — fichas, conversa, fila, elenco. Isso é de quem é da sala, a
-   não ser que a sala seja aberta.
+   **O CONTEÚDO** — fichas, mural, conversa, fila, elenco. Isso é de quem é da
+   sala, a não ser que a sala seja aberta.
 
    ── e por que 403 e não 404 ───────────────────────────────────────────────
    Houve uma versão disto em que clube fechado respondia 404 para não confirmar

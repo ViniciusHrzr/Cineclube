@@ -39,6 +39,7 @@ import {
   EpisodeSheet,
   SeriesArchiveScreen,
   SeriesCatalogScreen,
+  SeriesFeedScreen,
   SeriesQueueScreen,
   ShowScreen,
 } from '@/screens/Series';
@@ -53,6 +54,7 @@ import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
 
 import { cn, plural } from '@/lib/utils';
 import { MovieReels, SeriesReels } from '@/screens/Reels';
+import { FeedScreen } from '@/screens/Feed';
 import { RateScreen } from '@/screens/Rate';
 import { CatalogScreen, WatchlistScreen } from '@/screens/Catalog';
 import { ReviewsScreen } from '@/screens/Reviews';
@@ -60,16 +62,19 @@ import { ProfileScreen } from '@/screens/Profile';
 import { ScreeningScreen } from '@/screens/Screening';
 
 export const TABS = [
-  /* Primeiro na fila e porta de entrada. O id continua sendo `feed` porque ele é
-     o endereço — `#c/<slug>/feed` está colado em conversa desde que existe —, e
-     o que ele abre hoje é o reel de trailers. Para trocar a porta, mover esta
-     entrada para baixo de `catalog` e mudar o `?? 'feed'` adiante. */
-  { id: 'feed', label: 'Reels' },
+  /* Primeiro na fila e porta de entrada: um mural que não é a tela de chegada é
+     um mural que ninguém lê. Para trocar a porta, mover esta entrada para baixo
+     de `catalog` e mudar o `?? 'feed'` adiante. */
+  { id: 'feed', label: 'Feed' },
   /* Rota, não aba: avaliar não se escolhe, escolhe-se um filme. `hidden` e não
      exclusão porque `rateMovie` escreve `#rate`, e um endereço que a tabela não
      reconhece derruba o Voltar e joga o recarregar no feed. */
   { id: 'rate', label: 'Avaliar', hidden: true },
   { id: 'catalog', label: 'Catálogo' },
+  /* O reel de trailers. Rota e não aba: a porta dele é a chave no alto do
+     catálogo, porque procurar um filme e pedir que sugiram um são o mesmo gesto
+     começando de lugares diferentes. */
+  { id: 'sugestoes', label: 'Sugestões', hidden: true },
   { id: 'watchlist', label: 'Quero ver' },
   /* Entre a fila e os avaliados, que é a ordem de uma noite: escolhe, assiste,
      avalia. */
@@ -88,12 +93,14 @@ export const TABS = [
    respondem a mesma pergunta sobre mundos diferentes, e misturá-las obrigaria
    toda leitura de rota a saber de qual das duas aquela entrada é. */
 export const SERIES_TABS = [
-  /* O reel primeiro, como no universo de filmes: a porta é o que está passando,
-     não uma lista do que passou. */
-  { id: 'feed', label: 'Reels' },
+  /* O feed primeiro, como no universo de filmes: um mural que não é a tela de
+     chegada é um mural que ninguém lê. */
+  { id: 'feed', label: 'Feed' },
   /* E o catálogo logo atrás: neste universo o gesto que se repete é achar a
      próxima série e marcar o que se viu. */
   { id: 'catalog', label: 'Catálogo' },
+  /* O reel, atrás da mesma chave do catálogo de filmes. */
+  { id: 'sugestoes', label: 'Sugestões', hidden: true },
   /* "Minhas séries" e não "Quero ver": no universo de filmes a fila é o que
      ainda não se viu, e aqui ela é o que o clube ACOMPANHA — uma série na lista
      costuma estar meio assistida, não esperando. */
@@ -811,6 +818,7 @@ function SeriesClubApp({
                 queued={queued}
                 onQueue={s => void enqueue(s)}
                 onOpen={goShow}
+                onTab={goTab}
                 fault={fault}
               />
             ) : tab === 'screening' ? (
@@ -835,7 +843,7 @@ function SeriesClubApp({
                    ele acabou de ficar velho. */
                 onSeen={() => void refresh()}
               />
-            ) : (
+            ) : tab === 'sugestoes' ? (
               <SeriesReels
                 takes={takes}
                 meId={me.id}
@@ -843,6 +851,12 @@ function SeriesClubApp({
                 onQueue={s => void enqueue(s)}
                 onOpen={goShow}
                 onTab={goTab}
+              />
+            ) : (
+              <SeriesFeedScreen
+                takes={takes}
+                onOpenShow={goShow}
+                onAimComment={setFocusComment}
               />
             )}
           </div>
@@ -1592,7 +1606,8 @@ function ClubApp({
             </div>
           ) : (
             <div key={tab} className="animate-frame-in">
-              {tab === 'feed' && <MovieReels />}
+              {tab === 'feed' && <FeedScreen />}
+              {tab === 'sugestoes' && <MovieReels />}
               {tab === 'rate' && (
                 <RateScreen pendingRate={pendingRate} onConsumedPending={() => setPendingRate(null)} />
               )}

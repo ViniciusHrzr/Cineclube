@@ -548,6 +548,37 @@ export type TakeComment = {
 
 export type TakeVote = { takeId: string; reviewerId: string; value: 1 | -1 };
 
+/* ── o mural do universo de séries ────────────────────────────────────────
+   Três tipos de linha, e o terceiro é o que este universo tem e o outro não:
+   `seen` é marcar sem avaliar, e vem AGRUPADO por pessoa, série e dia. Uma
+   maratona é um acontecimento, não treze. Ver routes/showsFeed.js. */
+export type ShowFeedEvent = {
+  id: string;
+  kind: 'take' | 'seen' | 'comment';
+  at: string;
+  actor: { id: string; name: string; dot: string };
+  showId: number;
+  showTitle: string;
+  showPoster: string | null;
+  genre?: string;
+  /** Em `take` e `comment`: o episódio de que a linha fala. */
+  season?: number;
+  episode?: number;
+  episodeTitle?: string | null;
+  takeId?: string;
+  final?: number;
+  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  excerpt?: string | null;
+  /** Só em comentário. */
+  commentId?: string;
+  parentId?: string | null;
+  owner?: { id: string; name: string };
+  /** Só em `seen`: quantos episódios a sessão juntou, e de onde até onde. */
+  count?: number;
+  from?: { season: number; episode: number };
+  to?: { season: number; episode: number; title: string | null };
+};
+
 export const showsSocial = {
   all: () =>
     capi<{ comments: TakeComment[]; votes: TakeVote[]; commentLikes: CommentLike[] }>(
@@ -560,6 +591,7 @@ export const showsSocial = {
     cput<{ liked: boolean }>(`/shows-social/comments/${id}/like`, { liked }),
   vote: (takeId: string, value: 1 | -1 | 0) =>
     cput<{ vote: TakeVote | null }>(`/shows-social/takes/${takeId}/vote`, { value }),
+  feed: () => capi<{ items: ShowFeedEvent[] }>('/shows-feed'),
 };
 
 /** O que se grava num episódio. Vazio é "só vi". */
@@ -691,6 +723,43 @@ export type Notice = {
   excerpt?: string;
   /** +1 ou −1, só em voto — é o que decide a direção do polegar no painel. */
   value?: number;
+};
+
+/* O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas
+   tabelas de sempre, então uma linha nunca sobrevive ao acontecimento que ela
+   anuncia.
+
+   Um tipo só para os quatro acontecimentos, com os campos que só alguns têm
+   marcados como opcionais: a união discriminada custaria quatro interfaces e um
+   `switch` de tipo em cada leitura para descrever quatro formas que
+   compartilham nove campos dos onze. */
+export type FeedEvent = {
+  id: string;
+  kind: 'review' | 'comment' | 'vote' | 'queued';
+  at: string;
+  actor: { id: string; name: string; dot: string };
+  movieId: number;
+  movieTitle: string;
+  moviePoster: string | null;
+  /** Ausente só na fila: um filme entra nela sem ninguém ter avaliado nada. */
+  reviewId?: string;
+  /* Só em comentário: o texto de que a linha fala, para o clique cair nele e não
+     na ficha inteira — e o pai, quando o texto é uma resposta a outro. */
+  commentId?: string | null;
+  parentId?: string | null;
+  /** De quem é a ficha em que se comentou ou votou. */
+  owner?: { id: string; name: string };
+  /** Só em avaliação. */
+  final?: number;
+  genre?: string;
+  /* Onde a pessoa se entusiasmou e onde se decepcionou. Null quando a ficha não
+     tem distância entre os extremos — ver `endsOf` no servidor. */
+  ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
+  /** Só em voto. */
+  value?: number;
+  criterion?: string;
+  /** O que foi escrito: o comentário da ficha, ou o comentário em si. */
+  excerpt?: string | null;
 };
 
 /* O sino é de uma sala: a pessoa em três clubes tem três sinos, e cada um conta
