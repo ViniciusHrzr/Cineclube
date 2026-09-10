@@ -102,7 +102,7 @@ test('nome de clube é único, e a caixa não faz diferença', async () => {
   const nome = `Sala ${crypto.randomUUID().slice(0, 6)}`;
   assert.equal((await req('POST', '/api/clubs', { name: nome }, quem.cookie)).status, 201);
   const outro = await req('POST', '/api/clubs', { name: nome.toUpperCase() }, quem.cookie);
-  assert.equal(outro.status, 409, 'duas salas com o mesmo nome no saguão são uma sala que ninguém sabe escolher');
+  assert.equal(outro.status, 409, 'duas salas com o mesmo nome na lista são uma sala que ninguém sabe escolher');
 });
 
 test('fundar exige estar logado', async () => {

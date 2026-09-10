@@ -1431,10 +1431,9 @@ function ShowPicker({
   );
 }
 
-/* Uma linha e não um cartão, e é a mesma decisão da lista de clubes em
-   atividade no saguão: a pergunta aqui é "qual deles", numa lista ordenada em
-   que o número na ponta responde. Vinte quadros 16:9 empilhados seriam vinte
-   imagens quase idênticas de fundo escuro. */
+/* Uma linha e não um cartão: a pergunta aqui é "qual deles", numa lista
+   ordenada em que o número na ponta responde. Vinte quadros 16:9 empilhados
+   seriam vinte imagens quase idênticas de fundo escuro. */
 function EpisodeLine({ episode, onPick }: { episode: Episode; onPick: () => void }) {
   return (
     <li>

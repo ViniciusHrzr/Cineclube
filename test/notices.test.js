@@ -133,7 +133,7 @@ test('os ids não colidem entre salas', async () => {
   assert.equal(new Set(items.map(i => i.id)).size, items.length, 'chave repetida esconde uma linha');
 });
 
-test('o retrato viaja no aviso — o saguão não tem elenco para consultar', async () => {
+test('o retrato viaja no aviso — o elenco carregado é o de uma sala só', async () => {
   const dono = await kit.signIn();
   const outro = await kit.signIn();
   await salaComAviso(dono, outro);

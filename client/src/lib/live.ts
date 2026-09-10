@@ -61,11 +61,11 @@ let failures = 0;
 function open() {
   if (source) return;
   /* ── fora de uma sala não há o que ouvir ────────────────────────────────
-     O cano é POR CLUBE, e desde que o sino virou o da rede ele é montado também
-     no saguão, onde não há sala nenhuma. Sem esta linha, `clubPath` lançava e a
-     tela inteira caía no boundary com "clubPath foi chamado cedo demais" —
+     O cano é POR CLUBE, e há um instante entre a sessão e a sala — o app ainda
+     resolvendo em qual clube abrir. Sem esta linha, `clubPath` lançava e a tela
+     inteira caía no boundary com "clubPath foi chamado cedo demais" —
      tecnicamente verdade, e inútil como diagnóstico: ninguém chamou cedo
-     demais, o saguão simplesmente não tem clube.
+     demais, ainda não havia clube.
 
      Voltar a abrir quando houver sala é trabalho de `resetLive`, logo abaixo. */
   if (!hasClub()) return;

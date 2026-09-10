@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { ProjectionSheet } from '@/components/film';
 import { Notices } from '@/components/notices';
+import { ClubSwitch } from '@/components/clubs';
 import { Fault } from '@/components/bits';
 import {
   api,
@@ -47,8 +48,7 @@ import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { DARK, readPulse, samePulse, type ScreeningMovie, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
 import { Key, Lens, Reel } from '@/components/bits';
-import { AccountSheet, SettingsSheet } from '@/components/settings';
-import { Lobby } from '@/screens/Lobby';
+import { SettingsSheet } from '@/components/settings';
 import { SetPassword, SignIn } from '@/screens/SignIn';
 import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
 
@@ -130,7 +130,8 @@ type Club = {
   refreshClub: () => Promise<void>;
   /** Sair da sala. As suas fichas aqui continuam onde estão. */
   leaveClub: () => Promise<void>;
-  goLobby: () => void;
+  /** Esta sala acabou de deixar de existir: cai no primeiro clube que sobrou. */
+  goHome: () => void;
   /* Abre a folha de ajustes — conta, senha e, para o ADM, a sala e os pedidos.
      No contexto porque três lugares a abrem: a engrenagem do perfil, o
      distintivo de pedidos na marquise e um aviso do sino. */
@@ -198,8 +199,9 @@ export function useClub() {
    para ser colado. O outro motivo é mecânico e está em clubs.js: `EventSource`
    não manda cabeçalho.
 
-   Sem `c/` na frente não há clube: é o saguão. Seção desconhecida cai no
-   catálogo; id que não existe mais abre a aba e não foca nada. */
+   Sem `c/` na frente não há clube, e o app resolve o primeiro da pessoa — ver
+   `EnterFirstClub`. Seção desconhecida cai no catálogo; id que não existe mais
+   abre a aba e não foca nada. */
 /* O universo vem antes de tudo: `#series/c/<slug>/feed` contra `#c/<slug>/feed`.
    Mora no endereço pela mesma razão que o clube mora.
 
@@ -218,8 +220,8 @@ type Route = {
   /** Qual série a rota pede, no universo de séries. */
   show: number | null;
   /* A folha de ajustes aberta pelo endereço. Não é aba: é folha por cima da
-     sala. Tem endereço porque o saguão precisa poder MANDAR alguém nela — o
-     convite de emprestar o acervo à rede tem um botão "abrir os ajustes". */
+     sala. Tem endereço para poder ser MANDADA — um aviso do sino sobre um
+     pedido de entrada leva direto a ela. */
   sheet: boolean;
 };
 
@@ -295,7 +297,6 @@ export default function App() {
   /* Lido junto da rota e pelo mesmo ouvinte: sair da tela de confirmação
      reescreve o endereço, e sem isto o app mostraria a tela que ele já não pede. */
   const [emailRoute, setEmailRoute] = useState(() => emailRouteFromHash());
-  const [self, setSelf] = useState(false);
 
   /* A sessão decide se o app renderiza, então é perguntada primeiro e sozinha:
      quem está deslogado chega na tela de entrada sem esperar por catálogo. */
@@ -344,13 +345,6 @@ export default function App() {
     location.hash = '';
   }, []);
 
-  /* Entrar numa sala, e opcionalmente já num lugar dentro dela: o saguão põe
-     fichas na tela e o clique tem de levar àquela ficha, não ao mural que a
-     contém. Sem destino, a porta é o mural. */
-  const enter = useCallback((slug: string, rest = 'feed', universe: Universe = 'filmes') => {
-    location.hash = clubHash(slug, rest, universe);
-  }, []);
-
   if (!authChecked) {
     return (
       <>
@@ -374,9 +368,9 @@ export default function App() {
 
   if (!me) return <SignIn onSignedIn={u => { setMe(u); void checkAuth(); }} />;
 
-  /* Antes do saguão porque é sobre a conta, não sobre uma sala — e porque logo
-     depois da primeira entrada é o único momento em que "guarde uma segunda
-     chave" tem contexto. Pular é permitido: obrigatório na porta é pedágio. */
+  /* Antes de qualquer sala porque é sobre a conta — e porque logo depois da
+     primeira entrada é o único momento em que "guarde uma segunda chave" tem
+     contexto. Pular é permitido: obrigatório na porta é pedágio. */
   if (needsPassword && !skippedPassword) {
     return (
       <SetPassword
@@ -389,26 +383,9 @@ export default function App() {
     );
   }
 
-  if (!route.club) {
-    return (
-      <>
-        <Lobby
-          me={me}
-          universe={route.universe}
-          /* Trocar de lente é trocar de endereço, e não de estado: o saguão de
-             séries tem de poder ser colado num link como qualquer outra tela
-             deste app. */
-          onUniverse={u => { location.hash = lensOf(u); }}
-          onEnter={enter}
-          onSignOut={() => void signOut()}
-          onOpenSelf={() => setSelf(true)}
-        />
-        {/* Também no saguão: quem ainda não está em clube nenhum precisa poder
-            trocar o próprio nome e cadastrar senha, e só está aqui. */}
-        <AccountSheet open={self} onClose={() => setSelf(false)} me={me} onChanged={checkAuth} />
-      </>
-    );
-  }
+  /* Sem clube no endereço não há tela: o app abre DENTRO de uma sala. Ver
+     `EnterFirstClub`. */
+  if (!route.club) return <EnterFirstClub universe={route.universe} />;
 
   /* A lente de séries tem o próprio casco: as abas são outras, os dados são
      outros, e não há sala de projeção. Fazer `ClubApp` bimodal infectaria os
@@ -420,7 +397,7 @@ export default function App() {
         slug={route.club}
         route={route}
         me={me}
-        onLobby={() => {
+        onHome={() => {
           location.hash = lensOf('series');
         }}
       />
@@ -441,10 +418,66 @@ export default function App() {
       setMe={setMe}
       onSignOut={() => void signOut()}
       onLeaveClub={() => {
-        // De volta ao saguão da lente em que se estava, e não sempre ao de filmes.
+        /* Endereço vazio, que cai no primeiro clube que sobrou. Guardando a
+           lente: quem estava olhando séries continua olhando séries. */
         location.hash = lensOf(route.universe);
       }}
     />
+  );
+}
+
+/* ══ o endereço sem clube ══════════════════════════════════════════════════
+   Havia um saguão aqui: uma tela da rede inteira, com as duas listas de salas e
+   uma vitrine do que os clubes andavam fazendo. Ele foi apagado a pedido do
+   usuário, e com ele a ideia de que existe um lugar do produto que não é uma
+   sala. O app abre DENTRO de um clube; trocar de sala é o painel da marquise.
+
+   Então este endereço não desenha nada: resolve para onde ir e vai. Para o
+   PRIMEIRO clube da pessoa, que é o mais antigo dela (`mineStmt` ordena por
+   `joined_at`) — e o mais antigo de todo mundo é o Cineclube, porque toda conta
+   nasce dentro dele (ver `joinHomeClub` no servidor). Quem fundou uma sala
+   própria depois continua abrindo o app na que já era a dele.
+
+   O Cineclube é a reserva e não a resposta: uma conta pode ter saído dele, e
+   mandar alguém de volta para uma sala que ela largou é o produto discutindo a
+   decisão. Só quando não sobra nenhuma — e aí ele é público, então abre.
+
+   `replaceState` e não `hash =`: o endereço vazio é uma passagem, e deixá-lo no
+   histórico faria o Voltar cair aqui e ser mandado adiante de novo, que é um
+   Voltar que não volta. */
+const HOME = 'cineclube';
+
+function EnterFirstClub({ universe }: { universe: Universe }) {
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      let destino = HOME;
+      try {
+        const { mine } = await clubsApi.all();
+        destino = mine[0]?.slug ?? HOME;
+      } catch (e) {
+        /* A lista não veio; o Cineclube é público e abre de qualquer jeito. Se
+           ele também falhar, quem diz é a tela do clube, que sabe dizer por quê. */
+        if (vivo) setErro((e as Error).message);
+      }
+      if (!vivo) return;
+      history.replaceState(null, '', '#' + clubHash(destino, 'feed', universe));
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [universe]);
+
+  return (
+    <>
+      <HolographicWall asBackdrop />
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
+        <span className="legend animate-flicker">{erro ? 'Abrindo o Cineclube' : 'Acendendo o projetor'}</span>
+      </div>
+    </>
   );
 }
 
@@ -457,12 +490,14 @@ function SeriesClubApp({
   slug,
   route,
   me,
-  onLobby,
+  onHome,
 }: {
   slug: string;
   route: Route;
   me: SessionUser;
-  onLobby: () => void;
+  /* Sair desta sala sem escolher outra: o endereço vazio resolve o primeiro
+     clube da pessoa. Ver `EnterFirstClub`. */
+  onHome: () => void;
 }) {
   const [club, setClubRow] = useState<ClubRow | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -737,7 +772,7 @@ function SeriesClubApp({
             <Fault detail={bootError}>O clube não existe, ou é privado e você não está nele.</Fault>
           </div>
           <div className="mt-5">
-            <Key onClick={onLobby}>Voltar ao saguão</Key>
+            <Key onClick={onHome}>Ir para outro clube</Key>
           </div>
         </div>
       </>
@@ -784,7 +819,7 @@ function SeriesClubApp({
           onUniverse={u => {
             location.hash = clubHash(slug, '', u);
           }}
-          onLobby={onLobby}
+          onEnterClub={slug => { location.hash = clubHash(slug, 'feed', 'series'); }}
           onOpenRequests={() => {
             location.hash = clubHash(slug, 'ajustes', 'filmes');
           }}
@@ -973,8 +1008,7 @@ function ClubApp({
      porque a coisa toda é justamente para quem NÃO está nela. */
   const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
   /* A folha de ajustes, aberta por quatro lugares: a engrenagem do perfil, o
-     distintivo de pedidos na marquise, um aviso do sino, e `#c/<slug>/ajustes`
-     — como o saguão manda alguém direto ao interruptor de emprestar o acervo.
+     distintivo de pedidos na marquise, um aviso do sino, e `#c/<slug>/ajustes`.
      Nasce aberta quando o endereço pede. */
   const [sheetOpen, setSheetOpen] = useState(route.sheet);
 
@@ -1062,7 +1096,7 @@ function ClubApp({
   useEffect(() => {
     const onHash = () => {
       const { club: c, tab: t, review, comment: within, person } = routeFromHash();
-      // Outro clube (ou o saguão): quem remonta é o componente de cima.
+      // Outro clube, ou endereço sem clube: quem remonta é o componente de cima.
       if (c !== slug) return;
       if (t) setTab(t);
       /* Só quando há id no endereço: voltar para `#reviews` limpo não deve
@@ -1383,7 +1417,7 @@ function ClubApp({
             isClubAdmin: club.role === 'admin',
             refreshClub,
             leaveClub,
-            goLobby: onLeaveClub,
+            goHome: onLeaveClub,
             openClubSettings: () => setSheetOpen(true),
             signOut: onSignOut,
             refreshReviewers,
@@ -1490,8 +1524,8 @@ function ClubApp({
   );
 
   /* Endereço apontando para clube que não existe, ou privado de que você não é.
-     A saída é o saguão e não a tela de entrada: o problema não é quem você é, é
-     onde você tentou entrar. */
+     A saída é outra sala e não a tela de entrada: o problema não é quem você é,
+     é onde você tentou entrar. */
   if (bootError && !club) {
     return (
       <>
@@ -1506,7 +1540,7 @@ function ClubApp({
             </Fault>
           </div>
           <div className="mt-5">
-            <Key onClick={onLeaveClub}>Voltar ao saguão</Key>
+            <Key onClick={onLeaveClub}>Ir para outro clube</Key>
           </div>
         </div>
       </>
@@ -1558,7 +1592,7 @@ function ClubApp({
           onUniverse={u => {
             location.hash = clubHash(slug, '', u);
           }}
-          onLobby={onLeaveClub}
+          onEnterClub={slug => { location.hash = clubHash(slug, 'feed', lens); }}
           onOpenRequests={() => setSheetOpen(true)}
         />
 
@@ -1880,7 +1914,7 @@ function Marquee({
   room,
   universe,
   onUniverse,
-  onLobby,
+  onEnterClub,
   onOpenRequests,
 }: {
   tabs: readonly { id: TabId; label: string; hidden?: boolean }[];
@@ -1895,7 +1929,8 @@ function Marquee({
   universe: Universe;
   /** A outra lente, sobre o MESMO clube. Ver a nota ao lado da peça. */
   onUniverse: (u: Universe) => void;
-  onLobby: () => void;
+  /** Trocar de sala, guardando a lente: um clube é um clube nos dois universos. */
+  onEnterClub: (slug: string) => void;
   onOpenRequests: () => void;
 }) {
   const rec = recOf(room);
@@ -1908,47 +1943,25 @@ function Marquee({
       <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         {/* O nome DA SALA e não o do produto: quem está em três clubes precisa
             saber em qual está antes de ler o resto da tela. A foto vem junto
-            quando existe — é o que torna a troca reconhecível sem ler. O
-            conjunto é a porta de volta ao saguão. */}
-        <div className="mr-auto flex min-w-0 items-center gap-x-1 sm:gap-x-3">
-          <button
-            type="button"
-            onClick={onLobby}
-            title="Voltar ao saguão"
-            className="group flex min-w-0 items-center gap-2.5 rounded-cell py-1 pr-1 text-left sm:pr-2"
-          >
-            {club.photo ? (
-              <img
-                src={club.photo}
-                alt=""
-                className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
-              />
-            ) : null}
-            <span className="min-w-0 truncate font-display text-[22px] leading-none tracking-[0.1em] text-beam transition-colors group-hover:text-beam-hot">
-              {club.name}
-            </span>
-            {club.visibility === 'private' ? (
-              <span className="legend hidden text-[9px] text-ink-faint sm:inline">Privado</span>
-            ) : null}
-          </button>
-          {/* ── a lente, aqui dentro também ────────────────────────────────
-              Ela só existia no saguão, o que fazia trocar de universo dentro de
-              uma sala ser: sair para o saguão, trocar lá, e achar a mesma sala
-              de novo. Um clube é um clube nos dois universos — mesma gente,
-              mesmo ADM —, então a troca guarda o clube e muda só o que se olha
-              dentro dele.
+            quando existe — é o que torna a troca reconhecível sem ler.
 
-              Ao lado do nome da sala, como no saguão fica ao lado do nome da
-              casa: a lente é mais externa que a seção, e ficar junto das abas a
-              faria ler como uma sexta aba. */}
+            E é ele que abre a lista de salas, porque é o lugar onde já se olha
+            para saber em qual se está. */}
+        <div className="mr-auto flex min-w-0 items-center gap-x-1 sm:gap-x-3">
+          <ClubSwitch club={club} onEnter={onEnterClub} />
+          {/* ── a lente ─────────────────────────────────────────────────────
+              Um clube é um clube nos dois universos — mesma gente, mesmo ADM —,
+              então a troca guarda o clube e muda só o que se olha dentro dele.
+
+              Ao lado do nome da sala: a lente é mais externa que a seção, e
+              ficar junto das abas a faria ler como uma sexta aba. */}
           <Lens on={universe} onPick={onUniverse} />
         </div>
         <SectionTabs variant="marquee" tabs={tabs} tab={tab} onTab={onTab} room={room} rec={rec} />
 
         {/* `relative` porque o painel do sino se pendura AQUI, e não no sino:
-            depois dele ainda vêm o retrato e a porta do saguão, e alinhar o
-            painel pela direita do sino o jogava para fora da tela num
-            telefone. Ver `Notices`. */}
+            depois dele ainda vem o retrato, e alinhar o painel pela direita do
+            sino o jogava para fora da tela num telefone. Ver `Notices`. */}
         <div className="relative flex items-center gap-2">
           {/* Quem está batendo na porta: só para quem pode abrir, e só quando há
               alguém. O pedido vivia numa lista atrás de perfil, engrenagem e
@@ -1968,8 +1981,7 @@ function Marquee({
             </button>
           ) : null}
           {/* Sem props: o sino é da rede, junta todas as salas da pessoa e
-              carrega o clube em cada linha, então sabe sozinho para onde levar.
-              É o mesmo componente do saguão. */}
+              carrega o clube em cada linha, então sabe sozinho para onde levar. */}
           <Notices />
           <button
             type="button"
@@ -1982,15 +1994,6 @@ function Marquee({
               {initialsOf(me.name)}
             </Reel>
             <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
-          </button>
-          {/* Era "Sair". Sair da conta é raro e mora nos ajustes; o que se faz o
-              tempo todo é trocar de sala, então é essa a porta que fica aqui. */}
-          <button
-            type="button"
-            onClick={onLobby}
-            className="rounded-cell px-2 py-1.5 font-display text-[12px] uppercase tracking-[0.12em] text-ink-dim transition-colors hover:text-beam"
-          >
-            Saguão
           </button>
         </div>
       </div>

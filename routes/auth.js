@@ -166,8 +166,8 @@ router.get('/me', (req, res) => {
       isAdmin: !!req.session.is_admin,
       email: req.session.email || null,
       emailVerified: !!req.session.email_verified,
-      /* A bio vem junto porque o saguão precisa dela: lá não existe elenco de
-         clube de onde lê-la. */
+      /* A bio vem junto porque quem a lê nem sempre está numa sala com elenco
+         carregado — a folha da conta abre de qualquer tela. */
       bio: req.session.bio || null,
       avatar: avatarUrl(req.session.reviewer_id, req.session.avatar_rev),
     },
@@ -268,8 +268,8 @@ router.get('/google/callback', wrap(async (req, res) => {
 
   const sessionToken = await auth.createSession(reviewer.id);
   auth.sendSessionCookie(res, sessionToken);
-  // A raiz, e o cliente decide o resto: sem senha ele pede uma, com clube ele
-  // abre o saguão. Quem sabe disso é a tela, não esta rota.
+  // A raiz, e o cliente decide o resto: sem senha ele pede uma, com senha ele
+  // abre o primeiro clube da pessoa. Quem sabe disso é a tela, não esta rota.
   res.redirect('/');
 }));
 

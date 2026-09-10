@@ -6,9 +6,9 @@ import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
 
 /* ── para onde um aviso leva ──────────────────────────────────────────────
-   O endereço completo, com o clube na frente, porque o sino é lido de qualquer
-   lugar: do saguão, onde não há sala nenhuma, e de dentro de uma sala falando
-   de outra. Um destino relativo à sala atual acertaria só num dos dois casos.
+   O endereço completo, com o clube na frente, porque o sino junta as salas
+   todas e é lido de dentro de uma delas falando de outra. Um destino relativo à
+   sala atual mandaria a pessoa para o lugar errado da própria sala.
 
    `location.hash` e não uma função vinda por prop: quem monta este endereço é o
    App (`clubHash`), e passá-la por duas telas para o sino chamar seria
@@ -268,8 +268,8 @@ export function Notices() {
 
      Sem `relative` aqui de propósito: quem posiciona é o bloco de ações do
      cabeçalho, que é `relative` nos dois lugares onde este sino aparece (o
-     saguão e a marquise do clube). Alinhado pela direita DELE, o painel cai
-     junto da margem da página, que é onde ele cabe em qualquer largura. */
+     bloco de ações da marquise). Alinhado pela direita DELE, o painel cai junto
+     da margem da página, que é onde ele cabe em qualquer largura. */
   return (
     <div ref={box}>
       <button
@@ -385,8 +385,8 @@ export function Notices() {
                         outro — e porque são dois destinos: o rosto pergunta
                         "quem é essa pessoa" e o resto responde "o que ela fez".
 
-                        O endereço carrega o clube, então funciona igual do
-                        saguão e de dentro de outra sala. */}
+                        O endereço carrega o clube, então funciona igual de
+                        dentro de qualquer sala. */}
                     <button
                       type="button"
                       aria-label={n.actor.name}

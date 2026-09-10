@@ -172,9 +172,9 @@ function say(kind, item) {
 }
 
 /* O retrato viaja no aviso, repetindo a mesma URL dezenas de vezes na mesma
-   resposta. É de propósito: o sino da rede é lido no saguão, onde não há elenco
-   de clube nenhum para consultar — e um sino que mostra todo mundo como
-   etiqueta colorida perdeu a informação que faz uma linha ser reconhecida antes
+   resposta. É de propósito: o sino junta as salas todas, e o elenco carregado
+   na tela é o de uma só — sem o retrato aqui, quem avisa de outra sala vira uma
+   etiqueta colorida, que é a informação que faz a linha ser reconhecida antes
    de ser lida. */
 const avatarOf = row =>
   row.actor_avatar_rev ? `/api/reviewers/${row.actor_id}/avatar?v=${row.actor_avatar_rev}` : null;

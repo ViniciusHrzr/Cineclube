@@ -95,12 +95,9 @@ app.use('/api/reels', require('./routes/reels'));
    /api/c/<slug>/shows. */
 app.use('/api/series', require('./routes/series'));
 app.use('/api/clubs', clubRoutes.index);
-/* O que a rede está fazendo, acima da linha do clube: a única leitura do produto
-   que atravessa salas, e ela só enxerga o que cada uma emprestou. Ver lobby.js. */
-app.use('/api/lobby', require('./routes/lobby'));
 /* O sino é da REDE e não de uma sala: quem está em três clubes tinha três
-   sinos. Fora do escopo porque o saguão, onde a pergunta é "o que aconteceu
-   enquanto eu não estava?", não tem sala nenhuma. */
+   sinos, e nenhum deles contava o que houve nos outros dois. Fora do escopo
+   porque a resposta atravessa salas. */
 app.use('/api/notices', require('./routes/notices'));
 app.use('/api/reviewers', reviewerRoutes.index);
 

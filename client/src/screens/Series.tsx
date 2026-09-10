@@ -44,7 +44,6 @@ import { PersonName, PersonReel } from '@/components/person';
 import {
   fmt,
   initialsOf,
-  lobby as lobbyApi,
   reelColor,
   seriesApi,
   /* Renomeado porque `shows` também é o nome da fila numa das telas daqui, e
@@ -55,7 +54,6 @@ import {
   type Episode,
   type EpisodeDetail,
   type EpisodeTake,
-  type LobbyTake,
   type QueuedShow,
   type Reviewer,
   type SeasonDetail,
@@ -1400,58 +1398,22 @@ export function EpisodeSheet({
           </label>
         </div>
 
-        <EpisodeVoices
-          showId={showId}
-          season={ep.season}
-          episode={ep.episode}
-          takes={takes}
-          meId={meId}
-        />
+        <EpisodeVoices takes={takes} meId={meId} />
       </div>
     </dialog>
   );
 }
 
-/* Duas perguntas com uma chave entre elas.
+/* O que o clube achou deste episódio, em uma coluna. Sai de graça: o acervo
+   inteiro já está em memória desde o boot, e a folha recebeu as fichas por prop.
 
-   **Clube** sai de graça: o acervo inteiro já está em memória desde o boot, e a
-   folha recebeu as fichas por prop. **Todas** é a rede, e custa uma chamada —
-   que é justamente por que não é o padrão; ela também obedece as paredes.
+   Havia uma chave **Clube / Todas** aqui, e a segunda perguntava à rede o que os
+   outros clubes tinham achado do mesmo episódio. Ela saiu com o saguão: sem uma
+   tela que mostre a rede e sem o interruptor que dizia o que cada sala empresta,
+   não há rede para consultar, e uma chave com um lado só não escolhe nada.
 
-   Ordenada por credibilidade do lado da rede, como todo ranking dali. Do lado
-   do clube a ordem é a nota: numa sala de seis, credibilidade não separa
-   ninguém e a pergunta real é quem gostou mais. */
-function EpisodeVoices({
-  showId,
-  season,
-  episode,
-  takes,
-  meId,
-}: {
-  showId: number;
-  season: number;
-  episode: number;
-  takes: EpisodeTake[];
-  meId: string;
-}) {
-  const [alcance, setAlcance] = useState<'clube' | 'todas'>('clube');
-  const [rede, setRede] = useState<{ takes: LobbyTake[]; average: number | null; count: number; clubs: number } | null>(null);
-  const [buscando, setBuscando] = useState(false);
-
-  useEffect(() => {
-    if (alcance !== 'todas' || rede) return;
-    let vivo = true;
-    setBuscando(true);
-    void lobbyApi
-      .episode(showId, season, episode)
-      .then(r => vivo && setRede(r))
-      .catch(() => vivo && setRede({ takes: [], average: null, count: 0, clubs: 0 }))
-      .finally(() => vivo && setBuscando(false));
-    return () => {
-      vivo = false;
-    };
-  }, [alcance, rede, showId, season, episode]);
-
+   Ordenada pela NOTA: numa sala de seis, a pergunta real é quem gostou mais. */
+function EpisodeVoices({ takes, meId }: { takes: EpisodeTake[]; meId: string }) {
   const doClube = [...takes]
     .filter(t => t.final != null)
     .sort((a, b) => (b.final ?? 0) - (a.final ?? 0));
@@ -1463,93 +1425,47 @@ function EpisodeVoices({
   return (
     <section className="mt-6 border-t border-white/[0.07] pt-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="legend mr-1">O que acharam</span>
-        <Chip size="sm" on={alcance === 'clube'} onClick={() => setAlcance('clube')}>
-          Clube
-        </Chip>
-        <Chip size="sm" on={alcance === 'todas'} onClick={() => setAlcance('todas')}>
-          Todas
-        </Chip>
-        {(alcance === 'clube' ? media : rede?.average) != null ? (
+        <span className="legend mr-1">O que o clube achou</span>
+        {media != null ? (
           <span className="q ml-auto text-[13px] text-beam">
-            {fmt((alcance === 'clube' ? media : rede?.average) as number)}
+            {fmt(media)}
             <span className="text-ink-faint"> /10</span>
           </span>
         ) : null}
       </div>
 
-      {alcance === 'clube' ? (
-        !doClube.length ? (
-          <p className="mt-4 text-[13px] leading-relaxed text-ink-dim">
-            Ninguém do clube avaliou este episódio ainda.
-          </p>
-        ) : (
-          <ul className="mt-4 flex flex-col gap-3">
-            {doClube.map(t => (
-              <li key={t.id} className="flex items-baseline gap-2.5">
-                <span
-                  className={cn(
-                    'font-display text-[13px] uppercase tracking-[0.1em]',
-                    t.reviewerId === meId ? 'text-dye-brass' : 'text-ink'
-                  )}
-                >
-                  {t.reviewerId === meId ? 'você' : t.reviewerName}
-                </span>
-                {/* A criteriosa se anuncia: as duas são notas, e a diferença
-                    entre elas é quanto se olhou. */}
-                {t.scores ? (
-                  <span className="legend text-[9px] text-beam-dim">criteriosa</span>
-                ) : null}
-                <span className="q ml-auto text-[14px] text-beam">{fmt(t.final ?? 0)}</span>
-              </li>
-            ))}
-            {doClube.map(t =>
-              t.comment ? (
-                <li key={`${t.id}-txt`} className="-mt-1 break-words text-[12.5px] italic leading-relaxed text-ink-dim">
-                  “{t.comment}” — {t.reviewerId === meId ? 'você' : t.reviewerName}
-                </li>
-              ) : null
-            )}
-          </ul>
-        )
-      ) : buscando ? (
-        <p className="mt-4 text-[13px] text-ink-dim">Perguntando à rede…</p>
-      ) : !rede?.takes.length ? (
+      {!doClube.length ? (
         <p className="mt-4 text-[13px] leading-relaxed text-ink-dim">
-          Nenhum clube que empresta as fichas avaliou este episódio ainda.
+          Ninguém do clube avaliou este episódio ainda.
         </p>
       ) : (
-        <>
-          <ul className="mt-4 flex flex-col gap-3.5">
-            {rede.takes.map(t => (
-              <li key={t.id} className="flex gap-2.5">
-                <Reel color={reelColor(t.actor.dot, t.actor.id)} src={t.actor.avatar} size="sm">
-                  {initialsOf(t.actor.name)}
-                </Reel>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="font-display text-[13px] uppercase tracking-[0.1em] text-ink">
-                      {t.actor.name}
-                    </span>
-                    <span className="font-display text-[10.5px] uppercase tracking-[0.12em] text-dye-brass">
-                      {t.club.name}
-                    </span>
-                    <span className="q ml-auto text-[14px] text-beam">{fmt(t.final)}</span>
-                  </span>
-                  {t.excerpt ? (
-                    <span className="mt-1 block break-words text-[12.5px] italic leading-relaxed text-ink-dim">
-                      “{t.excerpt}”
-                    </span>
-                  ) : null}
-                </span>
+        <ul className="mt-4 flex flex-col gap-3">
+          {doClube.map(t => (
+            <li key={t.id} className="flex items-baseline gap-2.5">
+              <span
+                className={cn(
+                  'font-display text-[13px] uppercase tracking-[0.1em]',
+                  t.reviewerId === meId ? 'text-dye-brass' : 'text-ink'
+                )}
+              >
+                {t.reviewerId === meId ? 'você' : t.reviewerName}
+              </span>
+              {/* A criteriosa se anuncia: as duas são notas, e a diferença
+                  entre elas é quanto se olhou. */}
+              {t.scores ? (
+                <span className="legend text-[9px] text-beam-dim">criteriosa</span>
+              ) : null}
+              <span className="q ml-auto text-[14px] text-beam">{fmt(t.final ?? 0)}</span>
+            </li>
+          ))}
+          {doClube.map(t =>
+            t.comment ? (
+              <li key={`${t.id}-txt`} className="-mt-1 break-words text-[12.5px] italic leading-relaxed text-ink-dim">
+                “{t.comment}” — {t.reviewerId === meId ? 'você' : t.reviewerName}
               </li>
-            ))}
-          </ul>
-          <p className="q mt-3 text-[10.5px] text-ink-faint">
-            {plural(rede.count, 'avaliação', 'avaliações')} em{' '}
-            {plural(rede.clubs, 'clube', 'clubes')} · ordenadas por quem mais avalia
-          </p>
-        </>
+            ) : null
+          )}
+        </ul>
       )}
     </section>
   );

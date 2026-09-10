@@ -32,10 +32,8 @@ import { useClub } from '@/App';
    segunda não é desenhada desabilitada — ela não existe: um controle cinza é
    uma promessa que a interface não pode cumprir.
 
-   E a Conta não conhece o clube, porque ela é usada em dois lugares: dentro de
-   uma sala, e no saguão, onde uma pessoa sem clube nenhum ainda precisa trocar
-   o próprio nome. Um componente que chamasse `useClub()` não existiria no
-   segundo.
+   E a região Conta não chama `useClub()`: ela fala da pessoa e não da sala, e
+   a única coisa que ela pega do clube é a bio, que chega por propriedade.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const FIELD =
@@ -43,27 +41,6 @@ const FIELD =
 
 /** O mesmo teto que routes/reviewers.js aplica. Espelhado, nunca decidido aqui. */
 const MAX_BIO = 140;
-
-/* A folha do saguão: só a conta, porque lá não há sala nenhuma sobre a qual
-   falar. Mesma casca, mesmas regiões, uma a menos. */
-export function AccountSheet({
-  open,
-  onClose,
-  me,
-  onChanged,
-}: {
-  open: boolean;
-  onClose: () => void;
-  me: SessionUser;
-  onChanged: () => void | Promise<void>;
-}) {
-  return (
-    <Sheet open={open} onClose={onClose} label="Minha conta">
-      <Account me={me} bio={me.bio ?? null} onSaved={onChanged} />
-      <Password />
-    </Sheet>
-  );
-}
 
 export function SettingsSheet({
   open,
@@ -856,7 +833,7 @@ function ClubRoom() {
           <p className="mt-2 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
             {club.club.visibility === 'public'
               ? 'Qualquer pessoa entra e já pode avaliar, e o acervo é lido por quem passar. Abrir agora admite quem estava esperando na fila de pedidos.'
-              : 'O clube aparece no saguão com nome e foto, mas entrar depende de você aprovar. O que um estranho enxerga daqui de dentro você decide abaixo.'}
+              : 'O clube aparece na lista de clubes com nome e foto, mas entrar depende de você aprovar. O que um estranho enxerga daqui de dentro você decide abaixo.'}
           </p>
         </div>
 
@@ -895,32 +872,6 @@ function ClubRoom() {
               A sala de projeção nunca abre: assistir junto é de dentro, e o
               painel dela diz quem está na sala agora.
             </p>
-
-            {/* ── e o que a sala empresta para o saguão ──────────────────────
-                Uma pergunta diferente das duas de cima, e por isso uma região
-                própria: aquelas decidem se um estranho LÊ esta sala; esta decide
-                se o que ela avaliou entra nas contas da rede.
-
-                O que se empresta é número — média, contagem, um pôster. Quem deu
-                a nota e o que escreveu continuam do lado de dentro, a não ser
-                que "Mostrar avaliações" também esteja ligado, e é isso que a
-                última frase diz em vez de deixar supor. */}
-            <div className="mt-6">
-              <span className="legend mb-2 block">O que o clube empresta à rede</span>
-              <Switch
-                on={!!club.club.showCharts}
-                onToggle={() => void saveClub({ showCharts: !club.club.showCharts })}
-                title="Entrar nas contas do saguão"
-                line="As notas daqui contam na média da rede, e o clube aparece entre os mais ativos."
-              />
-              <p className="mt-3 max-w-[54ch] text-[12.5px] leading-relaxed text-ink-dim">
-                {club.club.showCharts
-                  ? club.club.showReviews
-                    ? 'Ligada junto de “Mostrar avaliações”, uma avaliação daqui pode ser a avaliação em destaque do saguão — com o nome de quem escreveu e o que escreveu.'
-                    : 'O saguão soma as notas e mostra os pôsteres, sem dizer quem deu nota nem o que escreveu. Para uma avaliação daqui poder ser destaque lá, ligue também “Mostrar avaliações”.'
-                  : 'Desligada, nada deste clube existe no saguão: nem na contagem de avaliações, nem num pôster, nem num filme mais bem avaliado. O nome, a foto e quantas pessoas continuam à vista — é como alguém pede para entrar.'}
-              </p>
-            </div>
           </div>
         ) : null}
 
@@ -970,7 +921,7 @@ function EndClub() {
     setErro(null);
     try {
       await clubsApi.remove(club.club.slug);
-      club.goLobby();
+      club.goHome();
     } catch (e) {
       setErro((e as Error).message);
       setBusy(false);

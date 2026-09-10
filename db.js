@@ -65,8 +65,8 @@ async function columnsOf(table) {
 }
 
 /* Nome e slug são únicos por motivos diferentes: o nome porque duas salas
-   homônimas no saguão são uma sala que ninguém sabe escolher, o slug porque é
-   endereço. Um nome que reduz a nada (só emoji) ganha um slug sorteado. */
+   homônimas na lista de clubes são uma sala que ninguém sabe escolher, o slug
+   porque é endereço. Um nome que reduz a nada (só emoji) ganha um slug sorteado. */
 const HOME_CLUB = 'Cineclube';
 
 function slugify(name) {
@@ -91,8 +91,8 @@ async function freeSlug(name, exceptId = null) {
 }
 
 /* O clube principal: a PRAÇA da rede — aberto, e a sala em que toda conta nova
-   nasce. Quem chega já chega em algum lugar, em vez de cair num saguão onde a
-   única coisa a fazer é fundar um clube ou bater na porta de um fechado.
+   nasce. É o que faz o app poder abrir direto numa sala: sem endereço, entra-se
+   no primeiro clube da pessoa, e este é o primeiro de todo mundo.
 
    Idempotente: chamado pela migração e outra vez pelo boot. */
 async function ensureHomeClub() {
@@ -108,8 +108,8 @@ async function ensureHomeClub() {
 /* Chamado por quem cria conta, e por mais ninguém. `ON CONFLICT DO NOTHING`
    porque isto promete um estado, não um evento.
 
-   Falhar aqui não pode derrubar a criação da conta: uma pessoa sem clube tem um
-   saguão para resolver isso, uma pessoa sem conta não tem nada. */
+   Falhar aqui não pode derrubar a criação da conta: uma pessoa sem clube funda
+   um pelo painel da marquise, uma pessoa sem conta não tem nada. */
 async function joinHomeClub(reviewerId) {
   try {
     const home = await ensureHomeClub();
@@ -465,12 +465,10 @@ async function migrate() {
          a valer se ele fechar — a política escolhida não se perde. */
       show_reviews INTEGER NOT NULL DEFAULT 0,
       show_comments INTEGER NOT NULL DEFAULT 0,
-      /* E o que a sala empresta ao saguão, que é outra pergunta: os dois de cima
-         decidem se um estranho consegue LER esta sala, este decide se o que ela
-         avaliou entra nas contas da rede. Uma média de rede não diz quem deu a
-         nota nem em que sala, então um clube pode emprestar isso e continuar com
-         o acervo fechado — e o contrário também. Zero por padrão, pelo mesmo
-         motivo dos outros dois. */
+      /* MORTA desde que o saguão foi apagado: era o que a sala emprestava às
+         contas da rede, e não há mais rede que as leia. Fica na tabela porque
+         apagar coluna em SQLite é recriar a tabela, e uma migração destrutiva
+         para tirar um inteiro de zero não se paga. */
       show_charts INTEGER NOT NULL DEFAULT 0,
       /* SET NULL e não CASCADE: quem fundou pode sair um dia, e o clube não vai
          junto. Quem manda é o papel em club_members. */
@@ -764,7 +762,7 @@ async function migrate() {
 
   /* ══ o universo de séries ═══════════════════════════════════════════════
      Não existe coluna de universo na tabela clubs, e isso é a decisão inteira:
-     o universo é uma LENTE sobre o clube, escolhida no saguão e carregada no
+     o universo é uma LENTE sobre o clube, escolhida na marquise e carregada no
      endereço, não uma propriedade dele. O que se separa é o acervo — estas
      tabelas são o lado de séries do que reviews e watchlist são do de filmes, e
      nenhuma referencia a outra.

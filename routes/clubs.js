@@ -3,8 +3,6 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const clubs = require('../clubs');
-const lobby = require('../lobby');
-const lobbySeries = require('../lobbySeries');
 const throttle = require('../throttle');
 const live = require('../live');
 const wrap = require('../wrap');
@@ -58,9 +56,6 @@ function toDTO(row, extra = {}) {
        ajustes precisa saber o que mostrar marcado se o ADM fechar a sala. */
     showReviews: !!row.show_reviews,
     showComments: !!row.show_comments,
-    /* O terceiro interruptor, e ele não é sobre ler esta sala: é sobre o que ela
-       empresta às contas da rede no saguão. Ver lobby.js. */
-    showCharts: !!row.show_charts,
     photo: photoUrl(row),
     createdAt: row.created_at ?? null,
     ...extra,
@@ -279,7 +274,6 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
   for (const [campo, coluna] of [
     ['showReviews', 'show_reviews'],
     ['showComments', 'show_comments'],
-    ['showCharts', 'show_charts'],
   ]) {
     if (campo in patch) {
       await db.prepare(`UPDATE clubs SET ${coluna} = ? WHERE id = ?`)
@@ -300,14 +294,6 @@ scoped.patch('/', clubs.requireClubAdmin, throttleClubEdit, wrap(async (req, res
   }
 
   const row = await db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club.id);
-  /* O cache do saguão tem um minuto de vida, e um minuto é tempo demais para o
-     ADM que acabou de desligar o interruptor continuar vendo o clube na vitrine
-     — o que ele leria como o botão não ter funcionado.
-
-     Os DOIS saguões, porque as paredes de privacidade são do clube e valem nos
-     dois universos. */
-  lobby.invalidate();
-  lobbySeries.invalidate();
   live.emit('club', req.session.reviewer_id, req.club.id);
   res.json({
     club: toDTO(row, {
@@ -342,8 +328,6 @@ scoped.delete('/', auth.requireSession, wrap(async (req, res) => {
   live.emit('club', req.session.reviewer_id, req.club.id);
 
   await db.prepare('DELETE FROM clubs WHERE id = ?').run(req.club.id);
-  lobby.invalidate();
-  lobbySeries.invalidate();
   res.status(204).end();
 }));
 

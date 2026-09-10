@@ -1,8 +1,8 @@
 const { critsFor, episodeCritsFor, GENRES } = require('./criteria');
 
 /* Regras de LEITURA de uma ficha: qual é o alto e o baixo dela, e quanto do
-   que a pessoa escreveu cabe numa linha. Num módulo próprio porque o mural, o
-   saguão e a rede leem as mesmas fichas, e regra escrita duas vezes diverge na
+   que a pessoa escreveu cabe numa linha. Num módulo próprio porque os dois
+   murais leem as mesmas fichas, e regra escrita duas vezes diverge na
    terceira. */
 
 /* Meio ponto é o menor passo do controle. Exijo um ponto inteiro: abaixo disso

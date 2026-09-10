@@ -12,9 +12,7 @@ import { fmt, type Universe } from '@/lib/api';
 
 /* ── a lente ──────────────────────────────────────────────────────────────
    Filmes ou séries: a escolha mais externa do produto, e por isso a mais alta
-   em toda tela que a desenha. Mora aqui e não no saguão porque é a mesma peça
-   em dois lugares — a barra do saguão e a marquise de dentro de um clube —, e a
-   segunda cópia divergiria da primeira na terceira mexida.
+   em toda tela que a desenha.
 
    Sublinhado vermelho e não chapa de latão: pela regra do DESIGN.md, vermelho
    marca ONDE VOCÊ ESTÁ e latão marca o que você escolheu — e isto é um lugar em

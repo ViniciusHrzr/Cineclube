@@ -1,8 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const wrap = require('../wrap');
-/* As duas regras de leitura de uma ficha moram fora daqui desde que o saguão
-   passou a mostrar uma inteira — ver takes.js. */
+/* As duas regras de leitura de uma ficha moram fora daqui — ver takes.js. */
 const { excerpt, endsOf } = require('../takes');
 const clubs = require('../clubs');
 

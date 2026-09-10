@@ -59,10 +59,6 @@ export type Club = {
      continuam gravadas, para fechar a sala devolver o que o ADM tinha escolhido. */
   showReviews?: boolean;
   showComments?: boolean;
-  /* O terceiro interruptor, e ele responde outra pergunta: os dois de cima
-     decidem se um estranho LÊ esta sala, este decide se o que ela avaliou entra
-     nas contas da rede no saguão — parede, pódio, atividade, cartaz. */
-  showCharts?: boolean;
   photo: string | null;
   createdAt?: string | null;
   /** Só chega quando você é de lá. */
@@ -146,7 +142,7 @@ export const clubs = {
   update: (
     slug: string,
     patch: Partial<
-      Pick<Club, 'name' | 'tagline' | 'visibility' | 'showReviews' | 'showComments' | 'showCharts'>
+      Pick<Club, 'name' | 'tagline' | 'visibility' | 'showReviews' | 'showComments'>
     > & {
       photo?: string | null;
     }
@@ -182,151 +178,11 @@ export const clubs = {
     ),
 };
 
-/* ── o saguão ─────────────────────────────────────────────────────────────
-   O que a rede está fazendo, acima da linha do clube. Tudo aqui é o que cada
-   sala emprestou de propósito — ver lobby.js, onde a parede é desenhada. Uma
-   chamada só para seis agregações: uma porta que faz seis viagens é uma porta
-   que pensa antes de abrir. */
-export type LobbyMovie = {
-  id: number;
-  title: string;
-  year: number | null;
-  poster: string | null;
-  average: number;
-  takes: number;
-  /* Só os dois acervos de filme os trazem. O saguão de séries devolve a mesma
-     forma sem eles, e uma série não tem diretor nem uma folha só. */
-  director?: string | null;
-  clubs?: number;
-};
-
-export type LobbyPodiumMovie = LobbyMovie & { genre: string; clubs: number };
-
-export type LobbyClub = {
-  id: string;
-  name: string;
-  slug: string;
-  visibility: 'public' | 'private';
-  photo: string | null;
-  tagline: string | null;
-  /** Fichas gravadas na janela dos últimos `windowDays` dias. */
-  recent: number;
-  members: number;
-};
-
-/** Uma sala com sessão rolando neste segundo. Sai da memória, não do banco. */
-export type LobbyLive = {
-  club: {
-    id: string;
-    name: string;
-    slug: string;
-    visibility: 'public' | 'private';
-    photo: string | null;
-  };
-  movie: { id: number; title: string; year: number | null; poster: string | null };
-  watching: number;
-  status: 'playing' | 'paused';
-};
-
-/** A ficha da semana: a única coisa do saguão com um texto assinado dentro. */
-export type LobbyFeature = {
-  id: string;
-  club: { name: string; slug: string; visibility: 'public' | 'private' };
-  actor: { id: string; name: string; dot: string; avatar: string | null };
-  movieId: number;
-  movieTitle: string;
-  movieYear: number | null;
-  moviePoster: string | null;
-  genre: string;
-  final: number;
-  at: string;
-  ends: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
-  excerpt: string | null;
-  replies: number;
-  agrees: number;
-  disagrees: number;
-};
-
-export type LobbySnapshot = {
-  counts: { reviews: number; movies: number; clubs: number };
-  wall: LobbyMovie[];
-  podium: LobbyPodiumMovie[];
-  active: LobbyClub[];
-  live: LobbyLive[];
-  feature: LobbyFeature | null;
-  /** Quantas fichas um filme precisa ter para entrar no pódio. A tela imprime. */
-  floor: number;
-  /** Sobre quantos dias a atividade das salas é medida. */
-  windowDays: number;
-};
-
-/* Ordenadas por `credibility`: quantas fichas aquela pessoa já escreveu nas
-   salas que emprestam — quantidade de calibragem, que é a única coisa aqui que
-   um banco sabe medir. Não pondera nota nenhuma: decide só quem aparece
-   primeiro numa lista de cinco, que é edição e não aritmética. */
-export type LobbyTake = {
-  id: string;
-  actor: { id: string; name: string; dot: string; avatar: string | null };
-  club: { name: string; slug: string };
-  final: number;
-  at: string;
-  ends: { high: { name: string; value: number }; low: { name: string; value: number } } | null;
-  excerpt: string | null;
-  credibility: number;
-};
-
-export type LobbyFilm = {
-  takes: LobbyTake[];
-  /** A média da rede, ou null quando ninguém que empresta avaliou este filme. */
-  average: number | null;
-  count: number;
-  clubs: number;
-};
-
 /* Um clube é um clube: mesmo nome, mesma gente, mesmo ADM. O universo decide o
    que se olha DENTRO dele, e por isso mora no endereço e não na sessão — um
    link colado no Discord não pode significar coisas diferentes conforme o que o
    leitor escolheu antes de abri-lo. */
 export type Universe = 'filmes' | 'series';
-
-/* A lente de séries devolve a MESMA forma, com outro acervo dentro. É o que
-   deixa uma tela só desenhar os dois — `movies` conta séries aqui, e o rótulo é
-   da tela. Os campos a mais são o que só este universo sabe dizer. */
-export type LobbySeriesSnapshot = LobbySnapshot & {
-  counts: { reviews: number; movies: number; episodes: number; clubs: number };
-  podium: (LobbyPodiumMovie & { episodes: number })[];
-  feature: (LobbyFeature & {
-    showId: number;
-    season: number;
-    episode: number;
-    episodeTitle: string | null;
-  }) | null;
-};
-
-/** Uma série vista pela rede: as fichas, a conta, e a curva por temporada. */
-export type LobbyShow = LobbyFilm & {
-  episodes: number;
-  seasons: { season: number; average: number; episodes: number }[];
-  takes: (LobbyTake & { season: number; episode: number; episodeTitle: string | null })[];
-};
-
-export const lobby = {
-  get: () => api<LobbySnapshot>('/api/lobby'),
-  /* O que a REDE sabe sobre um filme. Sinopse e trailer não vêm daqui: são do
-     TMDB, e a rota do catálogo já os serve com cache. */
-  film: (movieId: number) => api<LobbyFilm>(`/api/lobby/film/${movieId}`),
-  /* Duas rotas e não um parâmetro: são duas consultas sobre duas tabelas, e uma
-     URL só fingiria que é a mesma pergunta. */
-  series: () => api<LobbySeriesSnapshot>('/api/lobby/series'),
-  show: (showId: number) => api<LobbyShow>(`/api/lobby/show/${showId}`),
-  /* Um episódio na rede inteira. Outra pergunta que a da série, e não um filtro
-     dela: filtrar no cliente daria a resposta certa por acidente e só enquanto a
-     série coubesse nas cinco fichas que a outra rota carrega. */
-  episode: (showId: number, season: number, episode: number) =>
-    api<LobbyFilm & { takes: (LobbyTake & { season: number; episode: number })[] }>(
-      `/api/lobby/episode/${showId}/${season}/${episode}`
-    ),
-};
 
 /* ══ o universo de séries ═════════════════════════════════════════════════
    Duas metades, e a divisão é a mesma do universo de filmes: o CATÁLOGO é do
@@ -704,8 +560,8 @@ export type Notice = {
   kind: 'comment' | 'reply' | 'mention' | 'vote' | 'like' | 'join';
   /** ISO em UTC, sem fuso no texto — ver `whenOf`. */
   at: string;
-  /* O retrato vem no aviso e não do elenco do clube: o sino é lido no saguão,
-     onde não há elenco nenhum para consultar. */
+  /* O retrato vem no aviso e não do elenco do clube: o sino junta as salas
+     todas, e o elenco carregado na tela é o de uma só. */
   actor: { id: string; name: string; dot: string; avatar?: string | null };
   /* De qual sala veio. Presente no sino da rede, ausente no de uma sala só —
      lá a resposta é a sala em que se está. É também o que faz o clique levar
@@ -767,8 +623,7 @@ export type FeedEvent = {
 /* ── o sino, e ele é da REDE ──────────────────────────────────────────────
    Uma lista só, de todas as salas de que a pessoa é. Antes havia um por clube:
    quem estava em três salas precisava entrar em cada uma para saber se alguém
-   tinha respondido, e o saguão — onde "o que aconteceu enquanto eu não estava?"
-   é a única pergunta — não tinha nenhum.
+   tinha respondido.
 
    Fora do escopo de clube (`api` e não `capi`), por isso mesmo. */
 export const notifications = {
@@ -948,12 +803,13 @@ export function clubPath(path: string) {
   return `/api/c/${encodeURIComponent(currentClub)}${path}`;
 }
 
-/* Há sala aberta? Existe para quem PODE rodar fora de uma — o sino vive no
-   saguão, onde não há clube, e o cano ao vivo que ele escuta é por sala.
+/* Há sala aberta? Existe para quem PODE rodar fora de uma: o app resolve o
+   clube antes de abrir a tela, e há um instante entre a sessão e a sala em que
+   o cano ao vivo já está montado e o clube ainda não.
 
    Uma pergunta e não um `try` em volta de `clubPath`: o lançamento ali é para
    pegar uma chamada de clube feita cedo demais, que é um defeito. "Ainda não há
-   sala" não é defeito nenhum, é o saguão. */
+   sala" não é defeito nenhum, é o instante antes. */
 export const hasClub = () => currentClub !== null;
 
 /** `api`, dentro do clube aberto. Todo o resto do produto usa esta. */

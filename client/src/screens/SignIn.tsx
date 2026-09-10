@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { auth, fmt, lobby, type SessionUser } from '@/lib/api';
+import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -15,9 +15,13 @@ import { cn, plural } from '@/lib/utils';
 
    Então a porta virou uma sala com alguma coisa dentro. À esquerda a frase e as
    duas chaves; à direita as FICHAS EM DESTAQUE, que são filmes de verdade,
-   avaliados de verdade, com a nota que a rede deu. Saem de `/api/lobby`, a
-   única leitura pública do produto — o que cada sala emprestou de propósito,
-   nunca o que ela guardou.
+   avaliados de verdade, com a nota que o clube deu.
+
+   Saem do CINECLUBE, que é a sala em que toda conta nasce e a única coisa que
+   esta tela pode prometer a quem ainda não entrou: ele é público, e num clube
+   público o acervo é lido de fora, inclusive deslogado. Vinham de uma média da
+   rede inteira enquanto havia um saguão que a somasse; sem ele, uma "nota da
+   rede" seria um número sem tela que o explique.
 
    O formulário não virou uma segunda tela: ele ocupa a coluna da esquerda no
    lugar da frase. Quem clicou em "entrar" já decidiu, e as fichas continuam ali
@@ -46,12 +50,14 @@ type Ficha = {
   director: string | null;
   average: number;
   takes: number;
-  /* Em quantas salas. Decide se a nota pode ser chamada de média DO CLUBE ou
-     média DA REDE — são afirmações diferentes e a placa diz uma das duas. */
-  clubs: number;
 };
 
 const MAX_MOSTRA = 3;
+
+/* A sala que esta tela mostra, e a mesma que o app abre sem endereço: toda conta
+   nasce dentro dela, e ela é pública, então o acervo é legível por quem ainda
+   não entrou. Ver `EnterFirstClub` em App.tsx e `joinHomeClub` no servidor. */
+const CLUBE = 'cineclube';
 
 export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [google, setGoogle] = useState(true);
@@ -69,7 +75,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   /* Se esta instalação sabe mandar e-mail. Sem isso "esqueci minha senha" não
      aparece — um botão que não tem como funcionar é pior que a ausência dele. */
   const [canMail, setCanMail] = useState(false);
-  /* `null` enquanto o saguão não respondeu: vazio é uma resposta diferente de
+  /* `null` enquanto o acervo não respondeu: vazio é uma resposta diferente de
      "ainda não sei", e as duas telas são outras. */
   const [fichas, setFichas] = useState<Ficha[] | null>(null);
 
@@ -86,34 +92,46 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
       .catch(() => setGoogle(true));
   }, []);
 
-  /* O pódio primeiro e a parede depois: o pódio é o que a rede mais gostou, com
-     piso de fichas, e é a melhor coisa que ela tem para mostrar; a parede é o
-     que ela viu por último, e entra aqui só para completar três enquanto o
-     pódio ainda não tem gente suficiente para formar um. */
+  /* O acervo cru, agrupado aqui e não no servidor: são as fichas do clube, uma
+     por pessoa por filme, e o que a porta mostra é a OBRA — três pessoas que
+     avaliaram Parasita são um cartaz com três fichas dentro, não três cartazes.
+
+     Da maior nota para a menor, porque o que o clube mais gostou é a melhor
+     coisa que ele tem para mostrar a quem está decidindo se entra. Sem pôster
+     não entra: um retângulo vazio numa mão de três cartazes é o buraco onde
+     deveria haver filme. */
   useEffect(() => {
     let vivo = true;
-    void lobby
-      .get()
-      .then(snap => {
+    void api<{ reviews: Review[] }>(`/api/c/${CLUBE}/reviews`)
+      .then(({ reviews }) => {
         if (!vivo) return;
-        const vistos = new Set<number>();
-        const out: Ficha[] = [];
-        for (const f of [...snap.podium, ...snap.wall]) {
-          if (!f.poster || vistos.has(f.id)) continue;
-          vistos.add(f.id);
-          out.push({
-            id: f.id,
-            title: f.title,
-            year: f.year,
-            poster: f.poster,
-            director: f.director ?? null,
-            average: f.average,
-            takes: f.takes,
-            clubs: f.clubs ?? 0,
+        const por = new Map<number, Ficha & { soma: number }>();
+        for (const r of reviews) {
+          if (!r.moviePoster) continue;
+          const tem = por.get(r.movieId);
+          if (tem) {
+            tem.soma += r.final;
+            tem.takes += 1;
+            tem.average = tem.soma / tem.takes;
+            continue;
+          }
+          por.set(r.movieId, {
+            id: r.movieId,
+            title: r.movieTitle,
+            year: r.movieYear,
+            poster: r.moviePoster,
+            director: r.movieDirector,
+            average: r.final,
+            soma: r.final,
+            takes: 1,
           });
-          if (out.length >= MAX_MOSTRA) break;
         }
-        setFichas(out);
+        setFichas(
+          [...por.values()]
+            .sort((a, b) => b.average - a.average)
+            .slice(0, MAX_MOSTRA)
+            .map(({ soma: _soma, ...f }) => f)
+        );
       })
       .catch(() => setFichas([]));
     return () => {
@@ -132,10 +150,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
     setDoor(qual);
   }
 
-  /* Enquanto o saguão não respondeu a coluna existe com as celas vazias, para a
-     página não pular quando os cartazes chegarem. Se a rede não tem nada
-     emprestado, ela deixa de existir e a frase fica sozinha no meio: melhor uma
-     coluna a menos do que três buracos onde deveria haver filme. */
+  /* Enquanto o acervo não respondeu a coluna existe com as celas vazias, para a
+     página não pular quando os cartazes chegarem. Se o clube não avaliou nada,
+     ela deixa de existir e a frase fica sozinha no meio: melhor uma coluna a
+     menos do que três buracos onde deveria haver filme. */
   const mostra = fichas === null || fichas.length > 0;
 
   return (
@@ -490,7 +508,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
                   : 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_24px_50px_-18px_rgba(0,0,0,0.9)]'
               )}
               /* A cela vazia não entra: ela é o lugar guardado enquanto o
-                 saguão responde, e uma cela que chega voando anuncia a espera
+                 acervo responde, e uma cela que chega voando anuncia a espera
                  em vez de escondê-la. Quem entra é a carta, quando existe. */
               initial={
                 quieto || !ficha ? alvo : { ...alvo, y: '16%', opacity: 0, rotate: alvo.rotate * 0.3 }
@@ -563,12 +581,12 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
             <span className="q font-display text-[32px] leading-none text-beam sm:text-[38px]">
               {fmt(centro.average)}
             </span>
-            {/* Uma ficha só não é média de nada, e duas salas não são um clube.
-                A placa diz o que o número de fato é nos três casos. */}
+            {/* Uma ficha só não é média de nada. A placa diz o que o número de
+                fato é nos dois casos. */}
             <span className="font-display text-[11px] uppercase leading-[1.5] tracking-[0.12em] text-dye-brass">
               {centro.takes > 1 ? 'Média' : 'Nota'}
               <br />
-              {centro.clubs > 1 ? 'da rede' : 'do clube'}
+              do clube
             </span>
           </motion.div>
         ) : null}
@@ -806,7 +824,7 @@ function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () 
   );
 }
 
-/* Aparece depois do Google e antes do saguão, e é a única coisa entre a pessoa
+/* Aparece depois do Google e antes do clube, e é a única coisa entre a pessoa
    e o produto — então ela diz por que existe. Um formulário que pede uma senha
    sem explicar por quê, logo depois de a pessoa ter provado quem é, parece
    trabalho repetido.

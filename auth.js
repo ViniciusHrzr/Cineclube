@@ -129,8 +129,8 @@ async function register({ name, email, password }) {
   await db.prepare('INSERT INTO reviewers (id, name, dot, email) VALUES (?, ?, ?, ?)')
     .run(id, quem, dot, mail);
   await setPassword(id, password);
-  /* Nasce dentro do clube principal. Ver joinHomeClub: uma conta que chega a um
-     saguão vazio não tem o que fazer nele. */
+  /* Nasce dentro do clube principal. Ver joinHomeClub: sem sala nenhuma não há
+     tela que o app possa abrir. */
   await db.joinHomeClub(id);
   return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id) };
 }
