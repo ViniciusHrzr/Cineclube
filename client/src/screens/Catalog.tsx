@@ -25,7 +25,7 @@ import {
 } from '@/components/bits';
 import { Bin, FilmCell } from '@/components/film';
 import { SuggestionsKey } from '@/screens/Reels';
-import { api, del, initialsOf, reelColor, type Movie, type WatchItem } from '@/lib/api';
+import { api, cdel, initialsOf, reelColor, type Movie, type WatchItem } from '@/lib/api';
 import { cn, named, norm, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -266,14 +266,26 @@ type Owner = {
 /* O chip com retrato mora em components/bits.tsx: três outras listas do produto
    filtram por pessoa com a mesma tira. */
 
+/* Quantos retratos o selo do cartaz desenha antes de virar contagem. Três é o
+   que cabe em 150px de pôster sem o selo atravessar a arte. */
+const FACES = 3;
+
 /** O balde de quem não tem dono registrado. Nunca é um id de gente. */
 const NOBODY = ' sem-dono';
 
 export function WatchlistScreen() {
   const club = useClub();
   const [query, setQuery] = useState('');
-  /** Qual pessoa a grade está mostrando, ou null para a fila inteira. */
-  const [who, setWho] = useState<string | null>(null);
+  /* Qual pessoa a grade está mostrando, ou null para a fila inteira.
+
+     Abre em VOCÊ. "Quero ver" é de cada um, e a pergunta que traz alguém a esta
+     aba é "o que eu quero ver" — numa sala de seis pessoas a fila inteira é a
+     resposta certa para outra pergunta. A sua volta em um toque, no "Todos" que
+     abre a tira.
+
+     Cai sozinho para a fila inteira quando você não tem nada nela, ou quando a
+     fila é de uma pessoa só: ver as guardas abaixo da contagem. */
+  const [who, setWho] = useState<string | null>(club.me.id);
   const [lift, setLift] = useState<Lift | null>(null);
   const [landing, setLanding] = useState(false);
   const cellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -311,8 +323,12 @@ export function WatchlistScreen() {
   const owners: Owner[] = [];
   const tally = new Map<string, number>();
   club.watchlist.forEach(w => {
-    const key = w.addedBy && club.reviewers.some(p => p.id === w.addedBy) ? w.addedBy : NOBODY;
-    tally.set(key, (tally.get(key) ?? 0) + 1);
+    /* Um cartaz conta para cada pessoa que o quer: a fila é de filmes e o desejo
+       é de gente. Sem ninguém registrado, cai no balde que a fila não sabe. */
+    const keys = w.wanters.filter(id => club.reviewers.some(p => p.id === id));
+    for (const key of keys.length ? keys : [NOBODY]) {
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
   });
   club.reviewers.forEach(p => {
     const count = tally.get(p.id);
@@ -320,8 +336,11 @@ export function WatchlistScreen() {
   });
   const orphans = tally.get(NOBODY) ?? 0;
 
-  const ownerOf = useCallback(
-    (w: WatchItem) => club.reviewers.find(p => p.id === w.addedBy) ?? null,
+  const wantersOf = useCallback(
+    (w: WatchItem) =>
+      w.wanters
+        .map(id => club.reviewers.find(p => p.id === id))
+        .filter((p): p is NonNullable<typeof p> => !!p),
     [club.reviewers]
   );
 
@@ -330,6 +349,10 @@ export function WatchlistScreen() {
      fila inteira quando o dono selecionado deixa de existir nela. */
   if (who && who !== NOBODY && !owners.some(o => o.id === who)) setWho(null);
   if (who === NOBODY && !orphans) setWho(null);
+  /* E uma fila de uma pessoa só não tem o que filtrar: a tira nem aparece, e um
+     filtro invisível aceso seria o arrasto desligado sem nada na tela dizendo
+     por quê — ver `filtering`. */
+  if (who && owners.length + (orphans ? 1 : 0) < 2) setWho(null);
 
   const searching = query.trim().length > 0;
   /* As duas peneiras contam para a mesma regra: o que a grade mostra não é a
@@ -338,8 +361,8 @@ export function WatchlistScreen() {
   const shown = club.watchlist.filter(w => {
     if (searching && !named(norm(query.trim()), w.title, w.original, w.english)) return false;
     if (!who) return true;
-    const mine = w.addedBy && club.reviewers.some(p => p.id === w.addedBy) ? w.addedBy : NOBODY;
-    return mine === who;
+    const keys = w.wanters.filter(id => club.reviewers.some(p => p.id === id));
+    return keys.length ? keys.includes(who) : who === NOBODY;
   });
 
   /* ── the queue, twenty-four at a time ───────────────────────────────────
@@ -371,8 +394,27 @@ export function WatchlistScreen() {
   const remove = useCallback(
     async (id: number) => {
       try {
-        await del(`/api/watchlist/${id}`);
-        club.reload({ watchlist: order.current.filter(w => String(w.id) !== String(id)) });
+        /* Do clube, como toda escrita: a fila mora em /api/c/<sala>/watchlist, e
+           o caminho sem sala não existe. */
+        await cdel(`/watchlist/${id}`);
+        /* A tesoura tira o SEU "quero ver", e o cartaz só sai quando ninguém
+           mais o quer. Na mão do zelador, que não o quer, ela tira o cartaz —
+           é a mesma conta que o servidor faz. */
+        const me = club.me.id;
+        const mine = !!order.current
+          .find(w => String(w.id) === String(id))
+          ?.wanters.includes(me);
+        club.reload({
+          watchlist: mine
+            ? order.current
+                .map(w =>
+                  String(w.id) === String(id)
+                    ? { ...w, wanters: w.wanters.filter(p => p !== me) }
+                    : w
+                )
+                .filter(w => String(w.id) !== String(id) || w.wanters.length > 0)
+            : order.current.filter(w => String(w.id) !== String(id)),
+        });
       } catch (e) {
         club.fault('Não foi possível remover: ' + (e as Error).message);
       }
@@ -602,7 +644,7 @@ export function WatchlistScreen() {
       {owners.length > 1 || orphans ? (
         <div className="mb-5">
           <ReelPicker
-            title="Quem pôs na fila"
+            title="Quem quer ver"
             value={who}
             onPick={setWho}
             choices={[
@@ -616,7 +658,7 @@ export function WatchlistScreen() {
                 id: o.id,
                 label: o.name,
                 count: o.count,
-                hint: `Ver só o que ${o.name} pôs na fila`,
+                hint: `Ver só o que ${o.name} quer ver`,
                 reel: (
                   <Reel color={reelColor(o.dot, o.id)} src={o.avatar} size="md">
                     {initialsOf(o.name)}
@@ -652,13 +694,14 @@ export function WatchlistScreen() {
           <AnimatePresence initial={false}>
             {paged.map((w, i) => {
               const air = lift?.id === w.id;
-              const owner = ownerOf(w);
-              /* A tesoura só aparece para quem pôs — e para o administrador,
-                 que é quem tira o que sobrou de gente que saiu do clube. Um
-                 botão que existe para dar 403 é pior do que botão nenhum: ele
-                 promete uma ação, e a explicação só chega depois do clique.
-                 Quem escolheu está dito no canto do pôster, logo ali. */
-              const cuttable = owner?.id === club.me.id || club.me.isAdmin;
+              const wants = wantersOf(w);
+              /* A tesoura aparece para quem quer ver o filme — cada um tira o
+                 seu — e para o administrador, que é quem tira o que sobrou de
+                 gente que saiu do clube. Um botão que existe para dar 403 é pior
+                 do que botão nenhum: ele promete uma ação, e a explicação só
+                 chega depois do clique. Quem quer está dito no canto do pôster,
+                 logo ali. */
+              const cuttable = wants.some(p => p.id === club.me.id) || club.me.isAdmin;
               return (
                 <motion.div
                   key={w.id}
@@ -731,20 +774,34 @@ export function WatchlistScreen() {
                         trocaria uma coisa que se lê sem pensar por uma que
                         pisca. Filtrar por pessoa é o que a tira lá em cima
                         faz, com nome e contagem à mostra. */}
-                    {owner ? (
+                    {/* Quantos retratos couberem num pôster de 150px, e o
+                        número do que não cabe: "+4" diz que o clube todo quer
+                        ver este filme sem tentar desenhar o clube todo. */}
+                    {wants.length ? (
                       <span
                         className="pointer-events-none absolute inset-x-0 top-0 z-20 aspect-[2/3]"
                         aria-hidden
                       >
                         {/* Sem desfoque, pelo motivo escrito na alça acima. */}
-                        <span className="absolute bottom-1.5 left-1.5 flex rounded-cell bg-house-deep/90 p-[3px] ring-1 ring-white/10">
-                          <Reel color={reelColor(owner.dot, owner.id)} src={owner.avatar} size="sm">
-                            {initialsOf(owner.name)}
-                          </Reel>
+                        <span className="absolute bottom-1.5 left-1.5 flex items-center gap-[3px] rounded-cell bg-house-deep/90 p-[3px] ring-1 ring-white/10">
+                          {wants.slice(0, FACES).map(p => (
+                            <Reel key={p.id} color={reelColor(p.dot, p.id)} src={p.avatar} size="sm">
+                              {initialsOf(p.name)}
+                            </Reel>
+                          ))}
+                          {wants.length > FACES ? (
+                            <span className="q px-[3px] text-[10px] leading-none text-ink-dim">
+                              +{wants.length - FACES}
+                            </span>
+                          ) : null}
                         </span>
                       </span>
                     ) : null}
-                    <span className="sr-only">Posto na fila por {owner ? owner.name : 'alguém que não ficou registrado'}.</span>
+                    <span className="sr-only">
+                      {wants.length
+                        ? `Quer ver: ${wants.map(p => p.name).join(', ')}.`
+                        : 'Na fila sem registro de quem pôs.'}
+                    </span>
                     <FilmCell
                       movie={w as Movie}
                       onOpen={club.openSheet}

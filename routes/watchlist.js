@@ -32,23 +32,35 @@ const listStmt = db.prepare(`
   WHERE w.club_id = ?
   ORDER BY w.position IS NULL, w.position ASC, w.added_at DESC
 `);
-/* `added_by` é a sessão, como toda escrita neste app. Nasceu para o mural ter o
-   que contar e hoje é também quem pode tirar — ver o DELETE lá embaixo. */
+/* `added_by` é a sessão, como toda escrita neste app, e desde que "quero ver"
+   passou a ser de cada um ele é parte da chave — ver a migração em db.js.
+   Apertar duas vezes continua sendo uma linha: o gesto é "eu quero ver isto", e
+   repetir não muda o que ele diz.
+
+   A posição é a do FILME e não da linha: quem chega depois querendo o mesmo
+   filme entra no lugar que ele já tem na fila do clube, senão a mesma obra teria
+   duas posições e o arrasto de uma delas não levaria a outra. */
 const insertStmt = db.prepare(`
   INSERT INTO watchlist (club_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, position, added_by)
   VALUES (@clubId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster,
-          (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist WHERE club_id = @clubId), @addedBy)
-  ON CONFLICT(club_id, movie_id) DO NOTHING
+          COALESCE(
+            (SELECT MIN(position) FROM watchlist WHERE club_id = @clubId AND movie_id = @movieId),
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM watchlist WHERE club_id = @clubId)),
+          @addedBy)
+  ON CONFLICT(club_id, movie_id, added_by) DO NOTHING
 `);
-const idsStmt = db.prepare('SELECT movie_id FROM watchlist WHERE club_id = ?');
+const idsStmt = db.prepare('SELECT DISTINCT movie_id FROM watchlist WHERE club_id = ?');
+/* Tirar o seu, e — só para o zelador — tirar o filme da fila inteira. */
+const deleteMineStmt = db.prepare('DELETE FROM watchlist WHERE club_id = ? AND movie_id = ? AND added_by = ?');
 const deleteStmt = db.prepare('DELETE FROM watchlist WHERE club_id = ? AND movie_id = ?');
-/* Quem pôs, com o nome junto: a recusa precisa dizer de quem é a escolha que
-   está sendo protegida, ou vira "não pode" sem sujeito. */
-const ownerStmt = db.prepare(`
+/* Quem quer ver, com os nomes junto: a recusa precisa dizer de quem é a escolha
+   que está sendo protegida, ou vira "não pode" sem sujeito. */
+const wantersStmt = db.prepare(`
   SELECT w.movie_id, w.movie_title, w.added_by, r.name AS added_by_name
   FROM watchlist w
   LEFT JOIN reviewers r ON r.id = w.added_by
   WHERE w.club_id = ? AND w.movie_id = ?
+  ORDER BY w.added_at ASC
 `);
 
 const SET_POSITION = 'UPDATE watchlist SET position = ? WHERE club_id = ? AND movie_id = ?';
@@ -63,19 +75,40 @@ function toDTO(row) {
     genre: row.movie_genre,
     poster: row.movie_poster,
     addedAt: row.added_at,
-    /* Quem teve a ideia. A coluna existia só para o mural, e a fila nunca a
-       mostrava: quarenta pôsteres, cada um escolhido por alguém, e nada na tela
-       dizendo por quem.
+    /* Quem quer ver — e são vários, porque a fila é de cada um e o cartaz é um
+       só. A coluna existia para o mural, e a fila nunca a mostrava: quarenta
+       pôsteres, cada um escolhido por alguém, e nada na tela dizendo por quem.
 
-       Só o id: o nome, a cor e o retrato são fatos sobre a pessoa e não sobre a
-       linha, e o clube inteiro já está carregado no cliente desde o boot. */
-    addedBy: row.added_by || null
+       Só os ids: o nome, a cor e o retrato são fatos sobre a pessoa e não sobre
+       a linha, e o clube inteiro já está carregado no cliente desde o boot. A
+       linha sem dono — anterior à coluna, ou de quem saiu do clube — não entra
+       na lista: ela é o balde de "sem registro", e um id vazio ali seria uma
+       pessoa que não existe. */
+    wanters: row.added_by ? [row.added_by] : [],
   };
+}
+
+/* ── uma linha por pessoa no banco, um cartaz por filme na tela ───────────
+   A fila é uma fila de FILMES — é isso que a ordem dela significa, e é isso que
+   se arrasta. Duas pessoas querendo a mesma obra não são dois lugares na fila:
+   são o mesmo lugar, querido por duas pessoas.
+
+   Agrupado aqui e não em SQL porque a ordem importa duas vezes: a dos filmes é a
+   do clube, e a das pessoas dentro de um filme é a da chegada. `GROUP_CONCAT` não
+   promete ordem nenhuma. */
+function toQueue(rows) {
+  const films = new Map();
+  for (const row of rows) {
+    const held = films.get(row.movie_id);
+    if (!held) films.set(row.movie_id, toDTO(row));
+    else if (row.added_by && !held.wanters.includes(row.added_by)) held.wanters.push(row.added_by);
+  }
+  return [...films.values()];
 }
 
 router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   const rows = await listStmt.all(req.club.id);
-  res.json({ watchlist: rows.map(toDTO) });
+  res.json({ watchlist: toQueue(rows) });
 }));
 
 // The queue is shared, so changing it is a club action and needs a member.
@@ -96,8 +129,8 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(a
      sabendo por quais nomes pode ser procurado depois. */
   await fillEnglishTitle(movie.id);
   /* A fila é a coleção em que duas pessoas mais tropeçam uma na outra: sem
-     isto, dois membros escolhendo o filme da semana ao mesmo tempo põem o mesmo
-     título duas vezes. */
+     isto, dois membros escolhendo o filme da semana ao mesmo tempo veem filas
+     diferentes até recarregar. */
   live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.status(201).json({ ok: true });
 }));
@@ -124,37 +157,45 @@ router.put('/order', auth.requireSession, clubs.requireMember, wrap(async (req, 
 
   const listed = await listStmt.all(req.club.id);
   live.emit('watchlist', req.session.reviewer_id, req.club.id);
-  res.json({ watchlist: listed.map(toDTO) });
+  res.json({ watchlist: toQueue(listed) });
 }));
 
-/* ── tirar é de quem pôs ──────────────────────────────────────────────────
-   Uma escolha na fila é alguém dizendo "quero ver isto com vocês", e apagar
-   isso é desdizer uma pessoa — a mesma regra que a avaliação já segue. Sem
-   isto, uma limpeza bem-intencionada tira quatro filmes que outra pessoa vinha
-   esperando, e a linha da fila é a única memória de que aquela escolha existiu.
+/* ── cada um tira o seu ───────────────────────────────────────────────────
+   "Quero ver" é uma frase de uma pessoa, e apagar isso é desdizer alguém — a
+   mesma regra que a avaliação já segue. Sem ela, uma limpeza bem-intencionada
+   tira quatro filmes que outra pessoa vinha esperando, e a linha da fila é a
+   única memória de que aquela escolha existiu.
 
-   O ADM é exceção e é a única: linhas antigas sem dono e escolhas de quem já
-   saiu do clube não podem ficar entaladas para sempre.
+   Então tirar o seu é sempre seu direito, e o seu é só o seu: o filme sai do
+   cartaz da fila quando a última pessoa que o queria desistir. Quem não o quer
+   não tem o que tirar — e é por isso que o marcador do catálogo nunca aparece
+   aceso num filme que você não pediu.
+
+   O ADM é exceção e é a única: ele tira o cartaz inteiro, que é o único caminho
+   para fora da fila das linhas sem dono e das escolhas de quem já saiu do clube.
 
    Sumir com uma linha que não existe continua sendo 204 e não 404: o pedido
    queria que o filme não estivesse lá, e ele não está. */
 router.delete('/:movieId', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
-  const row = await ownerStmt.get(req.club.id, Number(req.params.movieId));
-  if (!row) return res.status(204).end();
+  const rows = await wantersStmt.all(req.club.id, Number(req.params.movieId));
+  if (!rows.length) return res.status(204).end();
 
+  const movieId = rows[0].movie_id;
+  const mine = rows.some(r => r.added_by && r.added_by === req.session.reviewer_id);
   /* O zelador é o ADM do CLUBE e não o da instalação: a fila é daquela sala. O
      admin da instalação continua valendo porque `requireClubAdmin` o inclui,
      mas aqui a conta é feita direto contra o papel. */
-  const mine = !!row.added_by && row.added_by === req.session.reviewer_id;
   if (!mine && !req.club.isClubAdmin && !req.session.is_admin) {
+    const names = [...new Set(rows.map(r => r.added_by_name).filter(Boolean))];
     return res.status(403).json({
-      error: row.added_by_name
-        ? `Só quem pôs o filme na fila pode tirar, e ${row.movie_title} foi escolha de ${row.added_by_name}.`
+      error: names.length
+        ? `Cada um tira o seu, e ${rows[0].movie_title} está na fila de ${names.join(', ')}.`
         : 'Este filme entrou na fila antes de ela registrar quem põe. Só o administrador do clube pode tirar.'
     });
   }
 
-  await deleteStmt.run(req.club.id, row.movie_id);
+  if (mine) await deleteMineStmt.run(req.club.id, movieId, req.session.reviewer_id);
+  else await deleteStmt.run(req.club.id, movieId);
   live.emit('watchlist', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));

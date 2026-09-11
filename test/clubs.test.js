@@ -97,12 +97,46 @@ test('quem funda um clube é ADM dele', async () => {
   assert.equal(res.body.club.visibility, 'public', 'sem dizer nada, um clube nasce aberto');
 });
 
+/* Em duas contas porque fundar é um por pessoa — ver o teste logo abaixo. */
 test('nome de clube é único, e a caixa não faz diferença', async () => {
   const quem = await kit.signIn();
+  const outra = await kit.signIn();
   const nome = `Sala ${crypto.randomUUID().slice(0, 6)}`;
   assert.equal((await req('POST', '/api/clubs', { name: nome }, quem.cookie)).status, 201);
-  const outro = await req('POST', '/api/clubs', { name: nome.toUpperCase() }, quem.cookie);
+  const outro = await req('POST', '/api/clubs', { name: nome.toUpperCase() }, outra.cookie);
   assert.equal(outro.status, 409, 'duas salas com o mesmo nome na lista são uma sala que ninguém sabe escolher');
+});
+
+/* ── um clube por pessoa ─────────────────────────────────────────────────
+   Quem funda é ADM, aprova quem entra e responde pelo que a sala é. Três salas
+   de uma pessoa são três salas vazias com um dono ocupado, e a vitrine é a
+   primeira tela do produto. */
+test('cada pessoa funda um clube só', async () => {
+  const quem = await kit.signIn();
+  const primeiro = await req('POST', '/api/clubs', { name: `Sala ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
+  assert.equal(primeiro.status, 201);
+
+  const segundo = await req('POST', '/api/clubs', { name: `Outra ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
+  assert.equal(segundo.status, 403);
+  assert.match(segundo.body.error, /já tem um clube/);
+
+  const { body } = await req('GET', '/api/clubs', null, quem.cookie);
+  assert.equal(body.founded, true, 'a lista precisa dizer que a chave de fundar não tem mais o que fazer');
+});
+
+/* Conta as salas que EXISTEM, e não as que já foram fundadas: quem encerrou a
+   sua pode começar outra. */
+test('encerrar a sua devolve o direito de fundar', async () => {
+  const quem = await kit.signIn();
+  const nome = `Sala ${crypto.randomUUID().slice(0, 6)}`;
+  const feita = await req('POST', '/api/clubs', { name: nome }, quem.cookie);
+  assert.equal(feita.status, 201);
+
+  assert.equal((await req('DELETE', `/api/c/${feita.body.club.slug}`, null, quem.cookie)).status, 204);
+  assert.equal(
+    (await req('POST', '/api/clubs', { name: `Outra ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie)).status,
+    201
+  );
 });
 
 test('fundar exige estar logado', async () => {

@@ -64,6 +64,12 @@ async function columnsOf(table) {
   return rows.map(c => c.name);
 }
 
+/** As colunas da chave primária, na ordem dela. Uma migração pode perguntar. */
+async function keyOf(table) {
+  const { rows } = await client.execute(`PRAGMA table_info(${table})`);
+  return rows.filter(c => Number(c.pk) > 0).sort((a, b) => Number(a.pk) - Number(b.pk)).map(c => c.name);
+}
+
 /* Nome e slug são únicos por motivos diferentes: o nome porque duas salas
    homônimas na lista de clubes são uma sala que ninguém sabe escolher, o slug
    porque é endereço. Um nome que reduz a nada (só emoji) ganha um slug sorteado. */
@@ -758,6 +764,59 @@ async function migrate() {
       ALTER TABLE watchlist_rebuild RENAME TO watchlist;
     `);
     console.log(`[db] clubes: ${queue.length} filme(s) da fila movidos para ${HOME_CLUB}`);
+  }
+
+  /* ── "quero ver" é de cada um ───────────────────────────────────────────
+     A fila era do clube: uma linha por filme, com o nome de quem teve a ideia
+     pendurado nela. Quem chegasse depois querendo o mesmo filme não tinha onde
+     dizer isso — o `ON CONFLICT DO NOTHING` engolia o gesto, e a fila continuava
+     sendo a escolha de quem chegou primeiro.
+
+     Agora o dono entra na CHAVE: uma linha por pessoa por filme. Na tela a fila
+     continua sendo uma fila de filmes, com um cartaz por obra — ver `toQueue` em
+     routes/watchlist.js —, e o que ela ganhou é saber de quantas pessoas cada
+     cartaz é.
+
+     Vazio e não nulo para quem não tem dono registrado: dois nulos são distintos
+     numa chave, então nulo ali deixaria a mesma linha entrar duas vezes. O vazio
+     cai no balde de "sem registro" que a tela já desenha. */
+  if (!(await keyOf('watchlist')).includes('added_by')) {
+    const queue = await prepare('SELECT * FROM watchlist').all();
+
+    await exec(`
+      DROP TABLE IF EXISTS watchlist_rebuild;
+      CREATE TABLE watchlist_rebuild (
+        club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+        movie_id INTEGER NOT NULL,
+        movie_title TEXT NOT NULL,
+        movie_year INTEGER,
+        movie_genre TEXT NOT NULL,
+        movie_poster TEXT,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        added_by TEXT NOT NULL DEFAULT '',
+        position INTEGER,
+        PRIMARY KEY (club_id, movie_id, added_by)
+      );
+    `);
+
+    if (queue.length) {
+      await batch(queue.map(w => ({
+        sql: `INSERT OR IGNORE INTO watchlist_rebuild
+                (club_id, movie_id, movie_title, movie_year, movie_genre, movie_poster,
+                 added_at, added_by, position)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: [
+          w.club_id, w.movie_id, w.movie_title, w.movie_year ?? null, w.movie_genre,
+          w.movie_poster ?? null, w.added_at, w.added_by ?? '', w.position ?? null,
+        ],
+      })));
+    }
+
+    await exec(`
+      DROP TABLE watchlist;
+      ALTER TABLE watchlist_rebuild RENAME TO watchlist;
+    `);
+    console.log(`[db] fila: ${queue.length} linha(s) com dono na chave`);
   }
 
   /* ══ o universo de séries ═══════════════════════════════════════════════

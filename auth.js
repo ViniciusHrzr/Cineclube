@@ -272,8 +272,13 @@ async function claimAccount(newId, oldId) {
       args: [oldId, newId],
     });
   }
-  // Estas duas não têm restrição nenhuma, então nunca colidem.
-  passos.push({ sql: 'UPDATE watchlist SET added_by = ? WHERE added_by = ?', args: [oldId, newId] });
+  /* A fila é de cada um desde que o dono entrou na chave dela, então as duas
+     contas podem querer o mesmo filme: o `OR IGNORE` guarda o que a antiga já
+     tinha, e a linha da nova que ficou para trás sai na mão — não há cascade
+     atrás de `added_by`. */
+  passos.push({ sql: 'UPDATE OR IGNORE watchlist SET added_by = ? WHERE added_by = ?', args: [oldId, newId] });
+  passos.push({ sql: 'DELETE FROM watchlist WHERE added_by = ?', args: [newId] });
+  // Esta não tem restrição nenhuma, então nunca colide.
   passos.push({ sql: 'UPDATE clubs SET created_by = ? WHERE created_by = ?', args: [oldId, newId] });
 
   // E a linha nova sai, levando em cascata o que o OR IGNORE deixou para trás.

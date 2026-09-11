@@ -845,7 +845,7 @@ function Genres({ person }: { person: Reviewer }) {
    bordas e a gaveta do "ver todos". */
 function Queued({ person }: { person: Reviewer }) {
   const club = useClub();
-  const items = club.watchlist.filter(w => w.addedBy === person.id);
+  const items = club.watchlist.filter(w => w.wanters.includes(person.id));
   const [open, setOpen] = useState(false);
   const [touched, setTouched] = useState(false);
   const rail = useRef<HTMLUListElement>(null);

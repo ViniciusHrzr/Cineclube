@@ -677,17 +677,17 @@ test('adds a movie to the watchlist and lists it back', async () => {
   assert.equal(found.genre, 'Terror');
 });
 
-/* A fila mostra de quem foi a ideia, e o id é a única parte disso que sai do
-   servidor: o nome, a cor e o retrato são fatos sobre a pessoa e o clube
+/* A fila mostra quem quer ver cada filme, e o id é a única parte disso que sai
+   do servidor: o nome, a cor e o retrato são fatos sobre a pessoa e o clube
    inteiro já está carregado no cliente. Sem este campo a tela volta a ser
    quarenta pôsteres sem autor nenhum. */
-test('a fila diz quem pôs cada filme', async () => {
+test('a fila diz quem quer ver cada filme', async () => {
   const member = await newReviewer();
   const m = movie();
   await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
   const { body } = await req('GET', at('/watchlist'));
-  assert.equal(body.watchlist.find(w => w.id === m.id).addedBy, member.id);
+  assert.deepEqual(body.watchlist.find(w => w.id === m.id).wanters, [member.id]);
 });
 
 test('adding the same movie twice keeps a single entry', async () => {
@@ -698,6 +698,45 @@ test('adding the same movie twice keeps a single entry', async () => {
 
   const { body } = await req('GET', at('/watchlist'));
   assert.equal(body.watchlist.filter(w => w.id === m.id).length, 1);
+});
+
+/* ── "quero ver" é de cada um, e o cartaz é um só ────────────────────────
+   Duas pessoas querendo a mesma obra não são dois lugares na fila: são o mesmo
+   lugar, querido por duas pessoas. Antes a segunda não tinha onde dizer isso —
+   o gesto dela era engolido e a escolha continuava sendo a de quem chegou
+   primeiro. */
+test('duas pessoas querem o mesmo filme sem duplicar o cartaz', async () => {
+  const um = await newReviewer();
+  const outro = await newReviewer();
+  const m = movie();
+  await req('POST', at('/watchlist'), { movie: m }, um.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, outro.cookie);
+
+  const { body } = await req('GET', at('/watchlist'));
+  const cards = body.watchlist.filter(w => w.id === m.id);
+  assert.equal(cards.length, 1, 'o mesmo filme apareceu duas vezes na fila');
+  assert.deepEqual(cards[0].wanters.slice().sort(), [um.id, outro.id].sort());
+});
+
+/* Tirar o seu é sempre seu direito, e o seu é só o seu: o cartaz fica enquanto
+   alguém ainda o quiser. */
+test('quem desiste leva só o próprio quero ver', async () => {
+  const um = await newReviewer();
+  const outro = await newReviewer();
+  const m = movie();
+  await req('POST', at('/watchlist'), { movie: m }, um.cookie);
+  await req('POST', at('/watchlist'), { movie: m }, outro.cookie);
+
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, um.cookie)).status, 204);
+
+  const { body } = await req('GET', at('/watchlist'));
+  const card = body.watchlist.find(w => w.id === m.id);
+  assert.ok(card, 'o filme saiu da fila de quem ainda o queria');
+  assert.deepEqual(card.wanters, [outro.id]);
+
+  assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, outro.cookie)).status, 204);
+  const depois = await req('GET', at('/watchlist'));
+  assert.ok(!depois.body.watchlist.some(w => w.id === m.id), 'o cartaz ficou sem ninguém o querendo');
 });
 
 test('rejects a malformed movie on the watchlist', async () => {

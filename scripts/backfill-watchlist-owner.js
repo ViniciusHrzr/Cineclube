@@ -43,14 +43,19 @@ const WHO = argOf('--quem');
    "leonardo" não é uma diferença sobre a qual valha a pena errar. */
 const byNameStmt = db.prepare('SELECT id, name FROM reviewers WHERE name = ? COLLATE NOCASE');
 const countsStmt = db.prepare(`
-  SELECT COALESCE(w.added_by, '—') AS owner, r.name AS name, COUNT(*) AS n
+  SELECT COALESCE(NULLIF(w.added_by, ''), '—') AS owner, r.name AS name, COUNT(*) AS n
   FROM watchlist w
   LEFT JOIN reviewers r ON r.id = w.added_by
   GROUP BY w.added_by
   ORDER BY n DESC
 `);
-const fillStmt = db.prepare('UPDATE watchlist SET added_by = ? WHERE added_by IS NULL');
-const fillAllStmt = db.prepare('UPDATE watchlist SET added_by = ?');
+/* Vazio e não nulo desde que o dono entrou na chave da fila — ver db.js. E
+   `OR REPLACE` porque a chave pode colidir: dar a esta pessoa um filme que ela
+   já queria é uma linha só, e é a dela que fica. */
+const fillStmt = db.prepare(
+  `UPDATE OR REPLACE watchlist SET added_by = ? WHERE added_by IS NULL OR added_by = ''`
+);
+const fillAllStmt = db.prepare('UPDATE OR REPLACE watchlist SET added_by = ?');
 const totalStmt = db.prepare('SELECT COUNT(*) AS n FROM watchlist');
 
 async function main() {

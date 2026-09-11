@@ -135,7 +135,9 @@ export const auth = {
    Fora do escopo de clube, porque é a lista deles: exigir estar dentro de um
    para descobrir quais existem seria uma porta trancada por dentro. */
 export const clubs = {
-  all: () => api<{ mine: Club[]; open: Club[] }>('/api/clubs'),
+  /* `founded` é o teto de um clube por pessoa, dito pelo servidor: ver
+     routes/clubs.js. */
+  all: () => api<{ mine: Club[]; open: Club[]; founded: boolean }>('/api/clubs'),
   create: (body: { name: string; tagline?: string; visibility: 'public' | 'private'; photo?: string | null }) =>
     post<{ club: Club }>('/api/clubs', body),
   get: (slug: string) => api<{ club: Club }>(`/api/c/${encodeURIComponent(slug)}`),
@@ -770,10 +772,11 @@ export type WatchItem = {
   genre: string;
   poster: string | null;
   addedAt?: string;
-  /* Quem pôs o filme na fila. Só o id: o nome, a cor e o retrato saem do clube
-     que já está carregado. Nulo numa linha anterior à coluna, ou de alguém que
-     saiu do clube depois. */
-  addedBy?: string | null;
+  /* Quem quer ver — e são vários, porque "quero ver" é de cada um e o cartaz é
+     um só. Só os ids: o nome, a cor e o retrato saem do clube que já está
+     carregado. Vazia quando a fila não sabe de quem é a escolha: linha anterior
+     à coluna, ou de alguém que saiu do clube depois. */
+  wanters: string[];
 };
 
 /* ══════════════════════════════════════════════════════════════════════════

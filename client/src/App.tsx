@@ -1199,7 +1199,15 @@ function ClubApp({
     return out;
   }, [reviews]);
 
-  const inWatchlist = useCallback((id: number) => watchlist.some(w => String(w.id) === String(id)), [watchlist]);
+  /* O marcador é SEU, não do clube: "quero ver" é de cada um, e um marcador aceso
+     porque outra pessoa quer ver seria o seu gesto tomado por ela — e apertá-lo
+     tiraria a escolha de alguém em vez de fazer a sua. O cartaz na fila é um só;
+     quem o quer pode ser mais de um. */
+  const inWatchlist = useCallback(
+    (id: number) =>
+      !!me && watchlist.some(w => String(w.id) === String(id) && w.wanters.includes(me.id)),
+    [watchlist, me]
+  );
 
   /* A fila de agora, para handlers que não podem se refazer quando ela muda:
      `toggleWatch` é entregue a cada pôster do catálogo, e uma função nova a
@@ -1207,48 +1215,53 @@ function ClubApp({
   const watchRef = useRef(watchlist);
   watchRef.current = watchlist;
 
-  /* O clube e quem sou eu, pelo mesmo motivo. */
-  const rosterRef = useRef(reviewers);
-  rosterRef.current = reviewers;
+  /* E quem sou eu, pelo mesmo motivo. */
   const meRef = useRef(me);
   meRef.current = me;
-  /** Se você administra ESTA sala. Mesmo motivo das duas acima. */
-  const adminRef = useRef(false);
-  adminRef.current = club?.role === 'admin';
 
+  /* ── o marcador é o seu "quero ver", e só o seu ─────────────────────────
+     Nenhuma recusa a prever aqui: tirar o seu é sempre seu direito, e o que não
+     é seu nunca aparece aceso. O cartaz só sai da fila quando a última pessoa
+     que o queria desistir — é isso que as duas emendas na lista local dizem. */
   const toggleWatch = useCallback(
     async (m: Movie | WatchItem) => {
+      const me = meRef.current;
+      if (!me) return;
       const held = watchRef.current.find(w => String(w.id) === String(m.id));
-      const has = !!held;
-      /* Tirar é de quem pôs — a mesma regra do servidor, dita aqui para o
-         marcador do catálogo não mandar um pedido que já se sabe recusado. Na
-         fila a tesoura nem aparece nos filmes dos outros; no catálogo o marcador
-         é um só, então quem aperta merece uma frase. */
-      if (held && meRef.current) {
-        const me = meRef.current;
-        const owner = rosterRef.current.find(p => p.id === held.addedBy) ?? null;
-        // O zelador agora é o ADM DESTA sala, e não o da instalação.
-        if (owner?.id !== me.id && !adminRef.current && !me.isAdmin) {
-          fault(
-            owner
-              ? `Só quem pôs o filme na fila pode tirar, e ${held.title} foi escolha de ${owner.name}.`
-              : 'Este filme entrou na fila antes de ela registrar quem põe. Só quem administra o clube pode tirar.'
-          );
-          return;
-        }
-      }
+      const mine = !!held?.wanters.includes(me.id);
       try {
-        if (has) {
+        if (mine) {
           await cdel(`/watchlist/${m.id}`);
-          setWatchlist(list => list.filter(w => String(w.id) !== String(m.id)));
+          setWatchlist(list =>
+            list
+              .map(w =>
+                String(w.id) === String(m.id)
+                  ? { ...w, wanters: w.wanters.filter(id => id !== me.id) }
+                  : w
+              )
+              .filter(w => String(w.id) !== String(m.id) || w.wanters.length > 0)
+          );
         } else {
           await cpost('/watchlist', {
             movie: { id: m.id, title: m.title, year: m.year, genre: m.genre, poster: m.poster },
           });
-          setWatchlist(list => [
-            ...list,
-            { id: m.id, title: m.title, year: m.year, genre: m.genre, poster: m.poster },
-          ]);
+          setWatchlist(list =>
+            held
+              ? list.map(w =>
+                  String(w.id) === String(m.id) ? { ...w, wanters: [...w.wanters, me.id] } : w
+                )
+              : [
+                  ...list,
+                  {
+                    id: m.id,
+                    title: m.title,
+                    year: m.year,
+                    genre: m.genre,
+                    poster: m.poster,
+                    wanters: [me.id],
+                  },
+                ]
+          );
         }
       } catch (e) {
         fault('Não foi possível atualizar a fila: ' + (e as Error).message);

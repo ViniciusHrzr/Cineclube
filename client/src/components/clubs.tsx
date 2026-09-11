@@ -45,6 +45,8 @@ export function ClubSwitch({
   const [others, setOthers] = useState<Club[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [founding, setFounding] = useState(false);
+  /** Se a sua sala já existe: cada pessoa funda uma. Ver routes/clubs.js. */
+  const [founded, setFounded] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   /* Só ao abrir, e outra vez a cada abertura. Uma lista de salas buscada no boot
@@ -58,6 +60,7 @@ export function ClubSwitch({
       const got = await clubs.all();
       setMine(got.mine);
       setOthers(got.open);
+      setFounded(got.founded);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -202,18 +205,30 @@ export function ClubSwitch({
             </Block>
           ) : null}
 
+          {/* ── a chave de fundar, ou o porquê de ela não estar aqui ──────
+              Cada pessoa funda um clube. Dito onde a chave estaria, e não num
+              erro depois do formulário preenchido: uma regra que só aparece no
+              envio é um trabalho perdido. Quem já fundou entra nos outros pela
+              lista acima. */}
           <div className="border-t border-white/[0.07] p-3">
-            <Key
-              tone="flush"
-              onClick={() => {
-                setOpen(false);
-                setFounding(true);
-              }}
-              className="w-full"
-            >
-              <Plus className="h-[15px] w-[15px]" strokeWidth={2} aria-hidden />
-              Fundar um clube
-            </Key>
+            {founded ? (
+              <p className="px-1 py-0.5 text-[12.5px] leading-relaxed text-ink-dim">
+                Você já tem o seu clube. Cada pessoa funda um — nos outros, entre
+                pela lista.
+              </p>
+            ) : (
+              <Key
+                tone="flush"
+                onClick={() => {
+                  setOpen(false);
+                  setFounding(true);
+                }}
+                className="w-full"
+              >
+                <Plus className="h-[15px] w-[15px]" strokeWidth={2} aria-hidden />
+                Fundar um clube
+              </Key>
+            )}
           </div>
         </div>
       ) : null}

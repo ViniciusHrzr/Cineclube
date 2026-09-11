@@ -91,7 +91,17 @@ index.get('/', wrap(async (req, res) => {
     : [];
   const pending = new Set(asked);
 
+  /* Se a chave de fundar tem o que fazer. Vai na mesma resposta porque é a mesma
+     tela: um botão que só descobre no envio que a regra existe é um formulário
+     preenchido para nada. Ver o teto em `index.post`. */
+  const founded = me && !req.session?.is_admin
+    ? Number(
+        (await db.prepare('SELECT COUNT(*) AS n FROM clubs WHERE created_by = ?').get(me))?.n
+      ) > 0
+    : false;
+
   res.json({
+    founded,
     mine: mine.map(c =>
       toDTO(c, { role: c.role, isMember: true, members: Number(c.members) || 0 })
     ),
@@ -127,6 +137,26 @@ index.post('/', auth.requireSession, throttleFound, wrap(async (req, res) => {
       error: 'Confirme seu e-mail para fundar um clube. O link está na sua caixa de entrada.',
       needsVerifiedEmail: true,
     });
+  }
+
+  /* ── um clube por pessoa ────────────────────────────────────────────────
+     Fundar é criar uma sala que precisa de alguém cuidando dela: quem funda é o
+     ADM, aprova quem entra e responde pelo que a sala é. Três salas de uma
+     pessoa são três salas vazias com um dono ocupado, e a vitrine é a primeira
+     tela do produto.
+
+     Conta as que EXISTEM e não as que já foram fundadas: quem apagou a sua pode
+     começar outra. O admin da instalação é exceção porque é ele que monta as
+     salas que o produto precisa ter. */
+  if (!req.session.is_admin) {
+    const founded = await db.prepare('SELECT COUNT(*) AS n FROM clubs WHERE created_by = ?')
+      .get(req.session.reviewer_id);
+    if (Number(founded?.n) > 0) {
+      return res.status(403).json({
+        error: 'Você já tem um clube. Cada pessoa funda um — entre nos outros pela vitrine.',
+        alreadyFounded: true,
+      });
+    }
   }
 
   const name = String(req.body?.name || '').trim();

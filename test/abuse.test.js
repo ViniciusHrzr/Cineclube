@@ -264,13 +264,18 @@ test('cadastrar em rajada bate na porta', async () => {
   assert.ok(Number(travadas[0].retryAfter) > 0, 'e o cabeçalho, para quem não é navegador');
 });
 
+/* Duas paredes, uma atrás da outra. A da frente é a regra do produto — cada
+   pessoa funda um clube —, e a de trás é a torneira: a tentativa recusada também
+   consome a cota do dia, então um programa insistindo bate no 429 mesmo sem
+   nunca conseguir criar a segunda sala. */
 test('fundar clube em rajada também', async () => {
   const dono = await kit.signIn();
   const feitos = [];
   for (let i = 0; i < 7; i++) {
     feitos.push(await req('POST', '/api/clubs', { name: `Sala ${crypto.randomUUID().slice(0, 8)}` }, dono.cookie));
   }
-  assert.equal(feitos.filter(r => r.status === 201).length, 5);
+  assert.equal(feitos.filter(r => r.status === 201).length, 1, 'cada pessoa funda um clube');
+  assert.equal(feitos[1].status, 403);
   assert.equal(feitos.filter(r => r.status === 429).length, 2);
 });
 
