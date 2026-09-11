@@ -128,7 +128,10 @@ export function ClubSwitch({
             className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
           />
         ) : null}
-        <span className="min-w-0 truncate font-display text-[22px] leading-none tracking-[0.1em] text-beam transition-colors group-hover:text-beam-hot">
+        {/* Menor no telefone, e não por gosto: esta palavra divide uma linha só
+            com o sino, o retrato e a lente, e a 22px um nome de duas palavras
+            consome a barra inteira antes de começar a truncar. */}
+        <span className="min-w-0 truncate font-display text-[18px] leading-none tracking-[0.08em] text-beam transition-colors group-hover:text-beam-hot sm:text-[22px] sm:tracking-[0.1em]">
           {club.name}
         </span>
         {club.visibility === 'private' ? (

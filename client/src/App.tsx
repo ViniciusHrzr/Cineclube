@@ -1852,7 +1852,7 @@ function SectionTabs({
                tomou. Os dois são um par — se um dia isto for de ponta a ponta,
                o recuo volta junto com o `cover`. */
             'z-30 hidden flex-none border-t border-white/[0.07] bg-house/95 coarse:flex'
-          : '-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
+          : '-mx-1 flex min-w-0 max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] coarse:hidden [&::-webkit-scrollbar]:hidden'
       )}
     >
       {items.map(t => {
@@ -1960,14 +1960,24 @@ function Marquee({
        mexer — o navegador reborrava uma faixa de fundo vivo em todo quadro, em
        todo aparelho. Uma barra mais opaca lê quase igual e custa zero. */
     <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-house/95">
-      <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+      {/* ── UMA LINHA, sempre ────────────────────────────────────────────
+          Era `flex-wrap`, e num telefone o sino e o retrato caíam para uma
+          segunda linha: a marquise dobrava de altura, e o bloco de ações ficava
+          pendurado embaixo do nome da sala sem nada explicando por quê. Uma
+          barra de topo que muda de altura conforme o comprimento do nome do
+          clube não é uma barra — é um parágrafo.
+
+          Quem cede espaço é o NOME: ele trunca, e truncado ainda diz em que
+          sala você está. O bloco de ações não cede nada — são alvos de toque, e
+          um alvo que encolhe deixa de ser alvo. */}
+      <div className="mx-auto flex max-w-[1240px] items-center gap-x-2 px-4 py-3 sm:gap-x-6 sm:px-6">
         {/* O nome DA SALA e não o do produto: quem está em três clubes precisa
             saber em qual está antes de ler o resto da tela. A foto vem junto
             quando existe — é o que torna a troca reconhecível sem ler.
 
             E é ele que abre a lista de salas, porque é o lugar onde já se olha
             para saber em qual se está. */}
-        <div className="mr-auto flex min-w-0 items-center gap-x-1 sm:gap-x-3">
+        <div className="mr-auto flex min-w-0 shrink items-center gap-x-1 sm:gap-x-3">
           <ClubSwitch club={club} onEnter={onEnterClub} />
           {/* ── a lente ─────────────────────────────────────────────────────
               Um clube é um clube nos dois universos — mesma gente, mesmo ADM —,
@@ -1982,7 +1992,7 @@ function Marquee({
         {/* `relative` porque o painel do sino se pendura AQUI, e não no sino:
             depois dele ainda vem o retrato, e alinhar o painel pela direita do
             sino o jogava para fora da tela num telefone. Ver `Notices`. */}
-        <div className="relative flex items-center gap-2">
+        <div className="relative flex flex-none items-center gap-1 sm:gap-2">
           {/* Quem está batendo na porta: só para quem pode abrir, e só quando há
               alguém. O pedido vivia numa lista atrás de perfil, engrenagem e
               Ajustes, sem nada anunciando que estava lá. Latão e não vermelho,

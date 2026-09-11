@@ -34,9 +34,15 @@ export function Lens({ on, onPick }: { on: Universe; onPick: (u: Universe) => vo
             role="tab"
             aria-selected={here}
             onClick={() => onPick(o.id)}
+            /* Mais apertada no dedo: as duas palavras dividem UMA linha com o
+               nome da sala, o sino e o retrato, e no telefone cada pixel aqui é
+               um pixel que o nome do clube não tem. Continua passando do piso de
+               toque — 38 de altura e mais de 44 de largura. */
             className={cn(
-              'relative px-1.5 pb-1.5 pt-1 font-display text-[13px] uppercase leading-none sm:px-2',
-              'tracking-[0.12em] transition-colors duration-150 coarse:min-h-[38px]',
+              'relative pb-1.5 pt-1 font-display uppercase leading-none',
+              'transition-colors duration-150',
+              'px-1 text-[12px] tracking-[0.08em] coarse:min-h-[38px]',
+              'sm:px-2 sm:text-[13px] sm:tracking-[0.12em]',
               here ? 'text-beam' : 'text-ink-dim hover:text-ink'
             )}
           >
