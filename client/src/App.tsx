@@ -696,7 +696,13 @@ function SeriesClubApp({
     [slug]
   );
 
-  const queued = useMemo(() => new Set((queue ?? []).map(s => s.id)), [queue]);
+  /* O marcador é SEU, não do clube: acompanhar é de cada um, e um marcador aceso
+     porque outra pessoa acompanha seria o seu gesto tomado por ela. O cartaz na
+     lista é um só; quem o segue pode ser mais de um. */
+  const queued = useMemo(
+    () => new Set((queue ?? []).filter(s => s.wanters.includes(me.id)).map(s => s.id)),
+    [queue, me.id]
+  );
 
   const enqueue = useCallback(
     async (s: { id: number; title: string; year: number | null; genre: string; poster: string | null }) => {
@@ -843,6 +849,7 @@ function SeriesClubApp({
               <SeriesQueueScreen
                 shows={queue}
                 roster={roster}
+                me={me}
                 onOpen={goShow}
                 onRemove={id => void dequeue(id)}
               />

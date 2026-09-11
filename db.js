@@ -869,7 +869,10 @@ async function migrate() {
 
     /* A fila de séries do clube. Gêmea de watchlist e separada dela: o que se
        põe na fila aqui é uma SÉRIE, e uma série não tem nota — ela tem
-       episódios que têm. */
+       episódios que têm.
+
+       O dono na chave, como na fila de filmes: acompanhar é de cada um. Ver a
+       migração logo abaixo da criação. */
     CREATE TABLE IF NOT EXISTS show_queue (
       club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
       show_id INTEGER NOT NULL,
@@ -878,9 +881,9 @@ async function migrate() {
       show_genre TEXT NOT NULL,
       show_poster TEXT,
       added_at TEXT NOT NULL DEFAULT (datetime('now')),
-      added_by TEXT,
+      added_by TEXT NOT NULL DEFAULT '',
       position INTEGER,
-      PRIMARY KEY (club_id, show_id)
+      PRIMARY KEY (club_id, show_id, added_by)
     );
 
     /* ── a linha que é ao mesmo tempo "vi" e "achei" ────────────────────
@@ -982,6 +985,49 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS take_comment_likes_comment ON take_comment_likes(comment_id);
   `);
+
+  /* ── acompanhar é de cada um ────────────────────────────────────────────
+     A mesma mudança que a fila de filmes, pelas mesmas razões, e o porquê está
+     escrito na migração dela lá acima. As duas filas são gêmeas: uma divergência
+     aqui seria "quero ver" significando duas coisas conforme a aba. */
+  if (!(await keyOf('show_queue')).includes('added_by')) {
+    const queue = await prepare('SELECT * FROM show_queue').all();
+
+    await exec(`
+      DROP TABLE IF EXISTS show_queue_rebuild;
+      CREATE TABLE show_queue_rebuild (
+        club_id TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+        show_id INTEGER NOT NULL,
+        show_title TEXT NOT NULL,
+        show_year INTEGER,
+        show_genre TEXT NOT NULL,
+        show_poster TEXT,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        added_by TEXT NOT NULL DEFAULT '',
+        position INTEGER,
+        PRIMARY KEY (club_id, show_id, added_by)
+      );
+    `);
+
+    if (queue.length) {
+      await batch(queue.map(q => ({
+        sql: `INSERT OR IGNORE INTO show_queue_rebuild
+                (club_id, show_id, show_title, show_year, show_genre, show_poster,
+                 added_at, added_by, position)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: [
+          q.club_id, q.show_id, q.show_title, q.show_year ?? null, q.show_genre,
+          q.show_poster ?? null, q.added_at, q.added_by ?? '', q.position ?? null,
+        ],
+      })));
+    }
+
+    await exec(`
+      DROP TABLE show_queue;
+      ALTER TABLE show_queue_rebuild RENAME TO show_queue;
+    `);
+    console.log(`[db] séries: ${queue.length} linha(s) com dono na chave`);
+  }
   /* ── a ficha é da pessoa, e o clube é uma etiqueta ──────────────────────
      A unicidade era `(club_id, reviewer_id, movie_id)`, e o acervo de uma sala
      era só o que tinha sido gravado ali dentro: quem entrasse num clube novo

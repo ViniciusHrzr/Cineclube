@@ -58,6 +58,7 @@ import {
   type Reviewer,
   type SeasonDetail,
   type SeriesItem,
+  type SessionUser,
   type ShowDetail,
   type ShowFeedEvent,
   showsSocial,
@@ -243,6 +244,7 @@ function SeriesCell({
   inQueue,
   seen,
   average,
+  wants,
   onOpen,
   onQueue,
   onRemove,
@@ -252,6 +254,8 @@ function SeriesCell({
   /** O progresso do clube, quando esta célula está na lista de acompanhadas. */
   seen?: string | null;
   average?: number | null;
+  /** Quem acompanha, para o selo no pé do pôster. Vazio no catálogo. */
+  wants?: Reviewer[];
   onOpen: () => void;
   onQueue?: () => void;
   onRemove?: () => void;
@@ -275,6 +279,31 @@ function SeriesCell({
                 <Layers className="h-3.5 w-3.5" strokeWidth={2} />
                 Temporadas
               </span>
+              {/* ── quem acompanha ──────────────────────────────────────
+                  O mesmo selo da fila de filmes, no mesmo canto e pelo mesmo
+                  motivo: numa sala de seis, a primeira pergunta feita a uma
+                  lista comum é de quem é cada coisa. Quantos retratos couberem,
+                  e o número do que não cabe.
+
+                  Sem desfoque e sem eventos de ponteiro: hover neste canto é
+                  hover no pôster, e é ele que sobe a tarja das temporadas. */}
+              {wants?.length ? (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-1.5 left-1.5 flex items-center gap-[3px] rounded-cell bg-house-deep/90 p-[3px] ring-1 ring-white/10"
+                >
+                  {wants.slice(0, ROSTOS).map(p => (
+                    <Reel key={p.id} color={reelColor(p.dot, p.id)} src={p.avatar ?? null} size="sm">
+                      {initialsOf(p.name)}
+                    </Reel>
+                  ))}
+                  {wants.length > ROSTOS ? (
+                    <span className="q px-[3px] text-[10px] leading-none text-ink-dim">
+                      +{wants.length - ROSTOS}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
             </span>
           </button>
         </CardItem>
@@ -344,6 +373,10 @@ function SeriesCell({
   );
 }
 
+/* Quantos retratos o selo do cartaz desenha antes de virar contagem. O mesmo da
+   fila de filmes, e pela mesma conta: três é o que cabe sem atravessar a arte. */
+const ROSTOS = 3;
+
 /** O balde de quem não tem dono registrado. Nunca é um id de gente. */
 const NINGUEM = '\0sem-dono';
 
@@ -354,29 +387,41 @@ const NINGUEM = '\0sem-dono';
 export function SeriesQueueScreen({
   shows,
   roster,
+  me,
   onOpen,
   onRemove,
 }: {
   shows: QueuedShow[] | null;
   /** Quem está no clube, para a tira de quem escolheu. */
   roster: Reviewer[];
+  /* Quem está olhando: o filtro abre nele, e a tesoura é dele. Inteiro e não só
+     o id porque o zelador da instalação também corta — ver a célula abaixo. */
+  me: SessionUser;
   onOpen: (showId: number) => void;
   onRemove: (showId: number) => void;
 }) {
-  /** Qual pessoa a grade está mostrando, ou null para a fila inteira. */
-  const [quem, setQuem] = useState<string | null>(null);
+  /* Qual pessoa a grade está mostrando, ou null para a lista inteira.
 
-  /* A MESMA tira da fila de filmes, contada da própria fila e não do clube
+     Abre em VOCÊ, como a fila de filmes: a pergunta que traz alguém a esta aba é
+     "o que eu acompanho", e numa sala de seis a lista inteira é a resposta certa
+     para outra pergunta. A do clube volta em um toque, no "Todos". */
+  const [quem, setQuem] = useState<string | null>(me.id);
+
+  /* A MESMA tira da fila de filmes, contada da própria lista e não do clube
      inteiro: seis retratos em que quatro levam a uma grade vazia é uma tira que
      promete o que não tem.
 
-     Um `addedBy` pode apontar para quem já saiu do clube — a coluna não tem
+     Um id em `wanters` pode apontar para quem já saiu do clube — a coluna não tem
      chave estrangeira —, e isso cai no mesmo balde de quem nunca teve dono. */
   const { donos, orfas } = useMemo(() => {
     const conta = new Map<string, number>();
     for (const s of shows ?? []) {
-      const dono = s.addedBy && roster.some(p => p.id === s.addedBy) ? s.addedBy : NINGUEM;
-      conta.set(dono, (conta.get(dono) ?? 0) + 1);
+      /* Um cartaz conta para cada pessoa que o acompanha: a lista é de séries e o
+         gesto é de gente. */
+      const seus = s.wanters.filter(id => roster.some(p => p.id === id));
+      for (const dono of seus.length ? seus : [NINGUEM]) {
+        conta.set(dono, (conta.get(dono) ?? 0) + 1);
+      }
     }
     return {
       donos: roster
@@ -386,16 +431,21 @@ export function SeriesQueueScreen({
     };
   }, [shows, roster]);
 
-  /* Quem sai do clube, ou tem a última série tirada da fila, não pode deixar a
-     grade vazia e sem explicação: o filtro cai sozinho para a fila inteira. */
+  /* Quem sai do clube, ou tem a última série tirada da lista, não pode deixar a
+     grade vazia e sem explicação: o filtro cai sozinho para a lista inteira. */
   if (quem && quem !== NINGUEM && !donos.some(d => d.id === quem)) setQuem(null);
   if (quem === NINGUEM && !orfas) setQuem(null);
 
   const naTela = (shows ?? []).filter(s => {
     if (!quem) return true;
-    const dono = s.addedBy && roster.some(p => p.id === s.addedBy) ? s.addedBy : NINGUEM;
-    return dono === quem;
+    const seus = s.wanters.filter(id => roster.some(p => p.id === id));
+    return seus.length ? seus.includes(quem) : quem === NINGUEM;
   });
+
+  const quemSegue = (s: QueuedShow) =>
+    s.wanters
+      .map(id => roster.find(p => p.id === id))
+      .filter((p): p is Reviewer => !!p);
 
   if (!shows) {
     return (
@@ -446,7 +496,7 @@ export function SeriesQueueScreen({
       {donos.length || orfas ? (
         <div className="mb-5">
           <ReelPicker
-            title="Quem pôs na lista"
+            title="Quem acompanha"
             value={quem}
             onPick={setQuem}
             choices={[
@@ -455,7 +505,7 @@ export function SeriesQueueScreen({
                 id: d.id,
                 label: d.name,
                 count: d.count,
-                hint: `Ver só o que ${d.name} pôs na lista`,
+                hint: `Ver só o que ${d.name} acompanha`,
                 reel: (
                   <Reel color={reelColor(d.dot, d.id)} src={d.avatar ?? null} size="md">
                     {initialsOf(d.name)}
@@ -490,29 +540,41 @@ export function SeriesQueueScreen({
           `FilmCell` —, e duas células parecidas para a mesma coisa divergem na
           terceira mexida. */}
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {naTela.map(s => (
-          <li key={s.id}>
-            <SeriesCell
-              show={{
-                id: s.id,
-                title: s.title,
-                original: s.original,
-                year: s.year,
-                genre: s.genre,
-                genres: [s.genre],
-                poster: s.poster,
-                crowd: null,
-                watch: s.watch,
-              }}
-              seen={
-                s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`
-              }
-              average={s.average}
-              onOpen={() => onOpen(s.id)}
-              onRemove={() => onRemove(s.id)}
-            />
-          </li>
-        ))}
+        {naTela.map(s => {
+          const segue = quemSegue(s);
+          return (
+            <li key={s.id}>
+              <SeriesCell
+                show={{
+                  id: s.id,
+                  title: s.title,
+                  original: s.original,
+                  year: s.year,
+                  genre: s.genre,
+                  genres: [s.genre],
+                  poster: s.poster,
+                  crowd: null,
+                  watch: s.watch,
+                }}
+                seen={
+                  s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`
+                }
+                average={s.average}
+                wants={segue}
+                onOpen={() => onOpen(s.id)}
+                /* A tesoura aparece para quem acompanha — cada um tira o seu — e
+                   para o zelador, que é quem tira o que sobrou de gente que saiu
+                   do clube. Um botão que existe para dar 403 é pior do que botão
+                   nenhum. */
+                onRemove={
+                  segue.some(p => p.id === me.id) || me.isAdmin
+                    ? () => onRemove(s.id)
+                    : undefined
+                }
+              />
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -706,7 +768,11 @@ export function ShowScreen({
               }
             >
               {inQueue ? <Check className="h-3.5 w-3.5" strokeWidth={2.2} /> : <Plus className="h-3.5 w-3.5" strokeWidth={2} />}
-              {inQueue ? 'O clube acompanha' : 'Acompanhar'}
+              {/* "Você" e não "o clube": acompanhar é de cada um, e a chave fala
+                  do seu gesto. Dizer que o clube acompanha uma série que só outra
+                  pessoa pôs na lista era a tela atribuindo a escolha a quem não
+                  a fez — e deixava quem está lendo sem o botão. */}
+              {inQueue ? 'Você acompanha' : 'Acompanhar'}
             </Key>
             {show.trailerUrl ? (
               <TrailerKey

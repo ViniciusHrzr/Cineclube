@@ -187,6 +187,7 @@ test('pôr uma série na fila e tirá-la', async () => {
   assert.equal(lista.body.shows.length, 1);
   assert.equal(lista.body.shows[0].title, 'Severance');
   assert.equal(lista.body.shows[0].seen, 0);
+  assert.deepEqual(lista.body.shows[0].wanters, [dono.id]);
 
   const tirado = await req('DELETE', at(club, `/shows/${s.id}`), null, dono.cookie);
   assert.equal(tirado.status, 204);
@@ -205,6 +206,81 @@ test('tirar da fila é de quem pôs', async () => {
   // O ADM do clube é a única exceção, e o dono aqui é ADM.
   const pelaOutra = await req('DELETE', at(club, `/shows/${s.id}`), null, dono.cookie);
   assert.equal(pelaOutra.status, 204);
+});
+
+/* ── acompanhar é de cada um, e o cartaz é um só ─────────────────────────
+   A mesma regra da fila de filmes, e as duas filas são gêmeas: uma divergência
+   aqui seria "quero ver" significando duas coisas conforme a aba. */
+test('duas pessoas acompanham a mesma série sem duplicar o cartaz', async () => {
+  const dono = await kit.signIn();
+  const outra = await kit.signIn();
+  const club = await kit.makeClub({ owner: dono.id });
+  await kit.join(club.id, outra.id);
+  const s = show();
+
+  await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
+  await req('POST', at(club, '/shows'), { show: s }, outra.cookie);
+
+  const { body } = await req('GET', at(club, '/shows'), null, dono.cookie);
+  assert.equal(body.shows.length, 1, 'a mesma série apareceu duas vezes na lista');
+  assert.deepEqual(body.shows[0].wanters.slice().sort(), [dono.id, outra.id].sort());
+});
+
+test('pôr a mesma série duas vezes é uma linha só', async () => {
+  const dono = await kit.signIn();
+  const club = await kit.makeClub({ owner: dono.id });
+  const s = show();
+
+  await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
+  await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
+
+  const { body } = await req('GET', at(club, '/shows'), null, dono.cookie);
+  assert.equal(body.shows.length, 1);
+  assert.deepEqual(body.shows[0].wanters, [dono.id]);
+});
+
+/* Tirar o seu é sempre seu direito, e o seu é só o seu: o cartaz fica enquanto
+   alguém ainda acompanhar. */
+test('quem desiste de uma série leva só o próprio acompanhar', async () => {
+  const dono = await kit.signIn();
+  const outra = await kit.signIn();
+  const club = await kit.makeClub({ owner: dono.id });
+  await kit.join(club.id, outra.id);
+  const s = show();
+
+  await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
+  await req('POST', at(club, '/shows'), { show: s }, outra.cookie);
+
+  assert.equal((await req('DELETE', at(club, `/shows/${s.id}`), null, outra.cookie)).status, 204);
+
+  const { body } = await req('GET', at(club, '/shows'), null, dono.cookie);
+  assert.equal(body.shows.length, 1, 'a série saiu da lista de quem ainda a acompanhava');
+  assert.deepEqual(body.shows[0].wanters, [dono.id]);
+
+  assert.equal((await req('DELETE', at(club, `/shows/${s.id}`), null, dono.cookie)).status, 204);
+  const depois = await req('GET', at(club, '/shows'), null, dono.cookie);
+  assert.equal(depois.body.shows.length, 0, 'o cartaz ficou sem ninguém o acompanhando');
+});
+
+/* A recusa tem de dizer de quem é a escolha protegida, ou é um "não pode" sem
+   sujeito. Quem não é ADM e não acompanha não tem o que tirar. */
+test('ninguém tira da lista a série que só outra pessoa acompanha', async () => {
+  const dono = await kit.signIn();
+  const quemPos = await kit.signIn('Quem Pos');
+  const terceira = await kit.signIn();
+  const club = await kit.makeClub({ owner: dono.id });
+  await kit.join(club.id, quemPos.id);
+  await kit.join(club.id, terceira.id);
+  const s = show();
+
+  await req('POST', at(club, '/shows'), { show: s }, quemPos.cookie);
+
+  const recusado = await req('DELETE', at(club, `/shows/${s.id}`), null, terceira.cookie);
+  assert.equal(recusado.status, 403);
+  assert.match(recusado.body.error, /Quem Pos/);
+
+  const { body } = await req('GET', at(club, '/shows'), null, dono.cookie);
+  assert.equal(body.shows.length, 1, 'a lista perdeu uma série que ninguém tinha direito de tirar');
 });
 
 /* ── os três estados da linha ───────────────────────────────────────────── */

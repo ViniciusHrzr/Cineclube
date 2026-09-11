@@ -346,7 +346,9 @@ export type QueuedShow = {
   status: string | null;
   totalEpisodes: number | null;
   addedAt: string;
-  addedBy: string | null;
+  /* Quem acompanha — e são vários, porque acompanhar é de cada um e o cartaz é
+     um só. Vazia quando a lista não sabe de quem é a escolha. Ver `WatchItem`. */
+  wanters: string[];
   /** Episódios distintos que o clube já viu — não linhas. */
   seen: number;
   rated: number;

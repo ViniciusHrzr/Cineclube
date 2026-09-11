@@ -45,19 +45,29 @@ const queueStmt = db.prepare(`
   ORDER BY q.position IS NULL, q.position ASC, q.added_at DESC
 `);
 
+/* `added_by` é parte da chave: acompanhar é de cada um, como na fila de filmes —
+   o porquê está em routes/watchlist.js. A posição é da SÉRIE, não da linha: quem
+   chega depois entra no lugar que ela já tem na lista do clube. */
 const insertQueue = db.prepare(`
   INSERT INTO show_queue (club_id, show_id, show_title, show_year, show_genre, show_poster, position, added_by)
   VALUES (@clubId, @showId, @showTitle, @showYear, @showGenre, @showPoster,
-          (SELECT COALESCE(MAX(position), -1) + 1 FROM show_queue WHERE club_id = @clubId), @addedBy)
-  ON CONFLICT(club_id, show_id) DO NOTHING
+          COALESCE(
+            (SELECT MIN(position) FROM show_queue WHERE club_id = @clubId AND show_id = @showId),
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM show_queue WHERE club_id = @clubId)),
+          @addedBy)
+  ON CONFLICT(club_id, show_id, added_by) DO NOTHING
 `);
 
-const queueOwnerStmt = db.prepare(`
+/* Quem acompanha, com os nomes junto: a recusa precisa dizer de quem é a escolha
+   que está sendo protegida, ou vira "não pode" sem sujeito. */
+const queueWantersStmt = db.prepare(`
   SELECT q.show_id, q.show_title, q.added_by, r.name AS added_by_name
   FROM show_queue q
   LEFT JOIN reviewers r ON r.id = q.added_by
   WHERE q.club_id = ? AND q.show_id = ?
+  ORDER BY q.added_at ASC
 `);
+const deleteMineQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ? AND added_by = ?');
 const deleteQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ?');
 
 /* Contado por episódio distinto e não por linha: quatro pessoas vendo o mesmo
@@ -131,13 +141,30 @@ function queueDTO(row, progress) {
     status: row.status ?? null,
     totalEpisodes: row.total_episodes ?? null,
     addedAt: row.added_at,
-    addedBy: row.added_by || null,
+    /* Quem acompanha — e são vários, porque o cartaz é um só. Vazia na linha que
+       a lista não sabe de quem é: anterior à coluna, ou de quem saiu do clube.
+       Ver `toQueue`. */
+    wanters: row.added_by ? [row.added_by] : [],
     /* O progresso do CLUBE, não o seu. Quem abre a fila está perguntando onde a
        sala está, e a resposta individual é a da tela da série. */
     seen: p?.seen ?? 0,
     rated: p?.rated ?? 0,
     average: p?.average ?? null,
   };
+}
+
+/* Uma linha por pessoa no banco, um cartaz por série na tela: duas pessoas
+   acompanhando a mesma obra não são dois lugares na lista, são o mesmo lugar.
+   Agrupado aqui e não em SQL porque a ordem importa duas vezes — a das séries é
+   a do clube, e a das pessoas dentro de uma série é a da chegada. */
+function toQueue(rows, progress) {
+  const shows = new Map();
+  for (const row of rows) {
+    const held = shows.get(row.show_id);
+    if (!held) shows.set(row.show_id, queueDTO(row, progress));
+    else if (row.added_by && !held.wanters.includes(row.added_by)) held.wanters.push(row.added_by);
+  }
+  return [...shows.values()];
 }
 
 function takeDTO(row) {
@@ -202,7 +229,7 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     queueStmt.all(req.club.id),
     progressMap(req.club.id),
   ]);
-  const shows = rows.map(r => queueDTO(r, progress));
+  const shows = toQueue(rows, progress);
   await fillProviders(shows);
   res.json({ shows });
 }));
@@ -222,22 +249,26 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(a
   res.status(201).json({ ok: true });
 }));
 
-/* Tirar é de quem pôs, com o ADM do clube como única exceção. A mesma regra da
-   fila de filmes, e o porquê está escrito em routes/watchlist.js. */
+/* Cada um tira o seu, com o ADM do clube como única exceção — ele tira o cartaz
+   inteiro. A mesma regra da fila de filmes, e o porquê está escrito em
+   routes/watchlist.js. */
 router.delete('/:showId(\\d+)', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
-  const row = await queueOwnerStmt.get(req.club.id, Number(req.params.showId));
-  if (!row) return res.status(204).end();
+  const rows = await queueWantersStmt.all(req.club.id, Number(req.params.showId));
+  if (!rows.length) return res.status(204).end();
 
-  const mine = !!row.added_by && row.added_by === req.session.reviewer_id;
+  const showId = rows[0].show_id;
+  const mine = rows.some(r => r.added_by && r.added_by === req.session.reviewer_id);
   if (!mine && !req.club.isClubAdmin && !req.session.is_admin) {
+    const names = [...new Set(rows.map(r => r.added_by_name).filter(Boolean))];
     return res.status(403).json({
-      error: row.added_by_name
-        ? `Só quem pôs a série na fila pode tirar, e ${row.show_title} foi escolha de ${row.added_by_name}.`
+      error: names.length
+        ? `Cada um tira o seu, e ${rows[0].show_title} está na lista de ${names.join(', ')}.`
         : 'Esta série entrou na fila antes de ela registrar quem põe. Só o administrador do clube pode tirar.',
     });
   }
 
-  await deleteQueue.run(req.club.id, row.show_id);
+  if (mine) await deleteMineQueue.run(req.club.id, showId, req.session.reviewer_id);
+  else await deleteQueue.run(req.club.id, showId);
   live.emit('shows', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));
