@@ -295,6 +295,9 @@ export function ReelsScreen({
   }, [pinned, found, genre]);
 
   const here = items[active] ?? null;
+  /* O quadro que o projetor serve: o ativo depois de o dedo parar. Ver
+     `settled`, logo abaixo. */
+  const seat = items[settled] ?? null;
 
   /* ── qual quadro está na tela ──────────────────────────────────────────
      Observado e não calculado da rolagem: o mesmo sinal serve para o dedo, para
@@ -318,12 +321,11 @@ export function ReelsScreen({
     return () => spy.disconnect();
   }, [items.length]);
 
-  /* ── o player espera o dedo parar ──────────────────────────────────────
-     Montar o embed do YouTube é caro, e passar cinco trailers de uma vez montava
-     e destruía cinco players em meio segundo: o telefone gastava tudo o que
-     tinha carregando o que ninguém ia ver. O quadro ativo muda na hora — a
-     legenda, a luz da parede, o trilho —, e só o VÍDEO espera um instante de
-     quietude para nascer. */
+  /* ── o vídeo espera o dedo parar ───────────────────────────────────────
+     Passar cinco trailers de uma vez pediria cinco vídeos ao YouTube em meio
+     segundo, e o telefone gastaria tudo o que tem carregando o que ninguém ia
+     ver. O quadro ativo muda na hora — a legenda, a luz da parede, o trilho —,
+     e só o VÍDEO espera um instante de quietude para trocar. */
   useEffect(() => {
     const t = window.setTimeout(() => setSettled(active), 320);
     return () => window.clearTimeout(t);
@@ -378,6 +380,8 @@ export function ReelsScreen({
     window.clearTimeout(hudTimer.current);
     setHud(false);
   }, [hud, showHud]);
+
+  const hush = useCallback(() => setMuted(true), []);
 
   const flash = useCallback((msg: string) => {
     window.clearTimeout(alarm.current);
@@ -493,22 +497,29 @@ export function ReelsScreen({
             )}
           >
             {items.length ? (
-              items.map((it, i) => (
-                <Frame
-                  key={`${it.kind}-${it.id}-${i}`}
-                  index={i}
-                  item={it}
-                  rated={scoreOf.get(it.id) ?? null}
-                  /* Uma moldura por vez: montar as vizinhas seriam três players
-                     do YouTube no ar, e o que está fora da tela tocando som. O
-                     que abre por cima também desmonta, senão o trailer continua
-                     atrás. */
-                  live={i === settled && i === active && !ficha && !full && !filtering}
-                  near={Math.abs(i - active) <= 1}
-                  within={Math.abs(i - active) <= WINDOW}
+              <>
+                {items.map((it, i) => (
+                  <Frame
+                    key={`${it.kind}-${it.id}-${i}`}
+                    index={i}
+                    item={it}
+                    rated={scoreOf.get(it.id) ?? null}
+                    near={Math.abs(i - active) <= 1}
+                    within={Math.abs(i - active) <= WINDOW}
+                  />
+                ))}
+                {/* Irmão dos quadros e não filho de um deles: é o mesmo player
+                    atravessando o reel, e um player que troca de pai é um player
+                    que o navegador recarrega. */}
+                <Projector
+                  at={settled}
+                  videoKey={seat?.trailerKey ?? null}
+                  label={seat?.title ?? ''}
                   muted={muted}
+                  onBalk={hush}
+                  parked={!!ficha || full || filtering}
                 />
-              ))
+              </>
             ) : (
               <div className="grid h-full place-items-center px-6 text-center">
                 {loading ? (
@@ -803,11 +814,10 @@ function useGentle() {
 
    Na tela cheia a barra de controle volta: lá a pessoa foi assistir, e arrastar
    pelo minuto 2:10 é exatamente o que ela quer poder fazer. */
-const embedOf = (key: string, loop: boolean, bare: boolean) =>
+const embedOf = (key: string, bare: boolean) =>
   `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=1` +
   `&rel=0&modestbranding=1&playsinline=1&enablejsapi=1` +
-  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '') +
-  (loop ? `&loop=1&playlist=${key}` : '');
+  (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '');
 
 /** Uma ordem para um player já montado. Ver `embedOf`. */
 function command(frame: React.RefObject<HTMLIFrameElement>, func: string, args: unknown[] = []) {
@@ -835,52 +845,47 @@ function hushCaptions(frame: React.RefObject<HTMLIFrameElement>) {
    Dito ao player, não escrito no endereço dele: o endereço só é lido no
    nascimento, e nascer com som é nascer recusado (ver `embedOf`).
 
-   Amarrado a `rolling` e não só a `muted`, porque todo quadro novo nasce mudo
-   por obrigação: é ao começar a correr que ele descobre que a chave do trilho
-   já estava ligada. */
+   Amarrado a `rolling` e não só a `muted`, porque todo player nasce mudo por
+   obrigação: é ao começar a correr que ele descobre que a chave do trilho já
+   estava ligada.
+
+   E manda tocar DEPOIS de desmudar: tirar o mudo de um vídeo que o navegador só
+   deixou tocar porque estava mudo é o navegador pausando o vídeo, e um player
+   pausado desenha a abertura do YouTube inteira em cima do quadro. */
 function useSound(frame: React.RefObject<HTMLIFrameElement>, muted: boolean, rolling: boolean) {
   useEffect(() => {
     if (!rolling) return;
     command(frame, muted ? 'mute' : 'unMute');
+    if (!muted) command(frame, 'playVideo');
   }, [frame, muted, rolling]);
 }
 
-/* Junto do som porque tem a mesma condição — um player que já está tocando — e o
-   mesmo motivo: nada do YouTube desenha por cima deste quadro. */
-function useHush(frame: React.RefObject<HTMLIFrameElement>, rolling: boolean) {
-  useEffect(() => {
-    if (!rolling) return;
-    hushCaptions(frame);
-  }, [frame, rolling]);
-}
-
-/* ── esperar o projetor pegar ─────────────────────────────────────────────
+/* ── o que o player diz de si ─────────────────────────────────────────────
    Entre carregar a moldura e o filme começar a correr, o YouTube desenha a
    própria abertura: título, canal, botões grandes e a palavra "Mais vídeos".
-   Nenhum parâmetro tira isso, porque não é a barra de controle — é a tela de
-   espera do player, e ela só existe enquanto ele está esperando.
+   Nenhum parâmetro tira isso, porque não é a barra de controle — é o que o
+   player desenha enquanto NÃO está tocando. A única forma de nunca mostrá-la é
+   saber a diferença, e quem diz é o próprio player: com `enablejsapi`, a moldura
+   publica o estado dela por `postMessage` depois de a gente se apresentar.
 
-   Então o quadro parado do filme fica por cima até o player DIZER que está
-   rodando. Ele diz: com `enablejsapi`, a moldura publica o estado dela por
-   `postMessage` depois de a gente se apresentar. Estado 1 é "tocando".
-
-   ── e o cartaz NÃO sai por decurso de prazo ─────────────────────────────
-   Ele saía, e o que aparecia era exatamente a abertura do YouTube que ele
-   existia para esconder. O prazo continua, com outro desfecho: acende a NOSSA
-   chave de tocar por cima do cartaz. */
-const ROLLING = 1;
-const STALL_MS = 4000;
+   Filtrado por `e.source`: dois players convivem quando a tela cheia abre, e
+   todos os dois falam para a janela inteira. */
+const UNSTARTED = -1;
+const ENDED = 0;
+const PLAYING = 1;
+const PAUSED = 2;
+const BUFFERING = 3;
+const CUED = 5;
 const HELLO_MS = 260;
 
-function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>) {
-  const [rolling, setRolling] = useState(false);
-  const [stalled, setStalled] = useState(false);
+function useYtState(frame: React.RefObject<HTMLIFrameElement>, on: unknown) {
+  const [state, setState] = useState(UNSTARTED);
 
   useEffect(() => {
-    setRolling(false);
-    setStalled(false);
+    setState(UNSTARTED);
     if (!on) return;
 
+    let greeted = false;
     const hello = () =>
       frame.current?.contentWindow?.postMessage(
         JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }),
@@ -888,7 +893,9 @@ function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>
       );
 
     const heard = (e: MessageEvent) => {
+      if (e.source && e.source !== frame.current?.contentWindow) return;
       if (!/(^|\.)youtube(-nocookie)?\.com$/.test(hostOf(e.origin))) return;
+      greeted = true;
       let said: unknown;
       try {
         said = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -898,26 +905,23 @@ function useRolling(on: string | null, frame: React.RefObject<HTMLIFrameElement>
       /* O player fala de duas formas conforme a versão: `onStateChange` com o
          estado solto, e `infoDelivery` com ele dentro de `info`. */
       const box = said as { event?: string; info?: number | { playerState?: number } };
-      const state =
-        typeof box?.info === 'number' ? box.info : box?.info?.playerState;
-      if (state !== ROLLING) return;
-      setRolling(true);
-      setStalled(false);
+      const told = typeof box?.info === 'number' ? box.info : box?.info?.playerState;
+      if (typeof told === 'number') setState(told);
     };
 
     window.addEventListener('message', heard);
-    const ping = window.setInterval(hello, HELLO_MS);
-    const stall = window.setTimeout(() => setStalled(true), STALL_MS);
+    /* A apresentação se repete até ser ouvida: mandada antes de a moldura estar
+       pronta ela cai no vazio, e aí o player nunca fala. */
+    const ping = window.setInterval(() => !greeted && hello(), HELLO_MS);
     hello();
 
     return () => {
       window.removeEventListener('message', heard);
       window.clearInterval(ping);
-      window.clearTimeout(stall);
     };
   }, [on, frame]);
 
-  return { rolling, stalled: stalled && !rolling };
+  return state;
 }
 
 /** O host de uma origem, sem explodir num `origin` que não é URL. */
@@ -930,9 +934,12 @@ function hostOf(origin: string) {
 }
 
 /* ── um quadro ────────────────────────────────────────────────────────────
-   O trailer 16:9 no meio da coluna, a legenda deitada sobre o degradê no pé, e
-   atrás de tudo o próprio quadro do filme desfocado — não é vidro decorativo, é
-   a luz da projeção batendo na parede da sala.
+   A moldura 16:9 no meio da coluna com o quadro parado do filme, a legenda
+   deitada sobre o degradê no pé, e atrás de tudo o próprio quadro do filme
+   desfocado — não é vidro decorativo, é a luz da projeção batendo na parede.
+
+   O VÍDEO não mora aqui: é um player só para o reel inteiro, que se muda de
+   quadro em quadro. Ver `Projector`.
 
    A legenda recua da direita pela largura do trilho: os controles são uma
    coluna fixa, e texto que passa por baixo deles é texto que não se lê.
@@ -951,39 +958,18 @@ const Frame = memo(function Frame({
   index,
   item,
   rated,
-  live,
   near,
   within,
-  muted,
 }: {
   index: number;
   item: ReelItem;
   rated: RatedTitle | null;
-  live: boolean;
   /** Se este quadro está à vista ou é o vizinho de quem está. */
   near: boolean;
   /** Se vale a pena existir: fora da janela ele é só altura. */
   within: boolean;
-  muted: boolean;
 }) {
-  const gentle = useGentle();
-  /* Sob `prefers-reduced-motion` nada começa a se mexer sozinho: o quadro fica
-     parado com a chave de tocar, e o reel continua sendo folheável. */
-  const [asked, setAsked] = useState(false);
-  useEffect(() => {
-    if (!live) setAsked(false);
-  }, [live]);
-  const playing = live && (!gentle || asked);
   const still = item.backdrop ?? item.poster;
-  /* A moldura, para ouvir quando o filme começar e mandar nela depois. */
-  const beam = useRef<HTMLIFrameElement>(null);
-  const { rolling, stalled } = useRolling(playing ? item.trailerKey : null, beam);
-  useSound(beam, muted, rolling);
-  useHush(beam, rolling);
-  /* Dois motivos que não se sobrepõem: quem pediu para o mundo parar de se
-     mexer não tem nada começando sozinho, e um player que não pegou precisa de
-     uma porta. */
-  const offer = playing ? stalled : gentle && !asked;
 
   if (!within) {
     return (
@@ -1018,65 +1004,22 @@ const Frame = memo(function Frame({
         </>
       ) : null}
 
+      {/* Nada aqui entra animando. O quadro já chega pela rolagem, e uma
+          animação disparada quando o vídeo assumia — um terço de segundo depois
+          de a pessoa ter passado o dedo — apagava o quadro inteiro e o trazia de
+          volta: era a piscada a cada troca de reel. */}
       <div className="absolute inset-0 grid place-items-center">
-        <div
-          className={cn(
-            'relative aspect-video w-full overflow-hidden bg-black ring-1 ring-white/10',
-            live && 'animate-beam-in'
-          )}
-        >
+        <div className="relative aspect-video w-full overflow-hidden bg-black ring-1 ring-white/10">
           {still ? (
             <img
               src={still}
               alt=""
               loading="lazy"
-              /* Sai quando o filme está correndo, e não quando a moldura foi
-                 montada: entre uma coisa e outra o YouTube desenha a abertura
-                 dele, e era ela que aparecia. */
-              /* `z-[2]`: ele vem antes da moldura na árvore e precisa ficar
-                 DEPOIS dela na tela. Sem isto ele é um quadro parado atrás de
-                 um vídeo, que é o mesmo que não existir. */
-              className={cn(
-                'pointer-events-none absolute inset-0 z-[2] h-full w-full object-cover',
-                'transition-opacity duration-500',
-                rolling ? 'opacity-0' : 'opacity-100'
-              )}
+              /* Não é um cartaz de espera que sai: é a cama em que o projetor
+                 pousa, e o que fica no lugar do vídeo em todo instante em que o
+                 player não está TOCANDO. Ver `Projector`. */
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             />
-          ) : null}
-          {playing ? (
-            <iframe
-              /* Sem `key` no som: remontar fazia o player renascer com
-                 `mute=0`, e todo trailer depois do primeiro nascia recusado —
-                 parado, com a abertura do YouTube por cima. Ver `useSound`. */
-              ref={beam}
-              src={embedOf(item.trailerKey, true, true)}
-              title={`Trailer de ${item.title}`}
-              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-              referrerPolicy="strict-origin-when-cross-origin"
-              tabIndex={-1}
-              className="pointer-events-none absolute inset-0 h-full w-full border-0"
-            />
-          ) : null}
-          {live && offer ? (
-            <button
-              type="button"
-              /* Serve às duas causas: monta a moldura para quem pediu
-                 silêncio do mundo, e manda tocar no player que não pegou — um
-                 toque de gente é a única permissão que o navegador aceita. */
-              onClick={() => {
-                setAsked(true);
-                command(beam, 'playVideo');
-              }}
-              /* Acima do quadro parado, que sobe a `z-[2]` para cobrir a
-                 abertura do player: embaixo dele esta chave seria uma chave
-                 invisível e inclicável. */
-              className="absolute inset-0 z-[3] grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/20"
-            >
-              <span className="flex items-center gap-2 rounded-cell bg-house-seat/85 px-4 py-2.5 font-display text-[12px] uppercase tracking-[0.14em] ring-1 ring-house-rail">
-                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
-                Tocar o trailer
-              </span>
-            </button>
           ) : null}
         </div>
       </div>
@@ -1086,8 +1029,7 @@ const Frame = memo(function Frame({
           'absolute inset-x-0 bottom-0 px-5 pb-6 pt-5',
           // O recuo do trilho: 12 de margem + 44 de alvo + 12 de folga.
           'pr-[68px]',
-          'bg-gradient-to-t from-house-deep/[0.96] via-house-deep/[0.86] to-transparent',
-          live && 'animate-frame-in'
+          'bg-gradient-to-t from-house-deep/[0.96] via-house-deep/[0.86] to-transparent'
         )}
       >
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -1120,6 +1062,199 @@ const Frame = memo(function Frame({
     </section>
   );
 });
+
+/* ══ O PROJETOR ═══════════════════════════════════════════════════════════
+   UM player para o reel inteiro, que nunca é desmontado: o vídeo troca por
+   `loadVideoById` e a moldura se muda de quadro em quadro.
+
+   Era um player por quadro, montado quando o quadro assumia, e os três defeitos
+   saíam todos daí. Um player recém-montado passa obrigatoriamente pelo estado de
+   quem ainda não começou, e o que o YouTube desenha nesse estado é a abertura
+   dele — cartaz, título, canal, botão grande de tocar. A cada rolagem se pagava
+   essa abertura de novo, e no telefone ela ficava: o player nascia, o navegador
+   o pausava na hora de desmudar, e a abertura era tudo o que se via. Um player
+   que já está tocando não tem esse estado para mostrar.
+
+   ── a moldura mora DENTRO do rolador ────────────────────────────────────
+   Pendurada em `top: quadro × 100%`, que é onde o quadro dela está: assim ela
+   rola junto com o conteúdo em vez de ter de perseguir a rolagem a cada pixel.
+
+   ── nada do YouTube desenha em cima deste quadro ────────────────────────
+   `controls=0` tira a barra, `pointer-events: none` tira o que só aparece por
+   passagem de ponteiro, e o resto é estado: o player fica à vista TOCANDO e em
+   nenhuma outra hora. Pausado, terminado ou ainda não começado ele é invisível
+   no mesmo quadro de tela em que passa a ser — sem transição de saída, que seria
+   a abertura do YouTube aparecendo devagar —, e embaixo dele está o quadro
+   parado do filme, que é a mesma imagem. E, invisível, ele é reanimado: pausa
+   volta a tocar, fim volta ao começo.
+
+   O fim volta ao começo aqui e não por `loop=1`: o loop de um embed é uma
+   playlist de um item, e a playlist morre no primeiro `loadVideoById`. */
+
+/* Quanto se espera antes de cutucar um player que não pegou. Dois cutucões, o
+   vídeo de novo, e então a porta: um toque de gente é a única permissão que
+   navegador nenhum recusa. */
+const NUDGE_MS = 1200;
+
+function Projector({
+  at,
+  videoKey,
+  label,
+  muted,
+  onBalk,
+  parked,
+}: {
+  /** O quadro que o projetor serve. */
+  at: number;
+  videoKey: string | null;
+  label: string;
+  muted: boolean;
+  /** O navegador recusou o som: a chave do trilho tem de dizer a verdade. */
+  onBalk: () => void;
+  /** Alguma coisa abriu por cima do reel: o trailer para e sai da vista. */
+  parked: boolean;
+}) {
+  const beam = useRef<HTMLIFrameElement>(null);
+  const gentle = useGentle();
+  /* Sob `prefers-reduced-motion` nada começa a se mexer sozinho: o reel fica
+     folheável em quadros parados, com a chave de tocar. Perguntado uma vez para
+     o reel todo, e não a cada quadro — quem respondeu já respondeu. */
+  const [asked, setAsked] = useState(false);
+  const armed = !gentle || asked;
+  const want = armed && !parked ? videoKey : null;
+
+  /* O endereço é lido uma vez na vida do player: trocar o `src` seria remontá-lo,
+     que é justamente o que esta tela deixou de fazer. */
+  const seed = useRef<string | null>(null);
+  if (want && !seed.current) seed.current = want;
+  const born = seed.current;
+
+  const state = useYtState(beam, born);
+  /* Qual vídeo já foi visto tocando. É o que separa "o player diz que toca" de
+     "o player diz que toca O QUE EU PEDI": entre o pedido e a resposta o estado
+     que está no ar ainda é do trailer anterior. */
+  const [aired, setAired] = useState<string | null>(null);
+  const [offer, setOffer] = useState(false);
+  const wanted = useRef<string | null>(null);
+  const loaded = useRef<string | null>(null);
+  /* Quantas vezes este vídeo parou sozinho. Ver o conserto da pausa. */
+  const balks = useRef(0);
+
+  useEffect(() => {
+    wanted.current = want;
+    balks.current = 0;
+  }, [want]);
+
+  useEffect(() => {
+    if (!want) {
+      if (loaded.current) command(beam, 'pauseVideo');
+      return;
+    }
+    if (loaded.current === want) command(beam, 'playVideo');
+    /* Nulo é o player que acabou de nascer com este vídeo no endereço. */
+    else if (loaded.current) command(beam, 'loadVideoById', [{ videoId: want }]);
+    loaded.current = want;
+  }, [want]);
+
+  useEffect(() => {
+    if (state === PLAYING) {
+      if (wanted.current) setAired(wanted.current);
+      hushCaptions(beam);
+      return;
+    }
+    if (!wanted.current) return;
+    if (state === ENDED) {
+      command(beam, 'seekTo', [0, true]);
+      command(beam, 'playVideo');
+    }
+    /* Carregado e parado na primeira imagem: `loadVideoById` promete tocar e uma
+       promessa não é um estado. */
+    if (state === CUED) command(beam, 'playVideo');
+    if (state === PAUSED) {
+      /* Ninguém pede pausa neste reel — não há botão para isso —, então uma
+         pausa é sempre coisa do navegador, e a resposta é voltar a tocar.
+
+         Se ela volta sempre, é o som: um vídeo que só pôde tocar por estar mudo
+         é pausado na hora em que desmuda. Aí o som cede, porque o som é o extra
+         e o filme correndo é o que esta tela É. */
+      balks.current += 1;
+      if (balks.current > 2) {
+        command(beam, 'mute');
+        onBalk();
+      }
+      command(beam, 'playVideo');
+    }
+  }, [state, onBalk]);
+
+  const shown = aired === want && (state === PLAYING || state === BUFFERING);
+
+  useSound(beam, muted, shown);
+
+  useEffect(() => {
+    setOffer(false);
+    if (!want || shown) return;
+    let tries = 0;
+    const nudge = window.setInterval(() => {
+      tries += 1;
+      if (tries <= 2) command(beam, 'playVideo');
+      else if (tries === 3) command(beam, 'loadVideoById', [{ videoId: want }]);
+      else {
+        setOffer(true);
+        window.clearInterval(nudge);
+      }
+    }, NUDGE_MS);
+    return () => window.clearInterval(nudge);
+  }, [want, shown]);
+
+  const door = !parked && !!videoKey && (!armed || offer);
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 h-full"
+      style={{ top: `${at * 100}%` }}
+    >
+      <div className="grid h-full place-items-center">
+        <div className="relative aspect-video w-full">
+          {born ? (
+            <iframe
+              ref={beam}
+              src={embedOf(born, true)}
+              title={`Trailer de ${label}`}
+              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+              referrerPolicy="strict-origin-when-cross-origin"
+              tabIndex={-1}
+              aria-hidden={!shown}
+              className={cn(
+                'pointer-events-none absolute inset-0 h-full w-full border-0',
+                shown ? 'opacity-100 transition-opacity duration-300' : 'opacity-0'
+              )}
+            />
+          ) : null}
+          {door ? (
+            <button
+              type="button"
+              /* A porta não se fecha ao ser aberta: ela sai quando o filme
+                 ESTÁ correndo (ver o laço do cutucão). Fechada no toque, um
+                 toque que o navegador recusasse deixaria a pessoa diante de um
+                 quadro parado sem nada para apertar. */
+              onClick={() => {
+                setAsked(true);
+                command(beam, 'playVideo');
+                if (!muted) command(beam, 'unMute');
+              }}
+              className="pointer-events-auto absolute inset-0 grid place-items-center bg-house-deep/45 text-beam transition-colors hover:bg-house-deep/20"
+            >
+              <span className="flex items-center gap-2 rounded-cell bg-house-seat/85 px-4 py-2.5 font-display text-[12px] uppercase tracking-[0.14em] ring-1 ring-house-rail">
+                <Play className="h-3.5 w-3.5 fill-current" strokeWidth={0} aria-hidden />
+                Tocar o trailer
+              </span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ── uma tecla do trilho ──────────────────────────────────────────────────
    Quadrada, de 44, sobre uma placa: elas ficam por cima de um vídeo que muda
@@ -1325,7 +1460,7 @@ function FullTrailer({
   /* A barra de controle do YouTube fica aqui, de propósito: quem abriu a tela
      cheia foi assistir. O que não fica é o autoplay recusado. */
   const beam = useRef<HTMLIFrameElement>(null);
-  const { rolling } = useRolling(item.trailerKey, beam);
+  const rolling = useYtState(beam, item.trailerKey) === PLAYING;
   useSound(beam, muted, rolling);
 
   useEffect(() => {
@@ -1354,7 +1489,7 @@ function FullTrailer({
           <div className="aspect-video w-full max-w-[min(100%,calc((100dvh/var(--ui-zoom)-190px)*16/9))] overflow-hidden bg-black ring-1 ring-white/10">
             <iframe
               ref={beam}
-              src={embedOf(item.trailerKey, false, false)}
+              src={embedOf(item.trailerKey, false)}
               title={`Trailer de ${item.title}`}
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               referrerPolicy="strict-origin-when-cross-origin"
