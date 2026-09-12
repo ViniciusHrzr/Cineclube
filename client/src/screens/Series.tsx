@@ -349,10 +349,6 @@ function SeriesCell({
             </div>
           ) : null}
           {seen ? <p className="q mt-1 text-[11px] text-ink-faint">{seen}</p> : null}
-
-          {/* O progresso acima é do clube; esta linha é sua, e é a primeira
-              pergunta de quem abre a lista para retomar uma série. */}
-          <UpNext upNext={upNext} upcoming={upcoming} caughtUp={caughtUp} />
         </CardItem>
 
         {/* A chave repete o destino do cartaz, e isso não é redundância: a tarja
@@ -382,6 +378,15 @@ function SeriesCell({
             </IconKey>
           ) : null}
         </CardItem>
+
+        {/* Embaixo das chaves, e não junto do progresso do clube: no meio da
+            coluna esta linha lia como mais um dado do cartão, e ela é a
+            resposta que faz alguém tocar em "Episódios". Fora da pilha de
+            texto, com um fio separando, ela é a última coisa do cartaz — que é
+            onde o olho para. */}
+        <CardItem translateZ={12} className="w-full">
+          <UpNext upNext={upNext} upcoming={upcoming} caughtUp={caughtUp} />
+        </CardItem>
       </CardBody>
     </CardContainer>
   );
@@ -406,33 +411,47 @@ function UpNext({
 }) {
   if (upNext) {
     return (
-      <p className="mt-1.5 flex items-baseline gap-1.5">
+      <Strap>
         <span className="legend flex-none text-[9px] text-ink-faint">a seguir</span>
-        <span className="q flex-none text-[11.5px] text-dye-brass">{tag(upNext)}</span>
+        <span className="q flex-none text-[12.5px] font-medium text-dye-brass">{tag(upNext)}</span>
         {upNext.title ? (
-          <span className="truncate text-[11.5px] text-ink-dim">{upNext.title}</span>
+          <span className="truncate text-[12px] text-ink">{upNext.title}</span>
         ) : null}
-      </p>
+      </Strap>
     );
   }
 
   if (upcoming) {
     return (
-      <p className="mt-1.5 flex items-baseline gap-1.5">
+      <Strap>
         <span className="legend flex-none text-[9px] text-ink-faint">estreia</span>
-        <span className="q flex-none text-[11.5px] text-beam">{tag(upcoming)}</span>
-        <span className="q truncate text-[11.5px] text-ink-dim">
+        <span className="q flex-none text-[12.5px] font-medium text-beam">{tag(upcoming)}</span>
+        <span className="q truncate text-[12px] text-ink-dim">
           {upcoming.airDate ? soonBR(upcoming.airDate) : 'sem data'}
         </span>
-      </p>
+      </Strap>
     );
   }
 
   if (caughtUp) {
-    return <p className="q mt-1.5 text-[11.5px] text-ink-faint">você viu tudo</p>;
+    return (
+      <Strap>
+        <span className="q text-[12px] text-ink-faint">você viu tudo</span>
+      </Strap>
+    );
   }
 
   return null;
+}
+
+/* O fio em cima separa esta linha das chaves, que são de outro assunto — e é o
+   que faz ela ser lida como o rodapé do cartaz e não como mais um botão. */
+function Strap({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-3 flex items-baseline gap-1.5 border-t border-white/[0.07] pt-2.5">
+      {children}
+    </p>
+  );
 }
 
 const tag = (ep: EpisodeRef) => `T${ep.season}E${String(ep.episode).padStart(2, '0')}`;
