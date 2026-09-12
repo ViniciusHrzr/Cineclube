@@ -44,9 +44,20 @@ router.get('/', auth.requireSession, wrap(async (req, res) => {
 
   const items = [];
   let unread = 0;
+  /* A estreia de hoje é sobre a SÉRIE, e a mesma série acompanhada em duas
+     salas é uma estreia só. O resto dos avisos é sobre uma ficha de uma sala,
+     e ali repetição não existe. */
+  const estreias = new Set();
   for (const { sala, items: doClube, seenAt } of porSala) {
-    unread += notices.unreadIn(doClube, seenAt);
     for (const item of doClube) {
+      if (item.kind === 'airing') {
+        if (estreias.has(item.id)) continue;
+        estreias.add(item.id);
+      }
+      /* Contado item a item, e não pela lista da sala: o que foi dispensado por
+         repetição não pode continuar pesando no número do sino. A regra é a de
+         `notices.unreadIn` — chegou depois da última abertura. */
+      if (!seenAt || String(item.at) > seenAt) unread += 1;
       items.push({
         ...item,
         /* O id ganha a sala na frente: dois clubes podem ter avisos com o mesmo

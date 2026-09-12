@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, Mail, MessageSquare, ThumbsDown, ThumbsUp, UserPlus } from 'lucide-react';
-import { Key, Reel } from '@/components/bits';
+import { Bell, CalendarClock, Mail, MessageSquare, ThumbsDown, ThumbsUp, UserPlus } from 'lucide-react';
+import { Key, Poster, Reel } from '@/components/bits';
 import { auth, initialsOf, notifications, reelColor, type Notice } from '@/lib/api';
 import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
@@ -15,6 +15,11 @@ import { cn, plural, whenOf } from '@/lib/utils';
    encanamento para uma linha de texto. */
 const go = (slug: string, rest: string) =>
   (location.hash = `c/${encodeURIComponent(slug)}/${rest}`);
+
+/* O mesmo, do outro lado do produto: a lente de séries mora no endereço, antes
+   do clube. Ver `clubHash` no App, que é quem monta isto para as telas. */
+const goSeries = (slug: string, rest: string) =>
+  (location.hash = `series/c/${encodeURIComponent(slug)}/${rest}`);
 
 /* ══════════════════════════════════════════════════════════════════════════
    O sino: quem reagiu ao que é seu.
@@ -105,6 +110,7 @@ function ConfirmNotice() {
 }
 
 function iconOf(kind: Notice['kind'], value?: number) {
+  if (kind === 'airing') return CalendarClock;
   if (kind === 'join') return UserPlus;
   if (kind === 'comment' || kind === 'reply' || kind === 'mention') return MessageSquare;
   if (kind === 'like') return ThumbsUp;
@@ -359,7 +365,8 @@ export function Notices() {
               <p className="px-4 py-6 text-[13px] leading-relaxed text-ink-dim">
                 Ninguém reagiu ao que você escreveu ainda. Quando alguém comentar sua avaliação,
                 concordar com uma nota sua, curtir um comentário seu — ou pedir para entrar num
-                clube — aparece aqui.
+                clube — aparece aqui. E no dia em que estrear um episódio de uma série que você
+                acompanha, ele aparece aqui também.
               </p>
             )
           ) : (
@@ -371,6 +378,44 @@ export function Notices() {
                     key={n.id}
                     className="flex gap-2.5 border-b border-white/[0.05] px-4 py-3 transition-colors last:border-0 hover:bg-beam/[0.05]"
                   >
+                    {/* ── a estreia de hoje ──────────────────────────────
+                        Sem rosto e sem nome de gente: não houve quem. O cartaz
+                        ocupa o lugar do retrato e a linha inteira é um alvo só,
+                        porque há um destino só — a série. */}
+                    {n.kind === 'airing' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          if (n.club && n.showId) goSeries(n.club.slug, `show/${n.showId}`);
+                        }}
+                        className="flex min-w-0 flex-1 gap-2.5 text-left"
+                      >
+                        <Poster src={n.showPoster ?? null} className="h-[38px] w-[26px] flex-none" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[12.5px] leading-snug text-ink-dim">
+                            <span className="font-display uppercase tracking-[0.08em] text-ink">
+                              {n.showTitle}
+                            </span>{' '}
+                            {n.text}
+                          </span>
+                          {clubs > 1 && n.club ? (
+                            <span className="mt-1 block font-display text-[10.5px] uppercase leading-none tracking-[0.12em] text-dye-brass">
+                              {n.club.name}
+                            </span>
+                          ) : null}
+                          <span className="q mt-1 block text-[10.5px] text-ink-dim" title={n.at}>
+                            hoje
+                          </span>
+                        </span>
+                        <Icon
+                          className="mt-0.5 h-3.5 w-3.5 flex-none text-dye-brass"
+                          strokeWidth={1.9}
+                          aria-hidden
+                        />
+                      </button>
+                    ) : !n.actor ? null : (
+                      <>
                     {/* Com o retrato de quem reagiu, e ele leva ao perfil dessa
                         pessoa. Ficou fora do botão da linha porque um controle
                         não se aninha em outro, e porque são dois destinos
@@ -380,19 +425,12 @@ export function Notices() {
                         O painel se fecha antes de navegar: ele é ancorado ao
                         sino e ficaria aberto por cima do perfil que acabou de
                         abrir, falando de uma tela que não está mais embaixo. */}
-                    {/* O rosto leva ao perfil de quem reagiu, e fica fora do
-                        botão da linha porque um controle não se aninha em
-                        outro — e porque são dois destinos: o rosto pergunta
-                        "quem é essa pessoa" e o resto responde "o que ela fez".
-
-                        O endereço carrega o clube, então funciona igual de
-                        dentro de qualquer sala. */}
                     <button
                       type="button"
                       aria-label={n.actor.name}
                       onClick={() => {
                         setOpen(false);
-                        if (n.club) go(n.club.slug, `perfil/${n.actor.id}`);
+                        if (n.club) go(n.club.slug, `perfil/${n.actor!.id}`);
                       }}
                       className="flex-none"
                     >
@@ -456,6 +494,8 @@ export function Notices() {
                         aria-hidden
                       />
                     </button>
+                      </>
+                    )}
                   </li>
                 );
               })}

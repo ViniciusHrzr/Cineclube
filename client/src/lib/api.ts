@@ -596,13 +596,17 @@ export type Notice = {
   id: string;
   /* `join` é o único que não fala de uma ficha: é alguém batendo na porta do
      clube, e só o ADM o recebe. Por isso `movieId` e `reviewId` são opcionais —
-     um pedido de entrada não aponta para avaliação nenhuma. */
-  kind: 'comment' | 'reply' | 'mention' | 'vote' | 'like' | 'join';
+     um pedido de entrada não aponta para avaliação nenhuma.
+
+     `airing` é o único que não fala de uma pessoa: o episódio que estreia hoje
+     numa série que você acompanha. Vem sem `actor`, com a série no lugar. */
+  kind: 'comment' | 'reply' | 'mention' | 'vote' | 'like' | 'join' | 'airing';
   /** ISO em UTC, sem fuso no texto — ver `whenOf`. */
   at: string;
   /* O retrato vem no aviso e não do elenco do clube: o sino junta as salas
-     todas, e o elenco carregado na tela é o de uma só. */
-  actor: { id: string; name: string; dot: string; avatar?: string | null };
+     todas, e o elenco carregado na tela é o de uma só. Ausente em `airing`:
+     não houve quem. */
+  actor?: { id: string; name: string; dot: string; avatar?: string | null };
   /* De qual sala veio. Presente no sino da rede, ausente no de uma sala só —
      lá a resposta é a sala em que se está. É também o que faz o clique levar
      ao lugar certo de qualquer tela. */
@@ -619,6 +623,14 @@ export type Notice = {
   excerpt?: string;
   /** +1 ou −1, só em voto — é o que decide a direção do polegar no painel. */
   value?: number;
+  /* Só em `airing`: a série de que o aviso fala, e o episódio que estreia. O
+     cartaz entra no lugar do retrato, e é ele que faz a linha ser reconhecida
+     antes de ser lida. */
+  showId?: number;
+  showTitle?: string;
+  showPoster?: string | null;
+  season?: number;
+  episode?: number;
 };
 
 /* O que aconteceu no clube, em ordem de tempo. Derivado no servidor das mesmas

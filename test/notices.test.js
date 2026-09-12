@@ -293,3 +293,89 @@ test('criar a conta já dispara a confirmação', async () => {
   ).all(mail);
   assert.deepEqual(linhas.map(r => r.kind), ['verify']);
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   5. O AVISO QUE NÃO TEM AUTOR
+
+   Todos os outros são reação de alguém ao que é seu. Este é o calendário: hoje
+   estreia um episódio de uma série que VOCÊ acompanha. Três coisas podem falhar
+   em silêncio nele, e são as três daqui.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** O dia em Brasília, que é a régua do aviso — ver notices.js. */
+const hojeBR = (dias = 0) =>
+  new Date(Date.now() - 3 * 3600_000 + dias * 86400_000).toISOString().slice(0, 10);
+
+const serie = () => ({
+  id: 900000 + ++seq,
+  title: `Série ${seq}`,
+  year: 2024,
+  genre: 'Drama',
+  poster: `/s/${seq}.jpg`,
+});
+
+/** Grava o episódio no cache, que é o que a tela da série faz ao ser aberta. */
+const cacheEpisode = (showId, season, episode, title, airDate) =>
+  db.prepare(`
+    INSERT INTO episodes_cache (show_id, season, episode, title, air_date)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(show_id, season, episode) DO UPDATE SET air_date = excluded.air_date
+  `).run(showId, season, episode, title, airDate);
+
+test('a estreia de hoje avisa quem acompanha, e só quem acompanha', async () => {
+  const dono = await kit.signIn();
+  const outra = await kit.signIn();
+  const sala = await kit.makeClub({ owner: dono.id, visibility: 'private' });
+  await kit.join(sala.id, outra.id);
+
+  const s = serie();
+  await req('POST', at(sala, '/shows'), { show: s }, dono.cookie);
+  await cacheEpisode(s.id, 2, 5, 'O Retorno', hojeBR());
+
+  const meu = await req('GET', '/api/notices', null, dono.cookie);
+  const aviso = meu.body.items.find(i => i.kind === 'airing');
+  assert.ok(aviso, 'quem acompanha tem de ser avisado');
+  assert.equal(aviso.showId, s.id);
+  assert.equal(aviso.season, 2);
+  assert.equal(aviso.episode, 5);
+  assert.match(aviso.text, /T2E05/);
+  assert.match(aviso.text, /O Retorno/);
+  /* Sem ator: não houve quem. A tela desenha o cartaz no lugar do retrato, e um
+     `actor` vazio aqui faria ela procurar um nome que não existe. */
+  assert.equal(aviso.actor, undefined);
+  assert.ok(aviso.club?.slug, 'o aviso diz de qual sala veio, como todos');
+
+  /* A outra está na MESMA sala e não acompanha a série: acompanhar é de cada
+     um, e o aviso é sobre o que você está esperando. */
+  const dela = await req('GET', '/api/notices', null, outra.cookie);
+  assert.equal(dela.body.items.filter(i => i.kind === 'airing').length, 0);
+});
+
+test('o episódio de ontem não é estreia de hoje', async () => {
+  const dono = await kit.signIn();
+  const sala = await kit.makeClub({ owner: dono.id, visibility: 'private' });
+  const s = serie();
+  await req('POST', at(sala, '/shows'), { show: s }, dono.cookie);
+  await cacheEpisode(s.id, 1, 1, 'Piloto', hojeBR(-1));
+  await cacheEpisode(s.id, 1, 2, 'Amanhã', hojeBR(1));
+
+  const sino = await req('GET', '/api/notices', null, dono.cookie);
+  assert.equal(sino.body.items.filter(i => i.kind === 'airing').length, 0);
+});
+
+/* A estreia é sobre a SÉRIE, e a mesma série acompanhada em duas salas é uma
+   estreia só. Sem isto, quem acompanha em três clubes é avisado três vezes do
+   mesmo episódio — e o contador do sino conta as três. */
+test('a mesma série em duas salas avisa uma vez', async () => {
+  const dono = await kit.signIn();
+  const uma = await kit.makeClub({ owner: dono.id, visibility: 'private' });
+  const outra = await kit.makeClub({ owner: dono.id, visibility: 'private' });
+  const s = serie();
+  await req('POST', at(uma, '/shows'), { show: s }, dono.cookie);
+  await req('POST', at(outra, '/shows'), { show: s }, dono.cookie);
+  await cacheEpisode(s.id, 3, 1, 'Volta', hojeBR());
+
+  const sino = await req('GET', '/api/notices', null, dono.cookie);
+  const avisos = sino.body.items.filter(i => i.kind === 'airing');
+  assert.equal(avisos.length, 1);
+});
