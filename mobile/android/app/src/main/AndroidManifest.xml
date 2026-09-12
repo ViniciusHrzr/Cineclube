@@ -52,6 +52,15 @@
 
         </activity>
 
+        <!-- ── o serviço que segura a transmissão ────────────────────
+             Capturar a tela exige, do Android 10 em diante, um serviço em
+             primeiro plano com notificação; do 14 em diante ele precisa
+             declarar que é de PROJEÇÃO. Ver screencast/ScreenCastService.java. -->
+        <service
+            android:name="com.cineclube.app.screencast.ScreenCastService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -71,4 +80,13 @@
          execução — e o pedido só aparece se ela estiver declarada aqui. Sem
          isto o interruptor de Avisos liga e nada chega. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Transmitir a tela. A captura em si é autorizada pela pessoa num
+         diálogo do sistema, a cada vez; estas duas são para o serviço que
+         mantém a captura de pé enquanto o app não está na frente. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Opcional, e desligado por padrão: a voz de quem transmite. O som do
+         SISTEMA não vai junto nesta versão — ver CastEngine. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 </manifest>

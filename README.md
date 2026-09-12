@@ -291,9 +291,18 @@ serve o `minClient` de `contract.js`.
 - **Links do clube** abrem no app quando `ANDROID_FINGERPRINT` está no ambiente:
   é o `/.well-known/assetlinks.json` que o Android confere. O domínio entra no
   manifesto por um recurso gerado de `client/.env.app`.
-- **Transmitir a tela não existe no aplicativo**: capturar tela no Android é
-  permissão de sistema e código nativo. Assistir funciona; transmitir é do
-  computador, e a tela diz isso com essas palavras.
+- **Transmitir a tela do aparelho** existe, e é nativa: `mobile/android/.../
+  screencast`. Uma página não captura a tela de um telefone — `getDisplayMedia`
+  não existe no WebView —, e a ponte entre o nativo e a página não serve para
+  vídeo. Então o WebRTC de quem transmite roda em Java, com
+  `io.getstream:stream-webrtc-android`, e pela ponte passa só o aperto de mão.
+  Para quem assiste, a transmissão é indistinguível de uma que saiu de um
+  computador: 720p, codificada pelo hardware, com teto de 2 Mbps.
+
+  Duas coisas ficam de fora e a tela diz as duas: **não há prévia** (a imagem
+  nunca entra na página) e **não há som do sistema** (o Android entrega a tela,
+  não o áudio dos outros aplicativos — o clube conversa pelo Discord). E, como
+  no computador, um aplicativo com DRM entrega quadro preto.
 
 Três coisas que não têm volta depois da primeira publicação:
 

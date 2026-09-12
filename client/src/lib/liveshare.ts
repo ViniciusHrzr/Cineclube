@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Screening, SignalKind } from '@/lib/screening';
-import { inShell } from '@/lib/shell';
+import { inShell, plugin } from '@/lib/shell';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A TELA DE ALGUÉM, NA TELA DE TODO MUNDO — o segundo modo da sessão, e o
@@ -240,8 +240,24 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const early = useRef(new Map<string, RTCIceCandidateInit[]>());
   /** A captura desta máquina, quando este navegador é o que transmite. */
   const localRef = useRef<MediaStream | null>(null);
+  /* ── e quando quem transmite é um APARELHO ───────────────────────────────
+     Uma página não captura a tela de um telefone, e a ponte entre o nativo e a
+     página não serve para vídeo. Então, dentro de uma casca, o WebRTC de quem
+     transmite roda em Java: daqui saem os sinais e mais nada. Ver
+     mobile/android/.../screencast e lib/shell.ts.
+
+     Esta marca é o que faz o resto do arquivo saber que as conexões desta
+     ponta não estão em `peerMap` — elas estão do outro lado da ponte. */
+  const nativo = useRef(false);
+  /** Os dois ouvintes da ponte, para poder desmontá-los. */
+  const nativeSignals = useRef<{ remove?: () => void } | null>(null);
+  const nativePeers = useRef<{ remove?: () => void } | null>(null);
   /** Buscado uma vez e guardado: são endereços, não estado. */
   const iceRef = useRef<RTCConfiguration | null>(null);
+
+  /* O plugin da casa, quando há um. Fora de um aplicativo isto é nulo e todo
+     caminho abaixo cai no de sempre. */
+  const cast = () => (inShell() ? plugin('ScreenCast') : null);
 
   const ice = useCallback(async () => {
     if (iceRef.current) return iceRef.current;
@@ -279,6 +295,17 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      aberto continua mandando pacotes de manutenção, e uma captura de tela viva
      mantém a luz de "compartilhando" acesa no sistema operacional. */
   const drop = useCallback(() => {
+    /* A transmissão do aparelho, quando é dela que se trata: o motor nativo
+       fecha as conexões dele, e os ouvintes da ponte saem junto. */
+    if (nativo.current) {
+      nativo.current = false;
+      void cast()?.stop();
+      void Promise.resolve(nativeSignals.current).then(h => h?.remove?.());
+      void Promise.resolve(nativePeers.current).then(h => h?.remove?.());
+      nativeSignals.current = null;
+      nativePeers.current = null;
+    }
+
     for (const { pc } of peerMap.current.values()) pc.close();
     peerMap.current.clear();
     early.current.clear();
@@ -361,6 +388,19 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const heard = useCallback(
     async (from: string, kind: SignalKind, data: unknown) => {
       try {
+        /* ── a transmissão é do aparelho ─────────────────────────────────
+           Quem responde ao pedido, monta a oferta e aplica os caminhos de rede
+           é o motor nativo. Daqui o sinal só atravessa a ponte — e a resposta
+           volta pelo ouvinte montado em `start`.
+
+           Só quando ESTE lado é o que transmite: o mesmo aparelho recebendo a
+           tela de outra pessoa é um espectador comum, com o WebRTC do WebView,
+           que é o caminho de baixo. */
+        if (nativo.current && kind !== 'offer') {
+          await cast()?.signal({ from, kind, data: data ?? {} });
+          return;
+        }
+
         /* ── sou eu quem transmite ──────────────────────────────────────── */
         if (kind === 'want') {
           const local = localRef.current;
@@ -465,19 +505,69 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      pode ser recusada por uma pessoa: o navegador abre o seletor de janelas, e
      fechá-lo é um "não" legítimo que não deve deixar a sala anunciando uma
      transmissão que nunca começou. */
+  /* ── transmitir de dentro de um aplicativo ───────────────────────────────
+     A pessoa autoriza a projeção num diálogo do sistema, o serviço em primeiro
+     plano sobe, e o motor nativo passa a atender os pedidos da sala. Daqui só
+     saem sinais: o vídeo vai codificado pelo hardware direto para quem assiste.
+
+     Sem prévia local, e é uma ausência e não um esquecimento: a imagem nunca
+     entra na página, então não há o que mostrar aqui. O que a tela mostra é
+     quantas pessoas estão recebendo. */
+  const startNative = useCallback(async () => {
+    const plug = cast();
+    if (!plug) return false;
+
+    const conf = await ice();
+    try {
+      await plug.start({
+        iceServers: (conf.iceServers ?? []).map(s => ({ ...s })),
+        /* O som do sistema não vai nesta versão, e o microfone nasce
+           desligado: o clube conversa pelo Discord, e uma transmissão que
+           abre o microfone sem pedir é a sala inteira ouvindo a cozinha de
+           quem transmite. */
+        microphone: false,
+      });
+    } catch (e) {
+      const dito = (e as Error)?.message ?? '';
+      /* Fechar o diálogo do sistema é um "não" legítimo, e não merece frase
+         vermelha nenhuma. */
+      if (!/cancel/i.test(dito)) setError('A transmissão não começou: ' + dito);
+      return false;
+    }
+
+    nativo.current = true;
+    setSurface('aparelho');
+
+    /* Os sinais que o motor quer mandar, e quantas pessoas estão recebendo. Os
+       dois ouvintes são desmontados em `drop`. */
+    nativeSignals.current = (await plug.addListener('signal', (e: unknown) => {
+      const { to, kind, data } = (e ?? {}) as { to: string; kind: SignalKind; data: unknown };
+      if (to && kind) void sendSignal(to, kind, data);
+    })) as { remove?: () => void };
+    nativePeers.current = (await plug.addListener('peers', (e: unknown) => {
+      setPeers(Number((e as { peers?: number })?.peers ?? 0));
+    })) as { remove?: () => void };
+
+    if (!(await startLive())) {
+      /* A vaga era de outra pessoa. A captura morre aqui — deixá-la aberta
+         seria a notificação de "transmitindo" acesa por nada. */
+      drop();
+      return false;
+    }
+    return true;
+  }, [drop, ice, sendSignal, startLive]);
+
   const start = useCallback(async () => {
     setError(null);
+
+    /* Dentro de um aplicativo, este é o caminho — e não há o outro. */
+    if (inShell()) {
+      await startNative();
+      return;
+    }
+
     if (!navigator.mediaDevices?.getDisplayMedia) {
-      /* Duas ausências, duas frases. O WebView de um aplicativo não tem
-         `getDisplayMedia` e não vai ter: capturar a tela no Android é permissão
-         de sistema e código nativo, não coisa que uma página peça. Mandar quem
-         está no telefone "usar o Chrome no computador" seria uma instrução que
-         não descreve o que está acontecendo. */
-      setError(
-        inShell()
-          ? 'Transmitir a tela é do computador: o aplicativo não tem essa porta. Aqui dá para assistir o que outra pessoa transmitir.'
-          : 'Este navegador não sabe compartilhar tela. Chrome ou Edge, no computador.'
-      );
+      setError('Este navegador não sabe compartilhar tela. Chrome ou Edge, no computador.');
       return;
     }
     let capture: MediaStream;

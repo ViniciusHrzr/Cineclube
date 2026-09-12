@@ -36,6 +36,15 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    /* ── o WebRTC nativo ──────────────────────────────────────────────────
+       Para transmitir a tela deste aparelho. A página não consegue: capturar
+       tela é permissão de sistema, e a ponte entre o nativo e a página não
+       serve para vídeo — ver screencast/CastEngine.java.
+
+       Este pacote e não `org.webrtc:google-webrtc`: aquele é o oficial, e está
+       parado desde 2018 — sem correções, sem os codecs de hardware novos e sem
+       suporte a Android recente. */
+    implementation "io.getstream:stream-webrtc-android:1.3.10"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

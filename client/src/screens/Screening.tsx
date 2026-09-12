@@ -21,6 +21,7 @@ import {
 } from '@/lib/api';
 import { episodeTag, useScreening, type ScreeningMovie, type ScreeningState } from '@/lib/screening';
 import { useLiveShare, type LiveShare } from '@/lib/liveshare';
+import { inShell } from '@/lib/shell';
 import { bytes, isMagnet, useTorrent, type TorrentStatus } from '@/lib/torrent';
 import { cn, named, norm, plural } from '@/lib/utils';
 
@@ -1599,6 +1600,17 @@ function LiveScreen({
 
   return (
     <div className="mt-6">
+      {/* Sem prévia quando quem transmite é o APARELHO: a imagem sai codificada
+          direto do sistema para quem assiste e nunca entra nesta página — não
+          há o que mostrar aqui. Ver liveshare.ts. */}
+      {host && share.surface === 'aparelho' ? (
+        <div className="plate flex items-center justify-center px-4 py-10 text-center">
+          <p className="q max-w-[46ch] text-[12.5px] leading-relaxed text-ink-dim">
+            Sua tela está indo para a sala. O aparelho não mostra a si mesmo aqui — para conferir o
+            que o clube está vendo, pergunte a alguém que está recebendo.
+          </p>
+        </div>
+      ) : (
       <LiveVideo
         stream={share.stream}
         hostPreview={host}
@@ -1614,6 +1626,7 @@ function LiveScreen({
             : undefined
         }
       />
+      )}
 
       <div className="plate mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
         <span className="legend">{host ? 'Você está transmitindo' : `Tela de ${live.hostName}`}</span>
@@ -1669,14 +1682,18 @@ function LiveScreen({
         <div className="mt-2.5">
           <Fault
             detail={
-              share.surface === 'window'
+              share.surface === 'aparelho'
+                ? 'O som do sistema de um celular não atravessa: o Android entrega a tela, não o áudio dos outros aplicativos. O jeito de assistir com som é o clube estar no Discord, ou alguém transmitir do computador.'
+                : share.surface === 'window'
                 ? 'Compartilhe a TELA INTEIRA e marque “Compartilhar áudio do sistema”. Aí o som do VLC, do player ou de qualquer programa vai junto.'
                 : 'Chrome/Edge: ao escolher a tela inteira, marque “Compartilhar áudio do sistema”; ao escolher uma aba, marque “Compartilhar áudio da aba”.'
             }
           >
-            {share.surface === 'window'
-              ? 'Compartilhamento de janela não leva som — o clube vê o filme mudo.'
-              : 'Você está transmitindo sem som — o clube vê o filme mudo.'}
+            {share.surface === 'aparelho'
+              ? 'Transmitindo do celular, sem som — o clube vê o filme mudo.'
+              : share.surface === 'window'
+                ? 'Compartilhamento de janela não leva som — o clube vê o filme mudo.'
+                : 'Você está transmitindo sem som — o clube vê o filme mudo.'}
           </Fault>
         </div>
       ) : null}
@@ -1778,8 +1795,12 @@ function SourcePanel({
           Solte o arquivo do filme
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-          <Key onClick={() => browse.current?.click()}>Escolher do computador</Key>
-          <span className="q text-[11.5px] text-ink-dim">ou arraste até aqui</span>
+          <Key onClick={() => browse.current?.click()}>
+            {inShell() ? 'Escolher do aparelho' : 'Escolher do computador'}
+          </Key>
+          {inShell() ? null : (
+            <span className="q text-[11.5px] text-ink-dim">ou arraste até aqui</span>
+          )}
         </div>
         <input
           ref={browse}
@@ -1812,7 +1833,9 @@ function SourcePanel({
           escolhas com um parágrafo cada viravam uma página para ler antes de
           poder começar. */}
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-house-rail pt-4">
-        <Key onClick={onShareScreen}>Compartilhar minha tela</Key>
+        <Key onClick={onShareScreen}>
+          {inShell() ? 'Transmitir a tela deste aparelho' : 'Compartilhar minha tela'}
+        </Key>
       </div>
 
       {shareError ? <p className="q mt-2.5 text-[11.5px] text-dye-red-lit">{shareError}</p> : null}
