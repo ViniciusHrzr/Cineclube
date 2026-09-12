@@ -1,5 +1,32 @@
 apply plugin: 'com.android.application'
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A CHAVE QUE ASSINA O APLICATIVO.
+
+   Ela não está aqui e nunca vai estar: quem a tem publica atualização no seu
+   nome, e quem a perde não publica mais nenhuma — a Play Store trata um APK
+   assinado por outra chave como outro aplicativo. Então ela mora fora, e este
+   arquivo só sabe onde procurar.
+
+       mobile/android/keystore.properties   (não versionado)
+
+   Sem esse arquivo, o build de release sai SEM ASSINATURA. É de propósito:
+   quem está só compilando para testar não precisa de chave nenhuma, e um
+   keystore de mentira commitado seria pior do que a ausência dele.
+
+   Como criar a sua, uma vez:
+
+       keytool -genkey -v -keystore cineclube.jks -alias cineclube                -keyalg RSA -keysize 2048 -validity 10000
+
+   Ver keystore.properties.example ao lado.
+   ══════════════════════════════════════════════════════════════════════════ */
+def chaveArquivo = rootProject.file("keystore.properties")
+def chave = new Properties()
+if (chaveArquivo.exists()) {
+    chave.load(new FileInputStream(chaveArquivo))
+}
+def temChave = chaveArquivo.exists() && chave['storeFile'] != null
+
 android {
     namespace "com.cineclube.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,8 +43,29 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (temChave) {
+            release {
+                /* O caminho é relativo a mobile/android/ — ou absoluto, que é o
+                   normal quando a chave mora fora do projeto. */
+                storeFile rootProject.file(chave['storeFile'])
+                storePassword chave['storePassword']
+                keyAlias chave['keyAlias']
+                keyPassword chave['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (temChave) {
+                signingConfig signingConfigs.release
+            } else {
+                /* Dito uma vez, no build, em vez de descoberto na hora de
+                   instalar: um APK sem assinatura não instala em aparelho
+                   nenhum, e o erro do Android não diz por quê. */
+                logger.lifecycle("[cineclube] sem keystore.properties: o release sai SEM assinatura.")
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

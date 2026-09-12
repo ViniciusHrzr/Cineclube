@@ -311,6 +311,26 @@ serve o `minClient` de `contract.js`.
   Um aplicativo com DRM entrega tela preta e silêncio, de propósito — como no
   computador.
 
+### Assinar o APK
+
+Um release sem assinatura não instala em aparelho nenhum, e o erro do Android
+não diz por quê. A chave fica **fora do repositório** — quem a tem publica
+atualização no seu nome:
+
+```bash
+keytool -genkey -v -keystore cineclube.jks -alias cineclube         -keyalg RSA -keysize 2048 -validity 10000
+
+cp mobile/android/keystore.properties.example mobile/android/keystore.properties
+# e preencha caminho e senhas
+
+npm --prefix mobile run apk          # release
+npm --prefix mobile run apk debug    # para instalar e testar
+```
+
+Sem `keystore.properties` o build segue e o próprio Gradle avisa que saiu sem
+assinar. A impressão digital dessa chave (`keytool -list -v -keystore
+cineclube.jks`) é o que vai em `ANDROID_FINGERPRINT` no servidor.
+
 Três coisas que não têm volta depois da primeira publicação:
 
 - **o `appId`** (`com.cineclube.app`). A Play Store trata outro id como outro
@@ -383,6 +403,32 @@ tipo** — coisa nova entra como campo novo. Quem segura isso é
 `X-API-Version`. `minClient` só sobe quando uma versão antiga realmente parou de
 funcionar — e subir isso é dizer a quem não atualizou que o app parou. Ver
 `contract.js`.
+
+---
+
+## Checklist de configuração
+
+Cada recurso que depende de coisa de fora tem a mesma regra: **sem a variável,
+ele não existe** — a tela não oferece o interruptor, a rota responde 404, o
+Gradle não aplica o plugin. Nada quebra, e é isso que torna difícil perceber que
+falta alguma coisa. Então:
+
+```bash
+npm run check
+```
+
+lista o que está de pé, o que está desligado, e a linha que liga cada um.
+
+| Onde | O quê | Liga |
+|---|---|---|
+| Render | `VAPID_PUBLIC` `VAPID_PRIVATE` `VAPID_SUBJECT` | aviso de estreia no navegador e no PWA |
+| Render | `CINECLUBE_CRON_SECRET` | a porta que o relógio das estreias bate |
+| Render | `FCM_SERVICE_ACCOUNT` | aviso de estreia dentro do APK |
+| Render | `ANDROID_FINGERPRINT` | o link do clube abrindo no aplicativo |
+| GitHub → Secrets | `CINECLUBE_URL` `CINECLUBE_CRON_SECRET` | o fluxo `estreias.yml` |
+| Firebase | projeto + app `com.cineclube.app` → `google-services.json` em `mobile/android/app/` | o push do APK, do lado do aparelho |
+| Máquina que compila | `client/.env.app` com `VITE_API_BASE` | token em vez de cookie, o OTA e o domínio do link |
+| Máquina que compila | `mobile/android/keystore.properties` | a assinatura do APK |
 
 ---
 

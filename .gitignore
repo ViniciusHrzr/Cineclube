@@ -33,6 +33,12 @@ mobile/android/app/src/main/res/values/deeplink.xml
 # projeto e não é o produto; fica na máquina de quem compila, como o .env.app.
 # Sem o arquivo, o Gradle não aplica o plugin e o app compila sem push.
 mobile/android/app/google-services.json
+# A chave que assina o aplicativo, e o arquivo que diz onde ela está e com que
+# senha. Quem a tem publica atualização no seu nome. Ver
+# mobile/android/keystore.properties.example.
+mobile/android/keystore.properties
+*.jks
+*.keystore
 
 # ── o banco, e tudo que sai dele ──────────────────────────────────────────
 # A pasta inteira, e não `data/*.db`. Aquele padrão cobria o banco em uso e
