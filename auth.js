@@ -540,6 +540,71 @@ function clearSessionCookie(res) {
 
 /* ── middleware ───────────────────────────────────────────────────────── */
 
+/* ══ o bilhete de um uso ═══════════════════════════════════════════════════
+   Um segredo curto que viaja NA URL, para as duas coisas que não conseguem
+   apresentar uma sessão do jeito normal: o cano ao vivo, que é um
+   `EventSource` e não manda cabeçalho, e a volta do Google dentro de um
+   aplicativo, que acontece noutro navegador.
+
+   Um minuto de vida e um uso só. O token da sessão na URL valeria um dia e
+   seria escrito no log de todo intermediário do caminho; este é gasto antes de
+   qualquer log ser lido.
+
+   `useTicket` devolve a MESMA forma de `readSession`, porque quem o recebe é o
+   mesmo middleware que já sabia ler um cookie. */
+const TICKET_SECONDS = 60;
+
+async function createTicket(reviewerId, kind = 'stream') {
+  const token = crypto.randomBytes(24).toString('base64url');
+  await db.prepare(
+    `INSERT INTO tickets (token_hash, reviewer_id, kind, expires_at)
+     VALUES (?, ?, ?, datetime('now', '+' || ? || ' seconds'))`
+  ).run(sha(token), reviewerId, kind, TICKET_SECONDS);
+  return token;
+}
+
+/** Gasta o bilhete e devolve a sessão dele. Null é "não vale", sem distinguir. */
+async function useTicket(token, kind = 'stream') {
+  if (!token || typeof token !== 'string') return null;
+  const hash = sha(token);
+  const row = await db.prepare(
+    `SELECT reviewer_id, expires_at > datetime('now') AS viva
+     FROM tickets WHERE token_hash = ? AND kind = ?`
+  ).get(hash, kind);
+
+  /* Apagado mesmo quando não serve: um bilhete apresentado é um bilhete gasto,
+     e deixá-lo vivo daria tentativas infinitas a quem varia outra coisa. */
+  await db.prepare('DELETE FROM tickets WHERE token_hash = ?').run(hash);
+  if (!row?.viva) return null;
+
+  return db.prepare(
+    `SELECT r.id AS reviewer_id, r.name, r.dot, r.is_admin, r.avatar_rev, r.email, r.bio,
+            r.email_verified,
+            (r.password_hash IS NOT NULL) AS has_password
+     FROM reviewers r WHERE r.id = ?`
+  ).get(row.reviewer_id);
+}
+
+/* O middleware do bilhete. Roda logo depois de `attachSession` e antes de
+   qualquer coisa que dependa de quem é você — a sala é resolvida com a sessão
+   na mão, e um bilhete lido depois disso chegaria a um clube já marcado como
+   "não é membro".
+
+   Só nas rotas de `EventSource`, que são as únicas que não conseguem mandar
+   cabeçalho: um bilhete não é uma segunda porta para a API inteira. Não recusa
+   nada — quem cobra sessão é quem vem depois — e não toca em quem já chegou
+   identificado por cookie ou por Bearer. */
+async function attachTicket(req, res, next) {
+  try {
+    if (!req.session && req.query?.ticket && req.path.endsWith('/stream')) {
+      req.session = await useTicket(String(req.query.ticket), 'stream');
+    }
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
 /** O que veio no `Authorization: Bearer`, se veio. */
 function readBearer(req) {
   const raw = req.headers.authorization;
@@ -607,6 +672,9 @@ module.exports = {
   accountByEmail,
   TOKEN_HOURS,
   createSession,
+  createTicket,
+  useTicket,
+  attachTicket,
   createTokenPair,
   rotateRefresh,
   destroyRefreshFamily,

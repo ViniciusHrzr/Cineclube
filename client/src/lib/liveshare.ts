@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Screening, SignalKind } from '@/lib/screening';
+import { inShell } from '@/lib/shell';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A TELA DE ALGUÉM, NA TELA DE TODO MUNDO — o segundo modo da sessão, e o
@@ -467,7 +468,16 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const start = useCallback(async () => {
     setError(null);
     if (!navigator.mediaDevices?.getDisplayMedia) {
-      setError('Este navegador não sabe compartilhar tela. Chrome ou Edge, no computador.');
+      /* Duas ausências, duas frases. O WebView de um aplicativo não tem
+         `getDisplayMedia` e não vai ter: capturar a tela no Android é permissão
+         de sistema e código nativo, não coisa que uma página peça. Mandar quem
+         está no telefone "usar o Chrome no computador" seria uma instrução que
+         não descreve o que está acontecendo. */
+      setError(
+        inShell()
+          ? 'Transmitir a tela é do computador: o aplicativo não tem essa porta. Aqui dá para assistir o que outra pessoa transmitir.'
+          : 'Este navegador não sabe compartilhar tela. Chrome ou Edge, no computador.'
+      );
       return;
     }
     let capture: MediaStream;

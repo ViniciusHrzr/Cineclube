@@ -4,14 +4,18 @@
   "private": true,
   "description": "A casca Android do Cineclube: o mesmo cliente web, empacotado.",
   "scripts": {
-    "build": "npm --prefix ../client run build:app && npm run icons && npm run sync",
+    "build": "npm --prefix ../client run build:app && npm run icons && npm run links && npm run sync",
     "icons": "node scripts/icons.mjs",
+    "links": "node scripts/links.mjs",
     "sync": "cap sync android",
     "open": "cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/browser": "^6.0.6",
     "@capacitor/core": "^6.2.0",
+    "@capacitor/push-notifications": "^6.0.5",
     "@capgo/capacitor-updater": "^6.51.15"
   },
   "devDependencies": {

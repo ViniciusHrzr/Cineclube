@@ -234,9 +234,11 @@ Com ela, o cliente passa a falar com um servidor de outra origem e a sessão
 viaja em `Bearer` em vez de cookie — ver `client/src/lib/session.ts`. Sem ela,
 nada muda: o site continua sendo servido pelo mesmo Express que responde `/api`.
 
-Uma peça ainda não atravessa: `EventSource` não manda cabeçalho, então o cano ao
-vivo se identifica por cookie. Numa casca que carrega o site remoto funciona; numa
-com os arquivos embarcados, o mural atualiza pelo relógio e não ao vivo.
+`EventSource` não manda cabeçalho, então num aplicativo ele se identifica por um
+**bilhete**: `POST /api/auth/ticket` devolve um segredo de um minuto e de um uso
+que viaja na URL do cano. Um por conexão — quem reconecta pede outro, e é por
+isso que a retentativa é do cliente e não do `EventSource`, que repetiria a
+mesma URL com um bilhete já gasto.
 
 ### O APK
 
@@ -281,6 +283,18 @@ O que OTA **não** alcança: código nativo — plugin novo, permissão nova, mu
 de `versionCode`. Isso continua saindo por release na loja, e é para isso que
 serve o `minClient` de `contract.js`.
 
+### O que o aplicativo faz por fora
+
+- **Entrar pelo Google** abre o navegador do sistema (o Google recusa OAuth em
+  WebView) e volta por `cineclube://auth?code=…`, com um bilhete de um uso que
+  vira o par de chaves do aparelho. Ver `lib/shell.ts` e `routes/auth.js`.
+- **Links do clube** abrem no app quando `ANDROID_FINGERPRINT` está no ambiente:
+  é o `/.well-known/assetlinks.json` que o Android confere. O domínio entra no
+  manifesto por um recurso gerado de `client/.env.app`.
+- **Transmitir a tela não existe no aplicativo**: capturar tela no Android é
+  permissão de sistema e código nativo. Assistir funciona; transmitir é do
+  computador, e a tela diz isso com essas palavras.
+
 Três coisas que não têm volta depois da primeira publicação:
 
 - **o `appId`** (`com.cineclube.app`). A Play Store trata outro id como outro
@@ -313,9 +327,12 @@ dentro dele não acordaria nem a si mesmo. O que já foi avisado fica anotado po
 pessoa, episódio e dia: rodar de novo depois de uma falha no meio não acorda
 ninguém duas vezes.
 
-Onde isto **não** chega: o WebView de uma casca Capacitor não tem Push API.
-Alcança o navegador, o app instalado pelo navegador e a casca TWA; para o
-Capacitor o caminho é FCM, que é outra porta.
+O WebView de uma casca não tem Push API: lá quem acorda o aparelho é o FCM, e
+`fcm.js` é a segunda porta para a mesma mensagem. A inscrição diz por qual delas
+ela sai (`push_subs.kind`); o texto, a conta de quem recebe e o registro de quem
+já foi avisado são os mesmos. Precisa de uma conta de serviço do Firebase no
+ambiente e de um `google-services.json` em `mobile/android/app/` — nenhum dos
+dois entra no repositório.
 
 ### As duas portas da sessão
 

@@ -22,6 +22,34 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- ── a volta do Google ─────────────────────────────────────
+                 O Google recusa OAuth dentro de um WebView, então a entrada
+                 abre no navegador do sistema. Este esquema é como a resposta
+                 volta para cá: cineclube://auth?code=<bilhete de um uso>.
+                 Ver routes/auth.js. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cineclube" android:host="auth" />
+            </intent-filter>
+
+            <!-- ── o link do clube abrindo aqui dentro ───────────────────
+                 `autoVerify` faz o Android conferir, no domínio, que o dono
+                 dele reconhece este pacote — é o /.well-known/assetlinks.json
+                 servido por server.js. Sem essa conferência o link continua
+                 abrindo o navegador, que é o comportamento de antes.
+
+                 O domínio vem de um recurso gerado no build a partir de
+                 client/.env.app: escrevê-lo aqui poria o endereço do serviço no
+                 repositório. Ver mobile/scripts/links.mjs. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="@string/deeplink_host" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -38,4 +66,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Do Android 13 em diante, avisar precisa de permissão pedida em tempo de
+         execução — e o pedido só aparece se ela estiver declarada aqui. Sem
+         isto o interruptor de Avisos liga e nada chega. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

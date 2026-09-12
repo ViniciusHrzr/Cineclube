@@ -19,6 +19,16 @@ process.env.VAPID_PRIVATE = par.private;
 process.env.VAPID_SUBJECT = 'mailto:teste@exemplo.com';
 process.env.CINECLUBE_CRON_SECRET = 'segredo-do-relogio';
 
+/* A conta de serviço do Android aponta para o mesmo servidor de mentira — é o
+   que permite conferir o que sai daqui sem um projeto Firebase de verdade. A
+   chave é gerada agora: ela só precisa assinar um JWT que este teste não
+   verifica, e uma chave de exemplo no repositório seria uma chave a menos de
+   confusão no dia em que alguém a reconhecer como válida em outro lugar. */
+const { privateKey } = require('node:crypto').generateKeyPairSync('rsa', { modulusLength: 2048 });
+process.env.FCM_PROJECT_ID = 'cineclube-de-teste';
+process.env.FCM_CLIENT_EMAIL = 'robo@cineclube-de-teste.iam.gserviceaccount.com';
+process.env.FCM_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' });
+
 const app = require('../server');
 const db = require('../db');
 const live = require('../live');
@@ -69,12 +79,31 @@ test.before(async () => {
         headers: req.headers,
         body: Buffer.concat(pedacos),
       });
+      /* O FCM responde JSON; o serviço de Web Push responde vazio. O mesmo
+         servidor faz os dois papéis, e o caminho diz qual. */
+      /* A troca do JWT por um token de acesso, que o FCM exige antes de
+         qualquer envio. */
+      if (req.url === '/token') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{"access_token":"token-de-acesso-de-teste","expires_in":3600}');
+        return;
+      }
+      if (req.url.includes('/messages:send')) {
+        res.writeHead(resposta, { 'Content-Type': 'application/json' });
+        res.end(resposta === 200 ? '{"name":"projects/x/messages/1"}' : '{"error":{"status":"UNREGISTERED"}}');
+        return;
+      }
       res.writeHead(resposta).end();
     });
   });
   servico.listen(0);
   await new Promise(resolve => servico.once('listening', resolve));
   servicoUrl = `http://127.0.0.1:${servico.address().port}`;
+  /* O endereço do FCM e o do OAuth do Google apontam para cá. O segundo não é
+     configurável, então o teste do caminho nativo para antes dele — ver o
+     bloco 5. */
+  process.env.FCM_BASE = servicoUrl;
+  process.env.FCM_OAUTH = `${servicoUrl}/token`;
 });
 
 test.after(async () => {
@@ -132,6 +161,17 @@ async function aparelho(reviewerId) {
       crypto.randomBytes(16).toString('base64url')
     );
   return endpoint;
+}
+
+/** Um aparelho de APLICATIVO: o que ele tem é um token, não um endereço. */
+async function aparelhoApp(reviewerId) {
+  const token = `token-do-aparelho-${++seq}`;
+  await db
+    .prepare(
+      "INSERT INTO push_subs (id, reviewer_id, kind, endpoint, p256dh, auth) VALUES (?,?,'fcm',?,'','')"
+    )
+    .run(crypto.createHash('sha256').update(token).digest('hex'), reviewerId, token);
+  return token;
 }
 
 /* ══ 1. A CIFRA ══════════════════════════════════════════════════════════ */
@@ -320,4 +360,89 @@ test('sem o segredo, o relógio não dispara nada', async () => {
   assert.equal((await relogio('chute')).status, 403);
   assert.equal((await req('POST', '/api/push/airing')).status, 403);
   assert.equal(entregas.length, 0);
+});
+
+/* ══ 5. A PORTA DO ANDROID ═══════════════════════════════════════════════
+   O WebView de uma casca não tem Push API: quem acorda o aparelho é o serviço
+   do Android. A inscrição é um token, quem cifra é o Google, e o que não pode
+   mudar é o resto — a conta de quem recebe, o texto, e o registro de quem já
+   foi avisado. */
+
+test('o aplicativo se inscreve com um token, e a linha sabe por qual porta sai', async () => {
+  const p = await kit.signIn();
+  const posto = await req(
+    'POST',
+    '/api/push/subscribe',
+    { kind: 'fcm', token: 'token-de-um-aparelho' },
+    p.cookie
+  );
+  assert.equal(posto.status, 201);
+
+  const linhas = await db.prepare('SELECT * FROM push_subs WHERE reviewer_id = ?').all(p.id);
+  assert.equal(linhas.length, 1);
+  assert.equal(linhas[0].kind, 'fcm');
+  assert.equal(linhas[0].endpoint, 'token-de-um-aparelho');
+
+  assert.equal(
+    (await req('DELETE', '/api/push/subscribe', { token: 'token-de-um-aparelho' }, p.cookie)).status,
+    204
+  );
+  assert.equal((await db.prepare('SELECT * FROM push_subs WHERE reviewer_id = ?').all(p.id)).length, 0);
+});
+
+test('a estreia do dia sai pela porta do Android quando a inscrição é de app', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  await estreiaHoje(p, club);
+  const token = await aparelhoApp(p.id);
+
+  resposta = 200;
+  /* O relógio percorre o produto inteiro, então o número que ele devolve conta
+     também as estreias de outras contas destes testes. O que se afirma aqui é
+     sobre ESTE aparelho: o que saiu, e para quem. */
+  await relogio();
+
+  /* Duas requisições: a troca do JWT por um token de acesso, e o envio. */
+  const envio = entregas.find(e => e.url.includes('/messages:send'));
+  assert.ok(envio, 'nada foi mandado ao FCM');
+  assert.equal(envio.headers.authorization, 'Bearer token-de-acesso-de-teste');
+
+  const corpo = JSON.parse(envio.body.toString('utf8'));
+  assert.equal(corpo.message.token, token);
+  assert.ok(corpo.message.notification.title, 'o aviso precisa de um título');
+  assert.match(corpo.message.notification.body, /T4E02/);
+  /* `notification` e não só `data`: é ela que faz o Android desenhar o aviso
+     com o app fechado, que é o caso inteiro deste recurso. */
+  assert.ok(corpo.message.android.notification.tag);
+});
+
+test('o aparelho que o Google diz não existir mais sai da lista', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  await estreiaHoje(p, club);
+  await aparelhoApp(p.id);
+
+  resposta = 404;
+  await relogio();
+  assert.equal(
+    (await db.prepare('SELECT * FROM push_subs WHERE reviewer_id = ?').all(p.id)).length,
+    0,
+    'a inscrição morta tinha de sair'
+  );
+});
+
+/* As duas portas na mesma conta: um navegador e um aplicativo, o mesmo aviso. */
+test('quem tem os dois recebe nos dois', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  await estreiaHoje(p, club);
+  await aparelho(p.id);
+  await aparelhoApp(p.id);
+
+  /* 201 é entrega do Web Push e 200 é a do FCM; o serviço de mentira responde
+     um código só, então este teste mede o que saiu, não o que voltou. */
+  resposta = 200;
+  await relogio();
+  assert.ok(entregas.some(e => e.url.includes('/messages:send')), 'o aplicativo não recebeu');
+  assert.ok(entregas.some(e => e.url.startsWith('/entrega/')), 'o navegador não recebeu');
 });

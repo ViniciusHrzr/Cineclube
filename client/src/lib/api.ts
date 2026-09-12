@@ -6,6 +6,7 @@
    sobre formas: mora em lib/session.ts. Aqui só se lê o resultado — um
    cabeçalho, um modo de credencial, e uma renovação para tentar de novo. */
 
+import { inShell } from '@/lib/shell';
 import {
   appMode,
   authHeaders,
@@ -123,9 +124,19 @@ export const auth = {
       mail?: boolean;
     }>('/api/auth/me'),
   /* Não é fetch: é uma navegação de verdade, porque quem responde é o Google.
-     Numa casca, ela abre no navegador do sistema e a volta cria a sessão de
-     cookie no servidor — que `adopt` troca por um par de chaves. */
-  googleUrl: urlFor('/api/auth/google'),
+     `?app=1` numa casca: o Google recusa OAuth dentro de um WebView, então a
+     porta abre no navegador do sistema e a volta chega por `cineclube://auth`
+     com um bilhete de um uso. Ver lib/shell.ts e routes/auth.js. */
+  googleUrl: urlFor('/api/auth/google') + (inShell() ? '?app=1' : ''),
+  /* O bilhete que voltou do Google virando o par de chaves deste aparelho. */
+  handoff: async (code: string) => {
+    const got = await post<{ access: string; refresh: string; reviewer: SessionUser }>(
+      '/api/auth/token',
+      { handoff: code }
+    );
+    setPair({ access: got.access, refresh: got.refresh });
+    return got.reviewer;
+  },
   /* A mesma tela de entrar nos dois modos, e a diferença mora aqui: no site a
      resposta é um cookie que este código nem vê; numa casca é um par de chaves
      que ele guarda. */

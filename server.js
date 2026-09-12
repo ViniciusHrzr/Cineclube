@@ -58,6 +58,10 @@ app.get('/api/meta', require('./contract').meta);
 app.use(express.json({ limit: '1mb' }));
 // Every request learns who is signed in; individual routes decide if they care.
 app.use(auth.attachSession);
+/* E o bilhete, que é como um `EventSource` se identifica — ele não manda
+   cabeçalho. Aqui e não na rota: a sala é resolvida com a sessão na mão, e um
+   bilhete lido lá dentro chegaria a um clube já marcado como "não é membro". */
+app.use(auth.attachTicket);
 
 /* ── o teto de trás ───────────────────────────────────────────────────────
    As travas que importam são as das rotas. Esta não sabe nada sobre
@@ -171,6 +175,35 @@ app.use(
     },
   })
 );
+
+/* ── o que faz um link abrir DENTRO do aplicativo ─────────────────────────
+   Sem isto, tocar num endereço do clube mandado no grupo abre o navegador — o
+   Android só entrega o link ao app depois de confirmar, neste arquivo, que o
+   dono do domínio reconhece aquele pacote.
+
+   A impressão digital é do certificado que assina o APK, e sai do keystore com
+   `keytool -list -v -keystore <arquivo>`. Ela não é segredo (vai dentro de todo
+   APK publicado), mas é dado desta instalação: vive no ambiente, não no
+   repositório. Sem ela a rota não existe, e os links seguem abrindo o
+   navegador — que é o comportamento de hoje. */
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const digital = (process.env.ANDROID_FINGERPRINT || '').trim().toUpperCase();
+  if (!digital) return res.status(404).json({ error: 'Sem aplicativo registrado.' });
+  const pacote = (process.env.ANDROID_PACKAGE || 'com.cineclube.app').trim();
+
+  res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: pacote,
+        /* Mais de uma quando o app é assinado pela Play Store: ela reassina com
+           uma chave dela, e as duas precisam constar. Separadas por vírgula. */
+        sha256_cert_fingerprints: digital.split(',').map(d => d.trim()).filter(Boolean),
+      },
+    },
+  ]);
+});
 
 /* ══════════════════════════════════════════════════════════════════════════
    O ÚLTIMO TRATADOR, e por que ele não imprime o erro inteiro.

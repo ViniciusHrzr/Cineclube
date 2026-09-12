@@ -296,13 +296,44 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS push_subs (
       id TEXT PRIMARY KEY,
       reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      /* Por qual porta o aviso sai: web (o navegador, cifrado aqui) ou fcm (o
+         serviço do Android, para a casca — o WebView não tem Push API). O que
+         muda é só quem entrega; o texto e a conta de quem recebe são os
+         mesmos. Ver push.js e fcm.js. */
+      kind TEXT NOT NULL DEFAULT 'web',
+      /* O endereço de entrega no web, e o token do aparelho no fcm. */
       endpoint TEXT NOT NULL,
+      /* As chaves do aparelho, que só o web usa. */
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       last_ok_at TEXT
     );
     CREATE INDEX IF NOT EXISTS push_subs_reviewer ON push_subs(reviewer_id);
+
+    /* ── um bilhete de um uso ───────────────────────────────────────────
+       Duas coisas neste produto não conseguem apresentar uma sessão do jeito
+       normal, e as duas precisam de um segredo curto que viaje na URL:
+
+       · stream — o cano ao vivo. EventSource não manda cabeçalho, e num
+         aplicativo não há cookie: sem isto, a sala sincronizada e o mural ao
+         vivo simplesmente não existem no app.
+       · handoff — a volta do Google. Ele responde no navegador do sistema, e
+         o que precisa chegar ao aplicativo é a sessão que nasceu ali.
+
+       Por que não o token da sessão na URL: ele valeria um dia, e uma URL é
+       escrita no log de todo intermediário do caminho. Este vale um minuto, é
+       gasto na primeira apresentação, e não abre nada além do que abriu.
+
+       Some no uso e some no vencimento. */
+    CREATE TABLE IF NOT EXISTS tickets (
+      token_hash TEXT PRIMARY KEY,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS tickets_reviewer ON tickets(reviewer_id);
 
     /* O que já foi avisado, para o aviso não chegar duas vezes. A chave diz
        tudo: pessoa, episódio e dia. O trabalho da noite pode rodar de novo
@@ -1213,6 +1244,13 @@ async function migrate() {
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
   // E a chave de renovação que já não renova nada.
   await prepare("DELETE FROM refresh_tokens WHERE expires_at <= datetime('now')").run();
+  // Para um banco que criou a tabela antes de existir a porta do Android.
+  if (!(await columnsOf('push_subs')).includes('kind')) {
+    await exec("ALTER TABLE push_subs ADD COLUMN kind TEXT NOT NULL DEFAULT 'web'");
+  }
+
+  // Bilhete vencido não abre nada; sai no boot com o resto.
+  await prepare("DELETE FROM tickets WHERE expires_at <= datetime('now')").run();
   /* O registro de quem já foi avisado só serve para o dia dele. Um mês é folga
      para uma execução atrasada; passado isso é papel velho. */
   await prepare("DELETE FROM push_log WHERE at <= datetime('now', '-30 days')").run();

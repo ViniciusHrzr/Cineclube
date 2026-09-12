@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { capi, cpost, clubPath } from '@/lib/api';
-import { authHeaders, credentialsMode, urlFor } from '@/lib/session';
+import { authHeaders, credentialsMode, streamUrl, urlFor } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The client half of the screening room. The server owns where the film is;
@@ -251,64 +251,91 @@ export function useScreening(onError?: (msg: string) => void) {
   }, []);
 
   useEffect(() => {
-    /* ⚠ `EventSource` não manda cabeçalho, então a sessão dele é o cookie. Numa
-       casca que carrega o site remoto isso funciona; numa com os arquivos
-       embarcados, não — o cano ao vivo vai precisar de outro jeito de se
-       identificar antes de o aplicativo existir. Ver lib/live.ts. */
-    const source = new EventSource(urlFor(clubPath('/screening/stream')), {
-      withCredentials: true,
-    });
-    /* EventSource retries on its own, forever, with no way to ask it to stop
-       politely. That is right for a dropped connection and wrong for a refusal
-       — too many tabs open, or a signed-out session — where retrying is a loop
-       that never resolves. Counting consecutive failures separates the two. */
+    /* ── uma conexão, e quem a reabre é este código ───────────────────────
+       `EventSource` não manda cabeçalho: no site ele se identifica pelo cookie,
+       e num aplicativo o endereço carrega um BILHETE de um minuto e de um uso —
+       ver streamUrl em lib/session.ts.
+
+       É por causa do bilhete que a retentativa é nossa. A do `EventSource` usa
+       a MESMA URL, e a URL de um aplicativo traz um bilhete já gasto: ela
+       bateria numa porta que não abre mais até desistir. Então a conexão morre
+       no primeiro erro e volta daqui, com bilhete novo e um passo de espera a
+       cada tentativa.
+
+       Cinco seguidas e a sala desiste de vez: aqui não há pergunta periódica
+       que cubra — o que chega por este cano é o comando de tocar e pausar. */
+    let vivo = true;
+    let source: EventSource | null = null;
     let failures = 0;
+    let timer = 0;
 
-    source.onopen = () => {
-      failures = 0;
-      setConnected(true);
-    };
+    const abrir = async () => {
+      if (!vivo || source) return;
+      const endereco = await streamUrl(clubPath('/screening/stream'));
+      if (!vivo) return;
 
-    source.onmessage = e => {
-      let frame: Frame;
-      try {
-        frame = JSON.parse(e.data);
-      } catch {
-        return;
-      }
-      if (frame.type === 'signal') {
-        for (const fn of listeners.current) fn(frame.from, frame.kind, frame.data);
-        return;
-      }
-      setState(prev => {
-        if (frame.type === 'state') {
-          const { type: _drop, ...next } = frame;
-          return next;
+      const es = new EventSource(endereco, { withCredentials: true });
+      source = es;
+
+      es.onopen = () => {
+        failures = 0;
+        setConnected(true);
+      };
+
+      es.onmessage = e => {
+        let frame: Frame;
+        try {
+          frame = JSON.parse(e.data);
+        } catch {
+          return;
         }
-        /* A sync frame only moves the clock. Dropping one that is older than
-           what we hold keeps a frame that overtook another from rewinding the
-           film under somebody's hands. */
-        if (frame.revision < prev.revision) return prev;
-        return {
-          ...prev,
-          status: frame.status,
-          position: frame.position,
-          revision: frame.revision,
-          serverTime: frame.serverTime,
-        };
-      });
+        if (frame.type === 'signal') {
+          for (const fn of listeners.current) fn(frame.from, frame.kind, frame.data);
+          return;
+        }
+        setState(prev => {
+          if (frame.type === 'state') {
+            const { type: _drop, ...next } = frame;
+            return next;
+          }
+          /* A sync frame only moves the clock. Dropping one that is older than
+             what we hold keeps a frame that overtook another from rewinding the
+             film under somebody's hands. */
+          if (frame.revision < prev.revision) return prev;
+          return {
+            ...prev,
+            status: frame.status,
+            position: frame.position,
+            revision: frame.revision,
+            serverTime: frame.serverTime,
+          };
+        });
+      };
+
+      es.onerror = () => {
+        setConnected(false);
+        if (source !== es) return;
+        es.close();
+        source = null;
+        failures += 1;
+        if (failures >= 5) {
+          onError?.('A sessão perdeu a conexão com o servidor. Recarregue a página.');
+          return;
+        }
+        timer = window.setTimeout(() => {
+          timer = 0;
+          void abrir();
+        }, 1000 * failures);
+      };
     };
 
-    source.onerror = () => {
-      setConnected(false);
-      failures += 1;
-      if (failures >= 5) {
-        source.close();
-        onError?.('A sessão perdeu a conexão com o servidor. Recarregue a página.');
-      }
-    };
+    void abrir();
 
-    return () => source.close();
+    return () => {
+      vivo = false;
+      if (timer) window.clearTimeout(timer);
+      source?.close();
+    };
   }, [onError]);
 
   const send = useCallback(

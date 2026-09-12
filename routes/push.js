@@ -4,6 +4,7 @@ const db = require('../db');
 const auth = require('../auth');
 const wrap = require('../wrap');
 const push = require('../push');
+const fcm = require('../fcm');
 const airing = require('../airing');
 
 const router = express.Router();
@@ -24,10 +25,11 @@ const router = express.Router();
    ══════════════════════════════════════════════════════════════════════════ */
 
 const upsertSub = db.prepare(`
-  INSERT INTO push_subs (id, reviewer_id, endpoint, p256dh, auth)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO push_subs (id, reviewer_id, kind, endpoint, p256dh, auth)
+  VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     reviewer_id = excluded.reviewer_id,
+    kind = excluded.kind,
     p256dh = excluded.p256dh,
     auth = excluded.auth
 `);
@@ -48,12 +50,28 @@ const idOf = endpoint => crypto.createHash('sha256').update(endpoint).digest('he
    que é melhor do que um interruptor que liga e nunca avisa nada. */
 router.get('/key', (req, res) => {
   const chaves = push.keys();
-  if (!chaves) return res.status(404).json({ error: 'Este servidor não manda avisos.' });
-  res.json({ key: chaves.public });
+  /* 404 só quando NENHUMA das duas portas existe: um aplicativo não precisa da
+     chave VAPID, e um navegador não precisa do FCM. */
+  if (!chaves && !fcm.configured()) {
+    return res.status(404).json({ error: 'Este servidor não manda avisos.' });
+  }
+  res.json({ key: chaves?.public ?? null, fcm: fcm.configured() });
 });
 
 router.post('/subscribe', auth.requireSession, wrap(async (req, res) => {
-  const { endpoint, keys } = req.body || {};
+  const { endpoint, keys, kind, token } = req.body || {};
+
+  /* ── a porta do Android ────────────────────────────────────────────────
+     O aplicativo não tem endereço de entrega nem chaves: o que ele tem é um
+     token do aparelho, e quem cifra e entrega é o próprio Google. */
+  if (kind === 'fcm') {
+    if (typeof token !== 'string' || !token.trim() || token.length > 1000) {
+      return res.status(400).json({ error: 'Inscrição inválida.' });
+    }
+    await upsertSub.run(idOf(token), req.session.reviewer_id, 'fcm', token.trim(), '', '');
+    return res.status(201).json({ ok: true });
+  }
+
   const p256dh = keys?.p256dh;
   const segredo = keys?.auth;
   if (typeof endpoint !== 'string' || !/^https:\/\//.test(endpoint) || !p256dh || !segredo) {
@@ -64,13 +82,15 @@ router.post('/subscribe', auth.requireSession, wrap(async (req, res) => {
      destino de uma requisição nossa. */
   if (endpoint.length > 1000) return res.status(400).json({ error: 'Inscrição inválida.' });
 
-  await upsertSub.run(idOf(endpoint), req.session.reviewer_id, endpoint, p256dh, segredo);
+  await upsertSub.run(idOf(endpoint), req.session.reviewer_id, 'web', endpoint, p256dh, segredo);
   res.status(201).json({ ok: true });
 }));
 
 router.delete('/subscribe', auth.requireSession, wrap(async (req, res) => {
-  const endpoint = req.body?.endpoint;
-  if (typeof endpoint === 'string') await deleteSub.run(idOf(endpoint));
+  /* O endereço no navegador, o token no aplicativo: a chave da linha sai do
+     hash de um ou de outro, e os dois chegam por este mesmo campo. */
+  const dado = req.body?.endpoint ?? req.body?.token;
+  if (typeof dado === 'string') await deleteSub.run(idOf(dado));
   res.status(204).end();
 }));
 
@@ -147,7 +167,11 @@ async function entregar(subs, conteudo) {
   let falhas = 0;
 
   for (const sub of subs) {
-    const saida = await push.send(sub, corpo);
+    /* Duas portas, uma mensagem. O navegador recebe um corpo cifrado por nós; o
+       aplicativo recebe um aviso montado pelo Google a partir dos mesmos
+       campos. Ver fcm.js. */
+    const saida =
+      sub.kind === 'fcm' ? await fcm.send(sub, conteudo) : await push.send(sub, corpo);
     if (saida.ok) {
       enviados += 1;
       await marcarOk.run(sub.id);

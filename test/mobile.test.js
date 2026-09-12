@@ -444,3 +444,53 @@ function fileIn(buf, alvo) {
   }
   throw new Error(`${alvo} não está no pacote`);
 }
+
+/* ══ 6. O BILHETE DO CANO AO VIVO ════════════════════════════════════════
+   `EventSource` não manda cabeçalho: no site ele se identifica pelo cookie, e
+   num aplicativo não há cookie desta origem. Sem o bilhete, a sala sincronizada
+   e o mural ao vivo simplesmente não existem no APK.
+
+   O que ele não pode ser é uma segunda porta permanente: vale um minuto, é
+   gasto na primeira apresentação, e não abre nada que a sessão já não abrisse. */
+
+test('o bilhete vale como sessão no cano ao vivo, e só uma vez', async () => {
+  const p = await comSenha();
+  const par = (await req('POST', '/api/auth/token', {
+    body: { email: p.email, password: p.senha },
+  })).body;
+
+  const { body } = await req('POST', '/api/auth/ticket', { bearer: par.access });
+  assert.ok(body.ticket, 'sem bilhete não há cano ao vivo no app');
+
+  /* O clube principal, que toda conta nova recebe: é onde o cano existe. */
+  const clubes = await req('GET', '/api/clubs', { bearer: par.access });
+  const sala = clubes.body.mine[0];
+
+  const aberto = await fetch(
+    `${baseUrl}/api/c/${sala.slug}/live/stream?ticket=${encodeURIComponent(body.ticket)}`
+  );
+  assert.equal(aberto.status, 200);
+  assert.match(aberto.headers.get('content-type') || '', /text\/event-stream/);
+  await aberto.body.cancel();
+
+  /* Gasto: a segunda apresentação do mesmo bilhete não é sessão nenhuma, e a
+     rota cobra sessão. */
+  const denovo = await fetch(
+    `${baseUrl}/api/c/${sala.slug}/live/stream?ticket=${encodeURIComponent(body.ticket)}`
+  );
+  assert.equal(denovo.status, 401);
+});
+
+test('um bilhete inventado não abre cano nenhum', async () => {
+  const p = await kit.signIn();
+  const clubes = await req('GET', '/api/clubs', { cookie: p.cookie });
+  const sala = clubes.body.mine[0];
+
+  const chute = await fetch(`${baseUrl}/api/c/${sala.slug}/live/stream?ticket=nao-existe`);
+  assert.equal(chute.status, 401);
+});
+
+test('sem sessão ninguém tira bilhete', async () => {
+  const solto = await req('POST', '/api/auth/ticket', {});
+  assert.equal(solto.status, 401);
+});

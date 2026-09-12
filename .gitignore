@@ -26,6 +26,13 @@ mobile/node_modules/
 # endereço mora em client/.env.app, que também não é versionado.
 mobile/www/
 client/.env.app
+# O host do link profundo, gerado do .env.app a cada build. Versioná-lo poria o
+# endereço do serviço no repositório. Ver mobile/scripts/links.mjs.
+mobile/android/app/src/main/res/values/deeplink.xml
+# A conta do Firebase que recebe os avisos do aplicativo. Ela identifica o
+# projeto e não é o produto; fica na máquina de quem compila, como o .env.app.
+# Sem o arquivo, o Gradle não aplica o plugin e o app compila sem push.
+mobile/android/app/google-services.json
 
 # ── o banco, e tudo que sai dele ──────────────────────────────────────────
 # A pasta inteira, e não `data/*.db`. Aquele padrão cobria o banco em uso e

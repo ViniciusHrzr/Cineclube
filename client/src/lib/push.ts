@@ -1,4 +1,5 @@
 import { api, post } from '@/lib/api';
+import { inShell, plugin } from '@/lib/shell';
 
 /* ══════════════════════════════════════════════════════════════════════════
    SER AVISADO COM O APP FECHADO.
@@ -9,8 +10,16 @@ import { api, post } from '@/lib/api';
    devolvê-lo ao servidor.
 
    ── quatro estados, e a tela mostra os quatro ───────────────────────────
-   · `sem` — este navegador não faz push. É o caso do Safari fora de um app
-     instalado, e o do WebView de uma casca Capacitor, que não tem Push API.
+   · `sem` — nem o navegador nem a casca sabem receber. É o caso do Safari
+     fora de um app instalado.
+
+   ── e há DUAS portas ─────────────────────────────────────────────────────
+   No navegador, Web Push: a inscrição é um endereço de entrega mais as chaves
+   do aparelho, e quem cifra somos nós. Dentro de uma casca não existe Push API,
+   e quem acorda o aparelho é o serviço do Android — a inscrição é um token e
+   quem entrega é o Google. Ver push.js e fcm.js.
+
+   O interruptor da tela é o mesmo nos dois.
    · `servidor` — o navegador faz, mas ESTA instalação não tem chave VAPID
      configurada. Não adianta oferecer o interruptor.
    · `bloqueado` — a pessoa recusou a permissão. Só ela desfaz isso, nas
@@ -29,19 +38,68 @@ const supported = () =>
   'PushManager' in window &&
   'Notification' in window;
 
-/* A chave pública do servidor, perguntada uma vez. 404 dali quer dizer que esta
-   instalação não manda aviso nenhum — ver routes/push.js. */
-let chave: string | null | undefined;
+/* O que o servidor sabe entregar, perguntado uma vez. 404 dali quer dizer que
+   esta instalação não manda aviso nenhum — ver routes/push.js. */
+let portas: { key: string | null; fcm: boolean } | null | undefined;
 
-async function serverKey(): Promise<string | null> {
-  if (chave !== undefined) return chave;
+async function serverDoors() {
+  if (portas !== undefined) return portas;
   try {
-    const { key } = await api<{ key: string }>('/api/push/key');
-    chave = key;
+    portas = await api<{ key: string | null; fcm: boolean }>('/api/push/key');
   } catch {
-    chave = null;
+    portas = null;
   }
-  return chave;
+  return portas;
+}
+
+/* O token deste aparelho, guardado para saber que o interruptor está ligado e
+   para poder desligá-lo. No navegador isto não existe: lá quem sabe é o próprio
+   `PushManager`. */
+const FCM_STORE = 'cc.push.fcm';
+const fcmToken = () => {
+  try {
+    return localStorage.getItem(FCM_STORE);
+  } catch {
+    return null;
+  }
+};
+
+/* ── a porta do Android ───────────────────────────────────────────────────
+   O token não volta da chamada: ele chega por um evento, e pode não chegar —
+   aparelho sem Google Play, projeto Firebase ausente, rede fora. Dez segundos
+   de espera e o interruptor volta a apagado, que é a verdade. */
+async function nativeToken(): Promise<string | null> {
+  const nativo = plugin('PushNotifications');
+  if (!nativo) return null;
+
+  return new Promise(resolve => {
+    let pronto = false;
+    const handles: { remove?: () => void }[] = [];
+    const acabou = (token: string | null) => {
+      if (pronto) return;
+      pronto = true;
+      for (const h of handles) h.remove?.();
+      resolve(token);
+    };
+
+    const espera = window.setTimeout(() => acabou(null), 10_000);
+    const guarda = (p: unknown) =>
+      void Promise.resolve(p).then(h => handles.push(h as { remove?: () => void }));
+
+    guarda(
+      nativo.addListener('registration', (t: unknown) => {
+        window.clearTimeout(espera);
+        acabou((t as { value?: string })?.value ?? null);
+      })
+    );
+    guarda(
+      nativo.addListener('registrationError', () => {
+        window.clearTimeout(espera);
+        acabou(null);
+      })
+    );
+    void nativo.register();
+  });
 }
 
 async function current(): Promise<PushSubscription | null> {
@@ -50,8 +108,19 @@ async function current(): Promise<PushSubscription | null> {
 }
 
 export async function pushState(): Promise<PushState> {
+  const portas = await serverDoors();
+
+  if (inShell()) {
+    const nativo = plugin('PushNotifications');
+    if (!nativo) return 'sem';
+    if (!portas?.fcm) return 'servidor';
+    const perm = (await nativo.checkPermissions()) as { receive?: string };
+    if (perm?.receive === 'denied') return 'bloqueado';
+    return fcmToken() ? 'ligado' : 'desligado';
+  }
+
   if (!supported()) return 'sem';
-  if (!(await serverKey())) return 'servidor';
+  if (!portas?.key) return 'servidor';
   if (Notification.permission === 'denied') return 'bloqueado';
   return (await current()) ? 'ligado' : 'desligado';
 }
@@ -72,8 +141,30 @@ function bytesOf(base64url: string) {
    `userVisibleOnly` não é escolha: o Chrome exige a promessa de que todo push
    vira um aviso na tela. */
 export async function enablePush(): Promise<PushState> {
+  const portas = await serverDoors();
+
+  if (inShell()) {
+    const nativo = plugin('PushNotifications');
+    if (!nativo) return 'sem';
+    if (!portas?.fcm) return 'servidor';
+
+    const perm = (await nativo.requestPermissions()) as { receive?: string };
+    if (perm?.receive !== 'granted') return perm?.receive === 'denied' ? 'bloqueado' : 'desligado';
+
+    const token = await nativeToken();
+    if (!token) return 'desligado';
+    await post('/api/push/subscribe', { kind: 'fcm', token });
+    try {
+      localStorage.setItem(FCM_STORE, token);
+    } catch {
+      /* Sem armazenamento o aviso continua chegando; o que se perde é o
+         interruptor saber que está ligado depois de fechar o app. */
+    }
+    return 'ligado';
+  }
+
   if (!supported()) return 'sem';
-  const key = await serverKey();
+  const key = portas?.key;
   if (!key) return 'servidor';
 
   const permissao = await Notification.requestPermission();
@@ -95,6 +186,27 @@ export async function enablePush(): Promise<PushState> {
    inversa, uma falha de rede deixaria uma inscrição viva lá que o aparelho já
    não conhece — e o aviso chegaria de um lugar que a pessoa acabou de desligar. */
 export async function disablePush(): Promise<PushState> {
+  if (inShell()) {
+    const token = fcmToken();
+    if (token) {
+      await api('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      }).catch(() => {
+        /* O servidor não ouviu. A inscrição morre sozinha na primeira entrega
+           recusada — o Google devolve UNREGISTERED e a linha sai. */
+      });
+      try {
+        localStorage.removeItem(FCM_STORE);
+      } catch {
+        /* Ver acima: sem armazenamento, o estado do interruptor é o que o
+           servidor souber. */
+      }
+    }
+    return 'desligado';
+  }
+
   if (!supported()) return 'sem';
   const sub = await current();
   if (!sub) return 'desligado';

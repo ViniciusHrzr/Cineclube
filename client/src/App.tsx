@@ -37,6 +37,7 @@ import {
 } from '@/lib/api';
 import { WorldProvider, type World } from '@/lib/world';
 import { appIsReady } from '@/lib/session';
+import { closeOutside, onDeepLink } from '@/lib/shell';
 import {
   SeasonSheet,
   SeriesArchiveScreen,
@@ -328,6 +329,50 @@ export default function App() {
   useEffect(() => {
     appIsReady();
   }, []);
+
+  /* ── o endereço que acorda o aplicativo ──────────────────────────────────
+     Dois chegam aqui, e o manifesto do Android declara os dois:
+
+     · `cineclube://auth?code=…` — a volta do Google. O bilhete vira o par de
+       chaves deste aparelho, o navegador do sistema se fecha, e a sessão é
+       relida: quem estava na tela de entrar passa a estar dentro.
+     · `https://<domínio>/#…` — um link mandado no grupo. O Android entrega ao
+       app em vez de ao navegador, e o que ele carrega é o endereço interno de
+       sempre: escrever o hash é tudo o que falta fazer.
+
+     No site isto não registra ouvinte nenhum. Ver lib/shell.ts. */
+  useEffect(
+    () =>
+      onDeepLink(raw => {
+        let url: URL;
+        try {
+          url = new URL(raw);
+        } catch {
+          return;
+        }
+
+        if (url.protocol === 'cineclube:') {
+          const code = url.searchParams.get('code');
+          if (!code) return;
+          void auth
+            .handoff(code)
+            .then(() => {
+              closeOutside();
+              void checkAuth();
+            })
+            .catch(() => {
+              /* Sem toast aqui: este componente é anterior à sala, e quem
+                 fica na tela de entrar já vê que não entrou. O bilhete vale um
+                 minuto e um uso — insistir é tocar no botão de novo. */
+              closeOutside();
+            });
+          return;
+        }
+
+        if (url.hash) location.hash = url.hash.replace(/^#/, '');
+      }),
+    [checkAuth]
+  );
 
   useEffect(() => {
     const onHash = () => {

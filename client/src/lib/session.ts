@@ -130,6 +130,35 @@ async function rotate(): Promise<boolean> {
   }
 }
 
+/* ── o endereço de um cano ao vivo ────────────────────────────────────────
+   `EventSource` não manda cabeçalho: ele se identifica pelo cookie, e num
+   aplicativo não há cookie desta origem. Então, em modo aplicativo, o endereço
+   ganha um BILHETE — um segredo de um minuto e de um uso, trocado pela sessão
+   que já está na mão.
+
+   Um por conexão, e é por isso que quem chama tem de pedir outro ao reabrir: o
+   servidor gasta o bilhete ao aceitar a conexão. No site nada disso acontece —
+   lá o cookie faz o trabalho e a URL sai limpa.
+
+   Falhar aqui devolve a URL sem bilhete: o servidor recusa, o cliente cai no
+   relógio, e o app continua inteiro. */
+export async function streamUrl(path: string): Promise<string> {
+  const url = urlFor(path);
+  if (!appMode || !pair) return url;
+  try {
+    const res = await fetch(urlFor('/api/auth/ticket'), {
+      method: 'POST',
+      headers: authHeaders(),
+      credentials: credentialsMode,
+    });
+    if (!res.ok) return url;
+    const { ticket } = await res.json();
+    return ticket ? `${url}${url.includes('?') ? '&' : '?'}ticket=${encodeURIComponent(ticket)}` : url;
+  } catch {
+    return url;
+  }
+}
+
 /** O que a saída precisa mandar junto para o servidor derrubar a família. */
 export const refreshToken = () => pair?.refresh ?? null;
 

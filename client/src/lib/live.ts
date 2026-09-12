@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { clubPath, hasClub } from '@/lib/api';
-import { urlFor } from '@/lib/session';
+import { streamUrl } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A metade do navegador do clube ao vivo. O servidor manda uma palavra e quem
@@ -58,9 +58,14 @@ const MAX_FAILURES = 6;
 const listeners = new Set<(kind: LiveKind) => void>();
 let source: EventSource | null = null;
 let failures = 0;
+let retry = 0;
+/* Uma abertura de cada vez. Ela virou assíncrona por causa do bilhete, e sem
+   esta marca duas chamadas próximas — o primeiro ouvinte e a volta para a aba —
+   abririam dois canos contra um teto de três por pessoa. */
+let opening = false;
 
-function open() {
-  if (source) return;
+async function open() {
+  if (source || opening) return;
   /* ── fora de uma sala não há o que ouvir ────────────────────────────────
      O cano é POR CLUBE, e há um instante entre a sessão e a sala — o app ainda
      resolvendo em qual clube abrir. Sem esta linha, `clubPath` lançava e a tela
@@ -73,19 +78,24 @@ function open() {
 
   /* `clubPath` e não uma URL fixa: o cano é de uma sala, e o servidor só entrega
      nele o que é daquela sala. Ver live.js — sem isso, um aviso de clube privado
-     chegaria a quem não é dele. */
-  /* ⚠ A ÚNICA coisa deste cliente que não sabe falar por token: `EventSource`
-     não aceita cabeçalho, então ele se identifica pelo cookie. Numa casca que
-     carrega o site remoto a origem é a do servidor e o cookie vai; numa com os
-     arquivos embarcados, não vai, e o cano ao vivo cala — o resto do app
-     continua inteiro, porque tudo aqui também chega por relógio.
+     chegaria a quem não é dele.
 
-     O conserto, quando o aplicativo existir, é um bilhete de vida curta: uma
-     rota que troca o Bearer por um código de um uso que viaja na URL. Pôr o
-     token da sessão na URL seria escrevê-lo em todo log do caminho. */
-  const es = new EventSource(urlFor(clubPath('/live/stream')), { withCredentials: true });
+     `streamUrl` é quem resolve a única coisa que `EventSource` não sabe fazer:
+     mandar cabeçalho. No site ele devolve a URL limpa e o cookie identifica;
+     num aplicativo ele pendura um bilhete de um minuto e de um uso. */
+  opening = true;
+  let endereco: string;
+  try {
+    endereco = await streamUrl(clubPath('/live/stream'));
+  } finally {
+    opening = false;
+  }
+  /* A sala pode ter trocado enquanto o bilhete era pedido: abrir agora seria
+     ouvir o clube anterior. */
+  if (source || !hasClub()) return;
+
+  const es = new EventSource(endereco, { withCredentials: true });
   source = es;
-  failures = 0;
 
   es.onopen = () => {
     failures = 0;
@@ -103,15 +113,33 @@ function open() {
     listeners.forEach(fn => fn(frame.kind as LiveKind));
   };
 
+  /* ── quem reconecta é este código, e não o `EventSource` ──────────────
+     Ele reabre sozinho, com a MESMA URL — e a URL de um aplicativo carrega um
+     bilhete que já foi gasto na primeira conexão. A retentativa dele bateria
+     numa porta que não abre mais, seis vezes, e desistiria.
+
+     Então a conexão é fechada no primeiro erro e reaberta aqui, com bilhete
+     novo e um passo de espera a cada tentativa. Seis seguidas e o cano fica
+     fechado: a pergunta periódica do sino e do mural cobre o resto, e voltar
+     para a aba tenta de novo. */
   es.onerror = () => {
-    failures += 1;
-    if (failures < MAX_FAILURES) return;
+    if (source !== es) return;
     es.close();
-    if (source === es) source = null;
+    source = null;
+    failures += 1;
+    if (failures >= MAX_FAILURES) return;
+    retry = window.setTimeout(() => {
+      retry = 0;
+      if (listeners.size) void open();
+    }, 1000 * failures);
   };
 }
 
 function close() {
+  if (retry) {
+    window.clearTimeout(retry);
+    retry = 0;
+  }
   source?.close();
   source = null;
 }
@@ -132,7 +160,7 @@ function close() {
 export function resetLive() {
   close();
   failures = 0;
-  if (listeners.size) open();
+  if (listeners.size) void open();
 }
 
 /* Voltar para a aba é a hora certa de tentar de novo: a instância é gratuita e
@@ -145,7 +173,7 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState !== 'visible') return;
     if (!listeners.size || source) return;
     failures = 0;
-    open();
+    void open();
   });
 }
 
@@ -183,7 +211,7 @@ export function useLive(
     };
 
     listeners.add(fn);
-    if (!source) open();
+    if (!source) void open();
 
     return () => {
       listeners.delete(fn);

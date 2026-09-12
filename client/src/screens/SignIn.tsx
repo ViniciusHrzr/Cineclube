@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
+import { inShell, openOutside } from '@/lib/shell';
 import { cn, plural } from '@/lib/utils';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -58,6 +59,18 @@ const MAX_MOSTRA = 3;
    nasce dentro dela, e ela é pública, então o acervo é legível por quem ainda
    não entrou. Ver `EnterFirstClub` em App.tsx e `joinHomeClub` no servidor. */
 const CLUBE = 'cineclube';
+
+/* ── a entrada pelo Google, e a casca ─────────────────────────────────────
+   No navegador o link é um link: uma navegação de topo para a porta do Google.
+   Dentro de um aplicativo, uma navegação dessas ficaria presa no WebView — e o
+   Google recusa OAuth ali dentro. Então o clique é interceptado e a porta abre
+   no navegador DO SISTEMA; a volta chega por `cineclube://auth`, tratada no
+   App. Ver lib/shell.ts. */
+function abrirGoogle(e: React.MouseEvent<HTMLAnchorElement>) {
+  if (!inShell()) return;
+  e.preventDefault();
+  openOutside(e.currentTarget.href);
+}
 
 export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [google, setGoogle] = useState(true);
@@ -292,6 +305,7 @@ function Convite({
         {google ? (
           <a
             href={auth.googleUrl}
+            onClick={abrirGoogle}
             className={cn(
               'inline-flex items-center gap-2.5 rounded-cell px-6 py-3.5 no-underline',
               'bg-house-seat/70 ring-1 ring-house-rail',
@@ -374,6 +388,7 @@ function Porta({
             <>
               <a
                 href={auth.googleUrl}
+                onClick={abrirGoogle}
                 className={cn(
                   'mt-6 flex w-full items-center justify-center gap-3 rounded-cell px-4 py-3 no-underline',
                   'bg-house-seat/70 ring-1 ring-house-rail',

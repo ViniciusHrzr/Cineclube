@@ -112,6 +112,20 @@ const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const STATE_COOKIE = 'cc_oauth';
 
+/* ── a volta para dentro do aplicativo ───────────────────────────────────
+   O Google recusa OAuth dentro de um WebView, então o aplicativo abre a porta
+   no NAVEGADOR DO SISTEMA. A sessão nasce lá, e o que precisa atravessar de
+   volta é só a permissão de criar um par de chaves aqui dentro.
+
+   Quem atravessa é um endereço de esquema próprio — `cineclube://auth?code=` —
+   com um bilhete de um minuto e de um uso. O par nunca viaja na URL: ele vale
+   noventa dias, e uma URL é escrita no log de todo intermediário do caminho.
+
+   O ESTADO carrega a marca do aplicativo, e não um cookie: quem volta do Google
+   é o navegador do sistema, e o cookie que ele guardou é dele. */
+const APP_SCHEME = 'cineclube://auth';
+const APP_MARK = 'app.';
+
 const clientId = () => process.env.GOOGLE_CLIENT_ID || '';
 const clientSecret = () => process.env.GOOGLE_CLIENT_SECRET || '';
 const configured = () => !!(clientId() && clientSecret());
@@ -191,7 +205,10 @@ router.get('/google', (req, res) => {
   if (!configured()) {
     return res.status(503).json({ error: 'A entrada pelo Google não está configurada nesta instalação.' });
   }
-  const state = crypto.randomBytes(24).toString('base64url');
+  /* `?app=1` é o aplicativo pedindo para voltar por outro caminho. A marca vai
+     no estado porque ele é a única coisa que sobrevive à ida ao Google e volta
+     conferida. */
+  const state = (req.query.app ? APP_MARK : '') + crypto.randomBytes(24).toString('base64url');
   sendStateCookie(res, state);
 
   const url = new URL(GOOGLE_AUTH);
@@ -265,6 +282,14 @@ router.get('/google/callback', wrap(async (req, res) => {
     name: payload.name,
     verified: payload.email_verified === true || payload.email_verified === 'true',
   });
+
+  /* Voltando para um aplicativo: nada de cookie — ele ficaria no navegador do
+     sistema, que não é quem vai usar a conta. O que vai é um bilhete de um uso,
+     trocado por um par de chaves assim que o app o receber. */
+  if (String(state).startsWith(APP_MARK)) {
+    const code = await auth.createTicket(reviewer.id, 'handoff');
+    return res.redirect(`${APP_SCHEME}?code=${encodeURIComponent(code)}`);
+  }
 
   const sessionToken = await auth.createSession(reviewer.id);
   auth.sendSessionCookie(res, sessionToken);
@@ -475,7 +500,16 @@ router.post('/reset', throttleTokenTry, wrap(async (req, res) => {
 
    A mesma trava por endereço de rede do login, porque isto é um login. */
 router.post('/token', throttleLogin, wrap(async (req, res) => {
-  const { email, password } = req.body || {};
+  const { email, password, handoff } = req.body || {};
+
+  /* A terceira forma, e ela é a volta do Google dentro de um aplicativo: um
+     bilhete de um uso, criado no callback, trocado aqui pelo par de chaves. */
+  if (handoff !== undefined) {
+    const quem = await auth.useTicket(String(handoff || ''), 'handoff');
+    if (!quem) return res.status(401).json({ error: 'Esta entrada não vale mais. Tente de novo.' });
+    const par = await auth.createTokenPair(quem.reviewer_id);
+    return res.json({ ...par, reviewer: publicReviewer(await getReviewer.get(quem.reviewer_id)) });
+  }
 
   if (email === undefined && password === undefined) {
     if (!req.session) return res.status(401).json({ error: 'Entre para continuar.' });
@@ -512,6 +546,18 @@ router.post('/token', throttleLogin, wrap(async (req, res) => {
 
   const par = await auth.createTokenPair(reviewer.id);
   res.json({ ...par, reviewer: publicReviewer(reviewer) });
+}));
+
+/* O esquema que o aplicativo registra para receber a volta do Google. Servido
+   e não escrito no cliente para os dois lados nunca discordarem: mudar aqui e
+   esquecer lá seria uma entrada que abre o navegador e não volta nunca. */
+router.get('/scheme', (req, res) => res.json({ scheme: APP_SCHEME }));
+
+/* Um bilhete para o cano ao vivo. Vale um minuto e um uso, e existe porque
+   `EventSource` não manda cabeçalho: num aplicativo, sem isto, a sala
+   sincronizada e o mural ao vivo não existem. Ver auth.js. */
+router.post('/ticket', auth.requireSession, wrap(async (req, res) => {
+  res.json({ ticket: await auth.createTicket(req.session.reviewer_id, 'stream') });
 }));
 
 /* Troca a chave de renovação por um par novo. A chave apresentada é GASTA —
