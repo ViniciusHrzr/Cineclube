@@ -893,31 +893,29 @@ async function migrate() {
        Não há tabela de "assistido" ao lado desta. Ter uma seria um segundo
        lugar onde a mesma verdade pode estar errada — a mesma razão pela qual
        este banco não tem tabela de notificação e o pedido de entrada não tem
-       coluna de estado. Marcar visto insere a linha; avaliar preenche o resto
-       dela.
+       coluna de estado. Marcar visto insere a linha; desmarcar apaga.
 
        A UNIDADE DA NOTA É A TEMPORADA, e a do visto é o episódio. Uma linha de
        episódio (episode >= 1) carrega só a marca; a ficha com nota é a linha de
        episode = 0, que é a temporada — ver SEASON_ROW em show.js, onde está o
        porquê de ela morar aqui e não numa tabela própria.
 
-       Três estados, e os três são o mesmo registro:
-       · scores e quick nulos — visto, sem nota. É o tracking puro.
+       Uma linha de episódio tem as colunas de nota vazias, sempre: a rota
+       recusa nota no episódio, e as que existiam foram apagadas — ver a
+       migração nota-por-temporada adiante.
+
+       A linha da temporada nasce com uma nota, e ela é de um dos dois tipos:
        · quick preenchido — a nota objetiva de 0 a 10, num gesto.
        · scores preenchido — a avaliação criteriosa, os nove critérios de ofício
          (BASE, em criteria.js), sem os dois de gênero.
-
-       As linhas de episódio com nota são de quando avaliar era por episódio.
-       Continuam legíveis e ninguém escreve outra: o acervo e o mural as mostram
-       como sempre mostraram.
 
        A criteriosa SUBSTITUI a rápida, e é por isso que as duas colunas
        convivem em vez de uma só: quick guarda o que foi dito à mão, final
        guarda o que vale. Gravar a criteriosa zera quick — senão a linha
        carregaria duas respostas para a mesma pergunta.
 
-       A coluna final é nula enquanto ninguém deu nota, e nulo é diferente de
-       zero: um episódio visto e não avaliado não entra em média nenhuma.
+       A coluna final é nula na linha de um episódio, e nulo é diferente de
+       zero: um episódio visto não entra em média nenhuma.
 
        O id próprio, com a unicidade num índice à parte, é o mesmo arranjo de
        reviews: é o id que um endereço aponta e o que sobrevive a uma
@@ -1096,6 +1094,31 @@ async function migrate() {
       await exec(`ALTER TABLE ${table} ADD COLUMN trailer TEXT`);
       await exec(`ALTER TABLE ${table} ADD COLUMN trailer_at TEXT`);
     }
+  }
+
+  /* ── a nota saiu do episódio ────────────────────────────────────────────
+     A unidade da nota é a TEMPORADA. As fichas de episódio de antes não são
+     lidas por tela nenhuma, e uma nota que existe no banco e não existe no
+     produto é uma verdade guardada em dois lugares — a média de uma série
+     sairia de um veredito que ninguém consegue mais abrir nem mudar.
+
+     A linha fica: ela é o "eu vi", e isso continua sendo verdade. O que sai é
+     a opinião pendurada nela.
+
+     Marcada no `meta` porque APAGA: rodar de novo em cima de dados novos não
+     faria mal — a rota do episódio recusa nota —, mas uma correção de valor
+     não se repete por hábito. */
+  if (!(await done('nota-por-temporada'))) {
+    const tinham = await prepare(`
+      SELECT COUNT(*) AS n FROM episode_takes WHERE episode <> 0 AND final IS NOT NULL
+    `).get();
+    await exec(`
+      UPDATE episode_takes
+         SET scores = NULL, quick = NULL, final = NULL, comment = NULL, rated_at = NULL
+       WHERE episode <> 0
+    `);
+    if (tinham?.n) console.log(`[db] séries: ${tinham.n} nota(s) de episódio apagada(s); o visto ficou`);
+    await mark('nota-por-temporada');
   }
 
   // Sessão vencida é peso morto e risco; some no boot.

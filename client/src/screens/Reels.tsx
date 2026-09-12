@@ -1886,9 +1886,8 @@ export function SeriesReels({
   onTab: (t: TabId) => void;
 }) {
   /* Uma série é avaliada por TEMPORADA, então a nota que o reel mostra é a
-     média das fichas que o clube escreveu — as de temporada, e as de episódio
-     de quando avaliar era por episódio. Uma série só marcada como vista não
-     entra: ela não tem o que dizer. */
+     média das temporadas que o clube avaliou. Uma série só marcada como vista
+     não entra: ela não tem o que dizer. */
   const rated = useMemo(() => {
     const by = new Map<number, RatedTitle & { sum: number }>();
     for (const t of takes ?? []) {
@@ -1994,11 +1993,7 @@ export function ShowTakes({ showId, takes }: { showId: number; takes: ShowTake[]
           take={{ id: t.id, reviewerId: t.reviewerId, reviewerName: t.reviewerName ?? '' }}
           person={{ id: t.reviewerId, name: t.reviewerName ?? '', dot: t.reviewerDot }}
           final={t.final ?? 0}
-          line={
-            t.episode == null
-              ? `Temporada ${t.season}`
-              : `T${t.season}E${t.episode}${t.episodeTitle ? ` · ${t.episodeTitle}` : ''}`
-          }
+          line={`Temporada ${t.season}`}
           review={t}
         />
       ))}

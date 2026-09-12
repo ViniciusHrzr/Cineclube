@@ -76,9 +76,7 @@ const deleteQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND sho
    episódio é um episódio visto pelo clube, não quatro. A linha da temporada
    fica de fora da contagem de vistos — ela é uma nota, não uma sessão.
 
-   A média é de tudo o que tem nota, e isso inclui as fichas de episódio de
-   quando avaliar era por episódio: são vereditos que o clube deu, e recusá-los
-   aqui faria o cartaz de uma série antiga perder a nota que ele sempre teve. */
+   A média é das fichas de temporada, que são as únicas linhas com nota. */
 const progressStmt = db.prepare(`
   SELECT show_id,
          COUNT(DISTINCT CASE WHEN episode <> ${SEASON_ROW} THEN season || 'x' || episode END) AS seen,
@@ -110,9 +108,9 @@ const getTake = db.prepare(`
   WHERE club_id = ? AND reviewer_id = ? AND show_id = ? AND season = ? AND episode = ?
 `);
 
-/* Marcar não escreve nota nenhuma, e por isso não toca em scores, quick, final
-   nem comment: remarcar um episódio que já tem uma ficha antiga de quando
-   avaliar era por episódio apagaria o que ela diz. */
+/* Marcar não escreve nota nenhuma, e as colunas dela ficam de fora do upsert:
+   uma linha de episódio nunca as teve preenchidas desde que a nota passou a ser
+   da temporada, e listá-las aqui seria abrir um caminho de volta. */
 const markEpisode = db.prepare(`
   INSERT INTO episode_takes
     (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,

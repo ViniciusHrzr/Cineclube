@@ -1092,12 +1092,15 @@ function SeasonPanel({
   );
 }
 
-/* A linha tem um gesto só, e ele é o check: clicar marca, clicar de novo
-   desmarca, e nada abre. Ele era um símbolo do estado — parecia um check e não
-   era —, e mudar de estado obrigava a abrir uma folha e achar um botão lá
-   dentro.
+/* A linha tem dois gestos, e nenhum deles é opinião — ela é da temporada, no
+   painel acima da lista.
 
-   A opinião não mora aqui: ela é da temporada, no painel acima da lista. */
+   · **o check** marca e desmarca, no próprio controle. Ele era um símbolo do
+     estado — parecia um check e não era —, e mudar de estado obrigava a abrir
+     uma folha e achar um botão lá dentro.
+   · **a linha** abre a sinopse e quem do clube já viu. Uma gaveta e não uma
+     folha: é leitura curta sobre o que está ali do lado, e uma tela por cima
+     da outra para ler três frases é o produto cobrando caro por pouco. */
 function EpisodeRow({
   ep,
   takes,
@@ -1126,6 +1129,7 @@ function EpisodeRow({
      qualquer outra tela: onde a sala está nesta temporada. */
   const outros = takes.filter(t => t.reviewerId !== meId);
 
+  const [aberta, setAberta] = useState(false);
   const [salvando, setSalvando] = useState(false);
   /* O check responde ao toque e não à volta da rede: gravar recarrega o acervo
      inteiro, e esperar por ele deixava o gesto mais barato do produto com meio
@@ -1140,18 +1144,8 @@ function EpisodeRow({
   const alternar = useCallback(async () => {
     if (salvando) return;
     const marcar = minha == null;
-    /* Uma ficha de episódio de quando avaliar era por episódio mora nesta mesma
-       linha, e desmarcar apaga a linha. Um toque distraído não leva uma
-       avaliação antiga junto sem perguntar. */
-    if (
-      !marcar &&
-      minha?.final != null &&
-      !confirm(
-        `Desmarcar T${ep.season}E${ep.episode} apaga também a nota que você deu a este episódio. Continuar?`
-      )
-    ) {
-      return;
-    }
+    /* Sem pergunta: a linha é só o "eu vi", e desmarcar por engano se desfaz no
+       toque seguinte. A opinião é da temporada, e não passa por aqui. */
     setSalvando(true);
     setOtimista(marcar);
     try {
@@ -1189,49 +1183,63 @@ function EpisodeRow({
     fault,
   ]);
 
+  const vistoPor = [...takes].sort((a, b) => a.watchedAt.localeCompare(b.watchedAt));
+
   return (
     <li className="border-t border-white/[0.06] first:border-t-0">
+      {/* O contêiner não é um botão: dentro dele há dois alvos com dois
+          destinos, e um botão dentro de outro é HTML inválido antes de ser
+          confuso. O realce de linha continua, agora no grupo. */}
       <div className="group flex w-full items-center gap-3 rounded-cell px-2 py-3 transition-colors duration-150 hover:bg-beam/[0.05]">
-        {/* O quadro do episódio é 16:9 e não um cartaz: é uma cena, não uma
-            capa. Sem quadro, uma caixa vazia da mesma medida — o buraco tem de
-            ter forma, ou a lista desalinha. */}
-        {ep.still ? (
-          <img
-            src={ep.still}
-            alt=""
-            loading="lazy"
-            className="aspect-video w-[104px] flex-none rounded-cell object-cover ring-1 ring-white/[0.06]"
-          />
-        ) : (
-          <span aria-hidden className="aspect-video w-[104px] flex-none rounded-cell bg-house-deep ring-1 ring-white/[0.06]" />
-        )}
+        <button
+          type="button"
+          aria-expanded={aberta}
+          aria-label={`${aberta ? 'Fechar' : 'Abrir'} T${ep.season}E${ep.episode} — ${ep.title}`}
+          onClick={() => setAberta(v => !v)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          {/* O quadro do episódio é 16:9 e não um cartaz: é uma cena, não uma
+              capa. Sem quadro, uma caixa vazia da mesma medida — o buraco tem de
+              ter forma, ou a lista desalinha. */}
+          {ep.still ? (
+            <img
+              src={ep.still}
+              alt=""
+              loading="lazy"
+              className="aspect-video w-[104px] flex-none rounded-cell object-cover ring-1 ring-white/[0.06]"
+            />
+          ) : (
+            <span aria-hidden className="aspect-video w-[104px] flex-none rounded-cell bg-house-deep ring-1 ring-white/[0.06]" />
+          )}
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="q text-[11.5px] text-ink-dim">
-              T{ep.season}E{String(ep.episode).padStart(2, '0')}
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className="q text-[11.5px] text-ink-dim">
+                T{ep.season}E{String(ep.episode).padStart(2, '0')}
+              </span>
+              <span className="truncate text-[14px] text-ink transition-colors group-hover:text-beam">
+                {ep.title}
+              </span>
+              {/* O TMDB marca fim de arco e fim de temporada. É informação que o
+                  clube usaria de cor, e ela vem de graça. */}
+              {ep.kind === 'finale' ? (
+                <span className="legend flex-none text-[9px] text-dye-brass">Final</span>
+              ) : null}
             </span>
-            <span className="truncate text-[14px] text-ink">{ep.title}</span>
-            {/* O TMDB marca fim de arco e fim de temporada. É informação que o
-                clube usaria de cor, e ela vem de graça. */}
-            {ep.kind === 'finale' ? (
-              <span className="legend flex-none text-[9px] text-dye-brass">Final</span>
-            ) : null}
-          </div>
-          <span className="q mt-1 block text-[11px] text-ink-faint">
-            {[ep.airDate ? whenBR(ep.airDate) : null, ep.runtime ? `${ep.runtime} min` : null]
-              .filter(Boolean)
-              .join(' · ')}
+            <span className="q mt-1 block text-[11px] text-ink-faint">
+              {[ep.airDate ? whenBR(ep.airDate) : null, ep.runtime ? `${ep.runtime} min` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           </span>
-        </div>
+        </button>
 
         <div className="flex flex-none items-center gap-2 sm:gap-3">
-          {/* Quem mais já viu, em retratos. Sem nome e sem nota: é a posição da
-              sala nesta temporada, e mais nada. */}
+          {/* Quem mais já viu, em retratos. Sem nome e sem data: é a posição da
+              sala nesta temporada, e o resto está na gaveta. */}
           {outros.length ? (
             <span
-              aria-label={`Visto por ${outros.map(t => t.reviewerName ?? 'alguém').join(', ')}`}
-              title={`Visto por ${outros.map(t => t.reviewerName ?? 'alguém').join(', ')}`}
+              aria-hidden
               className="hidden items-center gap-[3px] sm:flex"
             >
               {outros.slice(0, ROSTOS).map(t => (
@@ -1252,14 +1260,53 @@ function EpisodeRow({
             </span>
           ) : null}
 
-          {/* A nota que você deu a este episódio quando avaliar era por
-              episódio. Ninguém dá outra, e apagá-la da tela seria o produto
-              escondendo o que a pessoa disse. */}
-          {minha?.final != null ? <MineNote take={minha} /> : null}
-
           <SeenCheck on={visto} busy={salvando} onToggle={() => void alternar()} />
+
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              'h-4 w-4 flex-none text-ink-faint transition-transform duration-200',
+              aberta && 'rotate-180'
+            )}
+            strokeWidth={1.7}
+          />
         </div>
       </div>
+
+      {/* A sinopse e quem já viu. Nada é buscado para abrir isto: a sinopse veio
+          com a temporada, e quem viu já está em memória desde o boot. */}
+      <Drawer open={aberta}>
+        <div className="px-2 pb-4 pl-[120px]">
+          {ep.overview ? (
+            <p className="max-w-[70ch] text-[13px] leading-relaxed text-ink-dim">{ep.overview}</p>
+          ) : (
+            <p className="text-[13px] text-ink-faint">O TMDB não tem sinopse deste episódio.</p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="legend">Quem já viu</span>
+            {!vistoPor.length ? (
+              <span className="q text-[12px] text-ink-faint">ninguém do clube ainda</span>
+            ) : (
+              vistoPor.map(t => (
+                <span key={t.id} className="flex items-center gap-1.5">
+                  <Reel
+                    color={reelColor(t.reviewerDot, t.reviewerId)}
+                    src={world.avatarOf(t.reviewerId)}
+                    size="sm"
+                  >
+                    {initialsOf(t.reviewerName ?? '?')}
+                  </Reel>
+                  <span className="text-[12.5px] text-ink">
+                    {t.reviewerId === meId ? 'você' : t.reviewerName ?? 'alguém'}
+                  </span>
+                  <span className="q text-[11px] text-ink-faint">{whenOf(t.watchedAt)}</span>
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      </Drawer>
     </li>
   );
 }
@@ -1614,12 +1661,7 @@ export function SeriesArchiveScreen({
 
   /* Série > temporada > episódio, montado de uma vez. A nota mora no nível do
      meio: uma temporada carrega as fichas do clube, e os episódios embaixo dela
-     carregam só quem viu.
-
-     As fichas de episódio de quando avaliar era por episódio continuam na
-     linha delas, e entram na média da temporada quando ela não tem ficha
-     própria: apagá-las da conta faria uma série inteira perder a nota que o
-     clube lhe deu. */
+     carregam só quem viu. */
   const arvore = useMemo(() => {
     const vistos = (takes ?? []).filter(t => !quem || t.reviewerId === quem);
     const series = new Map<
@@ -1659,8 +1701,9 @@ export function SeriesArchiveScreen({
       ep.takes.push(t);
     }
 
-    /* Nulo e não zero quando ninguém deu nota: um episódio visto e não avaliado
-       não entra em média nenhuma, e imprimir 0,0 seria inventar um veredito. */
+    /* Nulo e não zero quando ninguém avaliou: uma temporada que a sala só
+       assistiu não entra em média nenhuma, e imprimir 0,0 seria inventar um
+       veredito. */
     const medir = (lista: ShowTake[]) => {
       const comNota = lista.filter(x => x.final != null);
       return comNota.length
@@ -1675,14 +1718,8 @@ export function SeriesArchiveScreen({
           .map(([numero, temp]) => {
             const episodios = [...temp.eps.entries()]
               .sort((a, b) => a[0] - b[0])
-              .map(([n, ep]) => ({ numero: n, ...ep, average: medir(ep.takes) }));
-            return {
-              numero,
-              episodios,
-              takes: temp.takes,
-              average:
-                medir(temp.takes) ?? medir(episodios.flatMap(e => e.takes)),
-            };
+              .map(([n, ep]) => ({ numero: n, ...ep }));
+            return { numero, episodios, takes: temp.takes, average: medir(temp.takes) };
           });
         const todas = seasons
           .map(t => t.average)
@@ -1962,16 +1999,11 @@ function ArchiveSeason({
 }
 
 /* ── um episódio no acervo ────────────────────────────────────────────────
-   Era uma linha morta: número, título, e "Vinicius —" repetido em cada episódio
-   marcado sem avaliar. Ela dizia o NOME de quem não tinha dito nada, e não
-   dizia nada de quem tinha. Agora são dois desenhos:
+   Número, título, e quem viu — em retratos, sem nome escrito ao lado: o nome de
+   quem não disse nada, repetido linha após linha, era o acervo gastando a sua
+   largura para não responder nada.
 
-   · **quem só viu** aparece como retrato, sem número e sem nome — um traço ao
-     lado de um nome fingia que havia uma nota ausente ali.
-   · **quem avaliou** vira uma pastilha com a nota, e ela ABRE.
-
-   A pastilha é o gesto, e não a linha inteira: numa sala de seis, abrir "o
-   episódio" abriria as seis fichas de uma vez. */
+   A opinião não está aqui: ela é da temporada, uma linha acima. */
 function ArchiveEpisode({
   numero,
   title,
@@ -1982,14 +2014,6 @@ function ArchiveEpisode({
   takes: ShowTake[];
 }) {
   const world = useWorld();
-  /** Qual ficha está aberta. Uma de cada vez: são fichas do MESMO episódio. */
-  const [aberta, setAberta] = useState<string | null>(null);
-  /* Montada só depois de pedida e nunca desmontada — o mesmo par de gavetas do
-     feed: desmontar ao fechar faria a gaveta recolher de altura zero. */
-  const [tocada, setTocada] = useState(false);
-
-  const comNota = takes.filter(t => t.final != null);
-  const soVistos = takes.filter(t => t.final == null);
 
   return (
     <li className="border-t border-white/[0.04]">
@@ -2001,67 +2025,20 @@ function ArchiveEpisode({
           {title || 'sem título'}
         </span>
 
-        {/* Quem viu e não disse nada. Retratos e mais nada: o nome escrito ao
-            lado de um traço era o produto anunciando uma nota que ninguém deu. */}
-        {soVistos.length ? (
+        {takes.length ? (
           <span
             className="flex flex-none items-center gap-1 opacity-60"
-            title={`Visto por ${soVistos.map(t => t.reviewerName ?? 'alguém').join(', ')}, sem nota`}
+            title={`Visto por ${takes.map(t => t.reviewerName ?? 'alguém').join(', ')}`}
           >
             <Check className="h-3.5 w-3.5 flex-none text-ink-faint" strokeWidth={2} aria-hidden />
-            {soVistos.map(t => (
+            {takes.map(t => (
               <Reel key={t.id} color={reelColor(t.reviewerDot, t.reviewerId)} src={world.avatarOf(t.reviewerId)} size="sm">
                 {initialsOf(t.reviewerName ?? '?')}
               </Reel>
             ))}
           </span>
         ) : null}
-
-        {/* E quem avaliou. A divergência é o assunto deste produto, então é
-            uma pastilha por pessoa e não uma média. */}
-        {comNota.map(t => {
-          const on = aberta === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              aria-expanded={on}
-              aria-label={`${on ? 'Fechar' : 'Abrir'} a ficha de ${t.reviewerName ?? 'alguém'} — nota ${fmt(t.final ?? 0)}`}
-              onClick={() => {
-                setAberta(v => (v === t.id ? null : t.id));
-                setTocada(true);
-              }}
-              className={cn(
-                'flex flex-none items-center gap-1.5 rounded-cell px-1.5 py-1 ring-1 transition-colors duration-150',
-                on
-                  ? 'text-dye-brass ring-dye-brass/60 shadow-[inset_0_0_14px_rgba(217,164,65,0.18)]'
-                  : 'text-ink-dim ring-house-rail hover:text-beam hover:ring-white/25'
-              )}
-            >
-              <Reel color={reelColor(t.reviewerDot, t.reviewerId)} src={world.avatarOf(t.reviewerId)} size="sm">
-                {initialsOf(t.reviewerName ?? '?')}
-              </Reel>
-              {/* Creme na criteriosa e tinta na rápida: as duas são notas, e a
-                  diferença entre elas é quanto se olhou. */}
-              <span className={cn('q text-[12.5px] font-medium', t.scores ? 'text-beam' : undefined)}>
-                {fmt(t.final ?? 0)}
-              </span>
-            </button>
-          );
-        })}
       </div>
-
-      <Drawer open={aberta !== null}>
-        {tocada ? (
-          <div className="pb-3 pr-2">
-            {comNota
-              .filter(t => t.id === aberta)
-              .map(t => (
-                <TakeCard key={t.id} take={t} />
-              ))}
-          </div>
-        ) : null}
-      </Drawer>
     </li>
   );
 }
@@ -2291,9 +2268,7 @@ function FeedRated({
           person={e.actor}
           className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
         />
-        <span className="text-[12.5px] text-ink-dim">
-          {e.episode == null ? 'avaliou a temporada' : 'avaliou'}
-        </span>
+        <span className="text-[12.5px] text-ink-dim">avaliou a temporada</span>
         {hora ? <span className="q ml-auto text-[10.5px] text-ink-faint">{hora}</span> : null}
       </div>
 
@@ -2466,14 +2441,7 @@ function FeedRatedRun({
           className="font-display text-[13px] uppercase tracking-[0.1em] text-ink"
         />
         <span className="text-[12.5px] text-ink-dim">
-          {/* Um bloco pode juntar temporadas e as fichas de episódio antigas:
-              "fichas" é o que continua verdade nos três casos. */}
-          avaliou{' '}
-          {events.every(e => e.episode == null)
-            ? plural(events.length, 'temporada', 'temporadas')
-            : events.every(e => e.episode != null)
-              ? plural(events.length, 'episódio', 'episódios')
-              : plural(events.length, 'ficha', 'fichas')}
+          avaliou {plural(events.length, 'temporada', 'temporadas')}
         </span>
         {hora ? <span className="q ml-auto text-[11px] text-ink-faint">{hora}</span> : null}
       </div>
@@ -2776,10 +2744,15 @@ function TakeCard({ take }: { take: ShowTake }) {
         <span className="q text-[10.5px] text-ink-faint" title={take.ratedAt ?? take.watchedAt}>
           {whenOf(take.ratedAt ?? take.watchedAt)}
         </span>
-        <span className="ml-auto flex items-center gap-2.5">
-          <Strip value={take.final ?? 0} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />
-          <span className="q text-[16px] font-medium leading-none text-beam">{fmt(take.final ?? 0)}</span>
-        </span>
+        {/* Cala quando a ficha não tem nota — uma conversa antiga pendurada
+            numa linha que hoje é só "eu vi". Imprimir 0,0 ali seria a tela
+            inventando um veredito. */}
+        {take.final != null ? (
+          <span className="ml-auto flex items-center gap-2.5">
+            <Strip value={take.final} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />
+            <span className="q text-[16px] font-medium leading-none text-beam">{fmt(take.final)}</span>
+          </span>
+        ) : null}
         <TakeVotes take={quem} />
       </div>
 

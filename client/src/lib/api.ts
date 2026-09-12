@@ -366,12 +366,10 @@ export type QueuedShow = {
 /* ── uma linha do universo de séries ──────────────────────────────────────
    Duas coisas com a mesma forma, e `kind` diz qual:
 
-   · `episode` — a MARCA. Existir significa que a pessoa viu, e mais nada.
+   · `episode` — a MARCA. Existir significa que a pessoa viu, e mais nada: as
+     colunas de nota vêm sempre vazias.
    · `season` — a FICHA, com `episode` nulo. `quick` é a nota objetiva, `scores`
-     é a criteriosa, e as duas se substituem: a última coisa dita é a que vale.
-
-   Uma linha de episódio COM nota é de quando avaliar era por episódio. Ninguém
-   escreve outra, e o acervo e o mural continuam mostrando as que existem. */
+     é a criteriosa, e as duas se substituem: a última coisa dita é a que vale. */
 export type ShowTake = {
   id: string;
   kind: 'episode' | 'season';
@@ -393,8 +391,8 @@ export type ShowTake = {
   watchedAt: string;
   ratedAt: string | null;
   /* Os nove critérios abertos, como a ficha de um filme já manda os onze. Vazio
-     na ficha que é só "vi" e na de nota rápida: as duas não têm critério por
-     dentro. Ver `takeDTO` em routes/shows.js. */
+     na marca de um episódio e na ficha de nota rápida: as duas não têm critério
+     por dentro. Ver `takeDTO` em routes/shows.js. */
   breakdown: BreakdownRow[];
 };
 

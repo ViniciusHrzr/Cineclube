@@ -329,10 +329,6 @@ function answeredIn(genre, scores) {
    OBJETO de uma que já existe. Numa série animada ninguém atuou diante de uma
    câmera.
 
-   São também as chaves com que as fichas de episódio do clube foram escritas,
-   quando avaliar era por episódio: mudar o conjunto reescreveria o que elas
-   perguntaram.
-
    Mesma fórmula, divisor contado, mesma régua 0–10 da ficha de um filme. */
 function seasonCritsFor(genre) {
   const base = baseFor(GENRE_CRIT[genre] ? genre : 'Drama');
