@@ -177,7 +177,7 @@ export function SeriesCatalogScreen({
       ) : null}
 
       {!items ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {[0, 1, 2, 3, 4].map(i => (
             <Skeleton key={i} className="aspect-[2/3] w-full" />
           ))}
@@ -188,7 +188,7 @@ export function SeriesCatalogScreen({
         </Blank>
       ) : (
         <>
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
             {items.map(s => (
               <li key={s.id}>
                 <SeriesCell
@@ -444,13 +444,18 @@ function UpNext({
 
 /* Texto corrido e não uma fileira: o nome de um episódio passa da largura do
    cartaz com frequência, e numa fileira ele só podia truncar. Aqui ele desce
-   para a linha de baixo, que é onde ele cabe inteiro.
+   para a linha de baixo, que é onde ele cabe.
+
+   DUAS LINHAS SEMPRE, e é o que mantém a grade de pé: o rodapé é a última coisa
+   do cartaz, então a altura dele empurra as chaves para cima — um cartaz de uma
+   linha e o vizinho de duas desalinhavam a fileira inteira de "Episódios". A
+   altura é reservada mesmo com uma linha só, e o que passar de duas corta.
 
    O fio em cima separa esta linha das chaves, que são de outro assunto — e é o
    que faz ela ser lida como o rodapé do cartaz e não como mais um botão. */
 function Strap({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 break-words border-t border-white/[0.07] pt-2.5 leading-snug">
+    <p className="mt-3 line-clamp-2 min-h-[44px] break-words border-t border-white/[0.07] pt-2.5 text-[12px] leading-snug">
       {children}
     </p>
   );
@@ -553,7 +558,7 @@ export function SeriesQueueScreen({
     return (
       <section>
         <Bill title="Minhas séries" note="carregando…" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {[0, 1, 2].map(i => <Skeleton key={i} className="aspect-[2/3] w-full" />)}
         </div>
       </section>
@@ -640,8 +645,13 @@ export function SeriesQueueScreen({
       {/* A MESMA célula do catálogo, com a tesoura no lugar do marcador. É o que
           o universo de filmes já faz — a fila e o catálogo desenham o mesmo
           `FilmCell` —, e duas células parecidas para a mesma coisa divergem na
-          terceira mexida. */}
-      <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          terceira mexida.
+
+          Mais colunas nas telas largas do que o catálogo de filmes tem: um
+          cartaz de série carrega duas linhas a mais — o progresso e o próximo
+          episódio —, e num monitor grande a coluna de 285px empurrava o rodapé
+          do cartão para fora da tela. Cartaz menor, cartão inteiro à vista. */}
+      <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
         {naTela.map(s => {
           const segue = quemSegue(s);
           return (
