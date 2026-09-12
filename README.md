@@ -290,6 +290,33 @@ Três coisas que não têm volta depois da primeira publicação:
   num segredo do GitHub.
 - **o `versionCode`** só sobe. Ele está em `mobile/android/app/build.gradle`.
 
+### Avisos com o app fechado
+
+O sino só existe enquanto alguém está olhando; a estreia de hoje é justamente o
+aviso que precisa alcançar quem não está. Web Push resolve isso, e este servidor
+o implementa sem biblioteca: VAPID e a cifra do RFC 8291 em `push.js`, sobre
+`node:crypto`. O que torna isso seguro de escrever à mão é o vetor de teste do
+próprio RFC — `test/push.test.js` exige a mesma saída byte a byte.
+
+```bash
+npm run push:keys     # uma vez; o resultado vai para o ambiente, não para o repositório
+```
+
+A inscrição é do **aparelho**, não da conta: quem abre o clube no telefone e no
+computador é avisado nos dois, e cada um liga o seu em Ajustes → Avisos. O
+conteúdo vai cifrado — o serviço que entrega (Google, Mozilla, Apple) carrega a
+mensagem sem conseguir lê-la.
+
+Quem dispara é um relógio de fora, `.github/workflows/estreias.yml`, batendo em
+`POST /api/push/airing` com um segredo. O servidor dorme, e um `setInterval`
+dentro dele não acordaria nem a si mesmo. O que já foi avisado fica anotado por
+pessoa, episódio e dia: rodar de novo depois de uma falha no meio não acorda
+ninguém duas vezes.
+
+Onde isto **não** chega: o WebView de uma casca Capacitor não tem Push API.
+Alcança o navegador, o app instalado pelo navegador e a casca TWA; para o
+Capacitor o caminho é FCM, que é outra porta.
+
 ### As duas portas da sessão
 
 O navegador entra por **cookie** e um aplicativo entra por

@@ -8,6 +8,7 @@
     "start": "node server.js",
     "test": "node --test",
     "backup": "node scripts/backup.js",
+    "push:keys": "node scripts/push-keys.js",
     "mail:check": "node scripts/mail-check.js",
     "contas": "node scripts/merge-accounts.js",
     "migrate:turso": "node scripts/migrate-to-turso.js",

@@ -62,6 +62,57 @@ function meu(req, url) {
   return true;
 }
 
+/* ── o aviso que chega com o app fechado ──────────────────────────────────
+   Este worker continua de pé depois que a última aba fecha, e é por isso que
+   ele é quem desenha o aviso. O conteúdo chega cifrado e o navegador o
+   decifra — quem carregou a mensagem até aqui não sabe o que ela diz. Ver
+   push.js no servidor.
+
+   `showNotification` é obrigatório: a permissão foi dada para AVISAR, e um
+   push que não avisa nada é o navegador cortando a inscrição depois de algumas
+   vezes. */
+self.addEventListener('push', event => {
+  let dados = {};
+  try {
+    dados = event.data ? event.data.json() : {};
+  } catch {
+    /* Mensagem sem corpo legível: ainda assim avisa, porque calar aqui gasta
+       uma permissão que foi dada. */
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(dados.title || 'Cineclube', {
+      body: dados.body || '',
+      /* A mesma etiqueta substitui o aviso anterior em vez de empilhar: duas
+         execuções do relógio não deixam dois cartões do mesmo episódio. */
+      tag: dados.tag || 'cineclube',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data: { url: dados.url || '/' },
+    })
+  );
+});
+
+/* Tocar no aviso traz a janela que já existe para a frente, e só abre uma nova
+   quando não há nenhuma: quem tem o clube aberto numa aba não quer uma segunda
+   por ter tocado num aviso. */
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const destino = event.notification.data?.url || '/';
+  event.waitUntil(
+    (async () => {
+      const janelas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const janela of janelas) {
+        if (janela.url.startsWith(self.location.origin)) {
+          await janela.focus();
+          return;
+        }
+      }
+      await self.clients.openWindow(destino);
+    })()
+  );
+});
+
 self.addEventListener('fetch', event => {
   const req = event.request;
   let url;

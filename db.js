@@ -278,6 +278,39 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family);
     CREATE INDEX IF NOT EXISTS refresh_tokens_reviewer ON refresh_tokens(reviewer_id);
+
+    /* ── para onde mandar um aviso quando ninguém está com o app aberto ──
+       Uma linha por APARELHO, não por pessoa: o mesmo clube é aberto no
+       telefone e no computador, e quem instalou nos dois quer ser avisado nos
+       dois. A chave é o endereço que o navegador entrega, que já é único por
+       aparelho e por instalação.
+
+       As duas chaves ao lado não são segredo nosso: são a metade pública do
+       aparelho e um segredo que ELE sorteou para nós. Com as duas, e só com as
+       duas, o conteúdo do aviso é cifrado de tal forma que o serviço que o
+       entrega — Google, Mozilla, Apple — carrega sem conseguir ler. Ver push.js.
+
+       Some com a pessoa, e some sozinha quando o navegador diz que aquele
+       endereço morreu: uma inscrição de um aparelho que foi formatado responde
+       410 para sempre. */
+    CREATE TABLE IF NOT EXISTS push_subs (
+      id TEXT PRIMARY KEY,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_ok_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS push_subs_reviewer ON push_subs(reviewer_id);
+
+    /* O que já foi avisado, para o aviso não chegar duas vezes. A chave diz
+       tudo: pessoa, episódio e dia. O trabalho da noite pode rodar de novo
+       depois de uma falha no meio, e a segunda volta não acorda ninguém. */
+    CREATE TABLE IF NOT EXISTS push_log (
+      id TEXT PRIMARY KEY,
+      at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   /* De que porta veio a sessão. Uma do navegador desliza sozinha para a frente
@@ -1180,6 +1213,9 @@ async function migrate() {
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
   // E a chave de renovação que já não renova nada.
   await prepare("DELETE FROM refresh_tokens WHERE expires_at <= datetime('now')").run();
+  /* O registro de quem já foi avisado só serve para o dia dele. Um mês é folga
+     para uma execução atrasada; passado isso é papel velho. */
+  await prepare("DELETE FROM push_log WHERE at <= datetime('now', '-30 days')").run();
   // E pelo mesmo motivo, os links de e-mail que já não abrem nada.
   await prepare("DELETE FROM email_tokens WHERE expires_at <= datetime('now')").run();
 }

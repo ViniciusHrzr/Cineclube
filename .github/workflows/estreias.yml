@@ -1,0 +1,61 @@
+# ══════════════════════════════════════════════════════════════════════════
+# O AVISO DA MANHÃ.
+#
+# Todo dia às 13:00 UTC (10:00 em Brasília), bate numa porta do servidor que
+# percorre as estreias do dia e manda um aviso a quem acompanha a série — mesmo
+# com o Cineclube fechado. A conta de quem recebe o quê é a mesma do sino; ela
+# mora em airing.js, e quem entrega é push.js.
+#
+# ── por que um relógio de fora ────────────────────────────────────────────
+# O servidor roda numa instância que dorme, e um `setInterval` dentro dele não
+# acorda ninguém — inclusive a si mesmo. Este fluxo é o despertador, e a
+# requisição que ele faz é o que traz a instância de volta.
+#
+# Nada é calculado aqui: o GitHub só bate na porta. O trabalho, o banco e as
+# chaves ficam todos do lado de lá.
+#
+# ── os segredos ───────────────────────────────────────────────────────────
+# Settings → Secrets and variables → Actions:
+#
+#   CINECLUBE_URL           https://o-endereco-do-servico
+#   CINECLUBE_CRON_SECRET   o mesmo valor que está no Render
+#
+# Sem o segundo, a porta responde 404 e nada acontece — que é o estado de uma
+# instalação que não manda avisos.
+#
+# `workflow_dispatch` deixa rodar à mão pelo botão, que é como se testa isto sem
+# esperar o dia seguinte.
+# ══════════════════════════════════════════════════════════════════════════
+name: Avisos de estreia
+
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+# Este fluxo não lê nem escreve no repositório: ele faz uma requisição.
+permissions: {}
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bater na porta
+        env:
+          URL: ${{ secrets.CINECLUBE_URL }}
+          SECRET: ${{ secrets.CINECLUBE_CRON_SECRET }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "Faltam CINECLUBE_URL e CINECLUBE_CRON_SECRET nos segredos."
+            exit 1
+          fi
+          # `--retry` porque a instância pode estar dormindo: a primeira
+          # requisição a acorda e pode estourar o tempo enquanto ela sobe.
+          # `--fail-with-body` para o passo falhar mostrando o que o servidor
+          # respondeu, em vez de falhar em silêncio com um 403.
+          curl --silent --show-error --fail-with-body \
+               --retry 3 --retry-delay 20 --retry-all-errors \
+               --max-time 120 \
+               -X POST "$URL/api/push/airing" \
+               -H "X-Cineclube-Cron: $SECRET"
+          echo

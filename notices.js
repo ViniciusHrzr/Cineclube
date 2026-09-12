@@ -1,4 +1,5 @@
 const db = require('./db');
+const airing = require('./airing');
 const { handlesFor, mentionedIn } = require('./handles');
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -16,7 +17,9 @@ const { handlesFor, mentionedIn } = require('./handles');
 
    Um dos avisos não tem ator nenhum: o episódio que estreia hoje numa série que
    você acompanha. Ele não é reação a coisa nenhuma — é o calendário —, e por
-   isso é o único que chega sem retrato e sem nome de gente.
+   isso é o único que chega sem retrato e sem nome de gente. A conta dele mora
+   em airing.js, porque o aviso da noite — que alcança quem está com o app
+   fechado — precisa da mesma resposta.
 
    As marcas d'água ficam por (clube, pessoa) mesmo na leitura da rede: uma
    marca só, por pessoa, faria abrir o sino marcar como visto o que aconteceu
@@ -136,81 +139,6 @@ const knocking = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-/* ── o que estreia hoje ───────────────────────────────────────────────────
-   O único aviso sem autor: ninguém fez nada, o dia é que chegou. Vale para as
-   séries que VOCÊ acompanha — `added_by` é você —, porque acompanhar é de cada
-   um e um aviso sobre a estreia de hoje só serve a quem está esperando por ela.
-
-   Duas fontes, e a segunda existe porque a primeira tem um ponto cego:
-
-   · `episodes_cache` sabe a temporada inteira, datas futuras inclusive, e é
-     enchida pelo "o que eu vejo a seguir" toda vez que a lista é aberta. É a
-     fonte que acerta a semana seguinte sem ninguém abrir a série.
-   · `shows_cache.shape` guarda o próximo a estrear que o TMDB anuncia, e
-     alcança a série cuja temporada ainda não foi listada — uma que volta depois
-     de dois anos, por exemplo.
-
-   O dia é o de Brasília e não o do servidor: um aviso de estreia que aparece às
-   21h de ontem está falando de amanhã para quem lê. Sem horário de verão desde
-   2019, três horas é uma conta e não uma tabela.
-
-   Ver upnext.js, que é quem mantém as duas caches frescas. */
-const AGORA_BR = "datetime('now', '-3 hours')";
-
-const airingListed = db.prepare(`
-  SELECT q.show_id, q.show_title, q.show_poster,
-         e.season, e.episode, e.title AS episode_title, e.air_date
-  FROM show_queue q
-  JOIN episodes_cache e ON e.show_id = q.show_id
-  WHERE q.club_id = ? AND q.added_by = ? AND e.air_date = date(${AGORA_BR})
-`);
-
-const airingAnnounced = db.prepare(`
-  SELECT q.show_id, q.show_title, q.show_poster, sc.shape, date(${AGORA_BR}) AS hoje
-  FROM show_queue q
-  JOIN shows_cache sc ON sc.tmdb_id = q.show_id
-  WHERE q.club_id = ? AND q.added_by = ? AND sc.shape IS NOT NULL
-`);
-
-/** As estreias de hoje, sem repetir o episódio que as duas fontes conhecem. */
-function airingFrom(listed, announced) {
-  const por = new Map();
-  for (const row of listed) {
-    por.set(`${row.show_id}:${row.season}x${row.episode}`, {
-      showId: Number(row.show_id),
-      showTitle: row.show_title,
-      showPoster: row.show_poster,
-      season: Number(row.season),
-      episode: Number(row.episode),
-      episodeTitle: row.episode_title ?? null,
-      airDate: row.air_date,
-    });
-  }
-  for (const row of announced) {
-    let shape;
-    try {
-      shape = JSON.parse(row.shape);
-    } catch {
-      // Um cache ilegível é um cache vazio, não um erro.
-      continue;
-    }
-    const vem = shape?.nextAir;
-    if (!vem || vem.airDate !== row.hoje) continue;
-    const chave = `${row.show_id}:${vem.season}x${vem.episode}`;
-    if (por.has(chave)) continue;
-    por.set(chave, {
-      showId: Number(row.show_id),
-      showTitle: row.show_title,
-      showPoster: row.show_poster,
-      season: vem.season,
-      episode: vem.episode,
-      episodeTitle: vem.title ?? null,
-      airDate: vem.airDate,
-    });
-  }
-  return [...por.values()];
-}
-
 const marksStmt = db.prepare(
   'SELECT notifications_seen_at, notifications_cleared_at FROM club_members WHERE club_id = ? AND reviewer_id = ?'
 );
@@ -246,8 +174,7 @@ function say(kind, item) {
   if (kind === 'like') return 'curtiu seu comentário';
   if (kind === 'join') return 'pediu para entrar no clube';
   if (kind === 'airing') {
-    const tag = `T${item.season}E${String(item.episode).padStart(2, '0')}`;
-    return `tem episódio novo hoje — ${tag}${item.episodeTitle ? ` · ${item.episodeTitle}` : ''}`;
+    return `tem episódio novo hoje — ${airing.tagOf(item)}${item.episodeTitle ? ` · ${item.episodeTitle}` : ''}`;
   }
   return item.value === 1
     ? `concordou com sua avaliação de ${item.movie_title}`
@@ -273,7 +200,7 @@ const actorOf = row => ({
    decide o que fazer com as marcas: o sino de um clube conta o não lido daquela
    sala, o da rede soma o de todas. */
 async function forClub({ clubId, me, manda }) {
-  const [comments, replies, votes, likes, writing, notes, roster, marks, pedidos, listed, announced] =
+  const [comments, replies, votes, likes, writing, notes, roster, marks, pedidos, estreias] =
     await Promise.all([
       commentsOnMine.all(clubId, me, me),
       repliesToMine.all(clubId, me, me),
@@ -284,8 +211,7 @@ async function forClub({ clubId, me, manda }) {
       rosterStmt.all(clubId),
       marksStmt.get(clubId, me),
       manda ? knocking.all(clubId) : [],
-      airingListed.all(clubId, me),
-      airingAnnounced.all(clubId, me),
+      airing.forQueue(clubId, me),
     ]);
 
   const handles = handlesFor(roster);
@@ -307,7 +233,7 @@ async function forClub({ clubId, me, manda }) {
   /* Meia-noite e não a hora da leitura: a hora decide o que é "não lido", e um
      aviso carimbado com o instante em que o sino foi aberto nasceria sempre
      novo. Assim ele acende uma vez no dia e cala depois de visto. */
-  for (const estreia of airingFrom(listed, announced)) {
+  for (const estreia of estreias) {
     items.push({
       id: `air:${estreia.showId}:${estreia.season}x${estreia.episode}`,
       kind: 'airing',

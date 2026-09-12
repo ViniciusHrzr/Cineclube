@@ -11,6 +11,7 @@ import {
   type JoinRequest,
   type SessionUser,
 } from '@/lib/api';
+import { disablePush, enablePush, pushState, testPush, type PushState } from '@/lib/push';
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -78,6 +79,7 @@ export function SettingsSheet({
         }}
       />
       <Password />
+      <Avisos />
       {/* A região da sala não é desenhada para quem não a administra. */}
       {club.isClubAdmin ? <ClubRoom /> : <NotTheAdmin />}
     </Sheet>
@@ -441,6 +443,93 @@ function Switch({
         <span className="mt-1.5 block text-[12px] leading-snug text-ink-dim">{line}</span>
       </span>
     </button>
+  );
+}
+
+/* ── o aviso que chega com o app fechado ──────────────────────────────────
+   Um interruptor, e ele só é desenhado quando LIGAR é possível: este navegador
+   fazer push, e esta instalação ter chave. Um interruptor que liga e nunca
+   avisa nada é pior do que a ausência dele.
+
+   A permissão é pedida no clique e em nenhum outro lugar. Pedi-la na abertura é
+   o jeito mais rápido de ser recusado para sempre — e a recusa não tem volta
+   por aqui, só nas configurações do navegador, que é o que o estado
+   `bloqueado` explica.
+
+   O botão de teste existe porque a cadeia tem cinco elos — permissão,
+   inscrição, cifra, serviço de entrega, worker — e sem ele a única forma de
+   descobrir onde ela quebrou é esperar uma estreia. */
+function Avisos() {
+  const [estado, setEstado] = useState<PushState | null>(null);
+  const [indo, setIndo] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    void pushState().then(setEstado);
+  }, []);
+
+  /* Enquanto não se sabe, nada: um interruptor que nasce apagado e acende
+     sozinho meio segundo depois é a tela contando uma coisa e corrigindo. */
+  if (estado === null || estado === 'sem' || estado === 'servidor') return null;
+
+  const ligado = estado === 'ligado';
+
+  async function alternar() {
+    if (indo || estado === 'bloqueado') return;
+    setIndo(true);
+    setMsg(null);
+    try {
+      setEstado(ligado ? await disablePush() : await enablePush());
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setIndo(false);
+    }
+  }
+
+  async function testar() {
+    setIndo(true);
+    setMsg(null);
+    try {
+      const saida = await testPush();
+      setMsg(
+        saida.enviados
+          ? { ok: true, text: `Mandado para ${plural(saida.enviados, 'aparelho', 'aparelhos')}.` }
+          : { ok: false, text: 'Nenhum aparelho recebeu. Desligue e ligue de novo.' }
+      );
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setIndo(false);
+    }
+  }
+
+  return (
+    <Region title="Avisos">
+      {estado === 'bloqueado' ? (
+        <p className="text-[13px] leading-relaxed text-ink-dim">
+          Este navegador está bloqueando os avisos do Cineclube. Para voltar atrás, abra as
+          permissões do site na barra de endereço — daqui não há como pedir de novo.
+        </p>
+      ) : (
+        <>
+          <Switch
+            on={ligado}
+            onToggle={() => void alternar()}
+            title="Estreia de hoje"
+            line="Um aviso no dia em que sai episódio novo de uma série que você acompanha, mesmo com o Cineclube fechado. Vale só neste aparelho."
+          />
+          {ligado ? (
+            <div className="mt-3">
+              <Key tone="ghost" disabled={indo} onClick={() => void testar()}>
+                Mandar um aviso de teste
+              </Key>
+            </div>
+          ) : null}
+        </>
+      )}
+      <Note msg={msg} />
+    </Region>
   );
 }
 

@@ -113,6 +113,10 @@ app.use('/api/notices', require('./routes/notices'));
    de clube e fora de sessão: o que ele recebe é o mesmo JavaScript que qualquer
    pessoa baixa ao abrir o site. Ver ota.js. */
 app.use('/api/app', require('./routes/app'));
+/* Quem quer ser avisado com o app fechado, e o relógio que dispara os avisos do
+   dia. Fora de clube: a inscrição é do APARELHO, e o que ela recebe atravessa
+   as salas de quem está nele. Ver push.js. */
+app.use('/api/push', require('./routes/push'));
 app.use('/api/reviewers', reviewerRoutes.index);
 
 const scoped = express.Router({ mergeParams: true });
