@@ -20,7 +20,7 @@ import {
   initialsOf,
   reelColor,
   shows as showsApi,
-  type EpisodeTake,
+  type ShowTake,
   type Review,
   type Reviewer,
   type WatchItem,
@@ -66,7 +66,7 @@ export function ProfileScreen() {
      por visita basta — ninguém avalia um episódio enquanto lê o próprio perfil.
 
      Falha calada: o resto da página é sobre filmes e continua inteiro. */
-  const [episodes, setEpisodes] = useState<EpisodeTake[] | null>(null);
+  const [episodes, setEpisodes] = useState<ShowTake[] | null>(null);
   useEffect(() => {
     let alive = true;
     showsApi.takes().then(
@@ -410,17 +410,17 @@ function EndCard({
 /* ══ o que a pessoa vê em série ═══════════════════════════════════════════
    A outra metade do perfil, e ela conta de outro jeito. Um filme é uma noite e
    uma nota; uma série são vinte noites e vinte notas, e a pergunta que se faz
-   sobre ela não é "qual episódio" — é "o que ela anda acompanhando, e o que
-   achou". Então a leitura é POR SÉRIE: quantos episódios, que média, e o alto
-   e o baixo dentro dela.
+   sobre ela não é "qual temporada" — é "o que ela anda acompanhando, e o que
+   achou". Então a leitura é POR SÉRIE: quantas fichas, que média, e o alto e o
+   baixo dentro dela.
 
    Só o que tem nota. Marcar visto é o gesto barato deste universo e não é uma
    opinião — contá-lo aqui inflaria um perfil com maratonas caladas.
 
-   Sem episódio avaliado, a seção não existe: uma placa vazia dizendo "nenhuma
-   série" ocuparia, numa página feita de módulos que se calam, o lugar do que
-   tem o que dizer. */
-function Series({ person, episodes }: { person: Reviewer; episodes: EpisodeTake[] | null }) {
+   Sem ficha, a seção não existe: uma placa vazia dizendo "nenhuma série"
+   ocuparia, numa página feita de módulos que se calam, o lugar do que tem o que
+   dizer. */
+function Series({ person, episodes }: { person: Reviewer; episodes: ShowTake[] | null }) {
   const shows = useMemo(() => {
     const mine = (episodes ?? []).filter(t => t.reviewerId === person.id && t.final != null);
     const byShow = new Map<
@@ -455,7 +455,7 @@ function Series({ person, episodes }: { person: Reviewer; episodes: EpisodeTake[
   return (
     <Region
       title="Séries"
-      note={`${plural(rated, 'episódio', 'episódios')} em ${plural(shows.length, 'série', 'séries')}`}
+      note={`${plural(rated, 'ficha', 'fichas')} em ${plural(shows.length, 'série', 'séries')}`}
     >
       <ul className="flex flex-col gap-2.5">
         {shows.map(s => (
@@ -464,7 +464,7 @@ function Series({ person, episodes }: { person: Reviewer; episodes: EpisodeTake[
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13.5px] text-ink">{s.title}</span>
               <span className="q block text-[11px] text-ink-dim">
-                {plural(s.notes.length, 'episódio avaliado', 'episódios avaliados')}
+                {plural(s.notes.length, 'ficha', 'fichas')}
               </span>
             </span>
             <Strip value={s.average} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />

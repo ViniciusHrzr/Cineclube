@@ -21,7 +21,7 @@ import {
   fmt,
   reels,
   runtimeOf,
-  type EpisodeTake,
+  type ShowTake,
   type Movie,
   type ReelItem,
   type Review,
@@ -1877,7 +1877,7 @@ export function SeriesReels({
   onOpen,
   onTab,
 }: {
-  takes: EpisodeTake[] | null;
+  takes: ShowTake[] | null;
   meId: string;
   queued: (id: number) => boolean;
   onQueue: (s: { id: number; title: string; year: number | null; genre: string; poster: string | null }) => void;
@@ -1885,9 +1885,10 @@ export function SeriesReels({
   /** A casca de séries não tem contexto: a troca de seção chega por aqui. */
   onTab: (t: TabId) => void;
 }) {
-  /* Uma série é avaliada por EPISÓDIO, então a nota que o reel mostra é a média
-     dos episódios que têm nota — a mesma conta que o acervo de séries faz. Uma
-     série só marcada como vista não entra: ela não tem o que dizer. */
+  /* Uma série é avaliada por TEMPORADA, então a nota que o reel mostra é a
+     média das fichas que o clube escreveu — as de temporada, e as de episódio
+     de quando avaliar era por episódio. Uma série só marcada como vista não
+     entra: ela não tem o que dizer. */
   const rated = useMemo(() => {
     const by = new Map<number, RatedTitle & { sum: number }>();
     for (const t of takes ?? []) {
@@ -1933,9 +1934,9 @@ export function SeriesReels({
 
 /* ══ as fichas do clube, por universo ═════════════════════════════════════
    O reel é o mesmo dos dois lados; isto não é. Uma ficha de filme é uma por
-   pessoa por obra, e uma de série é uma por EPISÓDIO — a mesma pessoa tem oito
-   sobre a mesma série. Um componente só, com um `if` dentro, seria os dois
-   universos disputando as mesmas linhas.
+   pessoa por obra, e uma de série é uma por TEMPORADA — a mesma pessoa tem
+   quatro sobre a mesma série. Um componente só, com um `if` dentro, seria os
+   dois universos disputando as mesmas linhas.
 
    O que os dois têm igual é o que importa: cada ficha aceita o polegar do clube
    e uma conversa embaixo. As duas peças são as mesmas — ver components/social —
@@ -1971,7 +1972,7 @@ export function MovieTakes({ movieId }: { movieId: number }) {
   );
 }
 
-export function ShowTakes({ showId, takes }: { showId: number; takes: EpisodeTake[] | null }) {
+export function ShowTakes({ showId, takes }: { showId: number; takes: ShowTake[] | null }) {
   const here = (takes ?? [])
     .filter(t => t.showId === showId && t.final != null)
     .sort((a, b) => (b.ratedAt ?? b.watchedAt).localeCompare(a.ratedAt ?? a.watchedAt));
@@ -1979,7 +1980,7 @@ export function ShowTakes({ showId, takes }: { showId: number; takes: EpisodeTak
   if (!here.length) {
     return (
       <p className="text-[13px] text-ink-dim">
-        Ninguém do clube avaliou um episódio desta série ainda.
+        Ninguém do clube avaliou uma temporada desta série ainda.
       </p>
     );
   }
@@ -1993,7 +1994,11 @@ export function ShowTakes({ showId, takes }: { showId: number; takes: EpisodeTak
           take={{ id: t.id, reviewerId: t.reviewerId, reviewerName: t.reviewerName ?? '' }}
           person={{ id: t.reviewerId, name: t.reviewerName ?? '', dot: t.reviewerDot }}
           final={t.final ?? 0}
-          line={`T${t.season}E${t.episode}${t.episodeTitle ? ` · ${t.episodeTitle}` : ''}`}
+          line={
+            t.episode == null
+              ? `Temporada ${t.season}`
+              : `T${t.season}E${t.episode}${t.episodeTitle ? ` · ${t.episodeTitle}` : ''}`
+          }
           review={t}
         />
       ))}
@@ -2014,9 +2019,9 @@ function TakePlate({
   take: { id: string; reviewerId: string; reviewerName: string };
   person: { id: string; name: string; dot: string | null };
   final: number;
-  /** O que esta ficha é, quando não é a obra inteira: o episódio. */
+  /** O que esta ficha é, quando não é a obra inteira: a temporada. */
   line: string | null;
-  review: Review | EpisodeTake;
+  review: Review | ShowTake;
 }) {
   return (
     <div className="rounded-cell bg-house-deep/55 p-4 ring-1 ring-inset ring-white/[0.06]">

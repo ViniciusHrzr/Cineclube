@@ -1,8 +1,9 @@
 const express = require('express');
 const db = require('../db');
 const wrap = require('../wrap');
-const { excerpt, episodeEndsOf } = require('../takes');
+const { excerpt, seasonEndsOf } = require('../takes');
 const clubs = require('../clubs');
+const { SEASON_ROW } = require('../show');
 
 const router = express.Router({ mergeParams: true });
 
@@ -17,7 +18,9 @@ const router = express.Router({ mergeParams: true });
    domingo com uma série. Então há três tipos de linha:
 
    · **avaliado** — a ficha com nota, e a linha rica: carrega o mais alto e o
-     mais baixo dos nove critérios.
+     mais baixo dos nove critérios. É de uma TEMPORADA; as de episódio são de
+     quando avaliar era por episódio, e continuam no mural onde sempre
+     estiveram.
    · **visto** — AGRUPADO: os episódios que uma pessoa marcou da mesma série no
      mesmo dia são uma linha só. Uma maratona é um acontecimento, não seis.
    · **comentado** — alguém escreveu embaixo da ficha de outra pessoa.
@@ -61,6 +64,8 @@ const recentComments = db.prepare(`
 `);
 
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
+/** Nulo na ficha de uma temporada, que é a linha zero. Ver show.js. */
+const episodeOf = row => (row.episode === SEASON_ROW ? null : row.episode);
 /** O dia em que a coisa aconteceu, que é a janela do agrupamento. */
 const dayOf = at => String(at || '').slice(0, 10);
 
@@ -89,7 +94,7 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
         showTitle: row.show_title,
         showPoster: row.show_poster,
         season: row.season,
-        episode: row.episode,
+        episode: episodeOf(row),
         episodeTitle: row.episode_title ?? null,
         genre: row.show_genre,
         takeId: row.id,
@@ -97,7 +102,7 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
         /* Nulo numa nota rápida: ela não tem critério por dentro, e um alto e
            um baixo inventados a partir de um número só seriam a tela dizendo o
            que ninguém disse. */
-        ends: row.scores ? episodeEndsOf(row.show_genre, row.scores) : null,
+        ends: row.scores ? seasonEndsOf(row.show_genre, row.scores) : null,
         excerpt: row.comment ? excerpt(row.comment) : null,
       });
       continue;
@@ -141,7 +146,7 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
       showTitle: row.show_title,
       showPoster: row.show_poster,
       season: row.season,
-      episode: row.episode,
+      episode: episodeOf(row),
       episodeTitle: row.episode_title ?? null,
       takeId: row.take_id,
       commentId: row.id,

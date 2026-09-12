@@ -896,12 +896,20 @@ async function migrate() {
        coluna de estado. Marcar visto insere a linha; avaliar preenche o resto
        dela.
 
+       A UNIDADE DA NOTA É A TEMPORADA, e a do visto é o episódio. Uma linha de
+       episódio (episode >= 1) carrega só a marca; a ficha com nota é a linha de
+       episode = 0, que é a temporada — ver SEASON_ROW em show.js, onde está o
+       porquê de ela morar aqui e não numa tabela própria.
+
        Três estados, e os três são o mesmo registro:
        · scores e quick nulos — visto, sem nota. É o tracking puro.
        · quick preenchido — a nota objetiva de 0 a 10, num gesto.
        · scores preenchido — a avaliação criteriosa, os nove critérios de ofício
-         (BASE, em criteria.js), sem os dois de gênero: um episódio não escolhe
-         gênero.
+         (BASE, em criteria.js), sem os dois de gênero.
+
+       As linhas de episódio com nota são de quando avaliar era por episódio.
+       Continuam legíveis e ninguém escreve outra: o acervo e o mural as mostram
+       como sempre mostraram.
 
        A criteriosa SUBSTITUI a rápida, e é por isso que as duas colunas
        convivem em vez de uma só: quick guarda o que foi dito à mão, final

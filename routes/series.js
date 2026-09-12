@@ -3,7 +3,7 @@ const db = require('../db');
 const series = require('../series');
 const wrap = require('../wrap');
 const { providerCache } = require('../providers');
-const { GENRES, episodeCritsFor } = require('../criteria');
+const { GENRES, seasonCritsFor } = require('../criteria');
 const { cleanEpisodeRef } = require('../show');
 
 const router = express.Router();
@@ -100,12 +100,12 @@ const fillProviders = providerCache({
   fetch: id => series.watchProvidersFor(id),
 });
 
-/* Servido por gênero porque o gênero da SÉRIE decide o vocabulário — vozes numa
-   animação, estrutura num documentário — sem nunca acrescentar pergunta. Ver
-   criteria.js. */
+/* Os nove critérios da ficha de uma TEMPORADA. Servido por gênero porque o
+   gênero da SÉRIE decide o vocabulário — vozes numa animação, estrutura num
+   documentário — sem nunca acrescentar pergunta. Ver criteria.js. */
 router.get('/criteria', (req, res) => {
   const criteria = {};
-  for (const genre of GENRES) criteria[genre] = episodeCritsFor(genre);
+  for (const genre of GENRES) criteria[genre] = seasonCritsFor(genre);
   res.json({ genres: GENRES, criteria });
 });
 

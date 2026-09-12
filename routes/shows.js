@@ -8,8 +8,10 @@ const throttle = require('../throttle');
 const live = require('../live');
 const series = require('../series');
 const { providerCache } = require('../providers');
-const { GENRES, episodeCritsFor, episodeFinalOf, episodeAnsweredIn } = require('../criteria');
-const { cleanShow, cleanEpisodeRef, text, MAX_EPISODE_TITLE } = require('../show');
+const { GENRES, seasonCritsFor, seasonFinalOf, seasonAnsweredIn } = require('../criteria');
+const {
+  cleanShow, cleanEpisodeRef, cleanSeasonRef, text, SEASON_ROW, MAX_EPISODE_TITLE,
+} = require('../show');
 
 const router = express.Router({ mergeParams: true });
 
@@ -71,11 +73,16 @@ const deleteMineQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND
 const deleteQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ?');
 
 /* Contado por episódio distinto e não por linha: quatro pessoas vendo o mesmo
-   episódio é um episódio visto pelo clube, não quatro. */
+   episódio é um episódio visto pelo clube, não quatro. A linha da temporada
+   fica de fora da contagem de vistos — ela é uma nota, não uma sessão.
+
+   A média é de tudo o que tem nota, e isso inclui as fichas de episódio de
+   quando avaliar era por episódio: são vereditos que o clube deu, e recusá-los
+   aqui faria o cartaz de uma série antiga perder a nota que ele sempre teve. */
 const progressStmt = db.prepare(`
   SELECT show_id,
-         COUNT(DISTINCT season || 'x' || episode) AS seen,
-         COUNT(DISTINCT CASE WHEN final IS NOT NULL THEN season || 'x' || episode END) AS rated,
+         COUNT(DISTINCT CASE WHEN episode <> ${SEASON_ROW} THEN season || 'x' || episode END) AS seen,
+         COUNT(DISTINCT CASE WHEN episode = ${SEASON_ROW} AND final IS NOT NULL THEN season END) AS rated,
          AVG(final) AS average
   FROM episode_takes
   WHERE club_id = ?
@@ -103,19 +110,35 @@ const getTake = db.prepare(`
   WHERE club_id = ? AND reviewer_id = ? AND show_id = ? AND season = ? AND episode = ?
 `);
 
-const upsertTake = db.prepare(`
+/* Marcar não escreve nota nenhuma, e por isso não toca em scores, quick, final
+   nem comment: remarcar um episódio que já tem uma ficha antiga de quando
+   avaliar era por episódio apagaria o que ela diz. */
+const markEpisode = db.prepare(`
   INSERT INTO episode_takes
     (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
-     season, episode, episode_title, scores, quick, final, comment, watched_at, rated_at)
+     season, episode, episode_title, watched_at)
   VALUES
     (@id, @clubId, @reviewerId, @showId, @showTitle, @showPoster, @showGenre,
-     @season, @episode, @episodeTitle, @scores, @quick, @final, @comment,
+     @season, @episode, @episodeTitle, datetime('now'))
+  ON CONFLICT(club_id, reviewer_id, show_id, season, episode) DO UPDATE SET
+    show_title = excluded.show_title,
+    show_poster = excluded.show_poster,
+    show_genre = excluded.show_genre,
+    episode_title = COALESCE(excluded.episode_title, episode_takes.episode_title)
+`);
+
+const upsertSeasonTake = db.prepare(`
+  INSERT INTO episode_takes
+    (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
+     season, episode, scores, quick, final, comment, watched_at, rated_at)
+  VALUES
+    (@id, @clubId, @reviewerId, @showId, @showTitle, @showPoster, @showGenre,
+     @season, @episode, @scores, @quick, @final, @comment,
      datetime('now'), @ratedAt)
   ON CONFLICT(club_id, reviewer_id, show_id, season, episode) DO UPDATE SET
     show_title = excluded.show_title,
     show_poster = excluded.show_poster,
     show_genre = excluded.show_genre,
-    episode_title = COALESCE(excluded.episode_title, episode_takes.episode_title),
     scores = excluded.scores,
     quick = excluded.quick,
     final = excluded.final,
@@ -178,18 +201,23 @@ function takeDTO(row) {
      quando foi escrita, e imprimir um critério ausente como 0,0 é pôr uma
      opinião na boca de alguém. Vazio quando a ficha é só "vi" ou nota rápida. */
   const breakdown = scores
-    ? episodeAnsweredIn(genre, scores).map(c => ({
+    ? seasonAnsweredIn(genre, scores).map(c => ({
         key: c.key, name: c.name, w: c.w, group: c.group, value: scores[c.key],
       }))
     : [];
+  const season = row.episode === SEASON_ROW;
   return {
     id: row.id,
     showId: row.show_id,
     showTitle: row.show_title,
     showPoster: row.show_poster,
     genre: row.show_genre,
+    /* De qual das duas coisas esta linha fala, dito por extenso: o zero é onde
+       a ficha da temporada mora (ver show.js), e um cliente que tivesse de
+       descobrir isso sozinho descobriria errado uma vez. */
+    kind: season ? 'season' : 'episode',
     season: row.season,
-    episode: row.episode,
+    episode: season ? null : row.episode,
     episodeTitle: row.episode_title ?? null,
     reviewerId: row.reviewer_id,
     reviewerName: row.reviewer_name,
@@ -284,16 +312,16 @@ router.get('/:showId(\\d+)/takes', clubs.requireReadable, wrap(async (req, res) 
   res.json({ takes: rows.map(takeDTO) });
 }));
 
-/* ── marcar e avaliar, no mesmo lugar ─────────────────────────────────────
-   Uma rota de escrita só, porque é uma linha só. O corpo diz qual dos três
-   estados está sendo gravado:
+/* ── as duas escritas, e a diferença entre elas ───────────────────────────
+   **Um episódio se marca.** A linha existe, e isso quer dizer "eu vi". Nada
+   mais: um episódio não recebe nota.
 
-   · nada, ou { watched: true } — visto, sem nota
-   · { quick: 8 }               — a nota objetiva
-   · { scores: {...} }          — a avaliação criteriosa
+   **Uma temporada se avalia**, e é onde as duas notas moram — a rápida e a
+   criteriosa, que se substituem nos dois sentidos. A última coisa que a pessoa
+   disse é a que vale, e nenhuma sobra escondida na linha.
 
-   As duas notas se substituem nos dois sentidos: a última coisa que a pessoa
-   disse é a que vale, e nenhuma sobra escondida na linha. */
+   A unidade da nota é a temporada porque é ela que tem uma forma para julgar:
+   um arco que abre e fecha, um elenco que muda, um fôlego. */
 router.put(
   '/:showId(\\d+)/:season(\\d+)/:episode(\\d+)',
   auth.requireSession, clubs.requireMember, throttleTake,
@@ -303,6 +331,12 @@ router.put(
     const { showId, season, episode } = limpo.ref;
 
     const body = req.body || {};
+    /* Recusado e não ignorado: um cliente antigo mandando nota de episódio
+       precisa ouvir que ela não existe mais, ou some em silêncio. */
+    if (body.scores || body.quick != null) {
+      return res.status(400).json({ error: 'A avaliação agora é da temporada, não do episódio.' });
+    }
+
     const genre = GENRES.includes(body.genre) ? body.genre : 'Drama';
 
     /* O título e o pôster viajam com a escrita e são gravados na linha, como na
@@ -313,6 +347,44 @@ router.put(
     const showPoster = text(body.showPoster, 500);
     const episodeTitle = text(body.episodeTitle, MAX_EPISODE_TITLE);
 
+    const existing = await getTake.get(
+      req.club.id, req.session.reviewer_id, showId, season, episode
+    );
+
+    await markEpisode.run({
+      /* O id só é sorteado quando a linha nasce: numa regravação o upsert casa
+         pela chave natural e não toca nele, que é o que faz um endereço de
+         ficha continuar valendo. */
+      id: existing?.id || 'e' + crypto.randomUUID(),
+      clubId: req.club.id,
+      reviewerId: req.session.reviewer_id,
+      showId, showTitle, showPoster, showGenre: genre,
+      season, episode, episodeTitle,
+    });
+
+    const saved = await getTake.get(
+      req.club.id, req.session.reviewer_id, showId, season, episode
+    );
+    live.emit('shows', req.session.reviewer_id, req.club.id);
+    res.status(existing ? 200 : 201).json({ take: takeDTO({ ...saved, reviewer_name: null, reviewer_dot: null }) });
+  })
+);
+
+router.put(
+  '/:showId(\\d+)/:season(\\d+)',
+  auth.requireSession, clubs.requireMember, throttleTake,
+  wrap(async (req, res) => {
+    const limpo = cleanSeasonRef(req.params);
+    if (limpo.error) return res.status(400).json({ error: limpo.error });
+    const { showId, season, episode } = limpo.ref;
+
+    const body = req.body || {};
+    const genre = GENRES.includes(body.genre) ? body.genre : 'Drama';
+
+    const showTitle = text(body.showTitle, 300);
+    if (!showTitle) return res.status(400).json({ error: 'Série inválida.' });
+    const showPoster = text(body.showPoster, 500);
+
     let scores = null;
     let quick = null;
     let final = null;
@@ -320,7 +392,7 @@ router.put(
     if (body.scores && typeof body.scores === 'object') {
       /* Só as chaves que este gênero pergunta, e só números na régua. Uma chave
          inventada não entra na linha, e um valor fora de 0–10 não é nota. */
-      const allowed = new Set(episodeCritsFor(genre).map(c => c.key));
+      const allowed = new Set(seasonCritsFor(genre).map(c => c.key));
       const clean = {};
       for (const [key, value] of Object.entries(body.scores)) {
         if (!allowed.has(key)) continue;
@@ -332,7 +404,7 @@ router.put(
         return res.status(400).json({ error: 'A avaliação criteriosa não trouxe nenhuma nota.' });
       }
       scores = JSON.stringify(clean);
-      final = episodeFinalOf(genre, clean);
+      final = seasonFinalOf(genre, clean);
     } else if (body.quick !== undefined && body.quick !== null) {
       const n = Number(body.quick);
       if (!Number.isFinite(n) || n < 0 || n > 10) {
@@ -340,24 +412,26 @@ router.put(
       }
       quick = n;
       final = n;
+    } else {
+      /* Uma ficha de temporada sem nota seria uma linha que o mural leria como
+         "viu a temporada inteira" — e ninguém vê uma temporada de uma vez.
+         Quem só quer escrever escreve na conversa. */
+      return res.status(400).json({ error: 'Uma avaliação de temporada precisa de uma nota.' });
     }
 
     const existing = await getTake.get(
       req.club.id, req.session.reviewer_id, showId, season, episode
     );
 
-    await upsertTake.run({
-      /* O id só é sorteado quando a linha nasce: numa regravação o upsert casa
-         pela chave natural e não toca nele, que é o que faz um endereço de
-         ficha continuar valendo depois de a nota mudar. */
+    await upsertSeasonTake.run({
       id: existing?.id || 'e' + crypto.randomUUID(),
       clubId: req.club.id,
       reviewerId: req.session.reviewer_id,
       showId, showTitle, showPoster, showGenre: genre,
-      season, episode, episodeTitle,
+      season, episode,
       scores, quick, final,
       comment: text(body.comment, 2000),
-      ratedAt: final !== null ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+      ratedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
     });
 
     const saved = await getTake.get(
@@ -368,14 +442,27 @@ router.put(
   })
 );
 
-/* Desmarcar apaga a linha inteira, e é o certo: a linha É o "eu vi", então
-   tirar o visto e tirar a nota são o mesmo gesto. Quem só quer trocar a nota
-   grava outra por cima. */
+/* Desmarcar apaga a linha inteira, e é o certo: a linha É o "eu vi". */
 router.delete(
   '/:showId(\\d+)/:season(\\d+)/:episode(\\d+)',
   auth.requireSession, clubs.requireMember,
   wrap(async (req, res) => {
     const limpo = cleanEpisodeRef(req.params);
+    if (limpo.error) return res.status(400).json({ error: limpo.error });
+    const { showId, season, episode } = limpo.ref;
+    await deleteTake.run(req.club.id, req.session.reviewer_id, showId, season, episode);
+    live.emit('shows', req.session.reviewer_id, req.club.id);
+    res.status(204).end();
+  })
+);
+
+/* Tirar a própria nota da temporada. Não mexe em episódio marcado nenhum: o que
+   se viu continua visto depois de a opinião ser retirada. */
+router.delete(
+  '/:showId(\\d+)/:season(\\d+)',
+  auth.requireSession, clubs.requireMember,
+  wrap(async (req, res) => {
+    const limpo = cleanSeasonRef(req.params);
     if (limpo.error) return res.status(400).json({ error: limpo.error });
     const { showId, season, episode } = limpo.ref;
     await deleteTake.run(req.club.id, req.session.reviewer_id, showId, season, episode);

@@ -30,14 +30,14 @@ import {
   seriesApi,
   shows as showsApi,
   showsSocial,
-  type EpisodeTake,
+  type ShowTake,
   type QueuedShow,
   type TakeComment,
   type TakeVote,
 } from '@/lib/api';
 import { WorldProvider, type World } from '@/lib/world';
 import {
-  EpisodeSheet,
+  SeasonSheet,
   SeriesArchiveScreen,
   SeriesCatalogScreen,
   SeriesFeedScreen,
@@ -507,7 +507,7 @@ function SeriesClubApp({
      nenhum dos dois carrega o retrato junto. */
   const [roster, setRoster] = useState<Reviewer[]>([]);
   const [queue, setQueue] = useState<QueuedShow[] | null>(null);
-  const [takes, setTakes] = useState<EpisodeTake[] | null>(null);
+  const [takes, setTakes] = useState<ShowTake[] | null>(null);
   const [criteria, setCriteria] = useState<Record<string, Criterion[]> | null>(null);
   /* A conversa do clube em cima das fichas de episódio: comentários, votos e
      curtidas, os três carregados inteiros no boot pelo mesmo motivo do outro
@@ -914,36 +914,28 @@ function SeriesClubApp({
         />
       </div>
 
-      {/* A folha da sessão. `key` na tripla para ela nascer limpa a cada
-          episódio: montada uma vez, ela abriria o segundo com as marcas do
-          primeiro ainda no formulário.
+      {/* A folha da sessão, e ela é a da TEMPORADA do episódio que está
+          passando: a nota é dela. `key` no par série-temporada para a folha
+          nascer limpa quando a sala muda de temporada.
 
-          O episódio vai no mínimo que a sala conhece — a tripla e o nome. A
-          folha busca o resto sozinha, que é o que ela já fazia para saber quem
-          dirigiu. */}
-      {avaliando?.season != null && avaliando.episode != null ? (
-        <EpisodeSheet
-          key={`${avaliando.id}x${avaliando.season}x${avaliando.episode}`}
+          Sem o nome e sem a sinopse da temporada: a sala conhece o episódio, e
+          buscar o resto do TMDB no meio de uma projeção é trabalho que a folha
+          não precisa para receber uma nota. */}
+      {avaliando?.season != null ? (
+        <SeasonSheet
+          key={`${avaliando.id}x${avaliando.season}`}
           showId={avaliando.id}
           showTitle={avaliando.title}
           showPoster={avaliando.poster}
           genre={avaliando.genre}
-          ep={{
-            season: avaliando.season,
-            episode: avaliando.episode,
-            title: avaliando.episodeTitle ?? '',
-            overview: null,
-            still: null,
-            airDate: null,
-            runtime: avaliando.runtime,
-            crowd: null,
-            kind: null,
-          }}
+          season={avaliando.season}
+          name={null}
+          overview={null}
           takes={(takes ?? []).filter(
             t =>
+              t.kind === 'season' &&
               t.showId === avaliando.id &&
-              t.season === avaliando.season &&
-              t.episode === avaliando.episode
+              t.season === avaliando.season
           )}
           meId={me.id}
           criteria={criteria?.[avaliando.genre] ?? null}

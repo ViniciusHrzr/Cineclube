@@ -319,19 +319,22 @@ function answeredIn(genre, scores) {
   return critsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }
 
-/* ══ a avaliação criteriosa de um episódio ═══════════════════════════════
+/* ══ a avaliação criteriosa de uma temporada ══════════════════════════════
    Os nove de `BASE` e nada mais. Os dois do gênero ficam de fora, e não é por
-   tamanho: um gênero é promessa de uma OBRA. "Atmosfera" é a pergunta certa
-   para um filme de terror porque o filme inteiro se propôs a sustentar um
-   clima; o quinto episódio de uma série de terror pode ser o de tribunal, e a
-   nota diria mais sobre o rótulo do que sobre o episódio.
+   tamanho: um gênero é promessa de uma OBRA INTEIRA, e uma temporada é um
+   pedaço dela — a terceira de uma série de terror pode ser a que troca o susto
+   pelo tribunal, e a nota diria mais sobre o rótulo do que sobre o que se viu.
 
    O `BASE_SWAP` continua valendo, porque ele não acrescenta pergunta — troca o
    OBJETO de uma que já existe. Numa série animada ninguém atuou diante de uma
-   câmera, e quem dubla o episódio 5 dubla a série.
+   câmera.
+
+   São também as chaves com que as fichas de episódio do clube foram escritas,
+   quando avaliar era por episódio: mudar o conjunto reescreveria o que elas
+   perguntaram.
 
    Mesma fórmula, divisor contado, mesma régua 0–10 da ficha de um filme. */
-function episodeCritsFor(genre) {
+function seasonCritsFor(genre) {
   const base = baseFor(GENRE_CRIT[genre] ? genre : 'Drama');
   return base
     .filter(t => t[0] !== PERSONAL_KEY)
@@ -340,10 +343,10 @@ function episodeCritsFor(genre) {
 }
 
 /** A nota da criteriosa. Mesma média contada de `finalOf`, sobre os nove. */
-function episodeFinalOf(genre, scores) {
+function seasonFinalOf(genre, scores) {
   let sum = 0;
   let weight = 0;
-  for (const c of episodeCritsFor(genre)) {
+  for (const c of seasonCritsFor(genre)) {
     const value = scores?.[c.key];
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     sum += value * c.w;
@@ -352,14 +355,14 @@ function episodeFinalOf(genre, scores) {
   return weight ? sum / weight : 0;
 }
 
-/** O que a ficha de um episódio respondeu, na ordem em que foi perguntado. */
-function episodeAnsweredIn(genre, scores) {
-  return episodeCritsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
+/** O que uma ficha de temporada respondeu, na ordem em que foi perguntado. */
+function seasonAnsweredIn(genre, scores) {
+  return seasonCritsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }
 
 module.exports = {
   BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, TMDB_GENRE_MAP, GENRE_TO_TMDB,
   CRAFT, GENRE, PERSONAL, PERSONAL_KEY,
   genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn,
-  episodeCritsFor, episodeFinalOf, episodeAnsweredIn
+  seasonCritsFor, seasonFinalOf, seasonAnsweredIn
 };

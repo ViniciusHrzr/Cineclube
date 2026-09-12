@@ -1,4 +1,4 @@
-const { critsFor, episodeCritsFor, GENRES } = require('./criteria');
+const { critsFor, seasonCritsFor, GENRES } = require('./criteria');
 
 /* Regras de LEITURA de uma ficha: qual é o alto e o baixo dela, e quanto do
    que a pessoa escreveu cabe numa linha. Num módulo próprio porque os dois
@@ -41,9 +41,9 @@ function endsWith(crits, genre, raw) {
 
 const endsOf = (genre, raw) => endsWith(critsFor, genre, raw);
 
-/* O mesmo, sobre os nove critérios de um episódio: ler uma ficha de episódio
+/* O mesmo, sobre os nove critérios de uma temporada: ler uma ficha de série
    com as onze chaves de filme faria os dois que ela não tem sumirem em
    silêncio. */
-const episodeEndsOf = (genre, raw) => endsWith(episodeCritsFor, genre, raw);
+const seasonEndsOf = (genre, raw) => endsWith(seasonCritsFor, genre, raw);
 
-module.exports = { SPREAD, excerpt, endsOf, episodeEndsOf };
+module.exports = { SPREAD, excerpt, endsOf, seasonEndsOf };

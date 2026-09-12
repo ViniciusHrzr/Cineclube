@@ -644,7 +644,7 @@ export function ScreeningScreen({
   }
 
   const movie = state.movie!;
-  const rateLabel = movie.kind === 'episode' ? 'Avaliar episódio' : 'Avaliar filme';
+  const rateLabel = movie.kind === 'episode' ? 'Avaliar temporada' : 'Avaliar filme';
   const mine = tag;
   const different = state.viewers.filter(v => v.id !== club.me.id && v.sourceTag && mine && v.sourceTag !== mine);
   const waiting = state.viewers.filter(v => !v.ready);
@@ -685,7 +685,7 @@ export function ScreeningScreen({
             Andar na série troca o que a sala está vendo; avaliar e encerrar são
             sobre esta noite. Estavam numa fileira só, e no telefone as quatro
             chaves caíam em duas linhas de dois misturando as duas naturezas —
-            "Avaliar episódio" ao lado de "Anterior", "Próximo" ao lado de
+            "Avaliar temporada" ao lado de "Anterior", "Próximo" ao lado de
             "Encerrar sessão".
 
             No telefone os grupos são linhas: o par de andar em cima, porque é o

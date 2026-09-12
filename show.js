@@ -58,7 +58,25 @@ function cleanEpisodeRef(params) {
   return { ref: { showId, season, episode } };
 }
 
+/* ── onde a ficha de uma temporada mora ───────────────────────────────────
+   Na MESMA tabela das marcas de episódio, na linha de número zero: o TMDB
+   numera episódios a partir de 1, e `cleanEpisodeRef` exige isso, então o zero
+   é um lugar que episódio nenhum ocupa.
+
+   Uma tabela à parte pediria uma segunda tabela de comentários, uma segunda de
+   votos e um segundo caminho no mural para cada uma — a conversa e o polegar
+   penduram no id de uma ficha, e um id que às vezes é de uma tabela e às vezes
+   de outra não é uma chave estrangeira. */
+const SEASON_ROW = 0;
+
+function cleanSeasonRef(params) {
+  const showId = whole(params?.showId, { min: 1, max: MAX_ID });
+  const season = whole(params?.season, { min: 0, max: MAX_SEASON });
+  if (showId === null || season === null) return { error: 'Temporada inválida.' };
+  return { ref: { showId, season, episode: SEASON_ROW } };
+}
+
 module.exports = {
-  cleanShow, cleanEpisodeRef, text,
-  MAX_EPISODE_TITLE, MAX_SEASON, MAX_EPISODE,
+  cleanShow, cleanEpisodeRef, cleanSeasonRef, text,
+  SEASON_ROW, MAX_EPISODE_TITLE, MAX_SEASON, MAX_EPISODE,
 };

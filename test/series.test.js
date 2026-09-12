@@ -13,25 +13,30 @@ const db = require('../db');
 const live = require('../live');
 const screening = require('../screening');
 const kit = require('../testkit');
-const { episodeCritsFor, episodeFinalOf, GENRE, CRAFT, PERSONAL } = require('../criteria');
+const { seasonCritsFor, seasonFinalOf, GENRE, CRAFT, PERSONAL } = require('../criteria');
 const { genresFromTvIds, signedBy } = require('../series');
 
 /* ══════════════════════════════════════════════════════════════════════════
    O universo de séries.
 
-   Três coisas que só existem aqui, e cada uma pode falhar em silêncio:
+   Quatro coisas que só existem aqui, e cada uma pode falhar em silêncio:
 
    1. **A ficha é de nove, e nunca de onze.** Os dois critérios do gênero são
-      uma promessa que uma OBRA faz, e um episódio não a faz. Se um deles vazar
-      para a ficha de episódio, ninguém vê um erro — vê uma pergunta a mais, e
+      uma promessa que uma OBRA INTEIRA faz, e uma temporada não a faz. Se um
+      deles vazar para a ficha, ninguém vê um erro — vê uma pergunta a mais, e
       a nota passa a medir o rótulo da série.
 
-   2. **A linha É o "eu vi".** Não há tabela de assistido ao lado. Marcar visto
-      insere; avaliar preenche; desmarcar apaga. Se as duas notas conseguirem
-      coexistir na mesma linha, ela carrega duas respostas para a mesma
-      pergunta e nada quebra até alguém perguntar qual vale.
+   2. **Marcar é do episódio; avaliar é da temporada.** São duas escritas
+      diferentes sobre a mesma tabela, e uma nota que voltasse a entrar numa
+      linha de episódio não quebraria nada — só espalharia o veredito por
+      quarenta minutos de cada vez.
 
-   3. **A parede entre clubes vale igual.** O acervo de séries é outra tabela,
+   3. **A linha É o "eu vi".** Não há tabela de assistido ao lado. Marcar
+      insere; desmarcar apaga. Se as duas notas conseguirem coexistir na mesma
+      ficha de temporada, ela carrega duas respostas para a mesma pergunta e
+      nada quebra até alguém perguntar qual vale.
+
+   4. **A parede entre clubes vale igual.** O acervo de séries é outra tabela,
       e uma tabela nova é uma parede nova que ninguém testou ainda.
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -84,27 +89,27 @@ const show = title => ({
 
 function scoresFor(genre, value) {
   const o = {};
-  episodeCritsFor(genre).forEach(c => { o[c.key] = value; });
+  seasonCritsFor(genre).forEach(c => { o[c.key] = value; });
   return o;
 }
 
 /* ── os nove ────────────────────────────────────────────────────────────── */
 
-test('a ficha de um episódio tem nove critérios e nenhum é do gênero', () => {
+test('a ficha de uma temporada tem nove critérios e nenhum é do gênero', () => {
   for (const genre of ['Drama', 'Terror', 'Comédia', 'Animação', 'Documentário']) {
-    const crits = episodeCritsFor(genre);
+    const crits = seasonCritsFor(genre);
     assert.equal(crits.length, 9, `${genre} deveria perguntar nove`);
     assert.equal(
       crits.filter(c => c.group === GENRE).length, 0,
-      `${genre} vazou um critério de gênero para a ficha de episódio`
+      `${genre} vazou um critério de gênero para a ficha de temporada`
     );
   }
 });
 
 test('o gênero troca o objeto de uma pergunta, nunca acrescenta uma', () => {
-  const drama = episodeCritsFor('Drama').map(c => c.key);
-  const anima = episodeCritsFor('Animação').map(c => c.key);
-  const doc = episodeCritsFor('Documentário').map(c => c.key);
+  const drama = seasonCritsFor('Drama').map(c => c.key);
+  const anima = seasonCritsFor('Animação').map(c => c.key);
+  const doc = seasonCritsFor('Documentário').map(c => c.key);
 
   assert.ok(drama.includes('atuacoes'));
   // Numa animação ninguém atuou diante de uma câmera: o que existe é voz.
@@ -118,19 +123,19 @@ test('o gênero troca o objeto de uma pergunta, nunca acrescenta uma', () => {
 });
 
 test('o Aproveitamento é o último, e é o único pessoal', () => {
-  const crits = episodeCritsFor('Drama');
+  const crits = seasonCritsFor('Drama');
   assert.equal(crits[crits.length - 1].key, 'aproveitamento');
   assert.equal(crits[crits.length - 1].group, PERSONAL);
   assert.equal(crits.filter(c => c.group === CRAFT).length, 8);
 });
 
 test('o divisor é contado, então uma ficha parcial não é punida', () => {
-  assert.equal(episodeFinalOf('Drama', scoresFor('Drama', 8)), 8);
+  assert.equal(seasonFinalOf('Drama', scoresFor('Drama', 8)), 8);
   // Duas respostas de 8 são 8, e não 16/9.
-  assert.equal(episodeFinalOf('Drama', { direcao: 8, roteiro: 8 }), 8);
+  assert.equal(seasonFinalOf('Drama', { direcao: 8, roteiro: 8 }), 8);
   // Zero é uma nota; ausência não é.
-  assert.equal(episodeFinalOf('Drama', { direcao: 0, roteiro: 10 }), 5);
-  assert.equal(episodeFinalOf('Drama', {}), 0);
+  assert.equal(seasonFinalOf('Drama', { direcao: 0, roteiro: 10 }), 5);
+  assert.equal(seasonFinalOf('Drama', {}), 0);
 });
 
 /* ── a taxonomia de televisão ───────────────────────────────────────────── */
@@ -283,7 +288,7 @@ test('ninguém tira da lista a série que só outra pessoa acompanha', async () 
   assert.equal(body.shows.length, 1, 'a lista perdeu uma série que ninguém tinha direito de tirar');
 });
 
-/* ── os três estados da linha ───────────────────────────────────────────── */
+/* ── marcar é do episódio; avaliar é da temporada ───────────────────────── */
 
 test('marcar visto grava a linha sem nota nenhuma', async () => {
   const p = await kit.signIn();
@@ -296,20 +301,41 @@ test('marcar visto grava a linha sem nota nenhuma', async () => {
     p.cookie
   );
   assert.equal(marcado.status, 201);
+  assert.equal(marcado.body.take.kind, 'episode');
   assert.equal(marcado.body.take.final, null, 'visto não é uma nota');
   assert.equal(marcado.body.take.quick, null);
   assert.equal(marcado.body.take.scores, null);
   assert.equal(marcado.body.take.episodeTitle, 'Ozymandias');
 });
 
-test('a nota rápida é uma nota, e a criteriosa a substitui', async () => {
+/* Recusado e não ignorado: um cliente antigo mandando nota de episódio tem de
+   ouvir que ela não existe mais, ou a opinião some em silêncio. */
+test('um episódio não recebe nota', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
   const s = show();
   const url = at(club, `/shows/${s.id}/1/1`);
   const base = { showTitle: s.title, genre: 'Drama' };
 
+  assert.equal((await req('PUT', url, { ...base, quick: 8 }, p.cookie)).status, 400);
+  assert.equal(
+    (await req('PUT', url, { ...base, scores: scoresFor('Drama', 8) }, p.cookie)).status, 400
+  );
+
+  const acervo = await req('GET', at(club, '/shows/takes'), null, p.cookie);
+  assert.equal(acervo.body.takes.length, 0, 'a recusa não podia deixar linha nenhuma');
+});
+
+test('a nota rápida é uma nota, e a criteriosa a substitui', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  const s = show();
+  const url = at(club, `/shows/${s.id}/1`);
+  const base = { showTitle: s.title, genre: 'Drama' };
+
   const rapida = await req('PUT', url, { ...base, quick: 7.5 }, p.cookie);
+  assert.equal(rapida.body.take.kind, 'season');
+  assert.equal(rapida.body.take.episode, null, 'uma ficha de temporada não fala de um episódio');
   assert.equal(rapida.body.take.quick, 7.5);
   assert.equal(rapida.body.take.final, 7.5);
   assert.equal(rapida.body.take.scores, null);
@@ -326,11 +352,26 @@ test('a nota rápida é uma nota, e a criteriosa a substitui', async () => {
   assert.equal(Object.keys(criteriosa.body.take.scores).length, 9);
 });
 
+/* Uma ficha sem nota seria lida pelo mural como "viu a temporada inteira", e
+   ninguém vê uma temporada de uma vez. */
+test('uma avaliação de temporada sem nota é recusada', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  const s = show();
+
+  const vazia = await req(
+    'PUT', at(club, `/shows/${s.id}/1`),
+    { showTitle: s.title, genre: 'Drama', comment: 'só passando' },
+    p.cookie
+  );
+  assert.equal(vazia.status, 400);
+});
+
 test('o id da linha sobrevive a uma regravação', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
   const s = show();
-  const url = at(club, `/shows/${s.id}/1/2`);
+  const url = at(club, `/shows/${s.id}/2`);
   const base = { showTitle: s.title, genre: 'Drama' };
 
   const primeiro = await req('PUT', url, { ...base, quick: 5 }, p.cookie);
@@ -344,11 +385,11 @@ test('uma chave que este gênero não pergunta não entra na linha', async () =>
   const s = show();
 
   const gravado = await req(
-    'PUT', at(club, `/shows/${s.id}/1/3`),
+    'PUT', at(club, `/shows/${s.id}/3`),
     {
       showTitle: s.title,
       genre: 'Drama',
-      // `atmosfera` é do gênero Terror e não existe em ficha de episódio.
+      // `atmosfera` é do gênero Terror e não existe em ficha de série.
       scores: { direcao: 8, atmosfera: 10, inventado: 3 },
     },
     p.cookie
@@ -361,7 +402,7 @@ test('uma nota fora da régua é recusada', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
   const s = show();
-  const url = at(club, `/shows/${s.id}/1/4`);
+  const url = at(club, `/shows/${s.id}/4`);
   const base = { showTitle: s.title, genre: 'Drama' };
 
   assert.equal((await req('PUT', url, { ...base, quick: 11 }, p.cookie)).status, 400);
@@ -375,11 +416,30 @@ test('desmarcar apaga a linha, porque a linha é o "eu vi"', async () => {
   const s = show();
   const url = at(club, `/shows/${s.id}/3/7`);
 
-  await req('PUT', url, { showTitle: s.title, genre: 'Drama', quick: 8 }, p.cookie);
+  await req('PUT', url, { showTitle: s.title, genre: 'Drama' }, p.cookie);
   assert.equal((await req('DELETE', url, null, p.cookie)).status, 204);
 
   const acervo = await req('GET', at(club, '/shows/takes'), null, p.cookie);
   assert.equal(acervo.body.takes.length, 0);
+});
+
+/* O que se viu e o que se achou são duas linhas, e é isso que permite retirar
+   uma opinião sem apagar o registro de uma noite. */
+test('apagar a nota da temporada não desmarca episódio nenhum', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  const s = show();
+  const base = { showTitle: s.title, genre: 'Drama' };
+
+  await req('PUT', at(club, `/shows/${s.id}/1/1`), base, p.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1`), { ...base, quick: 9 }, p.cookie);
+
+  assert.equal((await req('DELETE', at(club, `/shows/${s.id}/1`), null, p.cookie)).status, 204);
+
+  const acervo = await req('GET', at(club, '/shows/takes'), null, p.cookie);
+  assert.equal(acervo.body.takes.length, 1);
+  assert.equal(acervo.body.takes[0].kind, 'episode');
+  assert.equal(acervo.body.takes[0].episode, 1);
 });
 
 test('o progresso do clube conta episódio distinto, não linha', async () => {
@@ -394,11 +454,15 @@ test('o progresso do clube conta episódio distinto, não linha', async () => {
   // As duas pessoas viram o MESMO episódio: o clube viu um.
   await req('PUT', at(club, `/shows/${s.id}/1/1`), body, a.cookie);
   await req('PUT', at(club, `/shows/${s.id}/1/1`), body, b.cookie);
-  await req('PUT', at(club, `/shows/${s.id}/1/2`), { ...body, quick: 10 }, a.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1/2`), body, a.cookie);
+  // E as duas avaliaram a MESMA temporada: uma temporada avaliada.
+  await req('PUT', at(club, `/shows/${s.id}/1`), { ...body, quick: 10 }, a.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1`), { ...body, quick: 8 }, b.cookie);
 
   const fila = await req('GET', at(club, '/shows'), null, a.cookie);
-  assert.equal(fila.body.shows[0].seen, 2);
-  assert.equal(fila.body.shows[0].rated, 1, 'só um episódio ganhou nota');
+  assert.equal(fila.body.shows[0].seen, 2, 'a ficha da temporada não é um episódio visto');
+  assert.equal(fila.body.shows[0].rated, 1, 'só uma temporada ganhou nota');
+  assert.equal(fila.body.shows[0].average, 9);
 });
 
 /* ── a parede entre clubes ──────────────────────────────────────────────── */
@@ -410,7 +474,7 @@ test('o acervo de séries de um clube fechado não existe para quem não é dele
   const s = show();
 
   await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
-  await req('PUT', at(club, `/shows/${s.id}/1/1`), { showTitle: s.title, genre: 'Drama', quick: 9 }, dono.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1`), { showTitle: s.title, genre: 'Drama', quick: 9 }, dono.cookie);
 
   /* 403 e não 404, e isso é uma decisão registrada em clubs.js: houve uma
      versão que respondia 404 para não confirmar que a sala existia, e ela
@@ -421,7 +485,7 @@ test('o acervo de séries de um clube fechado não existe para quem não é dele
   assert.equal(lido.status, 403);
 
   const escrito = await req(
-    'PUT', at(club, `/shows/${s.id}/1/2`),
+    'PUT', at(club, `/shows/${s.id}/2`),
     { showTitle: s.title, genre: 'Drama', quick: 1 }, estranho.cookie
   );
   assert.ok(escrito.status >= 400, 'quem não é do clube não escreve nele');
@@ -434,8 +498,8 @@ test('a mesma pessoa acompanha a mesma série em dois clubes, separadamente', as
   const s = show();
   const body = { showTitle: s.title, genre: 'Drama' };
 
-  await req('PUT', at(um, `/shows/${s.id}/1/1`), { ...body, quick: 10 }, p.cookie);
-  await req('PUT', at(outro, `/shows/${s.id}/1/1`), { ...body, quick: 4 }, p.cookie);
+  await req('PUT', at(um, `/shows/${s.id}/1`), { ...body, quick: 10 }, p.cookie);
+  await req('PUT', at(outro, `/shows/${s.id}/1`), { ...body, quick: 4 }, p.cookie);
 
   const noUm = await req('GET', at(um, '/shows/takes'), null, p.cookie);
   const noOutro = await req('GET', at(outro, '/shows/takes'), null, p.cookie);

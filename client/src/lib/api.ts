@@ -363,18 +363,25 @@ export type QueuedShow = {
   } | null;
 };
 
-/* ── a linha que é ao mesmo tempo "vi" e "achei" ──────────────────────────
-   Existir significa que a pessoa viu. `quick` é a nota objetiva, `scores` é a
-   criteriosa, e as duas se substituem — a última coisa dita é a que vale.
-   `final` nulo é visto e não avaliado, que é diferente de zero. */
-export type EpisodeTake = {
+/* ── uma linha do universo de séries ──────────────────────────────────────
+   Duas coisas com a mesma forma, e `kind` diz qual:
+
+   · `episode` — a MARCA. Existir significa que a pessoa viu, e mais nada.
+   · `season` — a FICHA, com `episode` nulo. `quick` é a nota objetiva, `scores`
+     é a criteriosa, e as duas se substituem: a última coisa dita é a que vale.
+
+   Uma linha de episódio COM nota é de quando avaliar era por episódio. Ninguém
+   escreve outra, e o acervo e o mural continuam mostrando as que existem. */
+export type ShowTake = {
   id: string;
+  kind: 'episode' | 'season';
   showId: number;
   showTitle: string;
   showPoster: string | null;
   genre: string;
   season: number;
-  episode: number;
+  /** Nulo na ficha de uma temporada: ela não fala de um episódio. */
+  episode: number | null;
   episodeTitle: string | null;
   reviewerId: string;
   reviewerName: string | null;
@@ -421,9 +428,10 @@ export type ShowFeedEvent = {
   showTitle: string;
   showPoster: string | null;
   genre?: string;
-  /** Em `take` e `comment`: o episódio de que a linha fala. */
+  /* Em `take` e `comment`: de que a linha fala. `episode` nulo é uma ficha de
+     temporada, que é o que se avalia agora. */
   season?: number;
-  episode?: number;
+  episode?: number | null;
   episodeTitle?: string | null;
   takeId?: string;
   final?: number;
@@ -454,11 +462,18 @@ export const showsSocial = {
   feed: () => capi<{ items: ShowFeedEvent[] }>('/shows-feed'),
 };
 
-/** O que se grava num episódio. Vazio é "só vi". */
-export type TakePatch = {
+/** O que viaja com a marca de um episódio. Nota nenhuma: ela é da temporada. */
+export type MarkPatch = {
   showTitle: string;
   showPoster?: string | null;
   episodeTitle?: string | null;
+  genre: string;
+};
+
+/** O que se grava numa temporada. Uma das duas notas, sempre. */
+export type SeasonPatch = {
+  showTitle: string;
+  showPoster?: string | null;
   genre: string;
   quick?: number;
   scores?: Record<string, number>;
@@ -471,15 +486,19 @@ export const shows = {
     cpost<{ ok: true }>('/shows', { show }),
   remove: (showId: number) => cdel(`/shows/${showId}`),
   /** Tudo o que o clube gravou, para o acervo. */
-  takes: () => capi<{ takes: EpisodeTake[] }>('/shows/takes'),
-  takesFor: (showId: number) => capi<{ takes: EpisodeTake[] }>(`/shows/${showId}/takes`),
-  /* Marcar e avaliar são a mesma escrita porque são a mesma linha. Sem `quick`
-     nem `scores`, isto é só "vi". */
-  mark: (showId: number, season: number, episode: number, patch: TakePatch) =>
-    cput<{ take: EpisodeTake }>(`/shows/${showId}/${season}/${episode}`, patch),
-  /** Desmarcar apaga a linha inteira: a linha É o "eu vi". */
+  takes: () => capi<{ takes: ShowTake[] }>('/shows/takes'),
+  takesFor: (showId: number) => capi<{ takes: ShowTake[] }>(`/shows/${showId}/takes`),
+  /** Marcar um episódio: a linha existir é o "eu vi". */
+  mark: (showId: number, season: number, episode: number, patch: MarkPatch) =>
+    cput<{ take: ShowTake }>(`/shows/${showId}/${season}/${episode}`, patch),
+  /** Desmarcar apaga a linha: a linha É o "eu vi". */
   unmark: (showId: number, season: number, episode: number) =>
     cdel(`/shows/${showId}/${season}/${episode}`),
+  /** Avaliar a temporada, que é onde a nota mora. */
+  rate: (showId: number, season: number, patch: SeasonPatch) =>
+    cput<{ take: ShowTake }>(`/shows/${showId}/${season}`, patch),
+  /** Tirar a própria nota. O que você viu continua visto. */
+  unrate: (showId: number, season: number) => cdel(`/shows/${showId}/${season}`),
 };
 
 /* Your own name, your own portrait and your own bio. The route takes no id — it

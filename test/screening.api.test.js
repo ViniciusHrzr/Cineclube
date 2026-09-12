@@ -317,12 +317,12 @@ test('a virada de episódio marca o anterior para quem estava na sala', async ()
       t => t.showId === serie.showId && t.reviewerId === who.id
     );
 
-  // O Bruno já tinha avaliado o T2E05 antes desta noite.
+  // O Bruno já tinha avaliado a temporada 2 antes desta noite.
   assert.equal(
     (
       await req(
         'PUT',
-        at(`/shows/${serie.showId}/2/5`),
+        at(`/shows/${serie.showId}/2`),
         { showTitle: serie.title, genre: 'Drama', quick: 8 },
         bruno.cookie
       )
@@ -352,8 +352,12 @@ test('a virada de episódio marca o anterior para quem estava na sala', async ()
   assert.equal(daAna[0].final, null, 'visto não é avaliado');
 
   const doBruno = await vistos(bruno);
-  assert.equal(doBruno.length, 1, 'quem estava na sala e não apertou nada também viu');
-  assert.equal(doBruno[0].final, 8, 'e a nota de quem já tinha avaliado continua lá');
+  const marcadosDoBruno = doBruno.filter(t => t.kind === 'episode');
+  assert.equal(marcadosDoBruno.length, 1, 'quem estava na sala e não apertou nada também viu');
+  assert.equal(marcadosDoBruno[0].episode, 5);
+  const fichaDoBruno = doBruno.filter(t => t.kind === 'season');
+  assert.equal(fichaDoBruno.length, 1, 'a ficha da temporada não podia sumir na virada');
+  assert.equal(fichaDoBruno[0].final, 8, 'e a nota de quem já tinha avaliado continua lá');
 
   assert.equal((await vistos(deFora)).length, 0, 'quem não estava na sala não viu nada');
 
