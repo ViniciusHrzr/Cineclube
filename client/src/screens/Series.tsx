@@ -412,11 +412,9 @@ function UpNext({
   if (upNext) {
     return (
       <Strap>
-        <span className="legend flex-none text-[9px] text-ink-faint">a seguir</span>
-        <span className="q flex-none text-[12.5px] font-medium text-dye-brass">{tag(upNext)}</span>
-        {upNext.title ? (
-          <span className="truncate text-[12px] text-ink">{upNext.title}</span>
-        ) : null}
+        <span className="legend text-[9px] text-ink-faint">a seguir</span>{' '}
+        <span className="q text-[12.5px] font-medium text-dye-brass">{tag(upNext)}</span>
+        {upNext.title ? <span className="text-[12px] text-ink"> {upNext.title}</span> : null}
       </Strap>
     );
   }
@@ -424,9 +422,9 @@ function UpNext({
   if (upcoming) {
     return (
       <Strap>
-        <span className="legend flex-none text-[9px] text-ink-faint">estreia</span>
-        <span className="q flex-none text-[12.5px] font-medium text-beam">{tag(upcoming)}</span>
-        <span className="q truncate text-[12px] text-ink-dim">
+        <span className="legend text-[9px] text-ink-faint">estreia</span>{' '}
+        <span className="q text-[12.5px] font-medium text-beam">{tag(upcoming)}</span>{' '}
+        <span className="q text-[12px] text-ink-dim">
           {upcoming.airDate ? soonBR(upcoming.airDate) : 'sem data'}
         </span>
       </Strap>
@@ -444,11 +442,15 @@ function UpNext({
   return null;
 }
 
-/* O fio em cima separa esta linha das chaves, que são de outro assunto — e é o
+/* Texto corrido e não uma fileira: o nome de um episódio passa da largura do
+   cartaz com frequência, e numa fileira ele só podia truncar. Aqui ele desce
+   para a linha de baixo, que é onde ele cabe inteiro.
+
+   O fio em cima separa esta linha das chaves, que são de outro assunto — e é o
    que faz ela ser lida como o rodapé do cartaz e não como mais um botão. */
 function Strap({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 flex items-baseline gap-1.5 border-t border-white/[0.07] pt-2.5">
+    <p className="mt-3 break-words border-t border-white/[0.07] pt-2.5 leading-snug">
       {children}
     </p>
   );
