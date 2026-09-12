@@ -15,6 +15,21 @@ const db = require('./db');
    2. Erros seguidos contam, e a conta descansa por um tempo crescente.
    3. O cookie carrega um token aleatório; o banco guarda só o SHA-256 dele. Ler
       a tabela não deixa ninguém se passar por um membro.
+
+   ── e duas formas de apresentar a sessão ─────────────────────────────────
+   **Cookie** no navegador, `Authorization: Bearer` num aplicativo. É a mesma
+   sessão e a mesma tabela; o que muda é onde ela é guardada, e isso muda o
+   prazo:
+
+   · o cookie é `HttpOnly` — o JavaScript da página não o lê —, então trinta
+     dias deslizantes é um risco que o navegador segura.
+   · um aplicativo lê o que guarda. Então a sessão dele vale um DIA e é trocada
+     por uma nova com a chave de renovação, que vale noventa e é gasta a cada
+     uso. Ver `refresh_tokens` em db.js.
+
+   Um Bearer nunca recebe cookie de volta, e um cookie nunca vira Bearer: são
+   duas portas, e misturá-las daria ao navegador uma chave que ele não precisa
+   guardar e ao app um cookie que ele não consegue ler.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const SESSION_COOKIE = 'cc_session';
@@ -28,6 +43,15 @@ const SESSION_DAYS = 30;
    escrever a cada requisição seria um INSERT por clique numa aba que fica
    aberta a noite inteira. Assim é uma escrita a cada quinze dias por sessão. */
 const RENEW_UNDER_DAYS = 15;
+
+/* A sessão de um aplicativo. Curta porque o que ele guarda, ele lê: um aparelho
+   perdido para de valer sozinho em vinte e quatro horas, sem ninguém precisar
+   revogar nada. Não desliza — é a chave de renovação que a repõe. */
+const APP_SESSION_DAYS = 1;
+/* E a chave que a repõe. Noventa dias é "não pedir senha de novo neste ano", e
+   cada uso gasta a chave e devolve outra: uma que voltou a ser apresentada é
+   sinal de que existem duas cópias dela no mundo. */
+const REFRESH_DAYS = 90;
 
 const MAX_ATTEMPTS = 5;
 const LOCK_SECONDS = 60; // multiplicado por quanto a conta já passou do limite
@@ -297,14 +321,80 @@ async function claimAccount(newId, oldId) {
 
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 
-async function createSession(reviewerId) {
+async function createSession(reviewerId, kind = 'web') {
   const token = crypto.randomBytes(32).toString('base64url');
+  const days = kind === 'app' ? APP_SESSION_DAYS : SESSION_DAYS;
   await db.prepare(
-    `INSERT INTO sessions (token_hash, reviewer_id, expires_at)
-     VALUES (?, ?, datetime('now', '+${SESSION_DAYS} days'))`
-  ).run(sha(token), reviewerId);
+    `INSERT INTO sessions (token_hash, reviewer_id, kind, expires_at)
+     VALUES (?, ?, ?, datetime('now', '+' || ? || ' days'))`
+  ).run(sha(token), reviewerId, kind, days);
   return token;
 }
+
+/* ── a chave de renovação, e a família dela ───────────────────────────────
+   Renovar GASTA a chave e devolve outra da mesma família. Quem apresenta uma
+   chave que já foi gasta está numa de duas situações, e as duas terminam igual:
+   ou é o app repetindo um pedido que se perdeu no caminho, ou é alguém com uma
+   cópia roubada. Não há como distinguir, então a família inteira cai e as duas
+   pessoas voltam para a tela de entrar — que é o desfecho certo quando uma
+   delas é ladrão.
+
+   O par nasce junto: uma sessão de um dia e a chave de noventa que a repõe. */
+async function createTokenPair(reviewerId, family = null) {
+  const refresh = crypto.randomBytes(32).toString('base64url');
+  const grupo = family || 'f' + crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO refresh_tokens (token_hash, family, reviewer_id, expires_at)
+     VALUES (?, ?, ?, datetime('now', '+' || ? || ' days'))`
+  ).run(sha(refresh), grupo, reviewerId, REFRESH_DAYS);
+
+  const access = await createSession(reviewerId, 'app');
+  return {
+    access,
+    refresh,
+    /* Em segundos, que é a unidade que todo cliente de token já espera, e o
+       cliente não precisa saber de dias nem de fuso para decidir quando pedir
+       a próxima. */
+    expiresIn: APP_SESSION_DAYS * 86400,
+  };
+}
+
+/* Troca uma chave por um par novo. Null quer dizer "não vale", e é a mesma
+   resposta para chave inexistente, vencida e já gasta: distinguir contaria a
+   quem apresenta uma chave errada alguma coisa sobre as certas.
+
+   A chave gasta fica gravada em vez de sumir, e é ela que acusa o reuso: uma
+   linha apagada não sabe dizer de que família era. */
+async function rotateRefresh(token) {
+  if (!token || typeof token !== 'string') return null;
+  const hash = sha(token);
+  const row = await db.prepare(
+    `SELECT family, reviewer_id, used_at, expires_at > datetime('now') AS viva
+     FROM refresh_tokens WHERE token_hash = ?`
+  ).get(hash);
+  if (!row) return null;
+
+  if (row.used_at) {
+    await destroyRefreshFamily(row.family);
+    return null;
+  }
+
+  await db.prepare("UPDATE refresh_tokens SET used_at = datetime('now') WHERE token_hash = ?").run(hash);
+  if (!row.viva) return null;
+
+  return createTokenPair(row.reviewer_id, row.family);
+}
+
+/** Derruba a família inteira. É o que uma saída de app faz, e o que um reuso provoca. */
+async function destroyRefreshFamily(family) {
+  if (family) await db.prepare('DELETE FROM refresh_tokens WHERE family = ?').run(family);
+}
+
+const familyOf = async token =>
+  token
+    ? (await db.prepare('SELECT family FROM refresh_tokens WHERE token_hash = ?').get(sha(token)))
+        ?.family || null
+    : null;
 
 /* Devolve a sessão e diz se ela foi empurrada para frente, porque quem chamou
    precisa saber: renovar no banco sem reenviar o cookie deixaria o navegador
@@ -313,7 +403,7 @@ async function readSession(token) {
   if (!token) return null;
   const row = await db
     .prepare(
-      `SELECT s.reviewer_id, s.expires_at, r.name, r.dot, r.is_admin, r.avatar_rev, r.email, r.bio,
+      `SELECT s.reviewer_id, s.expires_at, s.kind, r.name, r.dot, r.is_admin, r.avatar_rev, r.email, r.bio,
               r.email_verified,
               (r.password_hash IS NOT NULL) AS has_password
        FROM sessions s JOIN reviewers r ON r.id = s.reviewer_id
@@ -321,6 +411,11 @@ async function readSession(token) {
     )
     .get(sha(token));
   if (!row) return null;
+
+  /* A do app não desliza: ela é curta de propósito, e empurrá-la a cada
+     requisição desfaria o prazo — e ainda seria uma escrita por toque, porque
+     uma sessão de um dia está sempre "perto" de vencer. */
+  if (row.kind === 'app') return row;
 
   const near = await db
     .prepare(`SELECT julianday(?) - julianday('now') < ? AS soon`)
@@ -445,13 +540,29 @@ function clearSessionCookie(res) {
 
 /* ── middleware ───────────────────────────────────────────────────────── */
 
-/** Attaches req.session when a valid cookie is present. Never rejects. */
+/** O que veio no `Authorization: Bearer`, se veio. */
+function readBearer(req) {
+  const raw = req.headers.authorization;
+  if (!raw) return null;
+  const [scheme, token] = String(raw).split(' ');
+  return /^Bearer$/i.test(scheme || '') && token ? token.trim() : null;
+}
+
+/* Pendura `req.session` quando a sessão apresentada vale. Nunca recusa: quem
+   cobra é `requireSession`.
+
+   O Bearer tem precedência sobre o cookie, e isso importa numa casca de
+   aplicativo que carrega o site: lá existem os dois, e o que manda é o que o
+   app escolheu apresentar. */
 async function attachSession(req, res, next) {
   try {
-    req.sessionToken = readCookie(req, SESSION_COOKIE);
+    const bearer = readBearer(req);
+    req.sessionToken = bearer || readCookie(req, SESSION_COOKIE);
+    req.sessionFromBearer = !!bearer;
     req.session = await readSession(req.sessionToken);
-    // A sessão deslizou no banco; o cookie tem de deslizar junto.
-    if (req.session?.renewed) sendSessionCookie(res, req.sessionToken);
+    /* A sessão deslizou no banco; o cookie tem de deslizar junto. Um Bearer não
+       leva cookie de volta: quem o guarda é o app, e ele renova pela chave. */
+    if (req.session?.renewed && !bearer) sendSessionCookie(res, req.sessionToken);
     next();
   } catch (e) {
     // A database failure here is a server error, not a signed-out visitor.
@@ -477,6 +588,8 @@ function requireAdmin(req, res, next) {
 module.exports = {
   SESSION_COOKIE,
   SESSION_DAYS,
+  APP_SESSION_DAYS,
+  REFRESH_DAYS,
   MAX_ATTEMPTS,
   MIN_PASSWORD,
   MAX_PASSWORD,
@@ -494,6 +607,10 @@ module.exports = {
   accountByEmail,
   TOKEN_HOURS,
   createSession,
+  createTokenPair,
+  rotateRefresh,
+  destroyRefreshFamily,
+  familyOf,
   readSession,
   destroySession,
   destroyAllSessions,

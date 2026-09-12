@@ -42,6 +42,16 @@ app.use((_req, res, next) => {
 app.use(require('./csp').middleware());
 app.use('/api/csp-report', require('./routes/csp'));
 
+/* Quem pode falar com esta API de outra origem — ver cors.js. Antes do corpo e
+   da sessão, porque um preflight não tem corpo nem sessão: ele pergunta se a
+   requisição de verdade pode existir, e a resposta é só de cabeçalho. */
+app.use('/api', require('./cors').middleware());
+
+/* De que versão da API veio cada resposta, e o que um aplicativo instalado
+   precisa saber antes de confiar nela — ver contract.js. */
+app.use('/api', require('./contract').middleware());
+app.get('/api/meta', require('./contract').meta);
+
 /* A megabyte, where the default is a tenth of that: a profile picture arrives
    as base64, which costs a third more than the bytes it carries. The picture
    route enforces its own, much lower, ceiling. */

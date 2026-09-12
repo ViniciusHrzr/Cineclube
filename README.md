@@ -209,6 +209,40 @@ app/
 - Nenhum segredo no repositório: `.env` está no `.gitignore` e o app se recusa a
   inventar um PIN inicial em produção.
 
+### As duas portas da sessão
+
+O navegador entra por **cookie** e um aplicativo entra por
+`Authorization: Bearer`. É a mesma sessão e a mesma tabela; o que muda é onde a
+chave é guardada, e é isso que muda o prazo — ver `auth.js`.
+
+| | navegador | aplicativo |
+|---|---|---|
+| chave | cookie `HttpOnly` | `Bearer` no cabeçalho |
+| prazo | 30 dias, deslizante | 1 dia, sem deslizar |
+| renova | sozinha, a cada uso | `POST /api/auth/refresh` |
+
+O par nasce em `POST /api/auth/token`, com e-mail e senha no corpo ou com uma
+sessão de navegador já aberta — que é o caminho de quem entrou pelo Google numa
+aba do sistema. A chave de renovação vale 90 dias, é **gasta** a cada uso e
+devolve outra da mesma família; apresentar uma já gasta derruba a família
+inteira, porque só existem duas cópias dela se uma foi roubada.
+
+`CINECLUBE_ORIGINS` diz quem pode chamar `/api` de outra origem. As cascas de
+aplicativo já entram sozinhas — ver `cors.js`.
+
+### O contrato: a API só cresce
+
+Enquanto o único cliente é o site, o mesmo deploy troca servidor e tela juntos.
+Um aplicativo instalado quebra a simetria: quem baixou em março continua com a
+tela de março. Então campo **não se remove, não se renomeia e não muda de
+tipo** — coisa nova entra como campo novo. Quem segura isso é
+`test/contract.test.js`, que congela os nomes de cada resposta que um app lê.
+
+`GET /api/meta` devolve `{ api, minClient }`, e toda resposta de `/api` carrega
+`X-API-Version`. `minClient` só sobe quando uma versão antiga realmente parou de
+funcionar — e subir isso é dizer a quem não atualizou que o app parou. Ver
+`contract.js`.
+
 ---
 
 ## Instalação

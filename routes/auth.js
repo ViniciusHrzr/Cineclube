@@ -457,8 +457,82 @@ router.post('/reset', throttleTokenTry, wrap(async (req, res) => {
   res.json({ reviewer: publicReviewer(reviewer) });
 }));
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A PORTA DO APLICATIVO.
+
+   O navegador entra e sai com cookie, e não precisa de mais nada. Um app não
+   tem cookie que preste: numa casca com os arquivos embarcados a origem é
+   `capacitor://localhost`, e um cookie de outro domínio ali é cookie de
+   terceiro — que o WebView pode simplesmente não guardar. Então ele recebe um
+   PAR de chaves e apresenta a primeira em `Authorization: Bearer`.
+
+   Duas formas de pegar o par, e as duas terminam no mesmo lugar:
+
+   · **e-mail e senha** no corpo, que é a tela de entrar do app.
+   · **uma sessão que já vale**, apresentada por cookie. É o caminho de quem
+     entrou pelo Google numa aba do sistema: o retorno do Google cria a sessão
+     de navegador, e o app a troca por um par sem pedir senha nenhuma.
+
+   A mesma trava por endereço de rede do login, porque isto é um login. */
+router.post('/token', throttleLogin, wrap(async (req, res) => {
+  const { email, password } = req.body || {};
+
+  if (email === undefined && password === undefined) {
+    if (!req.session) return res.status(401).json({ error: 'Entre para continuar.' });
+    const par = await auth.createTokenPair(req.session.reviewer_id);
+    return res.json({ ...par, reviewer: publicReviewer(await getReviewer.get(req.session.reviewer_id)) });
+  }
+
+  const mailAddr = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const reviewer = mailAddr
+    ? await db.prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE').get(mailAddr)
+    : null;
+
+  const wrong = () => res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+  if (!reviewer || !auth.isValidPassword(password)) return wrong();
+
+  const result = await auth.checkPassword(reviewer, password);
+  if (result === 'locked') {
+    const left = await auth.lockedSecondsLeft(await getReviewer.get(reviewer.id));
+    return res.status(429).json({ error: `Muitas tentativas. Tente de novo em ${left}s.`, retryAfter: left });
+  }
+  if (result === 'unset') {
+    return res.status(409).json({
+      error: 'Esta conta ainda não tem senha. Entre pelo Google uma vez para cadastrar uma.',
+    });
+  }
+  if (result !== 'ok') {
+    const after = await getReviewer.get(reviewer.id);
+    const left = await auth.lockedSecondsLeft(after);
+    if (left > 0) {
+      return res.status(429).json({ error: `Muitas tentativas. Tente de novo em ${left}s.`, retryAfter: left });
+    }
+    return wrong();
+  }
+
+  const par = await auth.createTokenPair(reviewer.id);
+  res.json({ ...par, reviewer: publicReviewer(reviewer) });
+}));
+
+/* Troca a chave de renovação por um par novo. A chave apresentada é GASTA —
+   receber a mesma duas vezes quer dizer que existem duas cópias dela no mundo,
+   e aí a família inteira cai. Ver auth.js.
+
+   Sem sessão e sem cookie: quem chama isto é justamente quem não tem mais uma
+   sessão que valha. */
+router.post('/refresh', throttleLogin, wrap(async (req, res) => {
+  const par = await auth.rotateRefresh(req.body?.refresh);
+  if (!par) return res.status(401).json({ error: 'Entre de novo.' });
+  res.json(par);
+}));
+
+/* Sair. Apaga a sessão apresentada, o cookie que a carregava, e — quando quem
+   sai é um app — a família de chaves inteira: sair no aparelho é sair, e uma
+   chave de noventa dias que sobrevive ao "sair" é a porta que ficou aberta. */
 router.post('/logout', wrap(async (req, res) => {
   await auth.destroySession(req.sessionToken);
+  const family = await auth.familyOf(req.body?.refresh);
+  if (family) await auth.destroyRefreshFamily(family);
   auth.clearSessionCookie(res);
   res.status(204).end();
 }));

@@ -248,7 +248,44 @@ async function migrate() {
       expires_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS sessions_reviewer ON sessions(reviewer_id);
+
+    /* ── a chave longa de um aplicativo ─────────────────────────────────
+       O navegador guarda a sessão num cookie HttpOnly, que o JavaScript da
+       página não lê — é o que faz um XSS não virar uma sessão roubada. Um
+       aplicativo não tem esse cofre: o que ele guardar, ele consegue ler.
+
+       Então a troca é outra: a sessão do app vale um DIA, e esta tabela guarda
+       o que a renova por noventa. O que vaza de um aparelho perdido expira
+       sozinho em vinte e quatro horas.
+
+       A coluna family é o que transforma roubo em porta fechada. Cada renovação
+       GASTA a chave e devolve outra da MESMA família; apresentar uma chave já
+       gasta só é possível se duas pessoas têm a mesma — e aí a família inteira
+       cai, inclusive a de quem roubou. Ver auth.js.
+
+       Só o SHA-256, como as sessões e os links de e-mail: ler esta tabela não
+       entrega nenhuma chave utilizável. */
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      token_hash TEXT PRIMARY KEY,
+      family TEXT NOT NULL,
+      reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      /* Gasta, e não apagada: uma linha apagada não sabe dizer de que família
+         era, e é justamente ela que precisa acusar o reuso. Sai no vencimento,
+         com as outras. */
+      used_at TEXT,
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family);
+    CREATE INDEX IF NOT EXISTS refresh_tokens_reviewer ON refresh_tokens(reviewer_id);
   `);
+
+  /* De que porta veio a sessão. Uma do navegador desliza sozinha para a frente
+     a cada uso; uma de aplicativo não — ela é curta de propósito, e deslizar
+     seria desfazer justamente isso. Ver `readSession`. */
+  if (!(await columnsOf('sessions')).includes('kind')) {
+    await exec("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'web'");
+  }
 
   // Migração leve: acrescenta colunas que não existiam em versões anteriores
   // deste esquema, sem apagar o que já está gravado.
@@ -1141,6 +1178,8 @@ async function migrate() {
 
   // Sessão vencida é peso morto e risco; some no boot.
   await prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+  // E a chave de renovação que já não renova nada.
+  await prepare("DELETE FROM refresh_tokens WHERE expires_at <= datetime('now')").run();
   // E pelo mesmo motivo, os links de e-mail que já não abrem nada.
   await prepare("DELETE FROM email_tokens WHERE expires_at <= datetime('now')").run();
 }
