@@ -238,6 +238,33 @@ Uma peça ainda não atravessa: `EventSource` não manda cabeçalho, então o ca
 vivo se identifica por cookie. Numa casca que carrega o site remoto funciona; numa
 com os arquivos embarcados, o mural atualiza pelo relógio e não ao vivo.
 
+### O APK
+
+A casca Android mora em `mobile/` e é um projeto Capacitor: o que roda dentro
+dela é o mesmo cliente, com os arquivos EMBARCADOS — o app abre offline e
+instantâneo, e o preço é que um deploy do site não atualiza quem já instalou.
+O porquê está escrito em `mobile/capacitor.config.js`.
+
+```bash
+npm --prefix mobile install        # uma vez
+cp client/.env.app.example client/.env.app   # e ponha o endereço do servidor
+npm run app                        # compila o cliente, desenha os ícones, sincroniza
+npm --prefix mobile run open       # abre o projeto no Android Studio
+```
+
+Para um APK de teste sem abrir o Android Studio:
+`cd mobile/android && ./gradlew assembleDebug` — ele sai em
+`mobile/android/app/build/outputs/apk/debug/`.
+
+Três coisas que não têm volta depois da primeira publicação:
+
+- **o `appId`** (`com.cineclube.app`). A Play Store trata outro id como outro
+  aplicativo, sem levar as instalações junto.
+- **a chave de assinatura.** Quem a tem publica atualização no seu nome, e quem
+  a perde não publica mais nenhuma. Ela não entra no repositório: fica fora, ou
+  num segredo do GitHub.
+- **o `versionCode`** só sobe. Ele está em `mobile/android/app/build.gradle`.
+
 ### As duas portas da sessão
 
 O navegador entra por **cookie** e um aplicativo entra por

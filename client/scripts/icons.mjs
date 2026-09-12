@@ -23,6 +23,7 @@
 
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 /* A paleta da sala, as mesmas de tailwind.config.ts. Copiadas e não
    importadas: aquele arquivo é TypeScript e este roda antes do build. Quatro
@@ -53,7 +54,7 @@ function chunk(type, data) {
 }
 
 /** Um PNG RGB de `size`×`size` a partir de um buffer de pixels. */
-function png(size, pixels) {
+export function png(size, pixels) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
@@ -77,7 +78,7 @@ function png(size, pixels) {
 /* `inset` é o recuo do desenho dentro do quadro, em fração do lado. A máscara
    do Android corta um círculo de 80% do ícone: com o desenho encostado na
    borda, a moldura de latão vira quatro cantos cortados. */
-function draw(size, inset) {
+export function draw(size, inset) {
   const px = Buffer.alloc(size * size * 3);
   const put = (x, y, [r, g, b]) => {
     if (x < 0 || y < 0 || x >= size || y >= size) return;
@@ -136,20 +137,25 @@ function draw(size, inset) {
   return px;
 }
 
-const out = new URL('../public/', import.meta.url);
-mkdirSync(out, { recursive: true });
+/* O desenho é exportado porque a casca Android precisa dele em cinco densidades
+   e em três formatos — ver mobile/scripts/icons.mjs. Importado, este arquivo é
+   só as duas funções; chamado direto, ele escreve os ícones da web. */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const out = new URL('../public/', import.meta.url);
+  mkdirSync(out, { recursive: true });
 
-/* O recuo de 6% é margem ótica — o ícone quadrado do iPhone e o atalho do
-   Android já vêm cortados por fora. O de 20% é o que a máscara circular pede. */
-const feitos = [
-  ['icon-192.png', 192, 0.06],
-  ['icon-512.png', 512, 0.06],
-  ['icon-180.png', 180, 0.06],
-  ['icon-mask-512.png', 512, 0.2],
-];
+  /* O recuo de 6% é margem ótica — o ícone quadrado do iPhone e o atalho do
+     Android já vêm cortados por fora. O de 20% é o que a máscara circular pede. */
+  const feitos = [
+    ['icon-192.png', 192, 0.06],
+    ['icon-512.png', 512, 0.06],
+    ['icon-180.png', 180, 0.06],
+    ['icon-mask-512.png', 512, 0.2],
+  ];
 
-for (const [nome, size, inset] of feitos) {
-  writeFileSync(new URL(nome, out), png(size, draw(size, inset)));
+  for (const [nome, size, inset] of feitos) {
+    writeFileSync(new URL(nome, out), png(size, draw(size, inset)));
+  }
+
+  console.log(`[icons] ${feitos.length} ícones gerados.`);
 }
-
-console.log(`[icons] ${feitos.length} ícones gerados.`);

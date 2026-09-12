@@ -17,6 +17,16 @@ client/public/sw.min.js
 # E os ícones do app, desenhados pelo `icons` a cada build a partir da paleta.
 # Mesma razão: são derivados de quatro cores e três medidas.
 client/public/icon-*.png
+# ── a casca Android ───────────────────────────────────────────────────────
+# O projeto `mobile/android` É versionado: ele tem configuração escrita à mão —
+# id do pacote, ícones, tela de abertura — e regerá-lo perderia isso. O que sai
+# é o que o build produz.
+mobile/node_modules/
+# O cliente compilado com o endereço da API dentro. Sai de `npm run app`, e o
+# endereço mora em client/.env.app, que também não é versionado.
+mobile/www/
+client/.env.app
+
 # ── o banco, e tudo que sai dele ──────────────────────────────────────────
 # A pasta inteira, e não `data/*.db`. Aquele padrão cobria o banco em uso e
 # deixava de fora qualquer subpasta — o que passou a importar no dia em que
