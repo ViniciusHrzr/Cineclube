@@ -7,6 +7,7 @@ const wrap = require('../wrap');
 const throttle = require('../throttle');
 const live = require('../live');
 const series = require('../series');
+const upnext = require('../upnext');
 const { providerCache } = require('../providers');
 const { GENRES, seasonCritsFor, seasonFinalOf, seasonAnsweredIn } = require('../criteria');
 const {
@@ -171,6 +172,12 @@ function queueDTO(row, progress) {
     seen: p?.seen ?? 0,
     rated: p?.rated ?? 0,
     average: p?.average ?? null,
+    /* O SEU próximo episódio, pendurado adiante por upnext.js. Declarados aqui
+       para a linha ter uma forma só: nulo é "não sei" — sem sessão, ou o TMDB
+       não respondeu —, e é diferente de estar em dia. */
+    upNext: null,
+    upcoming: null,
+    caughtUp: false,
   };
 }
 
@@ -257,6 +264,11 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   ]);
   const shows = toQueue(rows, progress);
   await fillProviders(shows);
+  /* "O próximo" é uma resposta sobre UMA pessoa, então só existe quando há
+     uma: quem lê um clube aberto de fora vê a lista e o progresso da sala. */
+  if (req.session?.reviewer_id) {
+    await upnext.fill(shows, { clubId: req.club.id, reviewerId: req.session.reviewer_id });
+  }
   res.json({ shows });
 }));
 

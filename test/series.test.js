@@ -15,6 +15,7 @@ const screening = require('../screening');
 const kit = require('../testkit');
 const { seasonCritsFor, seasonFinalOf, GENRE, CRAFT, PERSONAL } = require('../criteria');
 const { genresFromTvIds, signedBy } = require('../series');
+const upnext = require('../upnext');
 
 /* ══════════════════════════════════════════════════════════════════════════
    O universo de séries.
@@ -136,6 +137,95 @@ test('o divisor é contado, então uma ficha parcial não é punida', () => {
   // Zero é uma nota; ausência não é.
   assert.equal(seasonFinalOf('Drama', { direcao: 0, roteiro: 10 }), 5);
   assert.equal(seasonFinalOf('Drama', {}), 0);
+});
+
+/* ── o que você vê a seguir ─────────────────────────────────────────────
+   A conta que a lista do clube mostra em cada cartaz. Errar aqui é a tela
+   mandando alguém ver de novo o que já viu, ou anunciar como "o seu próximo"
+   um episódio que ainda não existe. */
+
+const temporadas = [{ season: 1, episodes: 3 }, { season: 2, episodes: 2 }];
+const epsDe = (season, ...datas) =>
+  datas.map((airDate, i) => ({ season, episode: i + 1, title: `E${i + 1}`, airDate }));
+const vistos = (...chaves) => new Set(chaves);
+
+test('o próximo é o primeiro que falta, e ele tem nome', () => {
+  const shape = { seasons: temporadas, nextAir: null };
+  const eps = epsDe(1, '2020-01-01', '2020-01-08', '2020-01-15');
+
+  const zerado = upnext.decide(shape, vistos(), eps, '2026-09-12');
+  assert.equal(zerado.next.episode, 1);
+  assert.equal(zerado.next.title, 'E1');
+  assert.equal(zerado.caughtUp, false);
+
+  const meio = upnext.decide(shape, vistos('1x1', '1x2'), eps, '2026-09-12');
+  assert.equal(meio.next.episode, 3, 'o buraco é no terceiro');
+});
+
+test('uma temporada inteira marcada não é o lugar de procurar', () => {
+  const shape = { seasons: temporadas, nextAir: null };
+  const pend = upnext.pendingSeason(temporadas, vistos('1x1', '1x2', '1x3'));
+  assert.equal(pend.season, 2);
+
+  const eps = epsDe(2, '2021-01-01', '2021-01-08');
+  const got = upnext.decide(shape, vistos('1x1', '1x2', '1x3'), eps, '2026-09-12');
+  assert.equal(got.next.season, 2);
+  assert.equal(got.next.episode, 1);
+});
+
+/* Um episódio com data no futuro não é "o seu próximo": é a estreia. A
+   diferença é a frase que a tela escreve, e são duas frases diferentes. */
+test('o que ainda não foi ao ar vira estreia, e não pendência', () => {
+  const shape = { seasons: [{ season: 1, episodes: 2 }], nextAir: null };
+  const eps = epsDe(1, '2020-01-01', '2030-01-01');
+
+  const got = upnext.decide(shape, vistos('1x1'), eps, '2026-09-12');
+  assert.equal(got.next, null);
+  assert.equal(got.upcoming.episode, 2);
+  assert.equal(got.caughtUp, true, 'quem viu tudo o que estreou está em dia');
+});
+
+test('em dia numa série no ar, a resposta é quando vem o próximo', () => {
+  const nextAir = { season: 3, episode: 1, title: 'Volta', airDate: '2026-10-01' };
+  const shape = { seasons: temporadas, nextAir };
+  const tudo = vistos('1x1', '1x2', '1x3', '2x1', '2x2');
+
+  const got = upnext.decide(shape, tudo, [], '2026-09-12');
+  assert.equal(got.next, null);
+  assert.deepEqual(got.upcoming, nextAir);
+  assert.equal(got.caughtUp, true);
+});
+
+test('em dia numa série que acabou, não há nada a dizer', () => {
+  const shape = { seasons: temporadas, nextAir: null };
+  const got = upnext.decide(shape, vistos('1x1', '1x2', '1x3', '2x1', '2x2'), [], '2026-09-12');
+  assert.equal(got.next, null);
+  assert.equal(got.upcoming, null);
+  assert.equal(got.caughtUp, true);
+});
+
+/* Sem lista de episódios os números da temporada ainda respondem qual é o
+   próximo — e é aí que a data de estreia do TMDB tem de corrigir o palpite,
+   porque uma lista sintética não tem data nenhuma. */
+test('sem a lista da temporada, o número responde e a estreia corrige', () => {
+  const shape = { seasons: [{ season: 1, episodes: 3 }], nextAir: null };
+  const cego = upnext.decide(shape, vistos('1x1'), [], '2026-09-12');
+  assert.equal(cego.next.episode, 2);
+  assert.equal(cego.next.title, null);
+
+  const nextAir = { season: 1, episode: 2, title: 'Ainda vem', airDate: '2026-12-01' };
+  const corrigido = upnext.decide({ ...shape, nextAir }, vistos('1x1'), [], '2026-09-12');
+  assert.equal(corrigido.next, null, 'o que ainda não estreou não pode ser pendência');
+  assert.deepEqual(corrigido.upcoming, nextAir);
+});
+
+/* "Não sei" é uma quarta resposta, e ela não pode ser confundida com "em dia":
+   uma série que o TMDB não descreveu não vira "você viu tudo". */
+test('sem inventário, o produto cala em vez de chutar', () => {
+  const got = upnext.decide(null, vistos(), [], '2026-09-12');
+  assert.equal(got.next, null);
+  assert.equal(got.upcoming, null);
+  assert.equal(got.caughtUp, false);
 });
 
 /* ── a taxonomia de televisão ───────────────────────────────────────────── */

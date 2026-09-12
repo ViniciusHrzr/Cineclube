@@ -353,6 +353,17 @@ export type QueuedShow = {
   seen: number;
   rated: number;
   average: number | null;
+  /* ── e o que VOCÊ vê a seguir ────────────────────────────────────────────
+     O resto desta linha é do clube; estes três são seus. `upNext` é o primeiro
+     episódio já no ar que você não marcou, `upcoming` é o próximo a estrear
+     quando você está em dia numa série que continua, e `caughtUp` diz que não
+     falta nada já exibido.
+
+     Os três nulos com `caughtUp` falso é "não sei": ninguém logado, ou o TMDB
+     não respondeu. Ver upnext.js. */
+  upNext?: EpisodeRef | null;
+  upcoming?: EpisodeRef | null;
+  caughtUp?: boolean;
   /* Onde esta série está passando. Os mesmos três estados de `SeriesItem`, e
      preenchido pela mesma via — ver providers.js. A lista que o clube acompanha
      é onde "hoje a gente vê qual?" é perguntado, e essa pergunta é sobre o que
@@ -361,6 +372,14 @@ export type QueuedShow = {
     link: string | null;
     streaming: Provider[];
   } | null;
+};
+
+/** Um episódio apontado de longe: a tripla, o nome e quando foi (ou vai) ao ar. */
+export type EpisodeRef = {
+  season: number;
+  episode: number;
+  title: string | null;
+  airDate: string | null;
 };
 
 /* ── uma linha do universo de séries ──────────────────────────────────────

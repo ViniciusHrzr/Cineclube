@@ -257,6 +257,17 @@ async function showDetails(id) {
       overview: x.overview || null
     })),
     totalEpisodes: s.number_of_episodes || null,
+    /* O próximo episódio a estrear, que o TMDB já manda junto com a série. É a
+       resposta para quem está em dia numa série no ar — a pergunta que essa
+       pessoa faz não é "o que eu vejo agora", é "quando vem o próximo". */
+    nextAir: s.next_episode_to_air
+      ? {
+          season: s.next_episode_to_air.season_number,
+          episode: s.next_episode_to_air.episode_number,
+          title: s.next_episode_to_air.name || null,
+          airDate: s.next_episode_to_air.air_date || null,
+        }
+      : null,
     /* ── as outras ordens em que esta série existe ──────────────────────
        Para algumas séries (anime exibido fora de ordem, relançamentos com
        temporadas recortadas) (temporada, número) não é a única leitura, e o

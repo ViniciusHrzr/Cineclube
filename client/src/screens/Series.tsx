@@ -52,6 +52,7 @@ import {
   shows as showsApi,
   type Criterion,
   type Episode,
+  type EpisodeRef,
   type QueuedShow,
   type Reviewer,
   type SeasonDetail,
@@ -245,6 +246,9 @@ function SeriesCell({
   inQueue,
   seen,
   average,
+  upNext,
+  upcoming,
+  caughtUp,
   wants,
   onOpen,
   onQueue,
@@ -255,6 +259,11 @@ function SeriesCell({
   /** O progresso do clube, quando esta célula está na lista de acompanhadas. */
   seen?: string | null;
   average?: number | null;
+  /* E o SEU: o próximo episódio que falta a você, ou o próximo a estrear
+     quando não falta nenhum. Ausentes no catálogo — lá não há o que retomar. */
+  upNext?: EpisodeRef | null;
+  upcoming?: EpisodeRef | null;
+  caughtUp?: boolean;
   /** Quem acompanha, para o selo no pé do pôster. Vazio no catálogo. */
   wants?: Reviewer[];
   onOpen: () => void;
@@ -340,6 +349,10 @@ function SeriesCell({
             </div>
           ) : null}
           {seen ? <p className="q mt-1 text-[11px] text-ink-faint">{seen}</p> : null}
+
+          {/* O progresso acima é do clube; esta linha é sua, e é a primeira
+              pergunta de quem abre a lista para retomar uma série. */}
+          <UpNext upNext={upNext} upcoming={upcoming} caughtUp={caughtUp} />
         </CardItem>
 
         {/* A chave repete o destino do cartaz, e isso não é redundância: a tarja
@@ -372,6 +385,73 @@ function SeriesCell({
       </CardBody>
     </CardContainer>
   );
+}
+
+/* ── o seu próximo ────────────────────────────────────────────────────────
+   Três respostas e uma ausência, e a ausência é o caso de o servidor não saber
+   — ver upnext.js. Calar é a resposta certa para "não sei": um "você está em
+   dia" que o produto não pode provar é pior do que nada.
+
+   O número do episódio em latão porque é o que se procura de relance; o nome
+   ao lado, e ele trunca — a coluna do cartaz é estreita, e quem reconhece o
+   episódio reconhece pelo T3E07. */
+function UpNext({
+  upNext,
+  upcoming,
+  caughtUp,
+}: {
+  upNext?: EpisodeRef | null;
+  upcoming?: EpisodeRef | null;
+  caughtUp?: boolean;
+}) {
+  if (upNext) {
+    return (
+      <p className="mt-1.5 flex items-baseline gap-1.5">
+        <span className="legend flex-none text-[9px] text-ink-faint">a seguir</span>
+        <span className="q flex-none text-[11.5px] text-dye-brass">{tag(upNext)}</span>
+        {upNext.title ? (
+          <span className="truncate text-[11.5px] text-ink-dim">{upNext.title}</span>
+        ) : null}
+      </p>
+    );
+  }
+
+  if (upcoming) {
+    return (
+      <p className="mt-1.5 flex items-baseline gap-1.5">
+        <span className="legend flex-none text-[9px] text-ink-faint">estreia</span>
+        <span className="q flex-none text-[11.5px] text-beam">{tag(upcoming)}</span>
+        <span className="q truncate text-[11.5px] text-ink-dim">
+          {upcoming.airDate ? soonBR(upcoming.airDate) : 'sem data'}
+        </span>
+      </p>
+    );
+  }
+
+  if (caughtUp) {
+    return <p className="q mt-1.5 text-[11.5px] text-ink-faint">você viu tudo</p>;
+  }
+
+  return null;
+}
+
+const tag = (ep: EpisodeRef) => `T${ep.season}E${String(ep.episode).padStart(2, '0')}`;
+
+/* A data de uma estreia, curta. Contada em dias enquanto a resposta é "logo" —
+   "em 3 dias" é o que se quer saber, e "15 de set." obriga a fazer a conta. */
+function soonBR(iso: string) {
+  const at = new Date(iso + 'T12:00:00');
+  if (Number.isNaN(at.getTime())) return iso;
+  const hoje = new Date();
+  const dias = Math.round((at.getTime() - new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12).getTime()) / 86400000);
+  if (dias <= 0) return 'hoje';
+  if (dias === 1) return 'amanhã';
+  if (dias <= 14) return `em ${dias} dias`;
+  return at.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: at.getFullYear() === hoje.getFullYear() ? undefined : 'numeric',
+  });
 }
 
 /* Quantos retratos o selo do cartaz desenha antes de virar contagem. O mesmo da
@@ -561,6 +641,9 @@ export function SeriesQueueScreen({
                   s.totalEpisodes ? `${s.seen}/${s.totalEpisodes} vistos` : `${s.seen} vistos`
                 }
                 average={s.average}
+                upNext={s.upNext}
+                upcoming={s.upcoming}
+                caughtUp={s.caughtUp}
                 wants={segue}
                 onOpen={() => onOpen(s.id)}
                 /* A tesoura aparece para quem acompanha — cada um tira o seu — e

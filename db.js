@@ -1096,6 +1096,24 @@ async function migrate() {
     }
   }
 
+  /* ── o inventário de uma série ──────────────────────────────────────────
+     Quantas temporadas, quantos episódios em cada uma, e qual é o próximo a
+     estrear. É o que responde "o que eu vejo a seguir" sem abrir a série: a
+     coluna `seasons` guarda só o NÚMERO de temporadas, e com ele não dá para
+     saber que falta o T3E07 a alguém.
+
+     Num JSON e não numa tabela de temporadas: nada aqui é consultado por
+     temporada, é sempre a lista inteira de uma série de uma vez — e uma tabela
+     nova seria uma terceira coisa para manter fresca. O carimbo é o de sempre,
+     porque uma série no ar ganha episódio toda semana. Ver upnext.js. */
+  {
+    const cols = await columnsOf('shows_cache');
+    if (!cols.includes('shape')) {
+      await exec('ALTER TABLE shows_cache ADD COLUMN shape TEXT');
+      await exec('ALTER TABLE shows_cache ADD COLUMN shape_at TEXT');
+    }
+  }
+
   /* ── a nota saiu do episódio ────────────────────────────────────────────
      A unidade da nota é a TEMPORADA. As fichas de episódio de antes não são
      lidas por tela nenhuma, e uma nota que existe no banco e não existe no
