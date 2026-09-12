@@ -36,6 +36,7 @@ import {
   type TakeVote,
 } from '@/lib/api';
 import { WorldProvider, type World } from '@/lib/world';
+import { appIsReady } from '@/lib/session';
 import {
   SeasonSheet,
   SeriesArchiveScreen,
@@ -319,6 +320,14 @@ export default function App() {
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
+
+  /* A tela subiu. Num aplicativo isto é o que confirma o pacote recém-trocado:
+     sem este aviso ele volta ao anterior sozinho. Aqui e não em main.tsx porque
+     este efeito só roda se a árvore montou — que é justamente o que se está
+     dizendo. Ver lib/session.ts. */
+  useEffect(() => {
+    appIsReady();
+  }, []);
 
   useEffect(() => {
     const onHash = () => {

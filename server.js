@@ -109,6 +109,10 @@ app.use('/api/clubs', clubRoutes.index);
    sinos, e nenhum deles contava o que houve nos outros dois. Fora do escopo
    porque a resposta atravessa salas. */
 app.use('/api/notices', require('./routes/notices'));
+/* O aplicativo instalado perguntando se existe versão nova, e baixando-a. Fora
+   de clube e fora de sessão: o que ele recebe é o mesmo JavaScript que qualquer
+   pessoa baixa ao abrir o site. Ver ota.js. */
+app.use('/api/app', require('./routes/app'));
 app.use('/api/reviewers', reviewerRoutes.index);
 
 const scoped = express.Router({ mergeParams: true });

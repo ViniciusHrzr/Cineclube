@@ -256,6 +256,31 @@ Para um APK de teste sem abrir o Android Studio:
 `cd mobile/android && ./gradlew assembleDebug` — ele sai em
 `mobile/android/app/build/outputs/apk/debug/`.
 
+### Atualizar sem passar pela loja
+
+O APK carrega os arquivos dentro dele, então um deploy do site não alcançaria
+quem já instalou. Alcança por aqui: na abertura, o app pergunta a
+`POST /api/app/update` se existe pacote novo, baixa o zip e troca na abertura
+seguinte.
+
+O pacote é a própria pasta `public/`, **zipada na hora** (`ota.js`) — não há
+artefato gerado no build nem zip no repositório, e o que o app baixa é byte a
+byte o que o site está servindo. O endereço da API é injetado no `index.html` no
+momento de servir, a partir de onde o pedido chegou, então o repositório
+continua sem saber onde este servidor mora.
+
+A versão é o carimbo do arquivo mais novo de `public/`: sobe sozinha a cada
+deploy, sem contador para alguém esquecer de girar.
+
+A rede de proteção é o aviso de que a tela subiu (`appIsReady`, em
+`client/src/lib/session.ts`): sem ele em dez segundos, o plugin desfaz a troca e
+volta ao pacote anterior. É o que impede uma publicação quebrada de virar tela
+branca para o clube inteiro.
+
+O que OTA **não** alcança: código nativo — plugin novo, permissão nova, mudança
+de `versionCode`. Isso continua saindo por release na loja, e é para isso que
+serve o `minClient` de `contract.js`.
+
 Três coisas que não têm volta depois da primeira publicação:
 
 - **o `appId`** (`com.cineclube.app`). A Play Store trata outro id como outro

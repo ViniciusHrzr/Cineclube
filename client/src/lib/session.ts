@@ -132,3 +132,24 @@ async function rotate(): Promise<boolean> {
 
 /** O que a saída precisa mandar junto para o servidor derrubar a família. */
 export const refreshToken = () => pair?.refresh ?? null;
+
+/* ── o aviso de que a tela subiu ──────────────────────────────────────────
+   O aplicativo baixa o cliente novo e o aplica na abertura seguinte — e espera
+   ouvir que ele funcionou. Sem este aviso, ele DESFAZ a troca sozinho e volta
+   ao pacote anterior: é a rede debaixo de publicar uma tela branca para todo
+   mundo de uma vez.
+
+   Chamado pelo bridge global e não por importação: o plugin que aplica a troca
+   é dependência da CASCA, e o cliente da web não a tem — nem deve ter, para o
+   site não carregar o que ele nunca usa. Fora de um aplicativo isto não
+   encontra nada e não faz nada. */
+export function appIsReady() {
+  const bridge = (globalThis as { Capacitor?: { Plugins?: Record<string, { notifyAppReady?: () => void }> } })
+    .Capacitor;
+  try {
+    bridge?.Plugins?.CapacitorUpdater?.notifyAppReady?.();
+  } catch {
+    /* Um plugin que não respondeu não pode derrubar a abertura do app: o pior
+       que acontece é a troca ser desfeita, que é o comportamento seguro. */
+  }
+}

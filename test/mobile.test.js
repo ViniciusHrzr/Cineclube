@@ -4,6 +4,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 
 const dbPath = path.join(os.tmpdir(), `cineclube-mobile-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
@@ -317,3 +318,129 @@ test('a API diz de que versão ela é, e qual cliente ela ainda atende', async (
   const qualquer = await req('GET', '/api/auth/me', {});
   assert.equal(qualquer.headers.get('x-api-version'), String(meta.body.api));
 });
+
+/* ══ 5. ATUALIZAR SEM PASSAR PELA LOJA ═══════════════════════════════════
+   O APK carrega os arquivos dentro dele, então um deploy do site não alcança
+   quem já instalou. Estas duas rotas alcançam: o app pergunta se há coisa nova
+   e baixa um zip com o cliente publicado agora.
+
+   O que falha em silêncio aqui é caro em dobro — um pacote quebrado vira tela
+   branca no aparelho de todo mundo de uma vez. Por isso o zip é conferido de
+   verdade: assinatura, índice, e o endereço da API dentro do HTML. */
+
+const APP_INFO = {
+  platform: 'android',
+  device_id: 'aparelho-de-teste',
+  app_id: 'com.cineclube.app',
+  version_name: '1.0',
+  version_build: '1.0',
+  version_os: '14',
+  plugin_version: '6.0.0',
+  is_emulator: true,
+  is_prod: false,
+};
+
+test('o aplicativo pergunta se há versão nova, e recebe onde baixá-la', async () => {
+  const r = await req('POST', '/api/app/update', { body: APP_INFO });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.version, 'sem versão o plugin não sabe o que baixou');
+  assert.match(r.body.url, /\/api\/app\/bundle\/.+\.zip$/);
+  assert.match(r.body.checksum, /^[a-f0-9]{64}$/, 'o plugin confere sha256 antes de aplicar');
+  assert.equal(r.body.message, undefined);
+});
+
+test('quem já está na última não baixa nada', async () => {
+  const primeira = await req('POST', '/api/app/update', { body: APP_INFO });
+  const denovo = await req('POST', '/api/app/update', {
+    body: { ...APP_INFO, version_name: primeira.body.version },
+  });
+  assert.equal(denovo.body.url, undefined, 'nada a baixar');
+  assert.ok(denovo.body.message);
+  assert.equal(denovo.body.version, primeira.body.version);
+});
+
+/* O pacote é a pasta public/ zipada na hora. Três coisas têm de ser verdade, e
+   cada uma quebra de um jeito diferente: a soma errada faz o plugin recusar, o
+   index fora da raiz faz o app abrir em branco, e o endereço ausente faz o app
+   procurar a API dentro do próprio aparelho. */
+test('o pacote confere com a soma, e carrega o endereço da API dentro', async () => {
+  const { body } = await req('POST', '/api/app/update', { body: APP_INFO });
+
+  const res = await fetch(body.url);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+  const bytes = Buffer.from(await res.arrayBuffer());
+
+  assert.equal(
+    crypto.createHash('sha256').update(bytes).digest('hex'),
+    body.checksum,
+    'a soma anunciada não descreve o pacote entregue'
+  );
+  assert.equal(bytes.subarray(0, 2).toString('ascii'), 'PK', 'isto não é um zip');
+
+  /* O índice do zip fica no fim do arquivo, e é dele que sai a lista de nomes
+     sem descompactar nada. `index.html` tem de estar na RAIZ: é o que o plugin
+     procura para saber o que servir. */
+  const nomes = namesIn(bytes);
+  assert.ok(nomes.includes('index.html'), 'index.html precisa estar na raiz do zip');
+  assert.ok(nomes.some(n => n.startsWith('assets/')), 'o pacote veio sem o cliente');
+
+  const html = fileIn(bytes, 'index.html');
+  assert.match(html, /window\.__CINECLUBE_API__="http/, 'sem endereço, o app não acha a API');
+  assert.ok(
+    html.indexOf('__CINECLUBE_API__') < html.indexOf('<script type="module"'),
+    'o endereço tem de estar escrito antes de o cliente rodar'
+  );
+});
+
+test('um pacote que não é o publicado agora não é servido', async () => {
+  const perdido = await req('GET', '/api/app/bundle/1.0.1.zip', {});
+  assert.equal(perdido.status, 404);
+});
+
+/* ── lendo o zip sem descompactador ──────────────────────────────────────
+   Um leitor mínimo, e de propósito: o escritor está em zip.js, e um teste que
+   usasse o escritor para conferir o escrito não conferiria nada. Isto lê o
+   índice central, que é a parte do formato que um descompactador de verdade
+   também lê primeiro. */
+function namesIn(buf) {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  assert.ok(eocd > 0, 'zip sem registro de fim');
+  const total = buf.readUInt16LE(eocd + 10);
+  let pos = buf.readUInt32LE(eocd + 16);
+  const nomes = [];
+  for (let i = 0; i < total; i++) {
+    assert.equal(buf.readUInt32LE(pos), 0x02014b50, 'entrada torta no índice');
+    const tamNome = buf.readUInt16LE(pos + 28);
+    const extra = buf.readUInt16LE(pos + 30);
+    const comentario = buf.readUInt16LE(pos + 32);
+    nomes.push(buf.subarray(pos + 46, pos + 46 + tamNome).toString('utf8'));
+    pos += 46 + tamNome + extra + comentario;
+  }
+  return nomes;
+}
+
+/** O conteúdo de um arquivo do zip, descomprimido pelo caminho do cabeçalho local. */
+function fileIn(buf, alvo) {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const total = buf.readUInt16LE(eocd + 10);
+  let pos = buf.readUInt32LE(eocd + 16);
+  for (let i = 0; i < total; i++) {
+    const tamNome = buf.readUInt16LE(pos + 28);
+    const extra = buf.readUInt16LE(pos + 30);
+    const comentario = buf.readUInt16LE(pos + 32);
+    const nome = buf.subarray(pos + 46, pos + 46 + tamNome).toString('utf8');
+    if (nome === alvo) {
+      const metodo = buf.readUInt16LE(pos + 10);
+      const tamanho = buf.readUInt32LE(pos + 20);
+      const local = buf.readUInt32LE(pos + 42);
+      const nomeLocal = buf.readUInt16LE(local + 26);
+      const extraLocal = buf.readUInt16LE(local + 28);
+      const inicio = local + 30 + nomeLocal + extraLocal;
+      const corpo = buf.subarray(inicio, inicio + tamanho);
+      return (metodo === 8 ? zlib.inflateRawSync(corpo) : corpo).toString('utf8');
+    }
+    pos += 46 + tamNome + extra + comentario;
+  }
+  throw new Error(`${alvo} não está no pacote`);
+}
