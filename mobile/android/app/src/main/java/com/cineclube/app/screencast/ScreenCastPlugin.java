@@ -1,5 +1,6 @@
 package com.cineclube.app.screencast;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -9,7 +10,10 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
@@ -31,11 +35,21 @@ import org.json.JSONObject;
  * continua dona da sala, de quem está nela e do caminho por onde os sinais
  * viajam. O que ela delega é a mídia.
  */
-@CapacitorPlugin(name = "ScreenCast")
+/* A permissão de gravar é do MICROFONE, e o microfone é aberto e descartado: o
+   módulo de áudio do WebRTC só sabe abrir as entradas do sistema, e o som que a
+   sala ouve é escrito por cima daquele buffer. Sem esta permissão não há por
+   onde o som do sistema entrar — ver a nota de PlaybackAudio em CastEngine. */
+@CapacitorPlugin(
+    name = "ScreenCast",
+    permissions = {
+      @Permission(alias = ScreenCastPlugin.SOM, strings = {Manifest.permission.RECORD_AUDIO})
+    })
 public class ScreenCastPlugin extends Plugin {
+  static final String SOM = "som";
+
   private CastEngine engine;
   private JSONArray iceGuardado;
-  private boolean microfone;
+  private boolean comSom;
 
   @Override
   public void load() {
@@ -57,6 +71,20 @@ public class ScreenCastPlugin extends Plugin {
                 JSObject evento = new JSObject();
                 evento.put("peers", count);
                 notifyListeners("peers", evento);
+              }
+
+              @Override
+              public void preview(String jpegBase64) {
+                JSObject evento = new JSObject();
+                evento.put("jpeg", jpegBase64);
+                notifyListeners("preview", evento);
+              }
+
+              @Override
+              public void audio(boolean capturando) {
+                JSObject evento = new JSObject();
+                evento.put("audio", capturando);
+                notifyListeners("audio", evento);
               }
             });
   }
@@ -83,8 +111,28 @@ public class ScreenCastPlugin extends Plugin {
     /* `JSArray` e não `JSONArray`: é o tipo que a ponte entrega, e ele já É um
        JSONArray — o motor recebe o mesmo objeto sem conversão. */
     iceGuardado = call.getArray("iceServers", new JSArray());
-    microfone = Boolean.TRUE.equals(call.getBoolean("microphone", false));
+    comSom = !Boolean.FALSE.equals(call.getBoolean("audio", true));
 
+    /* A permissão de gravar vem ANTES do diálogo de projeção, e não depois:
+       dois pedidos de sistema empilhados é a pessoa recusando o segundo sem ler
+       o que ele diz. Quem recusa este ainda transmite — sem som. */
+    if (comSom && getPermissionState(SOM) != PermissionState.GRANTED) {
+      requestPermissionForAlias(SOM, call, "somPedido");
+      return;
+    }
+
+    projetar(call);
+  }
+
+  @PermissionCallback
+  private void somPedido(PluginCall call) {
+    /* Recusar o microfone não derruba a transmissão: ela segue muda, e a tela
+       já sabe dizer isso. */
+    comSom = getPermissionState(SOM) == PermissionState.GRANTED;
+    projetar(call);
+  }
+
+  private void projetar(PluginCall call) {
     MediaProjectionManager manager =
         (MediaProjectionManager) getContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
     if (manager == null) {
@@ -111,7 +159,7 @@ public class ScreenCastPlugin extends Plugin {
     ScreenCastService.start(getContext());
 
     try {
-      engine.start(resultado.getData(), iceGuardado, microfone);
+      engine.start(resultado.getData(), iceGuardado, comSom);
     } catch (RuntimeException e) {
       ScreenCastService.stop(getContext());
       call.reject("A captura não começou: " + e.getMessage());

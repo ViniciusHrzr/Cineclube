@@ -299,10 +299,17 @@ serve o `minClient` de `contract.js`.
   Para quem assiste, a transmissão é indistinguível de uma que saiu de um
   computador: 720p, codificada pelo hardware, com teto de 2 Mbps.
 
-  Duas coisas ficam de fora e a tela diz as duas: **não há prévia** (a imagem
-  nunca entra na página) e **não há som do sistema** (o Android entrega a tela,
-  não o áudio dos outros aplicativos — o clube conversa pelo Discord). E, como
-  no computador, um aplicativo com DRM entrega quadro preto.
+  **Com som e com prévia.** O som é a captura de reprodução do Android 10+: a
+  mesma projeção que entrega a tela entrega o que está tocando nela. O WebRTC
+  não aceita outra fonte de entrada além do módulo de áudio dele, então o
+  microfone é aberto, descartado, e o bloco recém-gravado é sobrescrito pelo som
+  do sistema antes de seguir para o codificador — é o gancho que a biblioteca
+  oferece para exatamente este caso. A prévia é uma miniatura por segundo,
+  desviada do mesmo quadro que vai para o encoder: a imagem de verdade nunca
+  entra na página.
+
+  Um aplicativo com DRM entrega tela preta e silêncio, de propósito — como no
+  computador.
 
 Três coisas que não têm volta depois da primeira publicação:
 

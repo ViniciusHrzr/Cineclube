@@ -80,6 +80,12 @@ export type LivePhase =
   | 'failed';
 
 export type LiveShare = {
+  /* Uma miniatura por segundo do que está sendo transmitido, quando quem
+     transmite é um APARELHO. A imagem de verdade nunca entra na página — ela
+     sai codificada do sistema direto para quem assiste —, então a prévia é um
+     desvio do mesmo quadro, em JPEG, uma vez por segundo. Nulo no computador,
+     onde a prévia é o próprio stream. */
+  thumb?: string | null;
   role: 'off' | 'host' | 'viewer';
   phase: LivePhase;
   /** O que mostrar na tela: a captura local, ou o que chegou do transmissor. */
@@ -224,6 +230,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const [detail, setDetail] = useState<string | null>(null);
   const [hasAudio, setHasAudio] = useState(false);
   const [surface, setSurface] = useState<string | null>(null);
+  const [thumb, setThumb] = useState<string | null>(null);
   const [audioSources, setAudioSources] = useState<MediaDeviceInfo[]>([]);
   const [audioSourceId, setAudioSourceId] = useState<string | null>(null);
   /* A faixa de áudio que veio junto com a captura da tela. Guardada mesmo
@@ -249,9 +256,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      Esta marca é o que faz o resto do arquivo saber que as conexões desta
      ponta não estão em `peerMap` — elas estão do outro lado da ponte. */
   const nativo = useRef(false);
-  /** Os dois ouvintes da ponte, para poder desmontá-los. */
+  /** Os ouvintes da ponte, para poder desmontá-los. */
   const nativeSignals = useRef<{ remove?: () => void } | null>(null);
   const nativePeers = useRef<{ remove?: () => void } | null>(null);
+  const nativeThumb = useRef<{ remove?: () => void } | null>(null);
+  const nativeAudio = useRef<{ remove?: () => void } | null>(null);
   /** Buscado uma vez e guardado: são endereços, não estado. */
   const iceRef = useRef<RTCConfiguration | null>(null);
 
@@ -300,10 +309,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     if (nativo.current) {
       nativo.current = false;
       void cast()?.stop();
-      void Promise.resolve(nativeSignals.current).then(h => h?.remove?.());
-      void Promise.resolve(nativePeers.current).then(h => h?.remove?.());
-      nativeSignals.current = null;
-      nativePeers.current = null;
+      for (const held of [nativeSignals, nativePeers, nativeThumb, nativeAudio]) {
+        void Promise.resolve(held.current).then(h => h?.remove?.());
+        held.current = null;
+      }
+      setThumb(null);
     }
 
     for (const { pc } of peerMap.current.values()) pc.close();
@@ -521,11 +531,10 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     try {
       await plug.start({
         iceServers: (conf.iceServers ?? []).map(s => ({ ...s })),
-        /* O som do sistema não vai nesta versão, e o microfone nasce
-           desligado: o clube conversa pelo Discord, e uma transmissão que
-           abre o microfone sem pedir é a sala inteira ouvindo a cozinha de
-           quem transmite. */
-        microphone: false,
+        /* O som do SISTEMA — o que está tocando no aparelho, e não o
+           microfone. O microfone é aberto e descartado; a nota de por que ele
+           precisa existir está em CastEngine.java. */
+        audio: true,
       });
     } catch (e) {
       const dito = (e as Error)?.message ?? '';
@@ -537,6 +546,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
 
     nativo.current = true;
     setSurface('aparelho');
+    /* Sem som até o primeiro bloco chegar. O aviso de "filme mudo" já existe e
+       é ele que aparece nesse meio-tempo, que é o certo: o silêncio de uma
+       captura recusada é indistinguível do silêncio de um filme que ainda não
+       começou. */
+    setHasAudio(false);
 
     /* Os sinais que o motor quer mandar, e quantas pessoas estão recebendo. Os
        dois ouvintes são desmontados em `drop`. */
@@ -546,6 +560,21 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     })) as { remove?: () => void };
     nativePeers.current = (await plug.addListener('peers', (e: unknown) => {
       setPeers(Number((e as { peers?: number })?.peers ?? 0));
+    })) as { remove?: () => void };
+
+    /* A prévia: uma miniatura por segundo. É o que responde "o clube está vendo
+       o que eu acho que está?" sem mandar o vídeo inteiro pela ponte. */
+    nativeThumb.current = (await plug.addListener('preview', (e: unknown) => {
+      const jpeg = (e as { jpeg?: string })?.jpeg;
+      if (jpeg) setThumb(`data:image/jpeg;base64,${jpeg}`);
+    })) as { remove?: () => void };
+
+    /* E se o som do sistema está mesmo chegando. Ele começa falso e vira
+       verdadeiro no primeiro bloco capturado: um aplicativo que recusa captura
+       — e tudo que passa por DRM — nunca chega aqui, e a sala precisa saber
+       disso antes de passar meia hora achando que é o volume dela. */
+    nativeAudio.current = (await plug.addListener('audio', (e: unknown) => {
+      setHasAudio(!!(e as { audio?: boolean })?.audio);
     })) as { remove?: () => void };
 
     if (!(await startLive())) {
@@ -870,6 +899,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     detail,
     hasAudio,
     surface,
+    thumb,
     audioSources,
     audioSourceId,
     listAudio,

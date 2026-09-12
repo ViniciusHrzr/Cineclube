@@ -1604,10 +1604,27 @@ function LiveScreen({
           direto do sistema para quem assiste e nunca entra nesta página — não
           há o que mostrar aqui. Ver liveshare.ts. */}
       {host && share.surface === 'aparelho' ? (
-        <div className="plate flex items-center justify-center px-4 py-10 text-center">
-          <p className="q max-w-[46ch] text-[12.5px] leading-relaxed text-ink-dim">
-            Sua tela está indo para a sala. O aparelho não mostra a si mesmo aqui — para conferir o
-            que o clube está vendo, pergunte a alguém que está recebendo.
+        /* ── a prévia de quem transmite do celular ──────────────────────
+           Uma miniatura por segundo, e não o vídeo: a imagem de verdade sai
+           codificada do sistema direto para quem assiste e nunca entra nesta
+           página. O que se quer aqui é a resposta a "o clube está vendo o que
+           eu acho que está?", e um quadro por segundo responde isso. */
+        <div className="plate overflow-hidden">
+          {share.thumb ? (
+            <img
+              src={share.thumb}
+              alt="O que o clube está vendo"
+              className="mx-auto block max-h-[46vh] w-auto"
+            />
+          ) : (
+            <div className="flex items-center justify-center px-4 py-10 text-center">
+              <p className="q max-w-[46ch] text-[12.5px] leading-relaxed text-ink-dim">
+                Preparando a transmissão…
+              </p>
+            </div>
+          )}
+          <p className="q border-t border-white/[0.06] px-4 py-2 text-center text-[11px] text-ink-faint">
+            Prévia a um quadro por segundo. O clube recebe a imagem inteira.
           </p>
         </div>
       ) : (
@@ -1683,14 +1700,14 @@ function LiveScreen({
           <Fault
             detail={
               share.surface === 'aparelho'
-                ? 'O som do sistema de um celular não atravessa: o Android entrega a tela, não o áudio dos outros aplicativos. O jeito de assistir com som é o clube estar no Discord, ou alguém transmitir do computador.'
+                ? 'O som só sai daqui enquanto alguma coisa estiver tocando no aparelho — e aplicativos com DRM (Netflix, Prime) entregam silêncio de propósito, do mesmo jeito que entregam tela preta. Se o filme está tocando e mesmo assim não há som, foi o aplicativo que recusou a captura.'
                 : share.surface === 'window'
                 ? 'Compartilhe a TELA INTEIRA e marque “Compartilhar áudio do sistema”. Aí o som do VLC, do player ou de qualquer programa vai junto.'
                 : 'Chrome/Edge: ao escolher a tela inteira, marque “Compartilhar áudio do sistema”; ao escolher uma aba, marque “Compartilhar áudio da aba”.'
             }
           >
             {share.surface === 'aparelho'
-              ? 'Transmitindo do celular, sem som — o clube vê o filme mudo.'
+              ? 'Ainda sem som — o clube vê o filme mudo.'
               : share.surface === 'window'
                 ? 'Compartilhamento de janela não leva som — o clube vê o filme mudo.'
                 : 'Você está transmitindo sem som — o clube vê o filme mudo.'}
