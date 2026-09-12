@@ -4,10 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run vendor:sw && vite",
-    "build": "npm run vendor:sw && tsc -b && vite build",
+    "dev": "npm run assets && vite",
+    "build": "npm run assets && tsc -b && vite build",
     "preview": "vite preview",
-    "vendor:sw": "node scripts/vendor-sw.mjs"
+    "assets": "npm run vendor:sw && npm run icons",
+    "vendor:sw": "node scripts/vendor-sw.mjs",
+    "icons": "node scripts/icons.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

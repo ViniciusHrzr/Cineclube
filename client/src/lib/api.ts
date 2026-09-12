@@ -1,6 +1,21 @@
 /* The Express API is unchanged: this file is the only place that knows its
    shapes, so the screens stay about the interface. Every field here mirrors a
-   DTO the server already returns. */
+   DTO the server already returns.
+
+   Onde a API mora e como a sessão chega até ela é a outra pergunta, e ela não é
+   sobre formas: mora em lib/session.ts. Aqui só se lê o resultado — um
+   cabeçalho, um modo de credencial, e uma renovação para tentar de novo. */
+
+import {
+  appMode,
+  authHeaders,
+  credentialsMode,
+  hasPair,
+  refreshSession,
+  refreshToken,
+  setPair,
+  urlFor,
+} from '@/lib/session';
 
 export type Reviewer = {
   id: string;
@@ -107,15 +122,48 @@ export const auth = {
          como funcionar é pior que a ausência dele. */
       mail?: boolean;
     }>('/api/auth/me'),
-  /** Não é fetch: é uma navegação de verdade, porque quem responde é o Google. */
-  googleUrl: '/api/auth/google',
-  login: (email: string, password: string) =>
-    post<{ reviewer: SessionUser }>('/api/auth/login', { email, password }),
+  /* Não é fetch: é uma navegação de verdade, porque quem responde é o Google.
+     Numa casca, ela abre no navegador do sistema e a volta cria a sessão de
+     cookie no servidor — que `adopt` troca por um par de chaves. */
+  googleUrl: urlFor('/api/auth/google'),
+  /* A mesma tela de entrar nos dois modos, e a diferença mora aqui: no site a
+     resposta é um cookie que este código nem vê; numa casca é um par de chaves
+     que ele guarda. */
+  login: async (email: string, password: string) => {
+    if (!appMode) return post<{ reviewer: SessionUser }>('/api/auth/login', { email, password });
+    const got = await post<{ access: string; refresh: string; reviewer: SessionUser }>(
+      '/api/auth/token',
+      { email, password }
+    );
+    setPair({ access: got.access, refresh: got.refresh });
+    return { reviewer: got.reviewer };
+  },
+  /* Troca uma sessão de navegador já aberta por um par de chaves. É o fim do
+     caminho do Google dentro de uma casca, e não faz nada no site. */
+  adopt: async () => {
+    if (!appMode || hasPair()) return false;
+    try {
+      const got = await post<{ access: string; refresh: string }>('/api/auth/token', {});
+      setPair({ access: got.access, refresh: got.refresh });
+      return true;
+    } catch {
+      /* Ninguém logado do outro lado. Não é erro: é o caso comum de quem abre o
+         app pela primeira vez. */
+      return false;
+    }
+  },
   /* Criar conta sem passar pelo Google. Entra logado: pedir para a pessoa
      digitar a senha que ela acabou de escolher é o formulário duvidando dela. */
   register: (name: string, email: string, password: string) =>
     post<{ reviewer: SessionUser }>('/api/auth/register', { name, email, password }),
-  logout: () => post<null>('/api/auth/logout', {}),
+  /* A chave de renovação vai junto: ela vale noventa dias, e uma que sobrevive
+     ao "sair" é a porta que ficou aberta. O par local some antes da resposta —
+     sair tem de funcionar mesmo com o servidor fora do ar. */
+  logout: async () => {
+    const refresh = refreshToken();
+    setPair(null);
+    return post<null>('/api/auth/logout', { refresh });
+  },
   setPassword: (password: string, current?: string) =>
     post<{ ok: true }>('/api/auth/password', { password, current: current ?? null }),
   /* O link do e-mail aponta para a TELA (`#confirmar/<token>`), e é ela que
@@ -881,8 +929,30 @@ export const cput = <T>(path: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 
+/** Uma ida à API, com a sessão pendurada do jeito que este cliente a carrega. */
+const send = (path: string, opts?: RequestInit) =>
+  fetch(urlFor(path), {
+    ...opts,
+    credentials: credentialsMode,
+    headers: { ...authHeaders(), ...(opts?.headers || {}) },
+  });
+
+/* Uma sessão de aplicativo dura um dia e é reposta pela chave de renovação. O
+   cliente não fica olhando o relógio para saber quando: ele descobre pelo 401,
+   renova UMA vez e refaz o pedido.
+
+   A renovação em si é uma promessa compartilhada — ver lib/session.ts, onde
+   está escrito por que cinco 401 simultâneos não podem virar cinco renovações.
+
+   A rota de renovação nunca entra aqui: um 401 dela é a sessão ter acabado, e
+   tentar renovar a renovação seria um laço. */
 export async function api<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, opts);
+  let res = await send(path, opts);
+
+  if (res.status === 401 && hasPair() && !path.endsWith('/auth/refresh')) {
+    if (await refreshSession()) res = await send(path, opts);
+  }
+
   if (!res.ok) {
     let msg = res.statusText;
     try {

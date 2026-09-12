@@ -302,6 +302,10 @@ export default function App() {
      quem está deslogado chega na tela de entrada sem esperar por catálogo. */
   const checkAuth = useCallback(async () => {
     try {
+      /* Numa casca de aplicativo, uma sessão de navegador já aberta do outro
+         lado — a volta do Google — vira um par de chaves antes da primeira
+         pergunta. No site isto não faz nada. Ver lib/session.ts. */
+      await auth.adopt();
       const res = await auth.me();
       setMe(res.reviewer);
       setNeedsPassword(!!res.needsPassword);

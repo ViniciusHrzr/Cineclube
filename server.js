@@ -150,7 +150,14 @@ app.use(
 app.use(
   express.static(path.join(__dirname, 'public'), {
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.html') || filePath.endsWith('sw.min.js')) {
+      if (
+        filePath.endsWith('.html') ||
+        /* Os dois service workers: o do app e o do WebTorrent que ele importa.
+           Eles sobrevivem à aba que os instalou, e um navegador segurando o
+           antigo é o release anterior rodando sem ter como descobrir isso. */
+        filePath.endsWith('sw.min.js') ||
+        filePath.endsWith('app-sw.js')
+      ) {
         res.setHeader('Cache-Control', 'no-cache');
       }
     },

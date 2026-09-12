@@ -23,6 +23,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#07090e" />
+
+    <!-- ── instalar ──────────────────────────────────────────────────────
+         O manifesto é o que faz o navegador do celular oferecer "instalar", e
+         `display: standalone` é o que tira a barra de endereço depois disso.
+         O ícone é gerado no build a partir da paleta — ver scripts/icons.mjs.
+
+         O `apple-touch-icon` existe porque o iPhone ignora o manifesto na hora
+         de escolher a figura da tela inicial; ele lê esta linha. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Cineclube" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -111,7 +125,7 @@
         if (software) document.documentElement.setAttribute('data-render', 'software');
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-BytQSu6h.js"></script>
+    <script type="module" crossorigin src="/assets/index-BGJEHpxw.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-BmxaooVq.css">
   </head>
   <body>
@@ -132,6 +146,6 @@
       finish review, the verdict, DESIGN.md, and every shipping raster carrying
       its provenance.
     -->
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

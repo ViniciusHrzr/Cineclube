@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { capi, cpost, clubPath } from '@/lib/api';
+import { authHeaders, credentialsMode, urlFor } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    The client half of the screening room. The server owns where the film is;
@@ -175,7 +176,10 @@ async function measureOffset(samples = 5): Promise<number> {
   for (let i = 0; i < samples; i++) {
     try {
       const t0 = Date.now();
-      const res = await fetch(clubPath('/screening/time'));
+      const res = await fetch(urlFor(clubPath('/screening/time')), {
+        credentials: credentialsMode,
+        headers: authHeaders(),
+      });
       if (!res.ok) continue;
       const { t } = (await res.json()) as { t: number };
       const t2 = Date.now();
@@ -247,7 +251,13 @@ export function useScreening(onError?: (msg: string) => void) {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource(clubPath('/screening/stream'));
+    /* ⚠ `EventSource` não manda cabeçalho, então a sessão dele é o cookie. Numa
+       casca que carrega o site remoto isso funciona; numa com os arquivos
+       embarcados, não — o cano ao vivo vai precisar de outro jeito de se
+       identificar antes de o aplicativo existir. Ver lib/live.ts. */
+    const source = new EventSource(urlFor(clubPath('/screening/stream')), {
+      withCredentials: true,
+    });
     /* EventSource retries on its own, forever, with no way to ask it to stop
        politely. That is right for a dropped connection and wrong for a refusal
        — too many tabs open, or a signed-out session — where retrying is a loop

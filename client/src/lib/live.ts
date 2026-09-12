@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { clubPath, hasClub } from '@/lib/api';
+import { urlFor } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A metade do navegador do clube ao vivo. O servidor manda uma palavra e quem
@@ -73,7 +74,16 @@ function open() {
   /* `clubPath` e não uma URL fixa: o cano é de uma sala, e o servidor só entrega
      nele o que é daquela sala. Ver live.js — sem isso, um aviso de clube privado
      chegaria a quem não é dele. */
-  const es = new EventSource(clubPath('/live/stream'));
+  /* ⚠ A ÚNICA coisa deste cliente que não sabe falar por token: `EventSource`
+     não aceita cabeçalho, então ele se identifica pelo cookie. Numa casca que
+     carrega o site remoto a origem é a do servidor e o cookie vai; numa com os
+     arquivos embarcados, não vai, e o cano ao vivo cala — o resto do app
+     continua inteiro, porque tudo aqui também chega por relógio.
+
+     O conserto, quando o aplicativo existir, é um bilhete de vida curta: uma
+     rota que troca o Bearer por um código de um uso que viaja na URL. Pôr o
+     token da sessão na URL seria escrevê-lo em todo log do caminho. */
+  const es = new EventSource(urlFor(clubPath('/live/stream')), { withCredentials: true });
   source = es;
   failures = 0;
 

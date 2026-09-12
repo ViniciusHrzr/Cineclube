@@ -13,6 +13,10 @@ client/tsconfig.tsbuildinfo
 # Cópia do service worker do WebTorrent, refeita pelo `vendor:sw` a cada build.
 # Versionar seria guardar uma segunda cópia que pode divergir do pacote.
 client/public/sw.min.js
+
+# E os ícones do app, desenhados pelo `icons` a cada build a partir da paleta.
+# Mesma razão: são derivados de quatro cores e três medidas.
+client/public/icon-*.png
 # ── o banco, e tudo que sai dele ──────────────────────────────────────────
 # A pasta inteira, e não `data/*.db`. Aquele padrão cobria o banco em uso e
 # deixava de fora qualquer subpasta — o que passou a importar no dia em que

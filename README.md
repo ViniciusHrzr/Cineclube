@@ -209,6 +209,35 @@ app/
 - Nenhum segredo no repositório: `.env` está no `.gitignore` e o app se recusa a
   inventar um PIN inicial em produção.
 
+### Instalar no celular
+
+O app é um PWA: `manifest.webmanifest`, os ícones desenhados no build
+(`client/scripts/icons.mjs`) e um service worker com casca offline. O navegador
+do celular oferece "instalar", e a partir daí ele abre em tela cheia, com ícone
+próprio e sem barra de endereço.
+
+O service worker é **um só** — `client/public/app-sw.js` — e ele importa o do
+WebTorrent dentro de si. O escopo `/` aceita um registro: um segundo arquivo ali
+não somaria, substituiria, e o que perderia o lugar é quem serve o vídeo da
+Sessão.
+
+### Empacotar para um aplicativo
+
+O mesmo build serve ao site e a uma casca (Capacitor, Cordova). O que muda é uma
+variável no momento de empacotar:
+
+```
+VITE_API_BASE=https://seu-servidor npm --prefix client run build
+```
+
+Com ela, o cliente passa a falar com um servidor de outra origem e a sessão
+viaja em `Bearer` em vez de cookie — ver `client/src/lib/session.ts`. Sem ela,
+nada muda: o site continua sendo servido pelo mesmo Express que responde `/api`.
+
+Uma peça ainda não atravessa: `EventSource` não manda cabeçalho, então o cano ao
+vivo se identifica por cookie. Numa casca que carrega o site remoto funciona; numa
+com os arquivos embarcados, o mural atualiza pelo relógio e não ao vivo.
+
 ### As duas portas da sessão
 
 O navegador entra por **cookie** e um aplicativo entra por

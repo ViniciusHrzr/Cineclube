@@ -250,7 +250,11 @@ export function useTorrent() {
         throw new Error('Este navegador não tem service worker — sem ele o vídeo do torrent não pode ser servido.');
       }
 
-      const reg = await navigator.serviceWorker.register('/sw.min.js', { scope: '/' });
+      /* O MESMO arquivo que o app registra na abertura, e não `/sw.min.js`: o
+         escopo `/` aceita um registro só, e registrar o do WebTorrent aqui
+         derrubaria o do app — levando junto a casca offline e o "instalar". O
+         de agora importa aquele dentro dele. Ver public/app-sw.js. */
+      const reg = await navigator.serviceWorker.register('/app-sw.js', { scope: '/' });
       /* `ready` is what guarantees an *activated* worker controlling this page;
          the registration alone can still be installing, and the engine refuses
          a controller that is not active. */

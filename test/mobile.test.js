@@ -87,6 +87,40 @@ async function comSenha(senha = 'senha-de-teste') {
   return { ...p, email, senha };
 }
 
+/* ══ 0. INSTALAR ═════════════════════════════════════════════════════════
+   O manifesto e os ícones são o que faz o navegador do celular oferecer
+   "instalar" — e é a base de tudo que vem depois, TWA e casca inclusive. Falham
+   em silêncio de um jeito específico: um caminho de ícone errado não quebra
+   nada, só tira o convite de instalar da tela sem dizer por quê. */
+
+test('o manifesto está servido, e os ícones que ele promete existem', async () => {
+  const manifesto = await req('GET', '/manifest.webmanifest', {});
+  assert.equal(manifesto.status, 200);
+  assert.equal(manifesto.body.start_url, '/');
+  assert.equal(manifesto.body.display, 'standalone');
+  assert.ok(manifesto.body.icons.length >= 2);
+  assert.ok(
+    manifesto.body.icons.some(i => i.purpose === 'maskable'),
+    'sem um ícone mascarável o Android corta os cantos do desenho'
+  );
+
+  for (const icone of manifesto.body.icons) {
+    const res = await fetch(baseUrl + icone.src);
+    assert.equal(res.status, 200, `${icone.src} não está lá`);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+  }
+});
+
+/* Um escopo, um registro. Se este arquivo deixar de importar o do WebTorrent,
+   o vídeo da Sessão para de ser servido — e nada no console diz isso. */
+test('o service worker do app carrega o do WebTorrent dentro dele', async () => {
+  const res = await fetch(baseUrl + '/app-sw.js');
+  assert.equal(res.status, 200);
+  const code = await res.text();
+  assert.match(code, /importScripts\(['"]\/sw\.min\.js['"]\)/);
+  assert.match(code, /addEventListener\(['"]fetch['"]/);
+});
+
 /* ══ 1. A SESSÃO SEM COOKIE ══════════════════════════════════════════════ */
 
 test('e-mail e senha devolvem um par de chaves, e o Bearer vale como sessão', async () => {
