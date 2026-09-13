@@ -315,10 +315,20 @@ serve o `minClient` de `contract.js`.
 
 Um release sem assinatura não instala em aparelho nenhum, e o erro do Android
 não diz por quê. A chave fica **fora do repositório** — quem a tem publica
-atualização no seu nome:
+atualização no seu nome.
+
+A impressão digital de uma chave — a que vai em `ANDROID_FINGERPRINT` — sai
+daqui, sem decorar caminho de `keytool`:
 
 ```bash
-keytool -genkey -v -keystore cineclube.jks -alias cineclube         -keyalg RSA -keysize 2048 -validity 10000
+npm --prefix mobile run fingerprint
+```
+
+Ele lista a de teste, que o Android Studio já criou, e a de release quando
+houver. Criar a de release:
+
+```bash
+keytool -genkey -v -keystore cineclube.jks -alias cineclube -keyalg RSA -keysize 2048 -validity 10000
 
 cp mobile/android/keystore.properties.example mobile/android/keystore.properties
 # e preencha caminho e senhas
