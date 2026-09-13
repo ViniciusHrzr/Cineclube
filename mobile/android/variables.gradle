@@ -1,5 +1,9 @@
 ext {
-    minSdkVersion = 22
+    /* 23 e não 22, que é o padrão do Capacitor: as bibliotecas que este app
+       carrega — a de WebRTC e a que agenda a atualização pelo ar — já pedem 23,
+       e o merge do manifesto para o build antes de compilar. A diferença é o
+       Android 5.1, de 2015. */
+    minSdkVersion = 23
     compileSdkVersion = 34
     targetSdkVersion = 34
     androidxActivityVersion = '1.8.0'

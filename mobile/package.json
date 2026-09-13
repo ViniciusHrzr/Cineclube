@@ -8,6 +8,7 @@
     "icons": "node scripts/icons.mjs",
     "links": "node scripts/links.mjs",
     "apk": "node scripts/apk.mjs",
+    "fingerprint": "node scripts/apk.mjs signingReport",
     "sync": "cap sync android",
     "open": "cap open android"
   },

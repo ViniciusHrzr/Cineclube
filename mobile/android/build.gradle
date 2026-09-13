@@ -22,6 +22,24 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    /* ── uma dependência que pede mais do que este projeto compila ────────
+       O plugin de atualização traz `androidx.work` 2.10, e essa versão exige
+       ser compilada contra a API 35. O Capacitor 6 fixa o plugin do Android em
+       8.2.1, e ele recusa qualquer coisa acima da 34: o build para antes de
+       começar, com uma mensagem que sugere subir as duas coisas.
+
+       Subir as duas é trocar o toolchain inteiro do projeto por causa de uma
+       biblioteca transitiva. A 2.9.1 tem o que o plugin usa — agendar um
+       trabalho em segundo plano — e compila contra a 34.
+
+       Some no dia em que este projeto for para o Capacitor 7, que já nasce na
+       35. Aí é apagar estas linhas e conferir que o build passa. */
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.work:work-runtime:2.9.1'
+        }
+    }
 }
 
 task clean(type: Delete) {
