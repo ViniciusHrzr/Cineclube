@@ -93,29 +93,65 @@ const QUALITY_MS = 3000;
    passa a ser da rede, e não de um palpite feito antes de a rede existir. */
 const VIDEO_BITRATE = 8_000_000;
 
-/* ── e o teto é POR PESSOA, numa malha ────────────────────────────────────
-   Cada espectador recebe a própria cópia, codificada à parte: quatro pessoas a
-   oito megabits são trinta e dois saindo daquela máquina. Uma fibra doméstica
-   comum sobe cinquenta — e cada conexão, sozinha, não sabe das outras: as
-   quatro medem a rede, as quatro sobem até o teto, as quatro enchem o cano
-   juntas, e aí todas perdem pacote ao mesmo tempo e todas despencam juntas.
-   Passado o susto, as quatro sobem de novo. É essa a oscilação que se vê como
-   "tenta ficar HD, não consegue, e depois de um tempo volta".
+/* ══════════════════════════════════════════════════════════════════════════
+   O ORÇAMENTO DE SUBIDA — o teto é por PESSOA, e ninguém sabe quanto cabe.
 
-   O orçamento é a única peça que enxerga o conjunto: doze megabits repartidos
-   entre quem está recebendo. Com uma pessoa ele nem aparece — oito continuam
-   sendo o teto. Com quatro, cada uma leva três, e três megabits de 720p estável
-   valem mais que 1080p piscando.
+   Cada espectador recebe a própria cópia, codificada à parte: quatro pessoas a
+   oito megabits são trinta e dois saindo daquela máquina. E cada conexão,
+   sozinha, não sabe das outras — as quatro medem a rede, as quatro sobem até o
+   teto, as quatro enchem o cano juntas, e aí todas perdem pacote ao mesmo tempo
+   e todas despencam juntas. Passado o susto, as quatro sobem de novo. É essa a
+   oscilação que se vê como "tenta ficar HD, não consegue, e depois volta".
+
+   O orçamento é a única peça que enxerga o conjunto: um total repartido entre
+   quem está recebendo. O que ele NÃO pode ser é um número fixo — uma casa sobe
+   cem megabits e outra sobe oito, e qualquer constante aqui seria generosa
+   demais para uma e mesquinha para a outra. Então ele é MEDIDO.
+
+   ── como ele se acha ────────────────────────────────────────────────────
+   Começa conservador e anda a cada três segundos, junto com a medição que a
+   tela já faz:
+
+   · **encolhe** quando alguma cópia diz que quem a segura é a banda. Essa
+     palavra é do codificador, não nossa, e ele só a diz quando o estimador da
+     rede é o limite — nunca por causa deste teto. Encolher para 85% do que
+     estava SAINDO, e não do que estava permitido: é o que a rede acabou de
+     provar que aguenta.
+   · **cresce** 15% quando ninguém reclamou e o que sai já encosta no que é
+     permitido. Encostar é a única prova de que existe demanda; crescer sem ela
+     seria aumentar um teto que ninguém está usando.
+   · e não passa do que os codificadores usariam de qualquer jeito — oito
+     megabits por pessoa —, nem de um teto de sanidade.
+
+   Em uma noite normal isso acha sozinho a subida de quem transmite: numa casa
+   de cem megabits ele sobe até os codificadores estarem satisfeitos; numa de
+   oito ele para bem antes, sem ninguém configurar nada.
 
    O piso existe porque repartir sem fundo vira sala cheia e imagem nenhuma:
    abaixo de um megabit e meio a imagem deixa de ser assistível, e nesse ponto a
-   resposta certa é o clube ser menor, não a imagem ser pior. */
-const UPLINK_BUDGET = 12_000_000;
+   resposta certa é o clube ser menor, não a imagem ser pior.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Conservador de propósito: o primeiro minuto de uma sessão é quando todo mundo
+   está olhando, e é melhor subir a partir de uma imagem boa do que descer de
+   uma imagem quebrada. */
+const UPLINK_START = 12_000_000;
+const UPLINK_CEIL = 60_000_000;
+const UPLINK_FLOOR = 3_000_000;
 const VIDEO_FLOOR = 1_500_000;
+/** Passos do orçamento: sobe devagar, desce no susto. */
+const GROW = 1.15;
+const BACKOFF = 0.85;
+/* Quanto tempo uma conexão nova tem antes de a palavra dela valer para o
+   orçamento. O WebRTC começa deliberadamente baixo e sobe medindo, e durante
+   essa subida o codificador diz "banda" o tempo todo — não porque a rede está
+   cheia, mas porque ele ainda quer mais do que o estimador liberou. Encolher o
+   orçamento aí seria a sessão se estrangular exatamente no minuto em que todo
+   mundo está olhando. */
+const RAMP_MS = 15_000;
 
 /** O teto de cada cópia, com este tanto de gente recebendo. */
-const shareOf = (peers: number) =>
-  Math.max(VIDEO_FLOOR, Math.min(VIDEO_BITRATE, Math.round(UPLINK_BUDGET / Math.max(1, peers))));
+const shareOf = (peers: number, budget: number) =>
+  Math.max(VIDEO_FLOOR, Math.min(VIDEO_BITRATE, Math.round(budget / Math.max(1, peers))));
 /* Opus com música. O padrão de uma chamada fica perto de 32 kbps porque o
    assunto é voz; 192 kbps em estéreo é o que faz trilha sonora soar como
    trilha sonora. */
@@ -222,7 +258,7 @@ const DEAD = new Set(['failed', 'closed']);
    filme de um borrão. `degradationPreference` é a segunda metade: sob aperto,
    `balanced` reparte a perda entre nitidez e fluidez em vez de despencar a
    resolução, que é o comportamento padrão para conteúdo de tela. */
-async function tune(sender: RTCRtpSender, peers = 1) {
+async function tune(sender: RTCRtpSender, ceiling = VIDEO_BITRATE) {
   const kind = sender.track?.kind;
   try {
     const params = sender.getParameters();
@@ -231,7 +267,7 @@ async function tune(sender: RTCRtpSender, peers = 1) {
     if (!params.encodings?.length) params.encodings = [{}];
     if (kind === 'video') {
       params.degradationPreference = 'balanced';
-      params.encodings[0].maxBitrate = shareOf(peers);
+      params.encodings[0].maxBitrate = ceiling;
       params.encodings[0].maxFramerate = 30;
       /* Explícito porque o padrão para tela é reduzir: a captura já vem no
          tamanho certo, e encolhê-la é jogar fora o que se quis mostrar. */
@@ -387,6 +423,12 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     void ice();
   }, [ice]);
 
+  /* Quanto este lado acredita que cabe na subida dele, agora. Ver o bloco do
+     orçamento lá em cima; quem o move é o medidor. */
+  const budget = useRef(UPLINK_START);
+  /** O teto de cada cópia com o orçamento de agora e a gente de agora. */
+  const ceiling = useCallback(() => shareOf(peerMap.current.size, budget.current), []);
+
   /* ── repartir o cano de novo ─────────────────────────────────────────────
      Chamado sempre que o número de pessoas recebendo muda: o teto de cada cópia
      é o orçamento dividido por elas, e uma pessoa entrando ou saindo muda o
@@ -396,13 +438,13 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      Custa uma escrita de parâmetro por conexão e não renegocia nada: o teto é
      do codificador, não do que foi combinado com o outro lado. */
   const retune = useCallback(() => {
-    const quantos = peerMap.current.size;
+    const teto = ceiling();
     for (const { pc } of peerMap.current.values()) {
       for (const sender of pc.getSenders()) {
-        if (sender.track?.kind === 'video') void tune(sender, quantos);
+        if (sender.track?.kind === 'video') void tune(sender, teto);
       }
     }
-  }, []);
+  }, [ceiling]);
 
   /** Fecha uma conexão e esquece o que era dela. */
   const forget = useCallback(
@@ -441,6 +483,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     peerMap.current.clear();
     early.current.clear();
     setPeers(0);
+    budget.current = UPLINK_START;
     for (const track of localRef.current?.getTracks() ?? []) track.stop();
     localRef.current = null;
     /* A faixa escolhida à mão não pertence à captura, então ela não morre
@@ -576,7 +619,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
 
           const peer = await connect(from, epoch);
           for (const track of local.getTracks()) {
-            await tune(peer.pc.addTrack(track, local), peerMap.current.size);
+            await tune(peer.pc.addTrack(track, local), ceiling());
           }
           const offer = await peer.pc.createOffer();
           /* O estéreo é pedido aqui, na oferta, porque é ela que declara o que
@@ -660,7 +703,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         setError((e as Error).message);
       }
     },
-    [connect, flush, host, hostId, retune, sendSignal]
+    [ceiling, connect, flush, host, hostId, retune, sendSignal]
   );
 
   useEffect(() => onSignal((from, kind, data) => void heard(from, kind, data)), [onSignal, heard]);
@@ -959,7 +1002,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           continue;
         }
         if (!faixa || !localRef.current) continue;
-        await tune(peer.pc.addTrack(faixa, localRef.current), peerMap.current.size);
+        await tune(peer.pc.addTrack(faixa, localRef.current), ceiling());
         try {
           const offer = await peer.pc.createOffer();
           const dito = { type: offer.type, sdp: withStartBitrate(inStereo(offer.sdp ?? '')) };
@@ -1036,6 +1079,45 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         .map(t => String(t.stat.qualityLimitationReason ?? 'none'))
         .filter(r => r !== 'none');
 
+      /* As mesmas palavras, só das conexões que já passaram da subida inicial.
+         São estas que mexem no orçamento; a de cima é o que a tela mostra, e lá
+         a subida inicial é informação verdadeira. */
+      const maduras = tudo
+        .filter(t => {
+          const held = peerMap.current.get(t.withId);
+          return !!held?.up && agora - held.up > RAMP_MS;
+        })
+        .map(t => String(t.stat.qualityLimitationReason ?? 'none'));
+
+      /* ── o orçamento anda aqui ─────────────────────────────────────────
+         Só de quem transmite: quem assiste não tem teto para mexer. A palavra
+         "bandwidth" é do codificador e ele só a diz quando o estimador da rede
+         é o limite — este teto nunca aparece como banda, então não há risco de
+         o orçamento encolher por causa de si mesmo.
+
+         Descer para 85% do que estava SAINDO é o ponto: é o que a rede acabou
+         de provar que aguenta. Subir 15% só quando o que sai encosta no que é
+         permitido, que é a única prova de que existe demanda. */
+      if (host) {
+        const saindo = kbps * 1000;
+        const permitido = shareOf(tudo.length, budget.current) * tudo.length;
+        const antes = budget.current;
+
+        if (maduras.includes('bandwidth')) {
+          budget.current = Math.max(UPLINK_FLOOR, Math.round(saindo * BACKOFF));
+        } else if (saindo >= permitido * 0.85) {
+          /* Nunca além de um passo acima do que JÁ SAIU. Crescer sobre o teto
+             anterior daria um orçamento de sessenta megabits depois de meio
+             minuto com uma pessoa só — um número que ninguém provou, e que a
+             segunda pessoa a entrar cobraria de uma vez. Sobre o que saiu, o
+             orçamento é sempre lastreado. */
+          budget.current = Math.min(UPLINK_CEIL, Math.max(budget.current, Math.round(saindo * GROW)));
+        }
+
+        /* Reaplicado só quando a mudança vale uma escrita em toda conexão. */
+        if (Math.abs(budget.current - antes) > antes * 0.1) retune();
+      }
+
       setQuality({
         width: Number(pior.stat.frameWidth) || 0,
         height: Number(pior.stat.frameHeight) || 0,
@@ -1059,7 +1141,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
       window.clearInterval(id);
       lastBytes.current.clear();
     };
-  }, [hostId, host]);
+  }, [hostId, host, retune]);
 
   /* ── pedir imagem, e continuar pedindo ───────────────────────────────────
      O laço inteiro de quem assiste, e ele pergunta a coisa certa: não "tenho
