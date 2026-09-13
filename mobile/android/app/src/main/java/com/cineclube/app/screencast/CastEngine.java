@@ -377,6 +377,12 @@ class CastEngine {
 
     switch (kind) {
       case "want":
+        /* Sem pergunta nenhuma: todo pedido que chega aqui remonta a conexão.
+           QUANDO pedir é decisão da página — um pedido repetido enquanto a
+           oferta ainda está a caminho derruba a oferta que está a caminho, e o
+           filtro que separa repetição de tentativa nova mora lá, do lado que
+           conhece o protocolo inteiro. Ver "as armadilhas" em lib/liveshare.ts.
+           Duplicar a regra aqui seria mantê-la em dois lugares. */
         offerTo(from);
         break;
       case "answer": {

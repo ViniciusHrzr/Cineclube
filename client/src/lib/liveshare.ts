@@ -39,6 +39,25 @@ import { inShell, plugin } from '@/lib/shell';
 
    Agora um pedido repetido para uma conexão que ainda está tentando é IGNORADO,
    e o espectador repete por não ter par CONECTADO — não por não ter par.
+
+   ── 3. os dois lados desistindo em relógios diferentes ────────────────────
+   O remédio da armadilha 2 tinha o defeito dela ao contrário. O espectador
+   desiste em doze segundos e monta um par novo; quem transmite não fica sabendo
+   — fechar uma conexão não avisa o outro lado — e continua com um par que, para
+   ele, ainda está tentando. Todo pedido novo caía na regra da armadilha 2 e era
+   ignorado, até o par velho morrer sozinho, o que leva o tempo que a rede
+   quiser. Tela preta que destrava sozinha um minuto depois, ou não destrava.
+
+   Agora o pedido diz de QUAL tentativa ele é. Repetição da mesma tentativa
+   continua ignorada; uma tentativa nova derruba o par velho e recomeça. Os dois
+   lados param de depender de terem o mesmo relógio.
+
+   ── 4. conectado, e preto ────────────────────────────────────────────────
+   Conexão de pé e nenhum quadro chegando é o mesmo desenho de "está carregando"
+   para sempre. O espectador agora olha para a FAIXA e não só para a conexão:
+   uma faixa remota nasce muda e desmuta no primeiro quadro. Passado o prazo sem
+   nenhum, o par é considerado perdido e a tentativa recomeça — que é a única
+   coisa a fazer e era exatamente o que não acontecia.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** De quanto em quanto o espectador reavalia se precisa pedir de novo. */
@@ -48,6 +67,13 @@ const TICK_MS = 2000;
    viagens pelo servidor; abaixo disso o remédio vira a doença — foi o que a
    armadilha 2 fazia com quatro segundos. */
 const HANDSHAKE_MS = 12_000;
+
+/* E quanto tempo uma conexão JÁ DE PÉ tem para entregar o primeiro quadro. A
+   conta é outra: aqui a rede achou caminho, e o que falta é imagem. Vale só até
+   o primeiro quadro — depois dele, quem manda é o estado da conexão. Uma tela
+   parada pode ficar minutos sem mandar nada, e derrubar por silêncio ali seria
+   trocar uma imagem congelada por um recomeço a cada vinte segundos. */
+const FIRST_FRAME_MS = 10_000;
 
 /* O que o navegador é instruído a priorizar ao codificar. `motion` diz "prefira
    manter o movimento fluido a manter cada pixel nítido", que é a troca certa
@@ -128,7 +154,16 @@ type Peer = {
   queued: RTCIceCandidateInit[];
   /** Quando o aperto de mão começou, para saber quando ele demorou demais. */
   since: number;
+  /** De qual tentativa do espectador este par é. Ver a armadilha 3. */
+  epoch: number;
+  /** Quando a conexão ficou de pé, que é quando o prazo do quadro começa. */
+  up?: number;
+  /** Já chegou imagem por aqui. */
+  frames?: boolean;
 };
+
+/** De qual tentativa um pedido é. Um cliente antigo não diz, e zero é a dele. */
+const epochOf = (data: unknown) => Number((data as { epoch?: number })?.epoch ?? 0) || 0;
 
 const DEAD = new Set(['failed', 'closed']);
 
@@ -256,6 +291,18 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      Esta marca é o que faz o resto do arquivo saber que as conexões desta
      ponta não estão em `peerMap` — elas estão do outro lado da ponte. */
   const nativo = useRef(false);
+  /* Qual tentativa de receber esta é. Sobe cada vez que este lado desiste de um
+     par e recomeça; viaja no pedido para quem transmite saber que o par antigo
+     dele não serve mais. Ver a armadilha 3.
+
+     Começa no relógio e não em 1 porque ela precisa subir TAMBÉM entre uma
+     montagem e outra: recarregar a página fecha os pares deste lado sem avisar
+     ninguém, e uma tentativa que recomeçasse do 1 seria menor que a que quem
+     transmite tem guardada — ignorada, e a tela preta de volta. */
+  const attempt = useRef(Date.now());
+  /* O último pedido de cada pessoa que já atravessou a ponte para o motor
+     nativo. Ver o filtro em `heard`. */
+  const nativeAsked = useRef(new Map<string, { epoch: number; at: number }>());
   /** Os ouvintes da ponte, para poder desmontá-los. */
   const nativeSignals = useRef<{ remove?: () => void } | null>(null);
   const nativePeers = useRef<{ remove?: () => void } | null>(null);
@@ -313,6 +360,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         void Promise.resolve(held.current).then(h => h?.remove?.());
         held.current = null;
       }
+      nativeAsked.current.clear();
       setThumb(null);
     }
 
@@ -339,11 +387,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
      O mesmo objeto serve para transmitir e para receber; o que muda é quem
      chama primeiro e quem põe faixa nele. */
   const connect = useCallback(
-    async (withId: string) => {
+    async (withId: string, epoch = 0) => {
       forget(withId);
 
       const pc = new RTCPeerConnection(await ice());
-      const peer: Peer = { pc, queued: early.current.get(withId) ?? [], since: Date.now() };
+      const peer: Peer = { pc, queued: early.current.get(withId) ?? [], since: Date.now(), epoch };
       early.current.delete(withId);
       peerMap.current.set(withId, peer);
 
@@ -358,6 +406,9 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         if (peerMap.current.get(withId)?.pc !== pc) return;
 
         if (st === 'connected') {
+          /* O relógio do primeiro quadro começa aqui, e não quando o par
+             nasceu: o que se está medindo é a imagem, e não a rede. */
+          if (!peer.up) peer.up = Date.now();
           setError(null);
           setDetail('conectado');
         } else if (st === 'connecting') {
@@ -407,6 +458,25 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
            tela de outra pessoa é um espectador comum, com o WebRTC do WebView,
            que é o caminho de baixo. */
         if (nativo.current && kind !== 'offer') {
+          /* ── a armadilha 2, do lado de lá da ponte ────────────────────
+             O motor nativo REMONTA a conexão a cada pedido — ele obedece, e a
+             regra de quando pedir é desta ponta. Sem este filtro, um pedido
+             repetido enquanto a oferta ainda está a caminho derrubava a oferta
+             que estava a caminho, e um espectador que demorasse mais de dois
+             segundos para receber a primeira nunca recebia nenhuma: pedia de
+             novo, derrubava de novo, para sempre. É a tela preta que aparecia
+             para uma pessoa e não para a do lado.
+
+             A mesma regra do caminho de cima, com uma diferença: daqui não se
+             enxerga o estado das conexões de lá, então o que vale é o prazo do
+             aperto de mão. Passado ele, ou vindo tentativa nova, o pedido
+             atravessa. */
+          if (kind === 'want') {
+            const epoch = epochOf(data);
+            const held = nativeAsked.current.get(from);
+            if (held && epoch <= held.epoch && Date.now() - held.at < HANDSHAKE_MS) return;
+            nativeAsked.current.set(from, { epoch, at: Date.now() });
+          }
           await cast()?.signal({ from, kind, data: data ?? {} });
           return;
         }
@@ -416,14 +486,22 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           const local = localRef.current;
           if (!local) return; // Não estou transmitindo; o pedido não é comigo.
 
-          /* A armadilha 2. Um pedido repetido enquanto a conexão anterior
-             ainda está tentando não é um pedido novo — é a mesma pessoa
-             perguntando de novo porque ainda não viu resposta. Remontar aqui
-             fecharia o par para o qual a resposta dela está a caminho. */
-          const held = peerMap.current.get(from);
-          if (held && !DEAD.has(held.pc.connectionState)) return;
+          /* As armadilhas 2 e 3, que são a mesma pergunta: este pedido é uma
+             REPETIÇÃO ou uma TENTATIVA NOVA?
 
-          const peer = await connect(from);
+             Repetição — a mesma pessoa perguntando de novo porque ainda não viu
+             resposta — é ignorada enquanto o par anterior ainda tenta: remontar
+             fecharia o par para o qual a resposta dela está a caminho.
+
+             Tentativa nova é o contrário: o outro lado já desistiu e fechou o
+             par dele. Continuar com o nosso é ficar de pé sozinho — e era isso
+             que deixava a tela preta até uma conexão morta perceber que
+             morreu. */
+          const epoch = epochOf(data);
+          const held = peerMap.current.get(from);
+          if (held && !DEAD.has(held.pc.connectionState) && epoch <= held.epoch) return;
+
+          const peer = await connect(from, epoch);
           for (const track of local.getTracks()) await tune(peer.pc.addTrack(track, local));
           const offer = await peer.pc.createOffer();
           /* O estéreo é pedido aqui, na oferta, porque é ela que declara o que
@@ -827,25 +905,62 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     if (!hostId || host) return;
     let alive = true;
 
+    /* Quando esta tentativa começou a pedir. Serve ao caso em que NUNCA houve
+       par deste lado: a oferta se perdeu no caminho, e sem isto o espectador
+       ficaria repetindo a mesma tentativa para sempre — que é justamente a que
+       quem transmite aprendeu a ignorar. */
+    let pedindoDesde = Date.now();
+    const recomecar = (agora: number) => {
+      attempt.current += 1;
+      pedindoDesde = agora;
+    };
+
     const tick = () => {
       if (!alive) return;
       const peer = peerMap.current.get(hostId);
+      const agora = Date.now();
 
       if (peer) {
         const st = peer.pc.connectionState;
-        if (st === 'connected') return;
-        /* Ainda dentro do prazo do aperto de mão: esperar é o certo. Repetir
-           aqui é o que derrubava a resposta que estava a caminho. */
-        if (!DEAD.has(st) && Date.now() - peer.since < HANDSHAKE_MS) return;
-        /* Passou do prazo, ou morreu. Este par não vai vingar; fora ele antes
-           de pedir de novo, senão o transmissor ignora o pedido novo por já
-           haver um par deste lado. */
+
+        /* A faixa, e não a conexão: uma faixa remota nasce muda e desmuta no
+           primeiro quadro. É a diferença entre "conectado" e "chegando
+           imagem", que é a diferença entre o que a tela dizia e o que a pessoa
+           estava vendo. */
+        const faixa = peer.pc.getReceivers().find(r => r.track?.kind === 'video')?.track;
+        if (st === 'connected' && faixa && !faixa.muted) {
+          peer.frames = true;
+          setDetail('recebendo');
+          return;
+        }
+
+        /* Já houve imagem por aqui: daqui para a frente quem manda é o estado
+           da conexão. Uma tela parada fica minutos sem mandar quadro, e
+           derrubar por silêncio seria recomeçar a cada vinte segundos. */
+        if (peer.frames && !DEAD.has(st)) return;
+
+        const prazo = st === 'connected' ? FIRST_FRAME_MS : HANDSHAKE_MS;
+        const desde = st === 'connected' ? (peer.up ?? peer.since) : peer.since;
+        if (!DEAD.has(st) && agora - desde < prazo) {
+          if (st === 'connected') setDetail('conectado; esperando o primeiro quadro…');
+          return;
+        }
+
+        /* Passou do prazo, morreu, ou conectou e não veio imagem. Este par não
+           vai vingar: fora ele, e o pedido seguinte é de outra TENTATIVA — é
+           assim que quem transmite sabe que pode derrubar o par dele em vez de
+           ignorar o pedido por já ter um. */
         forget(hostId);
         setStream(null);
+        recomecar(agora);
+      } else if (agora - pedindoDesde >= HANDSHAKE_MS) {
+        /* Pedimos e não veio oferta nenhuma. Tentativa nova, senão o pedido
+           seguinte é idêntico ao que já foi ignorado. */
+        recomecar(agora);
       }
 
       setDetail('pedindo a imagem…');
-      void sendSignal(hostId, 'want');
+      void sendSignal(hostId, 'want', { epoch: attempt.current });
     };
 
     tick();
