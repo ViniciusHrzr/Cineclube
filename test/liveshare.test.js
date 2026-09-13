@@ -73,16 +73,41 @@ test('a transmissão aparece no snapshot, que é como cada aba sabe o próprio p
   });
 });
 
-/* ── e ela morre com quem estava nela ─────────────────────────────────── */
+/* ── e ela morre com quem estava nela, mas não na mesma hora ──────────────
+   O vídeo não passa pelo servidor: vai direto de máquina a máquina, e continua
+   indo enquanto a página de quem transmite estiver viva. O que passa por aqui
+   são os recados — e essa conexão cai por muito menos do que uma transmissão:
+   tela bloqueada, aplicativo em segundo plano, aba trocada, rede piscando.
+   Apagar a transmissão na hora era anunciar para a sala inteira o fim de uma
+   coisa que continuava chegando. */
 
-test('quem transmitia fechou a aba: a sala para de apontar para uma fonte que não existe', () => {
+test('quem transmitia perdeu a conexão: a sala espera antes de desistir dele', () => {
   const s = socket();
   screening.attach(room, session('p1', 'Vinicius'));
   screening.subscribe(room, s.res, 'p1');
   screening.startLive(room, session('p1', 'Vinicius'), T0);
 
-  screening.detach(room, 'p1');
+  screening.detach(room, 'p1', T0);
+  assert.equal(room.live?.hostId, 'p1');
+
+  /* Dentro do prazo nada acontece; passado ele, a sala para de apontar para uma
+     fonte que não existe. */
+  screening.expireAwol(T0 + screening.LIVE_GRACE_MS);
+  assert.equal(room.live?.hostId, 'p1');
+  screening.expireAwol(T0 + screening.LIVE_GRACE_MS + 1);
   assert.equal(room.live, null);
+});
+
+test('reconectar dentro do prazo é como nunca ter saído', () => {
+  screening.attach(room, session('p1', 'Vinicius'));
+  screening.startLive(room, session('p1', 'Vinicius'), T0);
+
+  screening.detach(room, 'p1', T0);
+  screening.attach(room, session('p1', 'Vinicius'));
+
+  /* E o prazo de quem voltou não fica pendurado esperando expirar. */
+  screening.expireAwol(T0 + screening.LIVE_GRACE_MS * 10);
+  assert.equal(room.live?.hostId, 'p1');
 });
 
 test('uma segunda aba da mesma pessoa não derruba a transmissão dela', () => {
@@ -90,9 +115,10 @@ test('uma segunda aba da mesma pessoa não derruba a transmissão dela', () => {
   screening.attach(room, session('p1', 'Vinicius'));
   screening.startLive(room, session('p1', 'Vinicius'), T0);
 
-  screening.detach(room, 'p1');
+  screening.detach(room, 'p1', T0);
   assert.equal(room.live?.hostId, 'p1');
-  screening.detach(room, 'p1');
+  screening.detach(room, 'p1', T0);
+  screening.expireAwol(T0 + screening.LIVE_GRACE_MS + 1);
   assert.equal(room.live, null);
 });
 

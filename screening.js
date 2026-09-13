@@ -38,6 +38,28 @@ const PING_MS = 20_000;
 /** The unprompted correction: late and drifting clients converge on this. */
 const SYNC_MS = 5000;
 
+/* ── quem transmite tem direito a sumir por um minuto ─────────────────────
+   A transmissão morria no instante em que a última conexão de quem transmite
+   fechava. O raciocínio era bom — uma sala apontando para uma fonte que não
+   existe é todo mundo esperando um vídeo que ninguém vai mandar —, e estava
+   errado sobre uma coisa: fechar a CONEXÃO DE RECADOS não é a mesma coisa que
+   parar de transmitir.
+
+   O vídeo não passa por aqui. Ele vai direto de máquina a máquina, e continua
+   indo enquanto a página de quem transmite estiver viva. O que passa por aqui
+   são os recados do aperto de mão — e essa conexão cai por muito menos: o
+   telefone bloqueia a tela, o aplicativo vai para segundo plano, o navegador
+   troca de aba, a rede pisca, um proxy corta uma conexão que julgou ociosa. Em
+   todos esses a imagem continuava chegando, e o servidor anunciava para a sala
+   inteira que ela tinha acabado.
+
+   Agora ele espera. Quem volta antes do prazo não deixou de transmitir coisa
+   nenhuma; quem não volta perdeu a página junto, e aí a sala está mesmo
+   apontando para o nada. Um minuto é mais do que qualquer reconexão precisa —
+   a do cliente tenta em um, dois, três segundos — e menos do que a paciência
+   de quem está esperando um filme. */
+const LIVE_GRACE_MS = 60_000;
+
 /* A file usually runs longer than the runtime TMDB reports — different cuts,
    credits, an extra frame of black. The clamp is a guard against nonsense, not
    a statement about the film, so it leaves room. */
@@ -227,6 +249,7 @@ function open(room, movie, host = null, now = Date.now()) {
   // E a transmissão pela mesma razão: quem estava com a tela no ar estava com
   // ela para o filme anterior.
   room.live = null;
+  room.liveAwol = null;
   stamp(room, now);
   broadcastState(room);
 }
@@ -312,6 +335,7 @@ function startLive(room, session, now = Date.now()) {
 function stopLive(room, reviewerId, now = Date.now()) {
   if (!room.live || room.live.hostId !== reviewerId) return false;
   room.live = null;
+  room.liveAwol = null;
   stamp(room, now);
   broadcastState(room);
   return true;
@@ -342,6 +366,7 @@ function close(room, now = Date.now()) {
   /* Encerrar a sessão derruba a transmissão junto. Uma tela ao vivo sem filme
      aberto seria uma sala escura com alguém ainda no ar dentro dela. */
   room.live = null;
+  room.liveAwol = null;
   // The viewers survive: they are the people with a connection open, and
   // closing the film does not disconnect anybody.
   for (const viewer of room.viewers.values()) {
@@ -440,6 +465,8 @@ function attach(room, session) {
     since: Date.now(),
   };
   room.viewers.set(session.reviewer_id, viewer);
+  /* Voltou dentro do prazo: nunca chegou a ter ido embora. */
+  if (room.live?.hostId === session.reviewer_id) room.liveAwol = null;
   /* Somebody arriving is news for the people already here. Without this the
      room only redraws on the next change — and the sync frames carry no
      viewers, so a member who joined during a quiet stretch could stay invisible
@@ -451,16 +478,15 @@ function attach(room, session) {
 /* Sair não mexe no filme. Havia aqui uma retomada, porque a sala se prendia na
    roda de quem saiu; não se prende mais. O que sai daqui é uma pessoa do
    painel. */
-function detach(room, reviewerId) {
+function detach(room, reviewerId, now = Date.now()) {
   const viewer = room.viewers.get(reviewerId);
   if (!viewer) return;
   viewer.streams -= 1;
   if (viewer.streams > 0) return;
   room.viewers.delete(reviewerId);
-  /* Quem transmitia foi embora, e com ele foi a imagem: as conexões saíram da
-     máquina dele. Deixar o campo de pé seria a sala apontando para uma fonte
-     que não existe, e cada pessoa esperando um vídeo que ninguém vai mandar. */
-  if (room.live?.hostId === reviewerId) room.live = null;
+  /* Quem transmitia perdeu a conexão de recados — o que não quer dizer que
+     parou de transmitir. Marcado e não apagado: ver LIVE_GRACE_MS. */
+  if (room.live?.hostId === reviewerId) room.liveAwol = now;
   /* O dono fechou a aba, e o controle vai para quem chegou primeiro entre os que
      ficaram. Sem isto o clube herda uma sessão que ninguém pode pausar, e a
      única saída seria abrir o filme de novo. */
@@ -604,10 +630,25 @@ function startTimers() {
         for (const res of room.streams) write(res, frame);
       }
     }, SYNC_MS),
+    setInterval(() => expireAwol(), SYNC_MS),
   ];
   // Timers must not be the reason the process refuses to exit — the tests
   // import this module and then expect `node --test` to finish.
   timers.forEach(t => t.unref?.());
+}
+
+/* Quem sumiu e não voltou. Separado do temporizador para os testes poderem
+   adiantar o relógio em vez de esperar um minuto de verdade. */
+function expireAwol(now = Date.now()) {
+  for (const room of rooms.values()) {
+    if (!room.live || !room.liveAwol) continue;
+    if (now - room.liveAwol <= LIVE_GRACE_MS) continue;
+    room.live = null;
+    room.liveAwol = null;
+    stamp(room, now);
+    broadcastState(room);
+    sweep(room);
+  }
 }
 
 function stopTimers() {
@@ -675,6 +716,8 @@ module.exports = {
   setSubtitle,
   startLive,
   stopLive,
+  expireAwol,
+  LIVE_GRACE_MS,
   signal,
   sendTo,
   open,

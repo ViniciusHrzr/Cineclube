@@ -324,8 +324,18 @@ export function ScreeningScreen({
      montou ficaria esperando por uma tela que não existe mais. */
   const daSala = liveShare.role === 'host' || torrent.status.phase === 'seeding';
   useEffect(() => {
-    onDuty?.(daSala);
-    return () => onDuty?.(false);
+    if (daSala) {
+      onDuty?.(true);
+      return;
+    }
+    /* A entrada é imediata e a SAÍDA espera. A sala chega por uma conexão que
+       reconecta, e num piscar dela o estado volta por um instante sem
+       transmissão nenhuma — se isso desligasse o serviço na hora, e a pessoa
+       estivesse noutra aba, a tela seria desmontada no meio do piscar e a
+       captura morreria junto, dessa vez de verdade. Cinco segundos cobrem
+       qualquer reconexão e não seguram nada que tenha acabado mesmo. */
+    const id = window.setTimeout(() => onDuty?.(false), 5000);
+    return () => window.clearTimeout(id);
   }, [daSala, onDuty]);
   /** A sala inteira muda de natureza enquanto isto é verdade. */
   const liveOn = state.live !== null;
