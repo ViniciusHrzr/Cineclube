@@ -69,6 +69,12 @@ const episodeOf = row => (row.episode === SEASON_ROW ? null : row.episode);
 /** O dia em que a coisa aconteceu, que é a janela do agrupamento. */
 const dayOf = at => String(at || '').slice(0, 10);
 
+/* Qual dos dois vem antes na série. A ordem do agrupamento é esta e não a da
+   consulta: marcar seis episódios de uma vez grava os seis no mesmo SEGUNDO, e
+   `ORDER BY` com empate devolve o que o banco quiser — então o começo e o fim
+   do trecho saíam trocados conforme a sorte. Temporada e episódio não empatam. */
+const antes = (a, b) => a.season < b.season || (a.season === b.season && a.episode < b.episode);
+
 router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   const [takes, comments] = await Promise.all([
     recentTakes.all(req.club.id),
@@ -112,21 +118,32 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     const aberta = juntando.get(chave);
     if (aberta) {
       aberta.count += 1;
-      /* O menor número visto vira o começo do trecho: "T1E01 a T1E06" é o que
-         se lê de uma maratona, e a consulta chega em ordem decrescente. */
-      aberta.from = { season: row.season, episode: row.episode };
+      const aqui = { season: row.season, episode: row.episode };
+      if (antes(aqui, aberta.from)) aberta.from = aqui;
+      if (antes(aberta.to, aqui)) {
+        aberta.to = { ...aqui, title: row.episode_title ?? null };
+        aberta.takeId = row.id;
+      }
       continue;
     }
     const linha = {
       id: `v:${row.id}`,
       kind: 'seen',
       at,
+      /* Onde o polegar e a conversa da placa pousam. Uma sessão de seis
+         episódios não tem linha própria em tabela nenhuma — ela é um
+         agrupamento feito aqui —, então o alvo tem de ser uma marca de verdade,
+         e é a do ÚLTIMO episódio do trecho: é o que a placa nomeia quando conta
+         um só, e é o único que a pessoa não desmarca ao voltar atrás um
+         episódio. Desmarcar leva junto o que se disse ali, do mesmo jeito que
+         apagar uma ficha leva. */
+      takeId: row.id,
       actor: actorOf(row),
       showId: Number(row.show_id),
       showTitle: row.show_title,
       showPoster: row.show_poster,
       genre: row.show_genre,
-      /* O episódio mais NOVO da sessão, que é o que a linha nomeia quando ela
+      /* O último episódio da sessão, que é o que a linha nomeia quando ela
          conta um só. */
       to: { season: row.season, episode: row.episode, title: row.episode_title ?? null },
       from: { season: row.season, episode: row.episode },

@@ -509,6 +509,8 @@ export type ShowFeedEvent = {
   season?: number;
   episode?: number | null;
   episodeTitle?: string | null;
+  /* Em `seen` também: a marca do último episódio da sessão, que é onde o
+     polegar e a conversa daquela placa pousam. Ver routes/showsFeed.js. */
   takeId?: string;
   final?: number;
   ends?: { high: { name: string; value: number }; low: { name: string; value: number } } | null;

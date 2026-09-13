@@ -2,9 +2,10 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bookmark, Check, Info, Trash2, X } from 'lucide-react';
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card-effect';
-import { Fault, IconKey, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
-import { api, fmt, runtimeOf, type Movie } from '@/lib/api';
+import { Fault, IconKey, Key, Poster, Reel, Skeleton, Strip, TrailerKey } from '@/components/bits';
+import { api, fmt, initialsOf, reelColor, runtimeOf, type Movie, type Review } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
+import { useWorld } from '@/lib/world';
 import { goesToService, watchDoor } from '@/lib/watch';
 
 /* ── the film cell ────────────────────────────────────────────────────────
@@ -137,17 +138,23 @@ export function ProjectionSheet({
   movieId,
   clubAvg,
   clubCount,
+  takes,
   inWatchlist,
   onClose,
   onRate,
+  onOpenTake,
   onToggleWatch,
 }: {
   movieId: number | null;
   clubAvg?: number;
   clubCount?: number;
+  /** O que o clube já escreveu sobre este filme. Ver `Roster`. */
+  takes?: Review[];
   inWatchlist: boolean;
   onClose: () => void;
   onRate: (id: number) => void;
+  /** Levar a uma dessas fichas, no acervo, junto das outras do mesmo filme. */
+  onOpenTake?: (reviewId: string) => void;
   onToggleWatch: (m: Movie) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -278,6 +285,8 @@ export function ProjectionSheet({
 
               <Verdicts club={clubAvg} clubCount={clubCount} crowd={movie.crowd} />
 
+              <Roster takes={takes} onOpen={onOpenTake} />
+
               <p className="mt-4 max-w-[66ch] text-[13.5px] leading-relaxed text-ink-dim">
                 {movie.overview || 'Sem sinopse disponível no TMDB.'}
               </p>
@@ -309,6 +318,55 @@ export function ProjectionSheet({
         )}
       </div>
     </dialog>
+  );
+}
+
+/* ── quem no clube já avaliou ─────────────────────────────────────────────
+   A média acima é o clube falando com uma voz só, e essa voz é uma conta. Quem
+   chega a esta folha por um mural — onde a linha era de uma pessoa — acabava de
+   ver uma opinião com nome e rosto virar um 7,4 sem dono.
+
+   Então as fichas aparecem por extenso, e cada uma leva à sua: o acervo mostra
+   ela junto das outras do mesmo filme, que é o que nem o mural nem esta folha
+   mostram. Da mais alta para a mais baixa, e não por data — a pergunta aqui é
+   "o que o clube achou", e uma fileira ordenada por nota responde antes de ser
+   lida.
+
+   O rosto é desenhado e não é porta: o retrato clicável levaria ao perfil, e um
+   cartão com dois destinos é um cartão em que o toque é uma aposta. Do perfil
+   se chega pela ficha. */
+function Roster({ takes, onOpen }: { takes?: Review[]; onOpen?: (reviewId: string) => void }) {
+  const world = useWorld();
+  if (!takes?.length) return null;
+  const ordenadas = [...takes].sort((a, b) => b.final - a.final);
+
+  return (
+    <div className="mt-5">
+      <p className="legend mb-2.5">
+        {plural(ordenadas.length, 'ficha no clube', 'fichas no clube')}
+      </p>
+      <ul className="flex flex-wrap gap-2">
+        {ordenadas.map(t => (
+          <li key={t.id}>
+            <button
+              type="button"
+              disabled={!onOpen}
+              onClick={() => onOpen?.(t.id)}
+              title={onOpen ? `Abrir a ficha de ${t.reviewerName} no acervo` : undefined}
+              className="flex items-center gap-2 rounded-cell bg-house-seat/55 py-1 pl-1 pr-2.5 ring-1 ring-inset ring-white/[0.06] transition-colors duration-150 enabled:hover:ring-white/25"
+            >
+              <Reel color={reelColor(t.reviewerDot, t.reviewerId)} src={world.avatarOf(t.reviewerId)} size="sm">
+                {initialsOf(t.reviewerName)}
+              </Reel>
+              <span className="font-display text-[12px] uppercase tracking-[0.1em] text-ink">
+                {t.reviewerName}
+              </span>
+              <span className="q text-[13px] font-medium text-beam">{fmt(t.final)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

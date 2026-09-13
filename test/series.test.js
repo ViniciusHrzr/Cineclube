@@ -608,3 +608,29 @@ test('a rota de critérios entrega nove por gênero', async () => {
     assert.equal(body.criteria[genre].length, 9, `${genre} deveria vir com nove`);
   }
 });
+
+/* ── o mural precisa de onde pendurar a conversa ──────────────────────────
+   A linha de "viu" é um agrupamento: seis episódios da mesma noite viram um
+   acontecimento só, e esse acontecimento não existe em tabela nenhuma. A placa
+   dele é curtível e comentável como a de uma avaliação, e o polegar tem de
+   pousar numa marca de verdade — a mais nova da sessão, que é a que a placa
+   nomeia quando conta um só. Sem isso a placa mostra a barra e o voto morre num
+   id que o servidor não conhece. */
+test('a linha de "viu" aponta a marca mais nova da sessão', async () => {
+  const p = await kit.signIn();
+  const club = await kit.makeClub({ owner: p.id });
+  const s = show();
+  const base = { showTitle: s.title, genre: 'Drama' };
+
+  await req('PUT', at(club, `/shows/${s.id}/1/1`), base, p.cookie);
+  await req('PUT', at(club, `/shows/${s.id}/1/2`), base, p.cookie);
+
+  const mural = await req('GET', at(club, '/shows-feed'), null, p.cookie);
+  const vistos = mural.body.items.filter(i => i.kind === 'seen');
+  assert.equal(vistos.length, 1);
+  assert.equal(vistos[0].count, 2);
+
+  const acervo = await req('GET', at(club, '/shows/takes'), null, p.cookie);
+  const segundo = acervo.body.takes.find(t => t.episode === 2);
+  assert.equal(vistos[0].takeId, segundo.id);
+});

@@ -1809,9 +1809,19 @@ function ClubApp({
         movieId={sheetId}
         clubAvg={sheetId != null ? averages[sheetId]?.avg : undefined}
         clubCount={sheetId != null ? averages[sheetId]?.count : undefined}
+        /* Do acervo em memória, filtrado aqui: a folha desenha a fileira de
+           quem já avaliou, e buscar isso de novo seria pedir ao servidor o que
+           a sala inteira já tem desde o boot. */
+        takes={sheetId != null ? reviews.filter(r => r.movieId === sheetId) : undefined}
         inWatchlist={sheetId != null ? inWatchlist(sheetId) : false}
         onClose={() => setSheetId(null)}
         onRate={rateMovie}
+        /* Fechar ANTES de ir: a ficha abre no acervo, e uma folha modal por
+           cima dela seria a tela entregando o destino atrás de uma parede. */
+        onOpenTake={id => {
+          setSheetId(null);
+          goReview(id);
+        }}
         onToggleWatch={m => void toggleWatch(m)}
       />
 

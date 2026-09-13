@@ -142,10 +142,13 @@ export function FeedScreen() {
   );
 }
 
-/* Quatro coisas empilhadas, e não um botão só: o corpo (que desdobra), o
+/* Quatro coisas empilhadas, e não um botão só: o corpo (com três alvos), o
    detalhamento, a barra de ação e a conversa. Um `<button>` dentro de outro não
    é coisa que o navegador monte, então a barra teve de sair do corpo. A régua
    acima dela diz que dali para baixo o clique faz outra coisa.
+
+   O corpo também não é um alvo só: o pôster e o nome levam ao FILME, e o resto
+   desdobra a avaliação. O porquê está lá embaixo, onde eles são desenhados.
 
    Duas gavetas e não uma: são duas perguntas — "o que ela achou de cada coisa"
    e "o que o clube disse disso" —, e juntá-las faria quem quer responder passar
@@ -189,80 +192,115 @@ function Rated({ e }: { e: FeedEvent }) {
         {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
       </div>
 
-      {/* Sem a ficha em memória cai na folha do filme, que é sobreposta e também
-          não tira ninguém do feed. */}
-      <button
-        type="button"
-        onClick={() => {
-          if (!review) {
-            club.openSheet(e.movieId);
-            return;
-          }
-          setOpen(v => !v);
-          setUnfolded(true);
-        }}
-        aria-expanded={review ? open : undefined}
-        aria-label={
-          review
-            ? `${open ? 'Fechar' : 'Abrir'} a avaliação de ${e.movieTitle} por ${e.actor.name}`
-            : `Abrir os detalhes de ${e.movieTitle}`
-        }
-        className="group flex w-full gap-4 px-4 pb-4 pt-2.5 text-left transition-colors duration-150 hover:bg-house-seat"
-      >
-        <Poster src={e.moviePoster} className="aspect-[2/3] w-[54px] flex-none sm:w-[62px]" />
+      {/* ── o corpo, e ele tem três alvos ────────────────────────────────
+          O pôster e o nome abrem a FICHA DO FILME. Quem toca num pôster quer o
+          filme — a sinopse, onde assistir, a fila, quem no clube já avaliou —,
+          e não a opinião de quem postou; a placa já mostra essa opinião inteira
+          aqui em cima. Antes os dois desdobravam os onze critérios, que é a
+          única coisa que a placa não tem e a ficha do filme também não.
 
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-baseline gap-x-3">
-            <span className="font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
-              {e.movieTitle}
-            </span>
-            <span className="q text-[11.5px] text-ink-dim">{e.genre}</span>
-          </span>
+          O resto do corpo continua desdobrando. Irmãos e não aninhados: um
+          `<button>` dentro de outro não é coisa que o navegador monte. */}
+      <div className="px-4 pb-4 pt-2.5">
+        <div className="flex gap-4">
+          {/* O pôster estica até o fim das notas, e não até o fim da placa: ele
+              é irmão do bloco de números, e o que a pessoa escreveu passou a
+              morar embaixo dos dois, na largura inteira. Uma observação de três
+              linhas esticava um cartaz de 54px até virar uma tira. */}
+          <button
+            type="button"
+            onClick={() => club.openSheet(e.movieId)}
+            aria-label={`Abrir a ficha de ${e.movieTitle}`}
+            /* A altura sai do estica do flex, e o piso é a forma de um cartaz:
+               sem ele, uma placa sem extremos e sem observação teria o bloco de
+               números mais baixo que 2:3 e o cartaz sairia achatado. */
+            className="group/cartaz min-h-[81px] flex-none sm:min-h-[93px]"
+          >
+            <Poster
+              src={e.moviePoster}
+              className="h-full w-[54px] transition-opacity duration-150 group-hover/cartaz:opacity-80 sm:w-[62px]"
+            />
+          </button>
 
-          <span className="mt-2.5 flex items-center gap-3">
-            <Strip value={e.final ?? 0} cells={10} className="h-[6px] w-[120px] flex-none" />
-            <span className="q text-[15px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
-            <span className="q text-[11px] text-ink-faint">/10</span>
-          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <button
+                type="button"
+                onClick={() => club.openSheet(e.movieId)}
+                className="text-left font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors duration-150 hover:text-beam-hot"
+              >
+                {e.movieTitle}
+              </button>
+              <span className="q text-[11.5px] text-ink-dim">{e.genre}</span>
+            </div>
 
-          {/* Ausente quando a ficha não tem distância entre o alto e o baixo —
-              ver `endsOf` no servidor: onze notas iguais não têm extremos, e
-              apontá-los seria inventar uma opinião que ninguém teve. */}
-          {e.ends ? (
-            <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
-              <span className="flex items-center gap-1.5 text-ink-dim">
-                <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
-                {e.ends.high.name}
-                <span className="q text-beam">{fmt(e.ends.high.value)}</span>
+            <button
+              type="button"
+              disabled={!review}
+              onClick={() => {
+                setOpen(v => !v);
+                setUnfolded(true);
+              }}
+              aria-expanded={review ? open : undefined}
+              aria-label={`${open ? 'Fechar' : 'Abrir'} o detalhamento da avaliação de ${e.actor.name}`}
+              className="group/notas mt-2.5 block w-full text-left"
+            >
+              <span className="flex items-center gap-3">
+                <Strip value={e.final ?? 0} cells={10} className="h-[6px] w-[120px] flex-none" />
+                <span className="q text-[15px] font-medium text-beam">{fmt(e.final ?? 0)}</span>
+                <span className="q text-[11px] text-ink-faint">/10</span>
+                {review ? (
+                  <ChevronDown
+                    aria-hidden
+                    className={cn(
+                      'ml-auto h-4 w-4 flex-none text-ink-faint transition-transform duration-200 group-hover/notas:text-ink-dim',
+                      open && 'rotate-180'
+                    )}
+                    strokeWidth={1.7}
+                  />
+                ) : null}
               </span>
-              <span className="flex items-center gap-1.5 text-ink-dim">
-                <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
-                {e.ends.low.name}
-                <span className="q text-ink">{fmt(e.ends.low.value)}</span>
-              </span>
-            </span>
-          ) : null}
 
-          {e.excerpt ? (
-            <span className="mt-2.5 block break-words text-[13px] italic leading-relaxed text-ink-dim">
-              “{e.excerpt}”
-            </span>
-          ) : null}
-        </span>
+              {/* Ausente quando a ficha não tem distância entre o alto e o
+                  baixo — ver `endsOf` no servidor: onze notas iguais não têm
+                  extremos, e apontá-los seria inventar uma opinião que ninguém
+                  teve. */}
+              {e.ends ? (
+                <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+                  <span className="flex items-center gap-1.5 text-ink-dim">
+                    <ThumbsUp className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                    {e.ends.high.name}
+                    <span className="q text-beam">{fmt(e.ends.high.value)}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-ink-dim">
+                    <ThumbsDown className="h-3 w-3 flex-none text-ink-faint" strokeWidth={1.9} aria-hidden />
+                    {e.ends.low.name}
+                    <span className="q text-ink">{fmt(e.ends.low.value)}</span>
+                  </span>
+                </span>
+              ) : null}
+            </button>
+          </div>
+        </div>
 
-        {/* Alinhada com o título e não com o bloco: é dele que ela é a
-            promessa. */}
-        {review ? (
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              'mt-1 h-4 w-4 flex-none text-ink-faint transition-transform duration-200 group-hover:text-ink-dim',
-              open && 'rotate-180'
-            )}
-            strokeWidth={1.7}
-          />
+        {/* A linha inteira, embaixo de tudo: uma frase é texto corrido e pede
+            largura, e espremida ao lado do cartaz ela virava uma coluna estreita
+            que empurrava a placa para baixo. */}
+        {e.excerpt ? (
+          <button
+            type="button"
+            disabled={!review}
+            onClick={() => {
+              setOpen(v => !v);
+              setUnfolded(true);
+            }}
+            title={review ? 'Ver o detalhamento' : undefined}
+            className="mt-3 block w-full break-words text-left text-[13px] italic leading-relaxed text-ink-dim"
+          >
+            “{e.excerpt}”
+          </button>
         ) : null}
-      </button>
+      </div>
 
       {/* Antes da barra de ação: é mais da ficha, não mais uma ação sobre ela. */}
       <Drawer open={open}>
