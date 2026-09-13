@@ -155,22 +155,40 @@ public class ScreenCastPlugin extends Plugin {
     }
 
     /* O serviço SOBE AGORA, com a permissão já na mão — é a ordem que o Android
-       14 exige, e invertê-la mata o aplicativo com uma SecurityException. */
-    ScreenCastService.start(getContext());
+       14 exige, e invertê-la mata o aplicativo com uma SecurityException.
 
-    try {
-      engine.start(resultado.getData(), iceGuardado, comSom);
-    } catch (RuntimeException e) {
-      ScreenCastService.stop(getContext());
-      call.reject("A captura não começou: " + e.getMessage());
-      return;
-    }
-    call.resolve();
+       E a captura só começa QUANDO ELE ESTÁ DE PÉ: `startForegroundService`
+       volta na hora e o serviço sobe depois, e tocar na projeção nesse intervalo
+       é a mesma exceção pelo outro motivo. Ver ScreenCastService. */
+    final Intent permissao = resultado.getData();
+    ScreenCastService.start(
+        getContext(),
+        () -> {
+          try {
+            engine.start(permissao, iceGuardado, comSom);
+            call.resolve();
+          } catch (Throwable e) {
+            /* `Throwable` e não `Exception`: o que vem do sistema aqui é
+               SecurityException, IllegalState e, num aparelho sem os codecs
+               esperados, erro de carregamento de biblioteca nativa. Qualquer um
+               deles solto fecha o aplicativo; nenhum deles é motivo para isso —
+               a tela sabe dizer que a transmissão não começou. */
+            engine.stop();
+            ScreenCastService.stop(getContext());
+            call.reject("A transmissão não começou: " + e);
+          }
+        });
   }
 
   @PluginMethod
   public void stop(PluginCall call) {
-    engine.stop();
+    try {
+      engine.stop();
+    } catch (Throwable e) {
+      /* Parar não pode falhar de um jeito que derrube o app: o pior desfecho
+         aceitável é a notificação do sistema ficar acesa até ele ser fechado. */
+      android.util.Log.w("cineclube.cast", "parada suja: " + e);
+    }
     ScreenCastService.stop(getContext());
     call.resolve();
   }
@@ -185,8 +203,14 @@ public class ScreenCastPlugin extends Plugin {
       return;
     }
     JSObject data = call.getObject("data", new JSObject());
-    engine.onSignal(from, kind, data);
-    call.resolve();
+    try {
+      engine.onSignal(from, kind, data);
+      call.resolve();
+    } catch (Throwable e) {
+      /* Um aperto de mão que falhou é uma pessoa que não recebe a imagem — não
+         é a transmissão inteira caindo, e muito menos o aplicativo. */
+      call.reject("sinal recusado: " + e);
+    }
   }
 
   /** Alguém saiu da sala: a conexão com essa pessoa não tem mais dono. */

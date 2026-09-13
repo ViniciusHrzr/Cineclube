@@ -283,12 +283,44 @@ router.get('/google/callback', wrap(async (req, res) => {
     verified: payload.email_verified === true || payload.email_verified === 'true',
   });
 
-  /* Voltando para um aplicativo: nada de cookie — ele ficaria no navegador do
-     sistema, que não é quem vai usar a conta. O que vai é um bilhete de um uso,
-     trocado por um par de chaves assim que o app o receber. */
+  /* ── voltando para um aplicativo ───────────────────────────────────────
+     Nada de cookie: ele ficaria no navegador do sistema, que não é quem vai
+     usar a conta. O que vai é um bilhete de um uso, trocado por um par de
+     chaves assim que o app o receber.
+
+     E vai numa PÁGINA, não num redirecionamento. Um 302 para um esquema que
+     não é http o navegador simplesmente engole — a navegação para um aplicativo
+     é considerada externa, e navegador nenhum a faz sem alguém ter tocado em
+     alguma coisa. O `meta refresh` tenta primeiro, porque em muitos aparelhos
+     funciona; o botão é o que sempre funciona.
+
+     Sem script: a política de conteúdo desta instalação só aceita os scripts
+     em linha cujo hash ela conhece, e eles são os do index.html. */
   if (String(state).startsWith(APP_MARK)) {
     const code = await auth.createTicket(reviewer.id, 'handoff');
-    return res.redirect(`${APP_SCHEME}?code=${encodeURIComponent(code)}`);
+    const volta = `${APP_SCHEME}?code=${encodeURIComponent(code)}`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.end(`<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=${volta}">
+<title>Entrando no Cineclube</title>
+<style>
+  html { color-scheme: dark }
+  body { margin:0; min-height:100dvh; display:flex; flex-direction:column;
+         align-items:center; justify-content:center; gap:1.5rem; padding:2rem;
+         background:#07090e; color:#ffe9c4; text-align:center;
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif }
+  p { margin:0; color:#9d9686; font-size:.95rem; line-height:1.5; max-width:28ch }
+  a { display:inline-block; padding:.9rem 1.6rem; border-radius:6px;
+      background:#d12a20; color:#fff6e6; text-decoration:none; font-weight:600;
+      letter-spacing:.06em; text-transform:uppercase; font-size:.9rem }
+</style>
+</head><body>
+<p>Pronto. Volte para o Cineclube para terminar de entrar.</p>
+<a href="${volta}">Voltar ao Cineclube</a>
+</body></html>`);
   }
 
   const sessionToken = await auth.createSession(reviewer.id);

@@ -31,13 +31,31 @@ public class ScreenCastService extends Service {
   private static final String CHANNEL = "cineclube-transmissao";
   private static final int ID = 8021;
 
-  public static void start(Context context) {
+  /** Quem está esperando o serviço subir. Ver a nota de `start`. */
+  public interface Pronto {
+    void aconteceu();
+  }
+
+  private static Pronto esperando;
+
+  /* ── e por que alguém espera ──────────────────────────────────────────
+     `startForegroundService` VOLTA NA HORA, e o serviço sobe depois. Quem
+     tocasse na projeção nesse intervalo — criar o display virtual, abrir a
+     captura de som — recebia do sistema uma SecurityException dizendo que
+     projeção exige um serviço em primeiro plano do tipo certo. E uma exceção
+     ali fecha o aplicativo.
+
+     Então quem chama diz o que fazer DEPOIS, e o `onStartCommand` chama de
+     volta quando `startForeground` já passou. */
+  public static void start(Context context, Pronto pronto) {
+    esperando = pronto;
     Intent intent = new Intent(context, ScreenCastService.class);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
     else context.startService(intent);
   }
 
   public static void stop(Context context) {
+    esperando = null;
     context.stopService(new Intent(context, ScreenCastService.class));
   }
 
@@ -57,6 +75,12 @@ public class ScreenCastService extends Service {
     } else {
       startForeground(ID, aviso);
     }
+    /* Agora sim: daqui para a frente a projeção pode ser tocada. Uma vez só, e
+       na linha principal, que é de onde o display virtual tem de ser criado. */
+    final Pronto quem = esperando;
+    esperando = null;
+    if (quem != null) new android.os.Handler(android.os.Looper.getMainLooper()).post(quem::aconteceu);
+
     /* Não reiniciar sozinho: uma transmissão que volta do nada depois de o
        sistema matar o app é uma tela sendo mostrada sem ninguém ter pedido. */
     return START_NOT_STICKY;

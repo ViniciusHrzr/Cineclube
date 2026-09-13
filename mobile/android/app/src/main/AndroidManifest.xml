@@ -47,7 +47,14 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="@string/deeplink_host" />
+                <!-- `path="/"` e não o domínio inteiro. Sem ele este filtro
+                     engole TODO endereço daquele host — inclusive a ida ao
+                     Google, que sai deste app para o navegador e voltava para
+                     cá no meio do caminho, antes de haver conta nenhuma.
+
+                     As telas do clube vivem todas na raiz: o que muda depois do
+                     `#` não entra na comparação de caminho que o Android faz. -->
+                <data android:scheme="https" android:host="@string/deeplink_host" android:path="/" />
             </intent-filter>
 
         </activity>
