@@ -12,6 +12,7 @@ import {
   type SessionUser,
 } from '@/lib/api';
 import { disablePush, enablePush, pushState, testPush, type PushState } from '@/lib/push';
+import { atualizarAgora, versaoAqui } from '@/lib/update';
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 import { mediaUrl } from '@/lib/session';
@@ -83,6 +84,7 @@ export function SettingsSheet({
       <Avisos />
       {/* A região da sala não é desenhada para quem não a administra. */}
       {club.isClubAdmin ? <ClubRoom /> : <NotTheAdmin />}
+      <Versao />
     </Sheet>
   );
 }
@@ -529,6 +531,58 @@ function Avisos() {
           ) : null}
         </>
       )}
+      <Note msg={msg} />
+    </Region>
+  );
+}
+
+/* ── em que versão este aparelho está ─────────────────────────────────────
+   Só no aplicativo, e a razão é a mesma que faz o site não precisar disto: lá
+   recarregar a página já é atualizar.
+
+   No aplicativo os arquivos moram dentro do aparelho e trocam sozinhos na
+   abertura seguinte — e essa troca é invisível. Quem abre o app depois de um
+   conserto e vê o defeito de novo não sabe se o conserto não chegou, se chegou
+   e ainda não trocou, ou se ele não conserta. Os três se parecem. Esta região
+   responde a pergunta e oferece a troca agora. Ver lib/update.ts. */
+function Versao() {
+  const [aqui, setAqui] = useState<string | null>(null);
+  const [indo, setIndo] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    void versaoAqui().then(setAqui);
+  }, []);
+
+  if (aqui === null) return null;
+
+  async function procurar() {
+    setIndo(true);
+    setMsg(null);
+    try {
+      const saida = await atualizarAgora();
+      setMsg({ ok: true, text: saida.texto });
+      /* Trocando, a tela recarrega e não há a quem devolver o controle: deixar
+         o "aguarde" aceso até lá é o que impede um segundo toque no meio da
+         troca. */
+      if (!saida.trocou) setIndo(false);
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+      setIndo(false);
+    }
+  }
+
+  return (
+    <Region title="Versão">
+      <p className="text-[13px] leading-relaxed text-ink-dim">
+        Este aparelho está na <span className="text-ink">{aqui}</span>. O app se atualiza sozinho
+        na abertura seguinte; daqui dá para trocar agora.
+      </p>
+      <div className="mt-3">
+        <Key tone="ghost" disabled={indo} onClick={() => void procurar()}>
+          {indo ? 'Procurando…' : 'Procurar atualização'}
+        </Key>
+      </div>
       <Note msg={msg} />
     </Region>
   );

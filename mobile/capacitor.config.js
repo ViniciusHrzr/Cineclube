@@ -81,6 +81,12 @@ const config = {
     CapacitorUpdater: {
       autoUpdate: !!base,
       ...(base ? { updateUrl: `${base}/api/app/update` } : {}),
+      /* Trocar NA ABERTURA em que o pacote chega, e não na seguinte. Sem isto o
+         plugin baixa e espera o app ir para segundo plano, e quem fecha o app
+         logo depois de abrir fica uma volta atrás para sempre — abre, não mudou
+         nada, fecha; abre, não mudou nada, fecha. O preço é meio segundo de
+         tela na primeira abertura depois de um deploy. */
+      directUpdate: true,
       /* Publicar na loja volta ao pacote que veio no APK. É o certo: aquele é o
          mais novo que existe naquele instante, e a próxima pergunta ao servidor
          resolve o resto. */
