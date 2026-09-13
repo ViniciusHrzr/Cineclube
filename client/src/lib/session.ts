@@ -87,6 +87,20 @@ export const credentialsMode: RequestCredentials = appMode ? 'include' : 'same-o
 /** O endereço completo de um caminho da API. */
 export const urlFor = (path: string) => (path.startsWith('/') ? apiBase + path : path);
 
+/* ── uma imagem que mora no servidor ──────────────────────────────────────
+   Retrato de gente e foto de clube são rotas da API, e o servidor as devolve
+   como CAMINHO — `/api/reviewers/x/avatar?v=3`. No site isso é o endereço
+   certo; dentro de uma casca, a página roda em `https://localhost` e aquele
+   caminho aponta para o próprio aparelho, onde não há foto nenhuma.
+
+   Só mexe no que começa com barra: pôster do TMDB é absoluto, e uma foto
+   recém-escolhida é `data:` — os dois passam intactos. */
+export const mediaUrl = (src?: string | null) =>
+  /* `undefined` e não `null` quando não há imagem: é o que um `src` de `<img>`
+     aceita sem o React reclamar, e o que faz a tag simplesmente não pedir
+     nada. */
+  src ? (src.startsWith('/') ? urlFor(src) : src) : undefined;
+
 let running: Promise<boolean> | null = null;
 
 /* Troca a chave por um par novo. Devolve se deu certo; quem chama decide o que

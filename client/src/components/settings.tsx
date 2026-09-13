@@ -14,6 +14,7 @@ import {
 import { disablePush, enablePush, pushState, testPush, type PushState } from '@/lib/push';
 import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
+import { mediaUrl } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    OS AJUSTES
@@ -827,7 +828,7 @@ function ClubRoom() {
           <div className="flex flex-col items-center gap-2">
             <span className="flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-plate bg-house-deep ring-1 ring-house-rail">
               {club.club.photo ? (
-                <img src={club.club.photo} alt="" className="h-full w-full object-cover" />
+                <img src={mediaUrl(club.club.photo)} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span className="font-display text-[26px] text-ink-faint">
                   {initialsOf(club.club.name)}

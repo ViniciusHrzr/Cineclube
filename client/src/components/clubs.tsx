@@ -5,6 +5,7 @@ import { Fault, Key } from '@/components/bits';
 import { PortraitGate } from '@/components/portrait';
 import { clubs, initialsOf, type Club } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
+import { mediaUrl } from '@/lib/session';
 
 /* ══════════════════════════════════════════════════════════════════════════
    A TROCA DE SALA — o nome do clube na marquise, e o painel que ele abre.
@@ -123,7 +124,7 @@ export function ClubSwitch({
       >
         {club.photo ? (
           <img
-            src={club.photo}
+            src={mediaUrl(club.photo)}
             alt=""
             className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
           />
@@ -335,7 +336,7 @@ function ClubMark({ club, size }: { club: Club; size: number }) {
       className="flex flex-none items-center justify-center overflow-hidden rounded-cell bg-house-deep ring-1 ring-white/10"
     >
       {club.photo ? (
-        <img src={club.photo} alt="" className="h-full w-full object-cover" />
+        <img src={mediaUrl(club.photo)} alt="" className="h-full w-full object-cover" />
       ) : (
         <span
           className="font-display leading-none text-ink-faint"
@@ -433,7 +434,7 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
             <div className="flex items-center gap-3">
               <span className="flex h-[64px] w-[64px] flex-none items-center justify-center overflow-hidden rounded-plate bg-house-deep ring-1 ring-house-rail">
                 {photo ? (
-                  <img src={photo} alt="" className="h-full w-full object-cover" />
+                  <img src={mediaUrl(photo)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <span className="font-display text-[24px] text-ink-faint">
                     {name.trim() ? initialsOf(name) : '—'}

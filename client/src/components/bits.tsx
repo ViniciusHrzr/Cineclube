@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmt, type Universe } from '@/lib/api';
+import { mediaUrl } from '@/lib/session';
 
 /* ── a lente ──────────────────────────────────────────────────────────────
    Filmes ou séries: a escolha mais externa do produto, e por isso a mais alta
@@ -174,7 +175,7 @@ export function Reel({
         )}
         style={{ background: color }}
       >
-        <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+        <img src={mediaUrl(src)} alt="" loading="lazy" className="h-full w-full object-cover" />
       </span>
     );
   }
