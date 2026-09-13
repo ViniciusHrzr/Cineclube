@@ -7,6 +7,12 @@ import { useEffect, useRef } from 'react';
    primeira à última é apontar cinco vezes. Arrastar é o gesto que todo mundo já
    tenta, e ele não existia.
 
+   ── na JANELA, e não num elemento ───────────────────────────────────────
+   A primeira versão escutava o `<main>` por uma ref, e não funcionava em
+   aparelho nenhum: o efeito roda uma vez, e se naquele instante o elemento
+   ainda não existe — uma tela que está carregando, uma lente que monta depois —
+   ele sai pela porta e nunca mais volta. A janela está sempre lá.
+
    ── o que este arquivo mais faz é NÃO agir ──────────────────────────────
    Uma tela cheia de coisas que também respondem a arrasto horizontal: as réguas
    dos critérios, a barra de tempo da Sessão, uma fileira que rola de lado, o
@@ -16,11 +22,10 @@ import { useEffect, useRef } from 'react';
    Então a recusa é por origem e por forma:
 
    · **por origem** — onde o dedo encostou. Controle deslizante, vídeo, algo que
-     rola de lado, ou qualquer coisa dentro de uma folha aberta: o gesto é de
-     lá.
-   · **por forma** — um arrasto de aba é largo, é mais horizontal do que
-     vertical, e é rápido. Rolar a página inclina; escolher um ponto numa régua
-     é lento e curto.
+     rola de lado DE VERDADE, ou qualquer coisa dentro de uma folha aberta.
+   · **por forma** — um arrasto de aba é largo, é mais horizontal que vertical,
+     e é rápido. Rolar a página inclina; escolher um ponto numa régua é lento e
+     curto.
 
    Só no dedo, e por meio do ponteiro e não do tamanho da tela: um monitor com
    tela sensível continua com o mouse, e um telefone deitado não vira
@@ -28,11 +33,18 @@ import { useEffect, useRef } from 'react';
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** O quanto o dedo precisa andar para isto ser um gesto, e não um toque torto. */
-const DISTANCIA = 70;
+const DISTANCIA = 56;
 /** Quanto mais horizontal que vertical. Abaixo disso é rolagem inclinada. */
-const INCLINACAO = 1.6;
+const INCLINACAO = 1.5;
 /** Um arrasto de aba é um gesto, não uma leitura: passado isto, não é mais. */
-const TEMPO_MS = 700;
+const TEMPO_MS = 800;
+
+/* Uma fileira só "rola de lado" quando há lado para rolar. O número não é
+   frescura: a coluna do app tem `overflow-y` no dedo, e uma caixa com um eixo
+   rolável passa a calcular o OUTRO como rolável também — então quase todo
+   ancestral do toque diz ter uma sobra horizontal de um ou dois pixels, de
+   arredondamento. Com uma tolerância pequena, o gesto era recusado sempre. */
+const SOBRA = 24;
 
 /* O que o dedo pode encostar sem que isto seja um gesto de aba. `data-noswipe`
    existe para o que não cabe numa regra: quem tiver um arrasto próprio marca. */
@@ -43,13 +55,10 @@ function daquiNao(alvo: EventTarget | null) {
   if (!el) return true;
   if (el.closest(DE_OUTRO_DONO)) return true;
 
-  /* Uma fileira que rola de lado — a tira de retratos, uma lista de chips. O
-     dedo ali está rolando aquilo, mesmo que ela caiba inteira neste instante. */
   for (let no: Element | null = el; no; no = no.parentElement) {
-    if (no.scrollWidth > no.clientWidth + 4) {
-      const estilo = getComputedStyle(no).overflowX;
-      if (estilo === 'auto' || estilo === 'scroll') return true;
-    }
+    if (no.scrollWidth - no.clientWidth < SOBRA) continue;
+    const estilo = getComputedStyle(no).overflowX;
+    if (estilo === 'auto' || estilo === 'scroll') return true;
   }
   return false;
 }
@@ -59,20 +68,13 @@ function daquiNao(alvo: EventTarget | null) {
  * do papel, e não a do dedo: puxar a página para a esquerda traz o que está à
  * direita.
  */
-export function useSwipeTabs(
-  ref: React.RefObject<HTMLElement>,
-  onPrev: () => void,
-  onNext: () => void,
-  enabled = true
-) {
-  /* Os dois passam pela ref porque o efeito não pode remontar a cada render de
-     quem chama — remontar no meio de um arrasto perderia o toque. */
-  const held = useRef({ onPrev, onNext });
-  held.current = { onPrev, onNext };
+export function useSwipeTabs(onPrev: () => void, onNext: () => void, enabled = true) {
+  /* Os dois passam por uma ref porque o efeito não pode remontar a cada render
+     de quem chama — remontar no meio de um arrasto perderia o toque. */
+  const held = useRef({ onPrev, onNext, enabled });
+  held.current = { onPrev, onNext, enabled };
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el || !enabled) return;
     if (!window.matchMedia('(hover: none), (pointer: coarse)').matches) return;
 
     let x = 0;
@@ -82,7 +84,7 @@ export function useSwipeTabs(
 
     const começou = (e: TouchEvent) => {
       /* Dois dedos é pinça, e pinça é da página. */
-      vale = e.touches.length === 1 && !daquiNao(e.target);
+      vale = held.current.enabled && e.touches.length === 1 && !daquiNao(e.target);
       if (!vale) return;
       x = e.touches[0].clientX;
       y = e.touches[0].clientY;
@@ -105,18 +107,23 @@ export function useSwipeTabs(
       else held.current.onPrev();
     };
 
+    const cancelou = () => {
+      vale = false;
+    };
+
     /* Passivos: isto não cancela rolagem nenhuma — ele decide DEPOIS que o dedo
        saiu, e um ouvinte que promete não interferir é um ouvinte que o
        navegador não espera antes de rolar. */
-    el.addEventListener('touchstart', começou, { passive: true });
-    el.addEventListener('touchend', acabou, { passive: true });
-    el.addEventListener('touchcancel', () => (vale = false), { passive: true });
+    window.addEventListener('touchstart', começou, { passive: true });
+    window.addEventListener('touchend', acabou, { passive: true });
+    window.addEventListener('touchcancel', cancelou, { passive: true });
 
     return () => {
-      el.removeEventListener('touchstart', começou);
-      el.removeEventListener('touchend', acabou);
+      window.removeEventListener('touchstart', começou);
+      window.removeEventListener('touchend', acabou);
+      window.removeEventListener('touchcancel', cancelou);
     };
-  }, [ref, enabled]);
+  }, []);
 }
 
 /** A aba vizinha na tabela da lente, pulando as que não aparecem na barra. */

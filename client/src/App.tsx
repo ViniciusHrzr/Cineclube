@@ -749,9 +749,7 @@ function SeriesClubApp({
      Desligado com uma série aberta: ali o arrasto não tem vizinho para onde ir,
      e a tela tem o próprio Voltar. Ver lib/swipe.ts, que é onde está escrito o
      que o gesto RECUSA — que é a parte que importa. */
-  const palco = useRef<HTMLElement>(null);
   useSwipeTabs(
-    palco,
     () => {
       const ir = neighbour(SERIES_TABS, tab, -1);
       if (ir) goTab(ir as TabId);
@@ -912,7 +910,6 @@ function SeriesClubApp({
         />
 
         <main
-          ref={palco}
           className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10"
         >
           <div key={showId != null ? `show-${showId}` : tab} className="animate-frame-in">
@@ -1204,9 +1201,7 @@ function ClubApp({
   );
 
   /* O mesmo gesto da outra lente, sobre a tabela desta. Ver lib/swipe.ts. */
-  const palco = useRef<HTMLElement>(null);
   useSwipeTabs(
-    palco,
     () => {
       const ir = neighbour(TABS, tab, -1);
       if (ir) goTab(ir as TabId);
@@ -1721,7 +1716,6 @@ function ClubApp({
             dedo — no computador o cartão é uma coluna ao lado, presa pelo topo
             (`lg:bottom-auto`), e ali o respiro continua servindo. */}
         <main
-          ref={palco}
           className={cn(
             'mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain sm:px-6 sm:pt-10',
             tab === 'rate' ? 'coarse:pb-0' : 'coarse:pb-8'
