@@ -228,6 +228,7 @@ export function ScreeningScreen({
   shows,
   onRate,
   onSeen,
+  onDuty,
 }: {
   /** A fila de filmes do clube. Ausente na lente de séries. */
   watchlist?: WatchItem[];
@@ -238,6 +239,14 @@ export function ScreeningScreen({
   /* A sala deixou um episódio para trás e o marcou como visto para quem estava
      dentro. Quem chamou esta tela guarda o acervo e é quem sabe relê-lo. */
   onSeen?: () => void;
+  /* ── "a sala depende de mim" ──────────────────────────────────────────
+     Verdadeiro enquanto ESTE navegador é a fonte do que o clube está vendo:
+     transmitindo a tela, ou servindo o arquivo para o enxame. Quem monta esta
+     tela usa isto para não desmontá-la ao trocar de aba — ver App.tsx.
+
+     Sai daqui porque é aqui que se sabe: quem está de fora vê uma aba, e a
+     diferença entre "assistindo" e "sendo a fonte" mora no motor. */
+  onDuty?: (on: boolean) => void;
 }) {
   const club = useWorld();
   const screening = useScreening(club.fault);
@@ -247,6 +256,21 @@ export function ScreeningScreen({
      não existe cópia local para sincronizar. Ver lib/liveshare.ts. */
   const liveShare = useLiveShare(screening, club.me.id);
   const { state, connected, setReady } = screening;
+
+  /* ── ficar de pé fora da aba ────────────────────────────────────────────
+     Transmitir e semear são as duas coisas que outras pessoas estão consumindo
+     agora: desmontá-las porque quem transmite foi ao Catálogo é derrubar o
+     filme da sala inteira para quem saiu procurar o próximo. Assistir não
+     entra — quem só assiste não é fonte de ninguém.
+
+     O aviso do fim do efeito é o que fecha o ciclo quando a tela morre de
+     verdade (trocar de clube, trocar de lente, recarregar): sem ele, quem
+     montou ficaria esperando por uma tela que não existe mais. */
+  const daSala = liveShare.role === 'host' || torrent.status.phase === 'seeding';
+  useEffect(() => {
+    onDuty?.(daSala);
+    return () => onDuty?.(false);
+  }, [daSala, onDuty]);
   /** A sala inteira muda de natureza enquanto isto é verdade. */
   const liveOn = state.live !== null;
   /* A sessão é de quem a abriu: o play, o pause e a barra são dela, e as outras

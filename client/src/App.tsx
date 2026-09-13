@@ -590,6 +590,10 @@ function SeriesClubApp({
      a folha é uma folha: ela abre por cima de onde você está, e quem acabou de
      ver não deve perder a sala para escrever o que achou. */
   const [avaliando, setAvaliando] = useState<ScreeningMovie | null>(null);
+  /* Este navegador é a FONTE do que a sala está vendo — transmitindo a tela ou
+     servindo o arquivo. Mora aqui e não na tela da sessão porque quem decide se
+     aquela tela continua montada é este componente. Ver `Sessao`. */
+  const [deServico, setDeServico] = useState(false);
 
   const fault = useCallback((msg: string) => {
     setToast(msg);
@@ -943,29 +947,7 @@ function SeriesClubApp({
                 onTab={goTab}
                 fault={fault}
               />
-            ) : tab === 'screening' ? (
-              /* A tela é a mesma do outro universo. O que ela recebe daqui é o
-                 que muda entre as lentes: escolhe-se um episódio das séries do
-                 clube, e quem acaba de ver vai para a série — a ficha é de um
-                 episódio e mora lá dentro. */
-              <ScreeningScreen
-                shows={queue ?? []}
-                onRate={m =>
-                  m.kind === 'episode'
-                    ? /* A MESMA folha da tela da série, aberta por cima da
-                         sessão: sair da sala para escrever o que achou é perder
-                         o que ainda está tocando para os outros. */
-                      setAvaliando(m)
-                    : /* Um filme, aberto do outro lado: a ficha dele é de lá, e
-                         a chave que a abre está na sessão daquela lente. */
-                      (location.hash = clubHash(slug, 'screening', 'filmes'))
-                }
-                /* A sala fechou o episódio anterior para todo mundo que estava
-                   dentro; o acervo desta casca é quem desenha o progresso, e
-                   ele acabou de ficar velho. */
-                onSeen={() => void refresh()}
-              />
-            ) : tab === 'sugestoes' ? (
+            ) : tab === 'screening' ? null : tab === 'sugestoes' ? (
               <SeriesReels
                 takes={takes}
                 meId={me.id}
@@ -982,7 +964,35 @@ function SeriesClubApp({
               />
             )}
           </div>
+
+          {/* A tela é a mesma do outro universo. O que ela recebe daqui é o que
+              muda entre as lentes: escolhe-se um episódio das séries do clube, e
+              quem acaba de ver vai para a série — a ficha é de um episódio e
+              mora lá dentro. Por que ela mora FORA da troca de aba está em
+              `Sessao`. */}
+          <Sessao aberta={tab === 'screening'} deServico={deServico}>
+            <ScreeningScreen
+              shows={queue ?? []}
+              onRate={m =>
+                m.kind === 'episode'
+                  ? /* A MESMA folha da tela da série, aberta por cima da
+                       sessão: sair da sala para escrever o que achou é perder o
+                       que ainda está tocando para os outros. */
+                    setAvaliando(m)
+                  : /* Um filme, aberto do outro lado: a ficha dele é de lá, e a
+                       chave que a abre está na sessão daquela lente. */
+                    (location.hash = clubHash(slug, 'screening', 'filmes'))
+              }
+              /* A sala fechou o episódio anterior para todo mundo que estava
+                 dentro; o acervo desta casca é quem desenha o progresso, e ele
+                 acabou de ficar velho. */
+              onSeen={() => void refresh()}
+              onDuty={setDeServico}
+            />
+          </Sessao>
         </main>
+
+        {deServico && tab !== 'screening' ? <NoAr onVoltar={() => goTab('screening')} /> : null}
 
         <SectionTabs
           variant="bar"
@@ -1082,6 +1092,10 @@ function ClubApp({
   const [bootError, setBootError] = useState<string | null>(null);
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [pendingRate, setPendingRate] = useState<number | null>(null);
+  /* Este navegador é a FONTE do que a sala está vendo — transmitindo a tela ou
+     servindo o arquivo. Mora aqui e não na tela da sessão porque quem decide se
+     aquela tela continua montada é este componente. Ver `Sessao`. */
+  const [deServico, setDeServico] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   /* Se a sala está com um filme rodando. Mora aqui e não na tela da sessão
      porque a coisa toda é justamente para quem NÃO está nela. */
@@ -1751,29 +1765,30 @@ function ClubApp({
               )}
               {tab === 'catalog' && <CatalogScreen />}
               {tab === 'watchlist' && <WatchlistScreen />}
-              {/* Montada só enquanto a aba está aberta, de propósito: a tela
-                  segura uma conexão SSE e, em modo torrent, um enxame. Nenhum
-                  dos dois deve sobreviver ao interesse de assistir. */}
-              {tab === 'screening' && (
-                <ScreeningScreen
-                  watchlist={watchlist}
-                  /* A sala é uma só e pode estar tocando um episódio aberto do
-                     outro lado. A ficha dele mora lá, e `id` é de uma SÉRIE —
-                     mandá-lo para a tela de avaliar filme abriria outra obra. */
-                  onRate={m =>
-                    m.kind === 'episode'
-                      ? (location.hash = clubHash(slug, `show/${m.id}`, 'series'))
-                      : rateMovie(m.id)
-                  }
-                />
-              )}
               {tab === 'reviews' && <ReviewsScreen />}
               {/* Uma tela para as duas rotas: `#people` é o endereço antigo e
                   sempre quis dizer "a minha". */}
               {(tab === 'perfil' || tab === 'people') && <ProfileScreen />}
             </div>
           )}
+
+          <Sessao aberta={tab === 'screening'} deServico={deServico}>
+            <ScreeningScreen
+              watchlist={watchlist}
+              /* A sala é uma só e pode estar tocando um episódio aberto do outro
+                 lado. A ficha dele mora lá, e `id` é de uma SÉRIE — mandá-lo
+                 para a tela de avaliar filme abriria outra obra. */
+              onRate={m =>
+                m.kind === 'episode'
+                  ? (location.hash = clubHash(slug, `show/${m.id}`, 'series'))
+                  : rateMovie(m.id)
+              }
+              onDuty={setDeServico}
+            />
+          </Sessao>
         </main>
+
+        {deServico && tab !== 'screening' ? <NoAr onVoltar={() => goTab('screening')} /> : null}
 
         {/* A navegação, na zona do polegar. Só no dedo (`coarse:flex` mora
             dentro dela), e não na tela de avaliar: lá a nota final e a chave de
@@ -1899,6 +1914,72 @@ function recOf(room: ScreeningPulse) {
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+/* ── a sessão não se desmonta ao trocar de aba ────────────────────────────
+   Ela era montada só enquanto a aba estava aberta, e o argumento era bom: a
+   tela segura uma conexão SSE e, em modo arquivo, um enxame — nenhum dos dois
+   deve sobreviver ao interesse de assistir.
+
+   O que o argumento não separava é QUEM está de cada lado. Para quem assiste ele
+   continua valendo. Para quem TRANSMITE, desmontar é derrubar o filme da sala
+   inteira: a captura fecha, as conexões caem, e o clube vê a tela preta porque
+   quem transmite foi ao Catálogo ver o nome de um ator. No telefone isso não é
+   um caso de borda, é o caso normal — transmitir o YouTube EXIGE sair do app.
+
+   Então enquanto este navegador for a fonte, a tela continua montada e apenas
+   escondida. `hidden` e não desmontar: o vídeo continua tocando, o enxame
+   continua servindo, as conexões continuam de pé, e voltar à aba não recomeça
+   nada. Parando de transmitir, ela volta a morrer com a aba.
+
+   O que isto NÃO alcança: trocar de lente ou de clube. Lá o casco inteiro é
+   desmontado de propósito — ver o `key` em `Club` —, e nada deste lado
+   sobrevive a isso. */
+function Sessao({
+  aberta,
+  deServico,
+  children,
+}: {
+  aberta: boolean;
+  deServico: boolean;
+  children: React.ReactNode;
+}) {
+  if (!aberta && !deServico) return null;
+  return (
+    <div hidden={!aberta} className={aberta ? 'animate-frame-in' : undefined}>
+      {children}
+    </div>
+  );
+}
+
+/* ── e uma faixa dizendo que você continua no ar ──────────────────────────
+   Uma transmissão que segue de pé atrás de outra tela é exatamente o tipo de
+   coisa que se esquece ligada — e ela custa a subida de quem transmite e a
+   privacidade da tela dele. A faixa é a lembrança e o caminho de volta no mesmo
+   lugar.
+
+   Grudada no alto da coluna e não flutuando por cima do conteúdo: no dedo a
+   barra de seções já mora embaixo, e uma segunda faixa presa ali disputaria o
+   polegar com ela. */
+function NoAr({ onVoltar }: { onVoltar: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onVoltar}
+      className="sticky bottom-0 z-20 flex w-full items-center gap-2.5 border-t border-dye-red-lit/30 bg-house-deep/95 px-4 py-2.5 text-left backdrop-blur-sm"
+    >
+      <Lamp on playing />
+      <span className="font-display text-[11.5px] uppercase tracking-[0.12em] text-dye-red-lit">
+        No ar
+      </span>
+      <span className="truncate text-[12.5px] text-ink-dim">
+        você é a fonte desta sessão
+      </span>
+      <span className="ml-auto flex-none font-display text-[11px] uppercase tracking-[0.12em] text-ink-dim">
+        Voltar
+      </span>
+    </button>
+  );
 }
 
 /** A ordem da barra do dedo, por decisão do dono. A marquise segue a tabela. */
