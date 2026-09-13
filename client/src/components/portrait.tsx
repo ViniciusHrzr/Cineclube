@@ -199,6 +199,8 @@ export function PortraitGate({
             <div
               ref={gateRef}
               role="application"
+              /* Aqui o arrasto ENQUADRA a foto. Ver lib/swipe.ts. */
+              data-noswipe
               aria-label="Área de enquadramento. Use as setas para mover e as teclas mais e menos para aproximar."
               tabIndex={0}
               onPointerDown={drag}

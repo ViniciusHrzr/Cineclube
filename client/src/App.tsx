@@ -38,6 +38,7 @@ import {
 import { WorldProvider, type World } from '@/lib/world';
 import { appIsReady } from '@/lib/session';
 import { closeOutside, onDeepLink } from '@/lib/shell';
+import { neighbour, useSwipeTabs } from '@/lib/swipe';
 import {
   SeasonSheet,
   SeriesArchiveScreen,
@@ -741,6 +742,27 @@ function SeriesClubApp({
     [slug]
   );
 
+  /* ── trocar de aba com o dedo ─────────────────────────────────────────
+     No dedo a barra fica no rodapé e as abas são cinco: ir da primeira à última
+     é apontar cinco vezes. O gesto é o que todo mundo tenta primeiro.
+
+     Desligado com uma série aberta: ali o arrasto não tem vizinho para onde ir,
+     e a tela tem o próprio Voltar. Ver lib/swipe.ts, que é onde está escrito o
+     que o gesto RECUSA — que é a parte que importa. */
+  const palco = useRef<HTMLElement>(null);
+  useSwipeTabs(
+    palco,
+    () => {
+      const ir = neighbour(SERIES_TABS, tab, -1);
+      if (ir) goTab(ir as TabId);
+    },
+    () => {
+      const ir = neighbour(SERIES_TABS, tab, 1);
+      if (ir) goTab(ir as TabId);
+    },
+    showId == null
+  );
+
   /* Uma série tem endereço, e é o que faz "manda o link daquela série" existir
      neste universo. */
   const goShow = useCallback(
@@ -889,7 +911,10 @@ function SeriesClubApp({
           }}
         />
 
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10">
+        <main
+          ref={palco}
+          className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain coarse:pb-8 sm:px-6 sm:pt-10"
+        >
           <div key={showId != null ? `show-${showId}` : tab} className="animate-frame-in">
             {showId != null ? (
               <ShowScreen
@@ -1176,6 +1201,20 @@ function ClubApp({
       if ((location.hash || '').replace(/^#/, '') !== next) location.hash = next;
     },
     [slug, lens]
+  );
+
+  /* O mesmo gesto da outra lente, sobre a tabela desta. Ver lib/swipe.ts. */
+  const palco = useRef<HTMLElement>(null);
+  useSwipeTabs(
+    palco,
+    () => {
+      const ir = neighbour(TABS, tab, -1);
+      if (ir) goTab(ir as TabId);
+    },
+    () => {
+      const ir = neighbour(TABS, tab, 1);
+      if (ir) goTab(ir as TabId);
+    }
   );
 
   /* O endereço é escrito sempre, inclusive já estando num perfil: ir de um
@@ -1682,6 +1721,7 @@ function ClubApp({
             dedo — no computador o cartão é uma coluna ao lado, presa pelo topo
             (`lg:bottom-auto`), e ali o respiro continua servindo. */}
         <main
+          ref={palco}
           className={cn(
             'mx-auto w-full max-w-[1240px] flex-1 px-4 pb-20 pt-7 coarse:overflow-y-auto coarse:overscroll-contain sm:px-6 sm:pt-10',
             tab === 'rate' ? 'coarse:pb-0' : 'coarse:pb-8'

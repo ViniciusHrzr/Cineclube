@@ -444,6 +444,9 @@ export function ReelsScreen({
        para servir uma aba seria a aba mandando na casca. */
     <section
       className={cn(immersive ? 'fixed inset-0 z-40 bg-house-deep' : 'flex flex-col')}
+      /* Esta tela já tem o arrasto dela — de lado se sai dos reels —, e o do
+         app trocaria de aba por baixo dele. Ver lib/swipe.ts. */
+      data-noswipe
       onTouchStart={sideways.onTouchStart}
       onTouchEnd={sideways.onTouchEnd}
     >
