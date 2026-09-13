@@ -21,7 +21,8 @@
     "backfill:fila": "node scripts/backfill-watchlist-owner.js",
     "recalcular:notas": "node scripts/recompute-finals.js",
     "build": "npm --prefix client install && npm --prefix client run build",
-    "app": "npm --prefix mobile run build"
+    "app": "npm --prefix mobile run build",
+    "app:url": "node scripts/app-url.js"
   },
   "engines": {
     "node": ">=22.5.0"

@@ -226,8 +226,9 @@ Sessão.
 O mesmo build serve ao site e a uma casca (Capacitor, Cordova). O que muda é uma
 variável no momento de empacotar:
 
-```
-VITE_API_BASE=https://seu-servidor npm --prefix client run build
+```bash
+npm run app:url https://seu-servidor   # uma vez, grava client/.env.app
+npm run app                            # compila o cliente e sincroniza a casca
 ```
 
 Com ela, o cliente passa a falar com um servidor de outra origem e a sessão
@@ -437,7 +438,7 @@ lista o que está de pé, o que está desligado, e a linha que liga cada um.
 | Render | `ANDROID_FINGERPRINT` | o link do clube abrindo no aplicativo |
 | GitHub → Secrets | `CINECLUBE_URL` `CINECLUBE_CRON_SECRET` | o fluxo `estreias.yml` |
 | Firebase | projeto + app `com.cineclube.app` → `google-services.json` em `mobile/android/app/` | o push do APK, do lado do aparelho |
-| Máquina que compila | `client/.env.app` com `VITE_API_BASE` | token em vez de cookie, o OTA e o domínio do link |
+| Máquina que compila | `npm run app:url https://seu-servidor` | token em vez de cookie, o OTA e o domínio do link |
 | Máquina que compila | `mobile/android/keystore.properties` | a assinatura do APK |
 
 ---
