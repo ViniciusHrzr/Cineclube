@@ -157,6 +157,26 @@ const shareOf = (peers: number, budget: number) =>
    trilha sonora. */
 const AUDIO_BITRATE = 192_000;
 
+/* ── sessenta quadros, e quando ────────────────────────────────────────────
+   Trinta bastam para um filme: cinema é vinte e quatro, e o resto do caminho é
+   repetição. Não bastam para o que mais se compartilha aqui depois do filme —
+   um vídeo de sessenta no YouTube, um jogo, uma rolagem de página. Ali a
+   diferença entre trinta e sessenta é a diferença entre uma coisa que anda e
+   uma coisa que arrasta.
+
+   O preço é real: o mesmo filme a sessenta pede perto do dobro de banda para
+   ficar igual de nítido. Com pouca banda, sessenta quadros não são sessenta
+   quadros — são trinta borrados, porque o codificador tira dos pixels o que
+   você pediu em tempo.
+
+   Então não é uma chave, é uma consequência: sessenta quando a fatia desta
+   cópia comporta, trinta quando não. Quem decide é o orçamento, que é medido —
+   e numa casa que sobe cem megabits ele chega lá em poucos segundos. */
+const FPS_FAST = 60;
+const FPS_BASE = 30;
+/** A partir daqui uma cópia aguenta sessenta sem virar borrão. */
+const FPS_FAST_MIN = 5_000_000;
+
 /* ── o que está saindo, e o que está segurando ────────────────────────────
    Uma imagem que piora sozinha é a pergunta mais difícil de responder desta
    sala: quem transmite continua vendo a própria tela nítida, e quem assiste não
@@ -268,7 +288,7 @@ async function tune(sender: RTCRtpSender, ceiling = VIDEO_BITRATE) {
     if (kind === 'video') {
       params.degradationPreference = 'balanced';
       params.encodings[0].maxBitrate = ceiling;
-      params.encodings[0].maxFramerate = 30;
+      params.encodings[0].maxFramerate = ceiling >= FPS_FAST_MIN ? FPS_FAST : FPS_BASE;
       /* Explícito porque o padrão para tela é reduzir: a captura já vem no
          tamanho certo, e encolhê-la é jogar fora o que se quis mostrar. */
       params.encodings[0].scaleResolutionDownBy = 1;
@@ -813,7 +833,11 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
              tela menor continua sendo ela mesma em vez de ser esticada. */
           width: { max: 1920 },
           height: { max: 1080 },
-          frameRate: { ideal: 30, max: 60 },
+          /* A captura vem a sessenta e quem reparte é o codificador: pedir
+             trinta aqui jogaria fora, na origem, quadros que não voltam. Uma
+             tela de sessenta hertz não entrega mais que isso de qualquer
+             forma. */
+          frameRate: { ideal: 60, max: 60 },
           /* Abre o seletor já na aba de telas inteiras. É preferência e não
              regra — a pessoa continua podendo escolher uma janela —, mas o
              caminho que leva som é o que aparece primeiro. */

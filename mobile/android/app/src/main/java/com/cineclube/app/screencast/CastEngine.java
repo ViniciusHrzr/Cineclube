@@ -83,8 +83,29 @@ class CastEngine {
 
   /** A medida da transmissão: o teto, mantida a proporção da tela. */
   private static final int LADO_MAIOR = 1280;
-  private static final int QUADROS = 30;
-  private static final int BITS = 2_000_000;
+
+  /* ── quantos quadros, e quanta banda ──────────────────────────────────────
+     Trinta bastam para um filme — cinema é vinte e quatro. Não bastam para o
+     que mais se transmite de um telefone: um vídeo de sessenta quadros, uma
+     rolagem, um jogo. Ali sessenta é a diferença entre uma coisa que anda e uma
+     que arrasta.
+
+     Sessenta só com banda, e pelo mesmo motivo do lado da página: com pouca
+     banda, sessenta quadros são trinta borrados — o codificador tira dos pixels
+     o que se pediu em tempo.
+
+     E o teto é POR PESSOA. Cada espectador recebe a própria cópia, então o que
+     sai do aparelho é a soma delas: sem repartir, quatro pessoas seriam quatro
+     vezes o teto subindo por um rádio só, e o resultado é a conexão inteira
+     caindo dois segundos depois. Ver o mesmo raciocínio, medido em vez de
+     fixo, em lib/liveshare.ts — aqui ele é fixo porque o motor nativo não lê
+     estatística nenhuma. */
+  private static final int ORCAMENTO = 9_000_000;
+  private static final int TETO = 4_500_000;
+  private static final int PISO = 1_200_000;
+  private static final int QUADROS = 60;
+  private static final int QUADROS_BASE = 30;
+  private static final int QUADROS_MIN = 2_500_000;
 
   /** A prévia é uma miniatura por segundo, e não um vídeo. Ver `preview`. */
   private static final long PREVIA_MS = 1000;
@@ -134,6 +155,9 @@ class CastEngine {
   /* Candidatos que chegaram antes de a conexão daquela pessoa existir. A mesma
      armadilha do lado do navegador: o "ice" pode chegar antes do "want". */
   private final Map<String, List<IceCandidate>> early = new HashMap<>();
+  /* A faixa de vídeo de cada conexão, guardada para o teto poder ser reescrito
+     quando alguém entra ou sai: a fatia de cada um muda com o número deles. */
+  private final Map<String, RtpSender> videos = new HashMap<>();
   private List<PeerConnection.IceServer> iceServers = new ArrayList<>();
 
   CastEngine(Context context, Sink sink) {
@@ -321,6 +345,7 @@ class CastEngine {
   void stop() {
     for (PeerConnection pc : peers.values()) pc.close();
     peers.clear();
+    videos.clear();
     early.clear();
     sink.peers(0);
 
@@ -428,7 +453,10 @@ class CastEngine {
     PeerConnection pc = peers.remove(who);
     if (pc != null) pc.close();
     early.remove(who);
+    videos.remove(who);
     sink.peers(peers.size());
+    /* Quem sobrou acabou de ganhar a fatia de quem saiu. */
+    limitAll();
   }
 
   private void offerTo(final String to) {
@@ -473,7 +501,9 @@ class CastEngine {
     List<String> streamIds = Collections.singletonList("cineclube");
     RtpSender video = pc.addTrack(videoTrack, streamIds);
     if (audioTrack != null) pc.addTrack(audioTrack, streamIds);
-    limit(video);
+    videos.put(to, video);
+    /* E as que já existiam descem para caber esta. */
+    limitAll();
 
     pc.createOffer(
         new Observer("createOffer(" + to + ")") {
@@ -493,18 +523,27 @@ class CastEngine {
         new MediaConstraints());
   }
 
+  /** A fatia de cada cópia, com este tanto de gente recebendo. */
+  private int share() {
+    int quantos = Math.max(1, peers.size());
+    return Math.max(PISO, Math.min(TETO, ORCAMENTO / quantos));
+  }
+
   /* O teto de banda. Sem ele o WebRTC sobe até onde a rede deixar, e numa rede
      móvel "até onde deixar" é um pico que derruba a conexão inteira dois
-     segundos depois. Dois megabits seguram 720p de uma tela com texto. */
-  private void limit(RtpSender sender) {
-    if (sender == null) return;
-    org.webrtc.RtpParameters params = sender.getParameters();
-    if (params == null || params.encodings.isEmpty()) return;
-    for (org.webrtc.RtpParameters.Encoding encoding : params.encodings) {
-      encoding.maxBitrateBps = BITS;
-      encoding.maxFramerate = QUADROS;
+     segundos depois. */
+  private void limitAll() {
+    int fatia = share();
+    for (RtpSender sender : videos.values()) {
+      if (sender == null) continue;
+      org.webrtc.RtpParameters params = sender.getParameters();
+      if (params == null || params.encodings.isEmpty()) continue;
+      for (org.webrtc.RtpParameters.Encoding encoding : params.encodings) {
+        encoding.maxBitrateBps = fatia;
+        encoding.maxFramerate = fatia >= QUADROS_MIN ? QUADROS : QUADROS_BASE;
+      }
+      sender.setParameters(params);
     }
-    sender.setParameters(params);
   }
 
   /** Os candidatos que chegaram cedo demais, aplicados agora que há conexão. */
