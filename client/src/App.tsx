@@ -751,11 +751,11 @@ function SeriesClubApp({
      que o gesto RECUSA — que é a parte que importa. */
   useSwipeTabs(
     () => {
-      const ir = neighbour(SERIES_TABS, tab, -1);
+      const ir = neighbour(barTabs(SERIES_TABS), tab, -1);
       if (ir) goTab(ir as TabId);
     },
     () => {
-      const ir = neighbour(SERIES_TABS, tab, 1);
+      const ir = neighbour(barTabs(SERIES_TABS), tab, 1);
       if (ir) goTab(ir as TabId);
     },
     showId == null
@@ -1203,11 +1203,11 @@ function ClubApp({
   /* O mesmo gesto da outra lente, sobre a tabela desta. Ver lib/swipe.ts. */
   useSwipeTabs(
     () => {
-      const ir = neighbour(TABS, tab, -1);
+      const ir = neighbour(barTabs(TABS), tab, -1);
       if (ir) goTab(ir as TabId);
     },
     () => {
-      const ir = neighbour(TABS, tab, 1);
+      const ir = neighbour(barTabs(TABS), tab, 1);
       if (ir) goTab(ir as TabId);
     }
   );
@@ -1894,6 +1894,23 @@ function recOf(room: ScreeningPulse) {
 /** A ordem da barra do dedo, por decisão do dono. A marquise segue a tabela. */
 export const BAR_ORDER: readonly TabId[] = ['screening', 'catalog', 'feed', 'watchlist', 'reviews'];
 
+/* A fileira COMO O DEDO A VÊ. Mora numa função só porque tem dois leitores que
+   não podem discordar: a barra, que a desenha, e o arrasto entre abas, que anda
+   por ela. Discordando, o gesto vai para a vizinha de outra ordem — uma aba que
+   não é a que está do lado na tela.
+
+   A tabela continua sendo a verdade sobre QUAIS seções existem e sobre a ordem
+   da marquise; BAR_ORDER diz só em que ordem a barra as desenha. O que não está
+   nomeado lá vai para o fim em vez de sumir — uma seção nova não pode
+   desaparecer do telefone por esquecimento. */
+export function barTabs<T extends { id: TabId; hidden?: boolean }>(tabs: readonly T[]) {
+  const shown = tabs.filter(t => !t.hidden);
+  return [
+    ...BAR_ORDER.flatMap(id => shown.filter(t => t.id === id)),
+    ...shown.filter(t => !BAR_ORDER.includes(t.id)),
+  ];
+}
+
 function SectionTabs({
   variant,
   tabs,
@@ -1912,17 +1929,7 @@ function SectionTabs({
   rec: string | null;
 }) {
   const bar = variant === 'bar';
-  /* A tabela lá em cima continua sendo a verdade sobre QUAIS seções existem e
-     sobre a ordem da marquise; `BAR_ORDER` diz só em que ordem a barra do dedo
-     as desenha. O que não está nomeado lá vai para o fim em vez de sumir — uma
-     seção nova não pode desaparecer do telefone por esquecimento. */
-  const shown = tabs.filter(t => !t.hidden);
-  const items = bar
-    ? [
-        ...BAR_ORDER.flatMap(id => shown.filter(t => t.id === id)),
-        ...shown.filter(t => !BAR_ORDER.includes(t.id)),
-      ]
-    : shown;
+  const items = bar ? barTabs(tabs) : tabs.filter(t => !t.hidden);
   return (
     <nav
       aria-label="Seções"

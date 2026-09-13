@@ -126,17 +126,20 @@ export function useSwipeTabs(onPrev: () => void, onNext: () => void, enabled = t
   }, []);
 }
 
-/** A aba vizinha na tabela da lente, pulando as que não aparecem na barra. */
-export function neighbour<T extends { id: string; hidden?: boolean }>(
+/**
+ * A aba vizinha na fileira. Recebe a fileira JÁ na ordem em que o dedo a vê —
+ * a barra do rodapé não segue a ordem da tabela, e o gesto tem de andar pelo
+ * que está na tela, não pelo que está no código. Ver `barTabs` em App.tsx.
+ */
+export function neighbour<T extends { id: string }>(
   tabs: readonly T[],
   atual: string,
   passo: 1 | -1
 ): string | null {
-  const visiveis = tabs.filter(t => !t.hidden);
-  const onde = visiveis.findIndex(t => t.id === atual);
+  const onde = tabs.findIndex(t => t.id === atual);
   /* Numa tela que não está na barra — uma ficha, uma série aberta — o gesto não
      tem vizinho para onde ir. Ele não faz nada, em vez de adivinhar. */
   if (onde < 0) return null;
-  const proximo = visiveis[onde + passo];
+  const proximo = tabs[onde + passo];
   return proximo ? proximo.id : null;
 }
