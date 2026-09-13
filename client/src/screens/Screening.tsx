@@ -203,6 +203,62 @@ function useNeighbours(movie: ScreeningMovie | null) {
   return around;
 }
 
+/* ── o que está saindo, e o que está segurando ────────────────────────────
+   Uma imagem que piora sozinha era a pergunta sem resposta desta sala. Quem
+   transmite continua vendo a própria tela nítida; quem assiste não sabe se o
+   gargalo é a rede dele, a de quem manda, ou a máquina de quem manda. E o
+   navegador sabe: `qualityLimitationReason` é o codificador dizendo por que não
+   está entregando mais.
+
+   Uma linha só, em voz baixa, e o número antes da frase: 1280×720 já responde
+   sozinho "não está em HD", e quem só queria saber isso não precisa ler o
+   resto.
+
+   Some no caminho nativo, onde não há o que medir: o WebRTC de quem transmite
+   pelo aplicativo mora do outro lado da ponte. */
+function Medida({ share, host }: { share: LiveShare; host: boolean }) {
+  const q = share.quality;
+  if (!q || !q.height) return null;
+
+  const mbps = q.kbps / 1000;
+  const numeros = [
+    `${q.width}×${q.height}`,
+    q.fps ? `${q.fps} q/s` : null,
+    mbps >= 0.1 ? `${mbps.toFixed(1)} Mb/s` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  /* A frase muda com quem está lendo, porque o que dá para fazer muda. Quem
+     transmite pode fechar o que está aberto ou transmitir uma tela menor; quem
+     assiste não pode nada, e o que ele ganha é parar de achar que é a internet
+     dele. */
+  const porque =
+    q.limit === 'cpu'
+      ? host
+        ? 'esta máquina não está dando conta de codificar — feche o que estiver pesado, ou transmita uma tela menor'
+        : 'a máquina de quem transmite não está dando conta de codificar'
+      : q.limit === 'bandwidth'
+        ? host
+          ? share.peers > 1
+            ? `a subida está cheia — cada pessoa recebendo é outra cópia, e são ${share.peers}`
+            : 'a subida desta rede está cheia'
+          : 'a rede entre vocês não está dando a banda'
+        : null;
+
+  return (
+    <p className="q mt-2 flex flex-wrap items-center gap-x-2 text-[11.5px] text-ink-faint">
+      <span>{numeros}</span>
+      {porque ? (
+        <>
+          <span aria-hidden>·</span>
+          <span className="text-ink-dim">{porque}</span>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
 /** What `MediaError.code` means, said to somebody who just saw a black screen. */
 function playbackFailure(code: number) {
   if (code === 2) return 'A fonte caiu no meio da reprodução.';
@@ -1696,6 +1752,8 @@ function LiveScreen({
           </button>
         ) : null}
       </div>
+
+      <Medida share={share} host={host} />
 
       {/* ── a falha que precisa ser dita antes de acontecer ───────────────
           Sem relay, quem estiver numa rede que não deixa duas máquinas se

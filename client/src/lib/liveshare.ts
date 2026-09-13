@@ -81,6 +81,9 @@ const FIRST_FRAME_MS = 10_000;
    uma captura de tela assume. */
 const HINT = 'motion';
 
+/** De quanto em quanto se mede o que está saindo (ou entrando). */
+const QUALITY_MS = 3000;
+
 /* O WebRTC trata conteúdo de tela como apresentação de slides: o teto que ele
    assume sozinho fica na casa de 2 Mbps, generoso para um documento parado e
    lama para um filme em movimento. O codificador então joga resolução fora.
@@ -89,10 +92,53 @@ const HINT = 'motion';
    controle de congestionamento desce sozinho. O que o teto muda é que a decisão
    passa a ser da rede, e não de um palpite feito antes de a rede existir. */
 const VIDEO_BITRATE = 8_000_000;
+
+/* ── e o teto é POR PESSOA, numa malha ────────────────────────────────────
+   Cada espectador recebe a própria cópia, codificada à parte: quatro pessoas a
+   oito megabits são trinta e dois saindo daquela máquina. Uma fibra doméstica
+   comum sobe cinquenta — e cada conexão, sozinha, não sabe das outras: as
+   quatro medem a rede, as quatro sobem até o teto, as quatro enchem o cano
+   juntas, e aí todas perdem pacote ao mesmo tempo e todas despencam juntas.
+   Passado o susto, as quatro sobem de novo. É essa a oscilação que se vê como
+   "tenta ficar HD, não consegue, e depois de um tempo volta".
+
+   O orçamento é a única peça que enxerga o conjunto: doze megabits repartidos
+   entre quem está recebendo. Com uma pessoa ele nem aparece — oito continuam
+   sendo o teto. Com quatro, cada uma leva três, e três megabits de 720p estável
+   valem mais que 1080p piscando.
+
+   O piso existe porque repartir sem fundo vira sala cheia e imagem nenhuma:
+   abaixo de um megabit e meio a imagem deixa de ser assistível, e nesse ponto a
+   resposta certa é o clube ser menor, não a imagem ser pior. */
+const UPLINK_BUDGET = 12_000_000;
+const VIDEO_FLOOR = 1_500_000;
+
+/** O teto de cada cópia, com este tanto de gente recebendo. */
+const shareOf = (peers: number) =>
+  Math.max(VIDEO_FLOOR, Math.min(VIDEO_BITRATE, Math.round(UPLINK_BUDGET / Math.max(1, peers))));
 /* Opus com música. O padrão de uma chamada fica perto de 32 kbps porque o
    assunto é voz; 192 kbps em estéreo é o que faz trilha sonora soar como
    trilha sonora. */
 const AUDIO_BITRATE = 192_000;
+
+/* ── o que está saindo, e o que está segurando ────────────────────────────
+   Uma imagem que piora sozinha é a pergunta mais difícil de responder desta
+   sala: quem transmite continua vendo a própria tela nítida, e quem assiste não
+   tem como saber se o problema é a rede dele, a de quem manda, ou a máquina de
+   quem manda. Os três se parecem — e o navegador sabe a resposta e nunca foi
+   perguntado.
+
+   `limit` é a palavra do próprio codificador: ele diz por que não está
+   entregando mais do que está. */
+export type LiveQuality = {
+  width: number;
+  height: number;
+  fps: number;
+  /** Quilobits por segundo. De quem transmite, é a soma de TODAS as cópias. */
+  kbps: number;
+  /** O que está segurando a imagem, quando alguma coisa está. */
+  limit: 'cpu' | 'bandwidth' | 'other' | null;
+};
 
 export type LivePhase =
   /** Ninguém transmitindo. */
@@ -131,6 +177,10 @@ export type LiveShare = {
   hasAudio: boolean;
   /** O que foi escolhido no seletor: 'monitor', 'window' ou 'browser'. */
   surface: string | null;
+  /* Medido a cada três segundos nas conexões desta ponta. Nulo quando não há
+     conexão nenhuma, e também no caminho nativo: lá o WebRTC mora do outro lado
+     da ponte, e daqui não há o que medir. */
+  quality: LiveQuality | null;
   /* ── de onde sai o som que o clube ouve ─────────────────────────────────
      Entradas de áudio desta máquina, para quando o mix do sistema não serve.
      Vazia até alguém pedir: listar exige permissão, e pedir microfone a quem
@@ -172,7 +222,7 @@ const DEAD = new Set(['failed', 'closed']);
    filme de um borrão. `degradationPreference` é a segunda metade: sob aperto,
    `balanced` reparte a perda entre nitidez e fluidez em vez de despencar a
    resolução, que é o comportamento padrão para conteúdo de tela. */
-async function tune(sender: RTCRtpSender) {
+async function tune(sender: RTCRtpSender, peers = 1) {
   const kind = sender.track?.kind;
   try {
     const params = sender.getParameters();
@@ -181,7 +231,7 @@ async function tune(sender: RTCRtpSender) {
     if (!params.encodings?.length) params.encodings = [{}];
     if (kind === 'video') {
       params.degradationPreference = 'balanced';
-      params.encodings[0].maxBitrate = VIDEO_BITRATE;
+      params.encodings[0].maxBitrate = shareOf(peers);
       params.encodings[0].maxFramerate = 30;
       /* Explícito porque o padrão para tela é reduzir: a captura já vem no
          tamanho certo, e encolhê-la é jogar fora o que se quis mostrar. */
@@ -266,6 +316,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
   const [hasAudio, setHasAudio] = useState(false);
   const [surface, setSurface] = useState<string | null>(null);
   const [thumb, setThumb] = useState<string | null>(null);
+  const [quality, setQuality] = useState<LiveQuality | null>(null);
   const [audioSources, setAudioSources] = useState<MediaDeviceInfo[]>([]);
   const [audioSourceId, setAudioSourceId] = useState<string | null>(null);
   /* A faixa de áudio que veio junto com a captura da tela. Guardada mesmo
@@ -336,15 +387,37 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     void ice();
   }, [ice]);
 
-  /** Fecha uma conexão e esquece o que era dela. */
-  const forget = useCallback((withId: string) => {
-    const held = peerMap.current.get(withId);
-    if (!held) return;
-    held.pc.close();
-    peerMap.current.delete(withId);
-    early.current.delete(withId);
-    setPeers(peerMap.current.size);
+  /* ── repartir o cano de novo ─────────────────────────────────────────────
+     Chamado sempre que o número de pessoas recebendo muda: o teto de cada cópia
+     é o orçamento dividido por elas, e uma pessoa entrando ou saindo muda o
+     teto de TODAS as outras. Sem isto, quem já estava conectado continuaria
+     apontado para o teto de quando a sala tinha meia gente.
+
+     Custa uma escrita de parâmetro por conexão e não renegocia nada: o teto é
+     do codificador, não do que foi combinado com o outro lado. */
+  const retune = useCallback(() => {
+    const quantos = peerMap.current.size;
+    for (const { pc } of peerMap.current.values()) {
+      for (const sender of pc.getSenders()) {
+        if (sender.track?.kind === 'video') void tune(sender, quantos);
+      }
+    }
   }, []);
+
+  /** Fecha uma conexão e esquece o que era dela. */
+  const forget = useCallback(
+    (withId: string) => {
+      const held = peerMap.current.get(withId);
+      if (!held) return;
+      held.pc.close();
+      peerMap.current.delete(withId);
+      early.current.delete(withId);
+      setPeers(peerMap.current.size);
+      /* Quem sobrou acabou de ganhar a fatia de quem saiu. */
+      retune();
+    },
+    [retune]
+  );
 
   /* ── derrubar tudo ───────────────────────────────────────────────────────
      Fechar a conexão é obrigatório e não cosmético: um RTCPeerConnection
@@ -502,7 +575,9 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           if (held && !DEAD.has(held.pc.connectionState) && epoch <= held.epoch) return;
 
           const peer = await connect(from, epoch);
-          for (const track of local.getTracks()) await tune(peer.pc.addTrack(track, local));
+          for (const track of local.getTracks()) {
+            await tune(peer.pc.addTrack(track, local), peerMap.current.size);
+          }
           const offer = await peer.pc.createOffer();
           /* O estéreo é pedido aqui, na oferta, porque é ela que declara o que
              este lado vai mandar. Depois de `setLocalDescription` não há mais
@@ -511,6 +586,8 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           await peer.pc.setLocalDescription(dito);
           void sendSignal(from, 'offer', dito);
           setPeers(peerMap.current.size);
+          /* E o teto das conexões que já existiam desce para caber a nova. */
+          retune();
           return;
         }
 
@@ -583,7 +660,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
         setError((e as Error).message);
       }
     },
-    [connect, flush, host, hostId, sendSignal]
+    [connect, flush, host, hostId, retune, sendSignal]
   );
 
   useEffect(() => onSignal((from, kind, data) => void heard(from, kind, data)), [onSignal, heard]);
@@ -882,7 +959,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
           continue;
         }
         if (!faixa || !localRef.current) continue;
-        await tune(peer.pc.addTrack(faixa, localRef.current));
+        await tune(peer.pc.addTrack(faixa, localRef.current), peerMap.current.size);
         try {
           const offer = await peer.pc.createOffer();
           const dito = { type: offer.type, sdp: withStartBitrate(inStereo(offer.sdp ?? '')) };
@@ -896,6 +973,93 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     },
     [sendSignal]
   );
+
+  /* ── medir o que está saindo ─────────────────────────────────────────────
+     Contadores acumulados viram taxa comparando com a leitura anterior; por
+     conexão, porque cada cópia tem a própria. De quem transmite, o que importa
+     é a SOMA — é ela que enche o cano e é ela que o orçamento reparte — e a
+     resolução da PIOR cópia, que é a de alguém de verdade.
+
+     Fora do caminho nativo: lá as conexões são do motor em Java, e um relatório
+     vazio seria pior que nenhum. */
+  const lastBytes = useRef(new Map<string, { bytes: number; at: number }>());
+  useEffect(() => {
+    if (!hostId) {
+      setQuality(null);
+      return;
+    }
+    let alive = true;
+
+    const medir = async () => {
+      if (nativo.current) return;
+      const pares = [...peerMap.current.entries()];
+      if (!pares.length) {
+        setQuality(null);
+        return;
+      }
+
+      const lidos = await Promise.all(
+        pares.map(async ([withId, peer]) => {
+          const relatorio = await peer.pc.getStats().catch(() => null);
+          if (!relatorio) return null;
+          let achado: Record<string, unknown> | null = null;
+          relatorio.forEach((stat: Record<string, unknown>) => {
+            const tipo = host ? 'outbound-rtp' : 'inbound-rtp';
+            if (stat.type === tipo && stat.kind === 'video') achado = stat;
+          });
+          return achado ? { withId, stat: achado as Record<string, unknown> } : null;
+        })
+      );
+      if (!alive) return;
+
+      const tudo = lidos.filter(Boolean) as { withId: string; stat: Record<string, unknown> }[];
+      if (!tudo.length) {
+        setQuality(null);
+        return;
+      }
+
+      const agora = Date.now();
+      let kbps = 0;
+      for (const { withId, stat } of tudo) {
+        const bytes = Number(host ? stat.bytesSent : stat.bytesReceived) || 0;
+        const antes = lastBytes.current.get(withId);
+        lastBytes.current.set(withId, { bytes, at: agora });
+        /* Bits por milissegundo é quilobit por segundo — a conta já sai na
+           unidade que se lê. */
+        if (antes && agora > antes.at) kbps += ((bytes - antes.bytes) * 8) / (agora - antes.at);
+      }
+
+      const pior = tudo.reduce((a, b) =>
+        (Number(a.stat.frameHeight) || 0) <= (Number(b.stat.frameHeight) || 0) ? a : b
+      );
+      const razoes = tudo
+        .map(t => String(t.stat.qualityLimitationReason ?? 'none'))
+        .filter(r => r !== 'none');
+
+      setQuality({
+        width: Number(pior.stat.frameWidth) || 0,
+        height: Number(pior.stat.frameHeight) || 0,
+        fps: Math.round(Number(pior.stat.framesPerSecond) || 0),
+        kbps: Math.max(0, Math.round(kbps)),
+        /* A CPU na frente da rede quando as duas aparecem: ela é a que a pessoa
+           pode resolver agora, fechando o que está aberto. */
+        limit: razoes.includes('cpu')
+          ? 'cpu'
+          : razoes.includes('bandwidth')
+            ? 'bandwidth'
+            : razoes.length
+              ? 'other'
+              : null,
+      });
+    };
+
+    const id = window.setInterval(() => void medir(), QUALITY_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+      lastBytes.current.clear();
+    };
+  }, [hostId, host]);
 
   /* ── pedir imagem, e continuar pedindo ───────────────────────────────────
      O laço inteiro de quem assiste, e ele pergunta a coisa certa: não "tenho
@@ -1014,6 +1178,7 @@ export function useLiveShare(screening: Screening, meId: string): LiveShare {
     detail,
     hasAudio,
     surface,
+    quality,
     thumb,
     audioSources,
     audioSourceId,
