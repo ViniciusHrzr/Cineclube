@@ -1,23 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   ONDE A API MORA, PARA O BUILD DO APLICATIVO.
-
-       npm run app:url https://o-seu-servico
-       npm run app:url            (mostra o que está configurado)
-
-   O site fala com a própria origem e não precisa saber de endereço nenhum. O
-   aplicativo precisa: os arquivos dele moram dentro do aparelho, e a API
-   continua no servidor. Esse endereço decide três coisas de uma vez — a sessão
-   viajar em token em vez de cookie, para onde o app pergunta se existe versão
-   nova, e qual domínio o Android entrega ao app em vez de ao navegador.
-
-   Mora em client/.env.app, que não é versionado pela mesma razão que
-   render.yaml não é. Isto existe para ninguém precisar lembrar do nome do
-   arquivo nem do nome da variável.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const arquivo = path.join(__dirname, '..', 'client', '.env.app');
 const atual = () => {
   if (!fs.existsSync(arquivo)) return null;
@@ -45,9 +28,6 @@ try {
   process.exit(1);
 }
 
-/* HTTPS, e a exceção é o localhost do desenvolvimento. O Android recusa tráfego
-   em claro, o service worker exige contexto seguro, e um aplicativo apontado
-   para http só descobre isso na primeira tela em branco. */
 if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
   console.error('[app] tem de ser https — o Android recusa tráfego em claro.');
   process.exit(1);

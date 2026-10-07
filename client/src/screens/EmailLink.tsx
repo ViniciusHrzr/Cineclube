@@ -4,26 +4,6 @@ import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { auth, type SessionUser } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   ONDE UM LINK DE E-MAIL CAI.
-
-   Duas telas com a mesma forma: alguém abriu uma mensagem, clicou, e chegou
-   aqui com um segredo no endereço. Nenhuma exige sessão — o link pode ser
-   aberto no celular enquanto a conta está aberta no computador, e é justamente
-   esse o caso de quem perdeu a senha.
-
-   A TELA apresenta o token, e não o link: servidores de e-mail e antivírus
-   abrem os links das mensagens antes de a pessoa ver, e um token que se gasta
-   ao ser aberto é um token que o scanner queima no caminho. Um POST vindo desta
-   tela não é feito por scanner nenhum.
-
-   E o token sai do endereço assim que é lido: um segredo na barra de endereço
-   fica no histórico e viaja no `Referer` de qualquer link clicado depois. */
-
-/* O token só é lido uma vez, e o endereço é limpo em seguida. Fora do
-   componente porque isto não é estado de tela: é uma leitura destrutiva do
-   endereço, e ela tem de acontecer uma vez só ainda que o React monte duas
-   (o modo estrito monta duas em desenvolvimento). */
 function takeToken(prefixo: string) {
   const raw = (location.hash || '').replace(/^#/, '').split('?')[0];
   const parts = raw.split('/').filter(Boolean);
@@ -50,12 +30,6 @@ function Sheet({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Confirmar o endereço.
-
-   Acontece sozinho ao abrir: não há nada a decidir, e um botão "confirmar"
-   aqui seria pedir que a pessoa confirme que clicou no link em que clicou.
-   ══════════════════════════════════════════════════════════════════════════ */
 export function ConfirmEmail({ onDone }: { onDone: () => void }) {
   const [state, setState] = useState<'indo' | 'ok' | 'erro'>('indo');
   const [message, setMessage] = useState<string | null>(null);
@@ -117,13 +91,6 @@ export function ConfirmEmail({ onDone }: { onDone: () => void }) {
   );
 }
 
-/* O token é gasto no ENVIO e não na abertura: quem chega com um link velho
-   descobre no botão, e não numa tela que valida ao abrir e queima o único uso
-   dele antes de a pessoa ter escolhido alguma coisa.
-
-   Ao dar certo, a pessoa já entra: o servidor derruba as outras sessões e abre
-   uma nova aqui. Mandá-la para a tela de entrada, para digitar a senha que ela
-   acabou de escolher, seria o formulário duvidando dela. */
 export function ResetPassword({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
@@ -187,9 +154,6 @@ export function ResetPassword({ onSignedIn }: { onSignedIn: (u: SessionUser) => 
   );
 }
 
-/* Um campo de senha. Não reaproveita o `Field` da tela de entrada porque aquele
-   mora lá e não é exportado — e exportar um componente de uma tela para outra
-   só para não repetir um `<input>` acopla as duas por nada. */
 const LinkField = forwardRef<
   HTMLInputElement,
   { label: string; value: string; onChange: (v: string) => void; hint?: string; bad?: boolean }

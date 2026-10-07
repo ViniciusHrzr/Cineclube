@@ -2,13 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-/* O segundo modo da sala: uma pessoa transmite a própria tela e as outras
-   recebem por WebRTC. O servidor não carrega vídeo nenhum, então o que existe
-   para testar aqui é exatamente o que ele faz — dizer de quem é a vaga, e
-   entregar recado a quem é dele.
-
-   Sem rede: uma "conexão" é um objeto com `write`, do mesmo jeito que o resto
-   dos testes desta sala. */
 const screening = require('../screening');
 const turn = require('../turn');
 
@@ -16,19 +9,16 @@ const T0 = 1_700_000_000_000;
 const FILM = { id: 1, title: 'Duna: Parte Dois', year: 2024, genre: 'Ficção', poster: null, runtime: 166 };
 const session = (id, name) => ({ reviewer_id: id, name, dot: '#b5abfc' });
 
-/** Quem abriu a sessão. Aqui não faz diferença: a vaga da transmissão é outra. */
 const HOST = { id: 'dono', name: 'Vinicius', dot: '#b5abfc' };
 
 const CLUBE = 'c-teste';
 let room;
 
-/** Uma conexão de mentira que guarda o que recebeu. */
 function socket() {
   const frames = [];
   return {
     res: { write: chunk => frames.push(JSON.parse(chunk.replace(/^data: /, ''))) },
     frames,
-    /** Só os recados de sinalização, que é o que quase todo teste quer ver. */
     signals: () => frames.filter(f => f.type === 'signal'),
   };
 }
@@ -39,13 +29,10 @@ test.beforeEach(() => {
   screening.open(room, FILM, HOST, T0);
 });
 
-/* ── a vaga é de uma pessoa ───────────────────────────────────────────── */
-
 test('quem chega primeiro fica com a transmissão, e o segundo é recusado', () => {
   assert.equal(screening.startLive(room, session('p1', 'Vinicius'), T0), true);
   assert.equal(room.live.hostId, 'p1');
   assert.equal(screening.startLive(room, session('p2', 'Ana'), T0), false);
-  // E a recusa não derruba quem está no ar.
   assert.equal(room.live.hostId, 'p1');
 });
 
@@ -73,14 +60,6 @@ test('a transmissão aparece no snapshot, que é como cada aba sabe o próprio p
   });
 });
 
-/* ── e ela morre com quem estava nela, mas não na mesma hora ──────────────
-   O vídeo não passa pelo servidor: vai direto de máquina a máquina, e continua
-   indo enquanto a página de quem transmite estiver viva. O que passa por aqui
-   são os recados — e essa conexão cai por muito menos do que uma transmissão:
-   tela bloqueada, aplicativo em segundo plano, aba trocada, rede piscando.
-   Apagar a transmissão na hora era anunciar para a sala inteira o fim de uma
-   coisa que continuava chegando. */
-
 test('quem transmitia perdeu a conexão: a sala espera antes de desistir dele', () => {
   const s = socket();
   screening.attach(room, session('p1', 'Vinicius'));
@@ -90,8 +69,6 @@ test('quem transmitia perdeu a conexão: a sala espera antes de desistir dele', 
   screening.detach(room, 'p1', T0);
   assert.equal(room.live?.hostId, 'p1');
 
-  /* Dentro do prazo nada acontece; passado ele, a sala para de apontar para uma
-     fonte que não existe. */
   screening.expireAwol(T0 + screening.LIVE_GRACE_MS);
   assert.equal(room.live?.hostId, 'p1');
   screening.expireAwol(T0 + screening.LIVE_GRACE_MS + 1);
@@ -105,7 +82,6 @@ test('reconectar dentro do prazo é como nunca ter saído', () => {
   screening.detach(room, 'p1', T0);
   screening.attach(room, session('p1', 'Vinicius'));
 
-  /* E o prazo de quem voltou não fica pendurado esperando expirar. */
   screening.expireAwol(T0 + screening.LIVE_GRACE_MS * 10);
   assert.equal(room.live?.hostId, 'p1');
 });
@@ -133,8 +109,6 @@ test('abrir outro filme também: a tela no ar era do anterior', () => {
   screening.open(room, { ...FILM, id: 2, title: 'Outro' }, HOST, T0 + 1000);
   assert.equal(room.live, null);
 });
-
-/* ── o carteiro ───────────────────────────────────────────────────────── */
 
 test('o recado chega a quem é, e a mais ninguém', () => {
   const um = socket();
@@ -214,14 +188,10 @@ test('um recado sem tamanho é recusado inteiro, e não cortado', () => {
 });
 
 test('a sinalização tem balde próprio: o aperto de mão não gasta as fichas do play', () => {
-  // Onze comandos estouram o balde de comandos...
   for (let i = 0; i < 10; i++) screening.withinRate('p1', T0);
   assert.equal(screening.withinRate('p1', T0), false);
-  // ...e a sinalização daquela mesma pessoa continua passando.
   assert.equal(screening.withinSignalRate('p1', T0), true);
 });
-
-/* ── onde os navegadores se procuram ──────────────────────────────────── */
 
 test('sem nada configurado sobra o STUN público, e nenhum relay é prometido', () => {
   delete process.env.TURN_URLS;

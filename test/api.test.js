@@ -5,8 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-// Point the app at a throwaway database *before* requiring it — db.js opens
-// the file the moment it is loaded.
 const dbPath = path.join(os.tmpdir(), `cineclube-test-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
 
@@ -14,9 +12,6 @@ const app = require('../server');
 const db = require('../db');
 const kit = require('../testkit');
 
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Pública, e isso é assunto de alguns destes testes: ler um clube aberto não
-   exige sessão nenhuma. O que o clube fechado faz está em clubs.test.js. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -24,8 +19,6 @@ let baseUrl;
 let server;
 
 test.before(async () => {
-  // The schema, the seeds and the admin are async now; nothing may hit the API
-  // before they land.
   await app.ready;
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
@@ -35,17 +28,12 @@ test.before(async () => {
 
 test.after(async () => {
   await new Promise(resolve => server.close(resolve));
-  // Windows keeps the file locked while the connection is open.
   db.close();
-  // WAL mode leaves -shm/-wal siblings behind. Windows can still hold the
-  // handle for a moment after close(), and a temp file we failed to delete is
-  // not a reason to fail a green run.
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
-/** `cookie` carries a session; omit it to act as a signed-out visitor. */
 async function req(method, pathname, body, cookie) {
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
@@ -69,21 +57,18 @@ function sessionCookie(setCookie) {
 
 let seq = 0;
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
   const who = await kit.signIn(name || `Avaliador ${++seq}`);
   await kit.join(CLUB.id, who.id);
   return who;
 }
 
-/** O ADM da sala — quem aprova entrada e quem varre o que não devia estar nela. */
 async function newAdmin(name) {
   const admin = await kit.signIn(name || `Chefe ${++seq}`);
   await kit.join(CLUB.id, admin.id, 'admin');
   return admin;
 }
 
-/** E o administrador da INSTALAÇÃO, que é outra coisa: ele cuida de contas. */
 async function newSiteAdmin(name) {
   const admin = await kit.signInAdmin(name || `Dono ${++seq}`);
   await kit.join(CLUB.id, admin.id, 'admin');
@@ -101,22 +86,11 @@ function scoresFor(genre, value) {
   return o;
 }
 
-/* ── reviewers ───────────────────────────────────────────────────────── */
-
-/* ── o elenco de UMA sala ────────────────────────────────────────────────
-   Isto listava a plataforma inteira, porque a plataforma inteira era um clube.
-   Agora lista quem está numa sala — e é essa a diferença que estes testes
-   protegem: uma rede que devolvesse todos os seus usuários a qualquer visitante
-   não seria uma lista, seria um vazamento com paginação. */
-
 test('as contas de exemplo nascem no clube principal, que é aberto', async () => {
   const home = await db
     .prepare('SELECT id, slug, visibility FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
   assert.equal(home.visibility, 'public', 'o clube principal é a praça da rede, e praça não tem porteiro');
 
-  /* O `join` abaixo é o que a criação da conta já fez sozinha — toda conta nova
-     nasce nesta sala. Repetir não custa nada: entrar duas vezes na mesma sala é
-     silêncio, não erro. */
   const dentro = await kit.signIn('Espia');
   await kit.join(home.id, dentro.id);
   const { status, body } = await req('GET', `/api/c/${home.slug}/reviewers`, null, dentro.cookie);
@@ -154,15 +128,7 @@ test('cada pessoa carrega o papel que tem NESTA sala', async () => {
   assert.equal(list.body.reviewers.find(r => r.id === gente.id).role, 'member');
 });
 
-/* ── e não existe mais rota de cadastro ──────────────────────────────────
-   Havia um POST aberto que criava avaliador com nome e PIN. Ele estava certo
-   enquanto o produto era uma sala de amigos com um endereço que só eles
-   conheciam. Numa rede, um endpoint público que cria contas sem verificar
-   e-mail nenhum é cadastro sem dono — conta agora nasce de um lugar só, a volta
-   do Google. */
 test('a rota pública de cadastro de avaliador não existe mais', async () => {
-  /* Sem passar por `req`: uma rota que não existe cai no 404 do Express, que é
-     HTML, e `req` só sabe ler JSON. O que importa aqui é o número. */
   const res = await fetch(baseUrl + '/api/reviewers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -171,12 +137,6 @@ test('a rota pública de cadastro de avaliador não existe mais', async () => {
   await res.text();
   assert.equal(res.status, 404);
 });
-
-/* ── apagar uma CONTA ────────────────────────────────────────────────────
-   Que é a pessoa deixando a plataforma, e não deixando uma sala: sair de um
-   clube é `DELETE /api/c/<slug>/members/<id>`, e tem os próprios testes. Aqui as
-   fichas dela vão junto, em todos os clubes de uma vez — e é por isso que só o
-   administrador da instalação alcança esta rota. */
 
 test('apagar uma conta não é coisa de qualquer um', async () => {
   const alvo = await newReviewer();
@@ -233,11 +193,6 @@ test('review_count reflects saved reviews', async () => {
   assert.equal(found.review_count, 2);
 });
 
-/* ── a bio ────────────────────────────────────────────────────────────────
-   A única coisa deste banco que uma pessoa afirma sobre si mesma. Todo o resto
-   que o perfil desenha é derivado do que ela fez, e por isso as regras aqui são
-   as mesmas do nome e do retrato: é dela, e a rota não recebe id nenhum. */
-
 async function rosterRow(id) {
   const list = await req('GET', at('/reviewers'));
   return list.body.reviewers.find(r => r.id === id);
@@ -253,7 +208,6 @@ test('escreve a própria bio, e ela sai na lista do clube', async () => {
   const reviewer = await newReviewer('Com Bio');
   const res = await req('PATCH', '/api/reviewers/me', { bio: '  Só vim pelo terror.  ' }, reviewer.cookie);
   assert.equal(res.status, 200);
-  // Aparada na gravação: o espaço que sobra de um campo de texto não é conteúdo.
   assert.equal(res.body.reviewer.bio, 'Só vim pelo terror.');
   assert.equal((await rosterRow(reviewer.id)).bio, 'Só vim pelo terror.');
 });
@@ -261,7 +215,6 @@ test('escreve a própria bio, e ela sai na lista do clube', async () => {
 test('uma bio em branco apaga, e o que fica é null', async () => {
   const reviewer = await newReviewer('Apaga Bio');
   await req('PATCH', '/api/reviewers/me', { bio: 'algo' }, reviewer.cookie);
-  // Os dois gestos que significam "limpei o campo" chegam pelo mesmo caminho.
   for (const empty of ['   ', null]) {
     await req('PATCH', '/api/reviewers/me', { bio: 'algo' }, reviewer.cookie);
     const res = await req('PATCH', '/api/reviewers/me', { bio: empty }, reviewer.cookie);
@@ -290,8 +243,6 @@ test('exatamente no teto passa', async () => {
 test('ninguém escreve a bio de outra pessoa — nem o admin', async () => {
   const admin = await newAdmin('Chefe Sem Voz');
   const alvo = await newReviewer('Alvo');
-  /* A rota não recebe id: escrever pela pessoa não é algo a proibir, é algo que
-     não há como pedir. O admin manda o patch e ele pousa na conta DELE. */
   const res = await req('PATCH', '/api/reviewers/me', { bio: 'falei por você' }, admin.cookie);
   assert.equal(res.status, 200);
   assert.equal((await rosterRow(alvo.id)).bio, null);
@@ -308,7 +259,6 @@ test('um visitante sem sessão não escreve bio nenhuma', async () => {
 test('a lista do clube diz desde quando cada pessoa está aqui', async () => {
   const reviewer = await newReviewer('Membro Datado');
   const row = await rosterRow(reviewer.id);
-  // O formato do banco: 'YYYY-MM-DD HH:MM:SS'. O perfil lê o mês e o ano dele.
   assert.match(row.createdAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 });
 
@@ -318,13 +268,6 @@ test('mexer na bio não mexe no nome nem no retrato', async () => {
   assert.equal(res.body.reviewer.name, 'Intacto');
   assert.equal(res.body.reviewer.avatar, null);
 });
-
-/* ── sign-in ─────────────────────────────────────────────────────────── */
-
-/* ── entrar ──────────────────────────────────────────────────────────────
-   O que estes testes protegem: que a credencial nunca sai do servidor, que
-   errar tem custo crescente, e que a rota de entrada não vira um jeito de
-   descobrir quem tem conta aqui. */
 
 test('a sessão diz quem eu sou', async () => {
   const reviewer = await newReviewer('Login OK');
@@ -351,8 +294,6 @@ test('cadastra a senha, e aí não precisa mais', async () => {
   const set = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
   assert.equal(set.status, 200);
 
-  /* Cadastrar senha derruba as outras sessões da conta — inclusive a que fez o
-     pedido, que recebe uma nova no mesmo response. */
   const cookie = sessionCookie(set.setCookie);
   const me = await req('GET', '/api/auth/me', null, cookie);
   assert.equal(me.body.needsPassword, false);
@@ -403,8 +344,6 @@ test('a conta descansa depois de erros seguidos', async () => {
   }
   assert.equal(last.status, 429, 'seis tentativas erradas deveriam ter trancado a conta');
 
-  /* E a senha certa também é recusada enquanto a trava vale — senão a trava
-     seria só um aviso. */
   const certa = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'umasenhaboa' });
   assert.equal(certa.status, 429);
 });
@@ -435,7 +374,6 @@ test('trocar a senha derruba as outras sessões da conta', async () => {
   const first = await req('POST', '/api/auth/password', { password: 'umasenhaboa' }, reviewer.cookie);
   const antiga = sessionCookie(first.setCookie);
 
-  /* Uma segunda aba da mesma pessoa. */
   const outra = await req('POST', '/api/auth/login', { email: reviewer.email, password: 'umasenhaboa' });
   const nova = sessionCookie(outra.setCookie);
 
@@ -458,8 +396,6 @@ test('a instalação diz se a porta do Google existe', async () => {
   const me = await req('GET', '/api/auth/me');
   assert.equal(typeof me.body.google, 'boolean');
 });
-
-/* ── reviews ─────────────────────────────────────────────────────────── */
 
 test('saves a review and computes the final score server-side', async () => {
   const reviewer = await newReviewer();
@@ -558,10 +494,6 @@ test('a film with no runtime on record is null, never zero', async () => {
   assert.equal(body.movieRuntime, null);
 });
 
-/* Re-rating goes through the same upsert as rating, and the client sends
-   whatever the catalogue handed it — which, on a stale sheet served from a
-   cache written before durations existed, is nothing. A second take must not
-   erase a runtime the first one recorded. */
 test('re-rating without a runtime does not erase the one already recorded', async () => {
   const reviewer = await newReviewer();
   const m = movie({ runtime: 96 });
@@ -642,7 +574,6 @@ test('a take is only ever deleted by the person who gave it, admin included', as
   }, owner.cookie);
 
   assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, other.cookie)).status, 403);
-  // The admin removes accounts, not opinions.
   assert.equal((await req('DELETE', at(`/reviews/${body.id}`), null, admin.cookie)).status, 403);
   assert.ok((await req('GET', at('/reviews'))).body.reviews.some(r => r.id === body.id));
 
@@ -663,8 +594,6 @@ test('rating a film someone else rated adds a take, it does not touch theirs', a
   assert.equal(mine.find(r => r.reviewerId === owner.id).final, first.body.final);
 });
 
-/* ── watchlist ───────────────────────────────────────────────────────── */
-
 test('adds a movie to the watchlist and lists it back', async () => {
   const member = await newReviewer();
   const m = movie({ title: 'Para Assistir' });
@@ -677,10 +606,6 @@ test('adds a movie to the watchlist and lists it back', async () => {
   assert.equal(found.genre, 'Terror');
 });
 
-/* A fila mostra quem quer ver cada filme, e o id é a única parte disso que sai
-   do servidor: o nome, a cor e o retrato são fatos sobre a pessoa e o clube
-   inteiro já está carregado no cliente. Sem este campo a tela volta a ser
-   quarenta pôsteres sem autor nenhum. */
 test('a fila diz quem quer ver cada filme', async () => {
   const member = await newReviewer();
   const m = movie();
@@ -700,11 +625,6 @@ test('adding the same movie twice keeps a single entry', async () => {
   assert.equal(body.watchlist.filter(w => w.id === m.id).length, 1);
 });
 
-/* ── "quero ver" é de cada um, e o cartaz é um só ────────────────────────
-   Duas pessoas querendo a mesma obra não são dois lugares na fila: são o mesmo
-   lugar, querido por duas pessoas. Antes a segunda não tinha onde dizer isso —
-   o gesto dela era engolido e a escolha continuava sendo a de quem chegou
-   primeiro. */
 test('duas pessoas querem o mesmo filme sem duplicar o cartaz', async () => {
   const um = await newReviewer();
   const outro = await newReviewer();
@@ -718,8 +638,6 @@ test('duas pessoas querem o mesmo filme sem duplicar o cartaz', async () => {
   assert.deepEqual(cards[0].wanters.slice().sort(), [um.id, outro.id].sort());
 });
 
-/* Tirar o seu é sempre seu direito, e o seu é só o seu: o cartaz fica enquanto
-   alguém ainda o quiser. */
 test('quem desiste leva só o próprio quero ver', async () => {
   const um = await newReviewer();
   const outro = await newReviewer();
@@ -789,7 +707,6 @@ test('a reorder that omits an entry does not lose it', async () => {
   const b = movie({ title: 'Tambem fica' });
   for (const m of [a, b]) await req('POST', at('/watchlist'), { movie: m }, member.cookie);
 
-  // A stale tab reorders without knowing about `b`.
   await req('PUT', at('/watchlist/order'), { ids: [a.id] }, member.cookie);
 
   const { body } = await req('GET', at('/watchlist'));
@@ -813,12 +730,6 @@ test('removes a movie from the watchlist', async () => {
   assert.ok(!body.watchlist.some(w => w.id === m.id));
 });
 
-/* ── tirar é de quem pôs ─────────────────────────────────────────────────
-   Uma escolha na fila é alguém dizendo "quero ver isto com vocês", e a linha é
-   a única memória de que aquilo foi escolhido. Uma limpeza bem-intencionada
-   apagando o mês de espera de outra pessoa é o que estes testes existem para
-   impedir — e a recusa tem de dizer de quem é a escolha, ou é um "não pode" sem
-   sujeito. */
 test('ninguém tira da fila o filme que outra pessoa pôs', async () => {
   const dono = await newReviewer('Quem Pos');
   const outro = await newReviewer();
@@ -833,9 +744,6 @@ test('ninguém tira da fila o filme que outra pessoa pôs', async () => {
   assert.ok(body.watchlist.some(w => w.id === m.id), 'a fila perdeu um filme que ninguém tinha direito de tirar');
 });
 
-/* O zelador do clube. É a única exceção, e ela existe porque as linhas antigas
-   sem dono e as escolhas de quem saiu do clube não têm outro caminho para fora
-   da fila. */
 test('o administrador tira o que for', async () => {
   const dono = await newReviewer();
   const admin = await newAdmin();
@@ -845,9 +753,6 @@ test('o administrador tira o que for', async () => {
   assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, admin.cookie)).status, 204);
 });
 
-/* Sumir com uma linha que já não existe não é erro de ninguém: o pedido queria
-   que o filme não estivesse na fila, e ele não está. Com a fila ao vivo, duas
-   pessoas tirando o mesmo filme ao mesmo tempo passou a acontecer de verdade. */
 test('tirar um filme que já saiu não é erro', async () => {
   const member = await newReviewer();
   const m = movie();
@@ -857,9 +762,6 @@ test('tirar um filme que já saiu não é erro', async () => {
   assert.equal((await req('DELETE', at(`/watchlist/${m.id}`), null, member.cookie)).status, 204);
 });
 
-/* Avaliar continua tirando o filme da fila seja de quem for a escolha: quem pôs
-   pediu para o clube ver, e o clube viu. Isso não é desdizer ninguém — é a
-   escolha tendo dado certo. */
 test('avaliar tira da fila mesmo o filme que outra pessoa pôs', async () => {
   const dono = await newReviewer();
   const outro = await newReviewer();

@@ -3,34 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <title>Cineclube — sala de projeção</title>
-    <!-- ── e NÃO `viewport-fit=cover` ────────────────────────────────────
-         Ele esteve aqui por um dia, pela razão de sempre: deixar a sala escura
-         ir até a borda, entalhe incluído. Custou caro e foi visto na hora — a
-         barra de navegação do app foi parar ATRÁS dos botões do Android.
-
-         O motivo é uma meia promessa da plataforma. `viewport-fit=cover` faz a
-         janela se estender por baixo das barras do sistema, e quem devolve o
-         espaço é `env(safe-area-inset-bottom)`. Só que numa ABA do Chrome, e
-         não num app em tela cheia, o Android estende a janela e reporta o
-         recuo como ZERO. A página fica maior que a área visível e não tem como
-         saber de quanto.
-
-         Sem ele, a janela termina onde os botões começam, que é o que se quer:
-         `100dvh` passa a ser a altura visível de verdade e a barra de baixo
-         assenta acima do sistema. O recuo de área segura continua sendo
-         aplicado onde importa — vale zero aqui e passa a valer no dia em que o
-         app rodar em tela cheia, e nesse dia funciona sozinho. -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#07090e" />
 
-    <!-- ── instalar ──────────────────────────────────────────────────────
-         O manifesto é o que faz o navegador do celular oferecer "instalar", e
-         `display: standalone` é o que tira a barra de endereço depois disso.
-         O ícone é gerado no build a partir da paleta — ver scripts/icons.mjs.
-
-         O `apple-touch-icon` existe porque o iPhone ignora o manifesto na hora
-         de escolher a figura da tela inicial; ele lê esta linha. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
@@ -43,31 +19,6 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Staatliches&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
     />
-    <!-- ── the room is always the same size ──────────────────────────────────
-         This design was drawn against one window: 1536 CSS pixels of width, the
-         reference below. Everything in it is stated in pixels, so on a wider
-         monitor the same layout used to sit in the middle of a growing field of
-         nothing, and on a narrower one it crowded.
-
-         So the interface is scaled to the window instead of laid out against it:
-         the zoom is the window's width over the width this was drawn for, which
-         makes a poster take the same share of the screen — and the shelf the
-         same number of posters — on every monitor. `zoom` and not a transform,
-         because the page still has to reflow and stay selectable and scrollable;
-         it is the same knob the design already used, now measured rather than
-         guessed. The default in the stylesheet stands until this runs.
-
-         Read from window.innerWidth, which is the one width the root's own zoom
-         cannot change — documentElement.clientWidth is reported in zoomed units,
-         so feeding it back in would chase its own tail.
-
-         The bounds are where proportion stops being the right answer: under
-         ~1150px real width the design would be shrinking itself out of
-         legibility, and the responsive rules it already carries do a better job;
-         over ~3070px it would be scaling past any type size anyone asked for.
-
-         Touch screens keep the stylesheet's own rule (no zoom at all) — the
-         property is removed rather than set, so the media query wins. -->
     <script>
       (function () {
         var BASE = 1536, MIN = 0.75, MAX = 2;
@@ -84,26 +35,6 @@
       })();
     </script>
 
-    <!-- ── is there a GPU behind this page? ───────────────────────────────────
-         Everything the room is made of assumes there is: a wall of layers that
-         creep forever, a second wall revealed under a moving mask, a light that
-         travels by transform. All of that is close to free on a compositor and
-         none of it is free on a CPU, and a browser with hardware acceleration
-         switched off — by a setting, by a driver the browser distrusts, by a
-         machine with no usable GPU — draws every one of those frames in
-         software. It is not a rare state: it is one checkbox, and it turned up
-         on the first machine outside this project that opened the site.
-
-         So the page asks. WebGL is the only thing a browser will answer
-         honestly about: with acceleration off, Chrome hands back SwiftShader
-         and says so, and where it hands back nothing at all there is certainly
-         no fast path. The context is thrown away immediately — this is a
-         question, not a feature.
-
-         The answer becomes an attribute on the root, before the first paint, so
-         both the stylesheet and the interface can read it. What they do with it
-         is written where they use it: the wall stands still, and the beam stops
-         opening a second copy of it. -->
     <script>
       (function () {
         var software = true;
@@ -112,40 +43,19 @@
           var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
           if (gl) {
             var dbg = gl.getExtension('WEBGL_debug_renderer_info');
-            // No way to ask is not a reason to assume the worst: a browser that
-            // hides the renderer for privacy is usually an accelerated one.
             var name = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '') : '';
             software = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i.test(name);
             var lose = gl.getExtension('WEBGL_lose_context');
             if (lose) lose.loseContext();
           }
-        } catch (e) {
-          /* asking failed, which is itself an answer */
-        }
+        } catch (e) {}
         if (software) document.documentElement.setAttribute('data-render', 'software');
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-Dc6sd0HH.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BNc93pUK.css">
+    <script type="module" crossorigin src="/assets/index-DAls-qtg.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BZUGTI62.css">
   </head>
   <body>
-    <!--
-      THESIS: a film club's scores are read the way a film is read — as light
-      thrown through celluloid in a dark room. Refuses the poster-grid app and
-      refuses the equipment metaphor this project wore before it.
-      OWN-WORLD: blue-black auditorium; a live wall of film cells that ignites
-      under the cursor; the room's own three colours (curtain red, beam cream,
-      marquee brass); Staatliches title cards over Poppins; square film-cell corners.
-      STORY: the club walks into a dark room, the wall lights where they look,
-      they set ten values and commit the take.
-      FIRST VIEWPORT: the live film wall behind everything; the marquee header;
-      the film slate; ten criteria as lit strips; the final score as a title card.
-      FORM: projection room / three-strip Technicolor. Direction pinned by the
-      user's brief (cinematic, interactive background), so no roll was dealt.
-      FINISH: unreviewed and undocumented is unfinished; this build ends with the
-      finish review, the verdict, DESIGN.md, and every shipping raster carrying
-      its provenance.
-    -->
     <div id="root"></div>
   </body>
 </html>

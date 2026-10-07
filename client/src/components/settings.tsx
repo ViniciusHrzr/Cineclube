@@ -17,32 +17,9 @@ import { cn, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 import { mediaUrl } from '@/lib/session';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   OS AJUSTES
-
-   Uma folha e não uma aba: configuração é uma interrupção com começo e fim —
-   você vem trocar a senha, troca, e volta. Uma aba faria disso um lugar, algo
-   que aparece na navegação e compete com o que o clube faz. Um `<dialog>`
-   nativo dá o cerco de foco, o Escape e a inércia do fundo de graça, e some sem
-   deixar endereço.
-
-   Segue as regras da primeira folha do produto (components/film.tsx): o
-   `cancel` é interceptado para o Escape sair pelo mesmo caminho do botão, e um
-   clique que pousa no próprio elemento do diálogo — fora da placa — fecha.
-
-   ── duas regiões, e a segunda quase nunca existe ────────────────────────
-   **Conta** é sua; **a sala** é do ADM do clube. Para quem não administra, a
-   segunda não é desenhada desabilitada — ela não existe: um controle cinza é
-   uma promessa que a interface não pode cumprir.
-
-   E a região Conta não chama `useClub()`: ela fala da pessoa e não da sala, e
-   a única coisa que ela pega do clube é a bio, que chega por propriedade.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const FIELD =
   'w-full rounded-cell bg-house-deep px-3 py-2.5 text-[14px] text-ink caret-dye-red ring-1 ring-house-rail placeholder:text-ink-dim focus-visible:ring-dye-brass';
 
-/** O mesmo teto que routes/reviewers.js aplica. Espelhado, nunca decidido aqui. */
 const MAX_BIO = 140;
 
 export function SettingsSheet({
@@ -52,10 +29,6 @@ export function SettingsSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  /* Em que região a folha abre. Ela é uma coluna só — Conta, Senha, Sala —, e
-     quem chega pelo endereço `#c/<slug>/ajustes` foi mandado ao interruptor da
-     sala, não à própria bio. Abrir na primeira região e deixar a pessoa rolar
-     atrás do que o botão prometeu é o botão entregando meia promessa. */
   focus?: 'clube';
 }) {
   const club = useClub();
@@ -63,8 +36,6 @@ export function SettingsSheet({
 
   useEffect(() => {
     if (!open || focus !== 'clube') return;
-    /* Depois do frame em que a folha montou: o `<dialog>` acabou de virar
-       modal e o alvo ainda não tem posição no momento em que este efeito roda. */
     const id = window.requestAnimationFrame(() => {
       document.getElementById('ajustes-clube')?.scrollIntoView({ block: 'start' });
     });
@@ -82,7 +53,7 @@ export function SettingsSheet({
       />
       <Password />
       <Avisos />
-      {/* A região da sala não é desenhada para quem não a administra. */}
+      {}
       {club.isClubAdmin ? <ClubRoom /> : <NotTheAdmin />}
       <Versao />
     </Sheet>
@@ -127,9 +98,6 @@ function Sheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      /* Um rolador só, e o fundo sem desfoque. O porquê dos dois está em
-         film.tsx: o `<dialog>` rola por conta própria, e um `backdrop-filter`
-         sobre a parede que anda é um borrão de tela cheia refeito todo quadro. */
       className={cn(
         'w-full max-w-[620px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
@@ -148,10 +116,6 @@ function Sheet({
   );
 }
 
-/* ── uma região da folha ──────────────────────────────────────────────────
-   Régua em cima e legenda, e nada de placa: a folha já É a placa, e uma placa
-   dentro de outra são duas caixas dizendo a mesma coisa em alturas diferentes.
-   Regra da regra fina — ver DESIGN.md. */
 function Region({
   title,
   first,
@@ -159,9 +123,7 @@ function Region({
   children,
 }: {
   title: string;
-  /** A primeira região não abre com uma régua: não há nada acima dela. */
   first?: boolean;
-  /** Um nome para esta região, quando alguém precisa ser levado direto a ela. */
   anchor?: string;
   children: React.ReactNode;
 }) {
@@ -173,7 +135,6 @@ function Region({
   );
 }
 
-/** Uma frase de resultado: verde escreveu, vermelho recusou. */
 function Note({ msg }: { msg: { ok: boolean; text: string } | null }) {
   if (!msg) return null;
   return (
@@ -183,13 +144,6 @@ function Note({ msg }: { msg: { ok: boolean; text: string } | null }) {
   );
 }
 
-/* Nome, retrato e bio, os três pela mesma regra: aparecem ao lado de tudo o que
-   a pessoa já disse neste clube, então pertencem a ela e a mais ninguém. A rota
-   não recebe id — editar outra pessoa não é algo a proibir, é algo que não há
-   como pedir.
-
-   O retrato é cortado em quadrado no navegador antes de subir: uma foto de
-   celular são quatro megabytes de uma coisa desenhada aqui com vinte pixels. */
 function Account({
   me,
   bio: theirBio,
@@ -203,18 +157,9 @@ function Account({
   const [bio, setBio] = useState(theirBio ?? '');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<'name' | 'photo' | 'bio' | null>(null);
-  /** O arquivo esperando enquadramento. Nada sobe enquanto isto estiver posto. */
   const [pending, setPending] = useState<File | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
-  /* Os campos nascem da conta e passam a ser de quem está digitando — mas a
-     conta pode mudar por baixo, e aí os dois discordam sem ninguém ter digitado
-     nada. Um cookie de sessão é do navegador inteiro, então entrar como outra
-     pessoa noutra aba faz exatamente isso: a marquise atualiza e este campo fica
-     segurando o nome do anterior, oferecendo salvá-lo por cima do novo.
-
-     Resemeado na renderização que percebeu, e não num efeito depois: um efeito
-     deixaria um quadro pintar o nome errado dentro da caixa. */
   const seeded = useRef(me.id);
   if (seeded.current !== me.id) {
     seeded.current = me.id;
@@ -230,8 +175,6 @@ function Account({
     setBusy(which);
     try {
       await profile.update(patch);
-      // O nome desenha em todo lugar; a bio, só no perfil. As duas listas são
-      // relidas de qualquer forma: uma requisição a menos não vale a divergência.
       await onSaved();
       setMsg({ ok: true, text: which === 'name' ? 'Nome atualizado.' : 'Bio atualizada.' });
     } catch (e) {
@@ -247,14 +190,8 @@ function Account({
     void save({ name: value }, 'name');
   }
 
-  /* Vazio manda `null`: apagar a bio e nunca ter escrito uma são o mesmo estado,
-     e o servidor grava os dois como null pelo mesmo motivo. */
   const saveBio = () => void save({ bio: bio.trim() || null }, 'bio');
 
-  /* Escolher um arquivo abre o enquadramento; nada é enviado antes de a moldura
-     ser decidida. Limpar o input aqui e não depois é o que deixa escolher o
-     MESMO arquivo outra vez após cancelar — um input de arquivo não dispara
-     change quando recebe o valor que já tinha. */
   function pick(picked: File) {
     setMsg(null);
     setPending(picked);
@@ -349,16 +286,7 @@ function Account({
         </div>
       </div>
 
-      {/* ── a bio ──────────────────────────────────────────────────────────
-          A única coisa do perfil que a pessoa afirma sobre si. Tudo o mais que
-          a página mostra é derivado do que ela avaliou — e derivado é mais
-          honesto, porque ninguém escreve "sou o cara da fotografia": isso se
-          prova avaliando. Isto existe para o que uma média não alcança, que é
-          o tom de voz.
-
-          O contador só aparece perto do fim. Um número contando cada tecla
-          desde o primeiro caractere transforma escrever uma frase em cumprir
-          uma cota. */}
+      {}
       <label className="mt-5 block">
         <span className="legend mb-1.5 block">Minha bio</span>
         <textarea
@@ -399,12 +327,6 @@ function Account({
   );
 }
 
-/* Uma linha inteira clicável, com a lâmpada à esquerda. Não é um `checkbox`: o
-   produto já tem um vocabulário para "isto está ligado", e é a lâmpada — a
-   única coisa redonda deste sistema (ver DESIGN.md).
-
-   Vermelho aceso e `ink-faint` apagado. Um interruptor que acendesse latão
-   diria "selecionado": latão é escolha, vermelho é funcionamento. */
 function Switch({
   on,
   onToggle,
@@ -449,19 +371,6 @@ function Switch({
   );
 }
 
-/* ── o aviso que chega com o app fechado ──────────────────────────────────
-   Um interruptor, e ele só é desenhado quando LIGAR é possível: este navegador
-   fazer push, e esta instalação ter chave. Um interruptor que liga e nunca
-   avisa nada é pior do que a ausência dele.
-
-   A permissão é pedida no clique e em nenhum outro lugar. Pedi-la na abertura é
-   o jeito mais rápido de ser recusado para sempre — e a recusa não tem volta
-   por aqui, só nas configurações do navegador, que é o que o estado
-   `bloqueado` explica.
-
-   O botão de teste existe porque a cadeia tem cinco elos — permissão,
-   inscrição, cifra, serviço de entrega, worker — e sem ele a única forma de
-   descobrir onde ela quebrou é esperar uma estreia. */
 function Avisos() {
   const [estado, setEstado] = useState<PushState | null>(null);
   const [indo, setIndo] = useState(false);
@@ -471,8 +380,6 @@ function Avisos() {
     void pushState().then(setEstado);
   }, []);
 
-  /* Enquanto não se sabe, nada: um interruptor que nasce apagado e acende
-     sozinho meio segundo depois é a tela contando uma coisa e corrigindo. */
   if (estado === null || estado === 'sem' || estado === 'servidor') return null;
 
   const ligado = estado === 'ligado';
@@ -536,15 +443,6 @@ function Avisos() {
   );
 }
 
-/* ── em que versão este aparelho está ─────────────────────────────────────
-   Só no aplicativo, e a razão é a mesma que faz o site não precisar disto: lá
-   recarregar a página já é atualizar.
-
-   No aplicativo os arquivos moram dentro do aparelho e trocam sozinhos na
-   abertura seguinte — e essa troca é invisível. Quem abre o app depois de um
-   conserto e vê o defeito de novo não sabe se o conserto não chegou, se chegou
-   e ainda não trocou, ou se ele não conserta. Os três se parecem. Esta região
-   responde a pergunta e oferece a troca agora. Ver lib/update.ts. */
 function Versao() {
   const [aqui, setAqui] = useState<string | null>(null);
   const [indo, setIndo] = useState(false);
@@ -562,9 +460,6 @@ function Versao() {
     try {
       const saida = await atualizarAgora();
       setMsg({ ok: true, text: saida.texto });
-      /* Trocando, a tela recarrega e não há a quem devolver o controle: deixar
-         o "aguarde" aceso até lá é o que impede um segundo toque no meio da
-         troca. */
       if (!saida.trocou) setIndo(false);
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -588,12 +483,6 @@ function Versao() {
   );
 }
 
-/* A atual é exigida quando já existe uma, então quem encontra um navegador
-   destrancado ainda não consegue trancar o dono fora da própria conta.
-
-   Quando não existe, o campo "atual" não é desenhado desabilitado: ele
-   simplesmente não está lá. Um campo cinza pedindo uma coisa que não existe é a
-   interface fazendo a pessoa duvidar da própria memória. */
 function Password() {
   const [has, setHas] = useState<boolean | null>(null);
   const [current, setCurrent] = useState('');
@@ -686,9 +575,6 @@ function Password() {
   );
 }
 
-/* O que sobra para quem não administra a sala: a frase que diz a quem pedir.
-   Antes isto era "esqueci meu PIN" e a resposta era o admin da instalação; agora
-   quem manda numa sala é o ADM dela, e é o nome dele que a pessoa precisa. */
 function NotTheAdmin() {
   const club = useClub();
   const admins = club.reviewers.filter(p => p.role === 'admin').map(p => p.name);
@@ -700,9 +586,7 @@ function NotTheAdmin() {
             'Aprovar quem entra, mudar a foto e o nome do clube são coisas de ADM.'
           : 'Este clube está sem ADM. Fale com o administrador da instalação.'}
       </p>
-      {/* Quem fundou não sai: sair é deixar de administrar, e a regra é que quem
-          fundou administra enquanto o clube existir. A saída dessa pessoa é
-          outra, e ela está na região de baixo. */}
+      {}
       {!club.club.isCreator ? (
         <Key
           tone="danger"
@@ -719,11 +603,6 @@ function NotTheAdmin() {
   );
 }
 
-/* Três coisas, e elas são as três perguntas de um ADM: quem está pedindo para
-   entrar, quem já está dentro, e o que este clube é.
-
-   Os pedidos vêm primeiro de propósito — é a única das três que tem alguém
-   esperando do outro lado. */
 function ClubRoom() {
   const club = useClub();
   const [requests, setRequests] = useState<JoinRequest[] | null>(null);
@@ -751,9 +630,6 @@ function ClubRoom() {
     try {
       await clubsApi.answer(club.club.slug, id, approve);
       setRequests(list => (list ?? []).filter(r => r.id !== id));
-      /* O clube sempre, o elenco só quando alguém entrou: é o clube que carrega
-         a conta de quem está esperando, e é ela que acende o distintivo na
-         marquise. Sem isto o número continuaria lá depois de a fila esvaziar. */
       await club.refreshClub();
       if (approve) await club.refreshReviewers();
     } catch (e) {
@@ -816,10 +692,6 @@ function ClubRoom() {
           {club.reviewers.map(p => {
             const isSelf = p.id === club.me.id;
             const isAdmin = p.role === 'admin';
-            /* Quem fundou administra enquanto o clube existir, então os dois
-               controles somem para essa pessoa. O servidor recusa de qualquer
-               jeito; um botão que existe para dar erro é a interface prometendo
-               o que ela sabe que não pode cumprir. */
             const fundador = club.club.isCreator && isSelf;
             return (
               <div
@@ -853,10 +725,7 @@ function ClubRoom() {
                   </Key>
                 ) : null}
 
-                {/* Tirar alguém não apaga a conta dela nem as fichas: ela sai da
-                    sala, e o que ela escreveu aqui continua onde está. É a
-                    diferença entre uma pessoa deixar de frequentar e a
-                    conversa dela nunca ter existido. */}
+                {}
                 {!isSelf ? (
                   <IconKey
                     aria-label={`Tirar ${p.name} do clube`}
@@ -924,9 +793,7 @@ function ClubRoom() {
                 className={FIELD}
               />
             </label>
-            {/* O endereço acompanha o nome, e o antigo deixa de funcionar. É o
-                preço de o endereço ser legível, e ele é dito aqui em vez de
-                descoberto por um link quebrado no Discord. */}
+            {}
             <p className="q mt-2 text-[11px] text-ink-dim">
               Trocar o nome troca o endereço do clube. Links antigos param de valer.
             </p>
@@ -981,13 +848,7 @@ function ClubRoom() {
           </p>
         </div>
 
-        {/* ── o que um estranho enxerga ───────────────────────────────────
-            Só faz sentido num clube fechado: num aberto tudo é legível de
-            qualquer jeito, e desenhar dois interruptores que não fazem nada
-            seria a tela oferecendo uma escolha que ela não vai honrar.
-
-            Os dois ligados deixam o clube fechado apenas na PORTA: ler é livre,
-            entrar e avaliar continuam dependendo de você. */}
+        {}
         {club.club.visibility === 'private' ? (
           <div className="mt-6">
             <span className="legend mb-2 block">O que quem não é do clube vê</span>
@@ -1038,18 +899,6 @@ function ClubRoom() {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Encerrar o clube: a única coisa verdadeiramente destrutiva do produto, e a
-   única reservada a quem fundou — não ao ADM, que é um cargo e não um dono.
-
-   Escrever o nome não é burocracia. Isto apaga o que OUTRAS pessoas
-   escreveram, e um `confirm()` é o preço de um clique distraído: escrever é o
-   único jeito de a mão parar tempo suficiente para a cabeça alcançar.
-
-   A conta do que se perde vem primeiro, e é a de verdade — as listas já estão
-   carregadas desde o boot. "12 fichas e 5 pessoas" é uma frase que se pesa;
-   "esta ação não pode ser desfeita" é uma que se lê sem ver.
-   ══════════════════════════════════════════════════════════════════════════ */
 function EndClub() {
   const club = useClub();
   const [armado, setArmado] = useState(false);

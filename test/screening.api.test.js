@@ -5,22 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The room over HTTP.
-
-   `screening.test.js` covers the room's logic by calling it directly. This file
-   covers the part that only exists once a socket is involved: the session gate,
-   the film being read out of the server's own records instead of the request
-   body, and — the reason this file exists at all — that a command posted by one
-   member actually comes back out of another member's event stream.
-
-   A separate file rather than more tests in the other one, because the room is
-   module state: these tests need a listening server and real connections, and
-   the unit tests need to reset that state between cases. `node --test` gives
-   each file its own process, which is what keeps the two from stepping on each
-   other.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const dbPath = path.join(os.tmpdir(), `cineclube-screening-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
 
@@ -28,13 +12,6 @@ const app = require('../server');
 const db = require('../db');
 const kit = require('../testkit');
 
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo.
-
-   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
-   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
-   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -50,14 +27,12 @@ test.before(async () => {
 });
 
 test.after(async () => {
-  /* An event stream is a request that never ends, so `close` alone would wait
-     for one forever — a test file that hangs instead of failing. */
   const closed = new Promise(resolve => server.close(resolve));
   server.closeAllConnections?.();
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -76,21 +51,16 @@ async function req(method, pathname, body, cookie) {
 
 let seq = 0;
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newMember(name) {
   const who = await kit.signIn(name || `Sócio ${++seq}`);
   await kit.join(CLUB.id, who.id);
   return who;
 }
 
-/* E alguém que NÃO é da sala. A sala de projeção é a única coisa deste produto
-   que exige ser membro até para olhar: assistir é uma coisa que se faz de
-   dentro, e o painel diz quem está na sala agora. */
 async function newOutsider(name) {
   return kit.signIn(name || `De Fora ${++seq}`);
 }
 
-/** A film in the club's queue, which is where `POST /open` looks it up. */
 async function queuedFilm(overrides) {
   const member = await newMember();
   const film = {
@@ -105,10 +75,6 @@ async function queuedFilm(overrides) {
   return film;
 }
 
-/* ── an open ear on the room ──────────────────────────────────────────────
-   A tiny SSE client: it holds the connection, parses whole frames out of the
-   stream, and lets a test wait for the first frame that satisfies a predicate.
-   Everything a browser's EventSource does that matters here, and nothing else. */
 async function listen(cookie) {
   const control = new AbortController();
   const res = await fetch(baseUrl + at('/screening/stream'), {
@@ -134,7 +100,7 @@ async function listen(cookie) {
         while ((cut = buffer.indexOf('\n\n')) >= 0) {
           const chunk = buffer.slice(0, cut);
           buffer = buffer.slice(cut + 2);
-          if (!chunk.startsWith('data: ')) continue; // a keep-alive comment
+          if (!chunk.startsWith('data: ')) continue;
           const frame = JSON.parse(chunk.slice(6));
           frames.push(frame);
           for (const [predicate, resolve] of waiters.splice(0)) {
@@ -144,13 +110,11 @@ async function listen(cookie) {
         }
       }
     } catch {
-      /* the abort at the end of a test arrives here */
     }
   })();
 
   return {
     frames,
-    /** Resolves with the first frame — past or future — matching `predicate`. */
     next(predicate, ms = 3000) {
       const seen = frames.find(predicate);
       if (seen) return Promise.resolve(seen);
@@ -165,8 +129,6 @@ async function listen(cookie) {
     },
   };
 }
-
-/* ── the gate ─────────────────────────────────────────────────────────────── */
 
 test('the room is the club\'s, not the internet\'s', async () => {
   for (const [method, route, body] of [
@@ -184,8 +146,6 @@ test('the room is the club\'s, not the internet\'s', async () => {
   }
 });
 
-/* ── opening ──────────────────────────────────────────────────────────────── */
-
 test('the film is read out of the club\'s records, never out of the request', async () => {
   const member = await newMember();
   const film = await queuedFilm({ title: 'A Cópia Verdadeira' });
@@ -193,8 +153,6 @@ test('the film is read out of the club\'s records, never out of the request', as
   const opened = await req(
     'POST',
     at('/screening/open'),
-    // Everything but the id is noise, and the poster is the reason it matters:
-    // accepted, it would be an arbitrary outbound request in every browser.
     { movieId: film.id, movie: { title: 'Outro Filme', poster: 'javascript:alert(1)' } },
     member.cookie
   );
@@ -213,12 +171,6 @@ test('a film the club does not have is not a session', async () => {
   assert.equal((await req('POST', at('/screening/open'), { movieId: 'nove' }, member.cookie)).status, 400);
 });
 
-/* ── a mesma sala, com um episódio dentro ─────────────────────────────────
-   Uma sala por clube e não uma por lente: o clube é a mesma gente. O que muda é
-   só a identidade do que toca — um filme é um id, um episódio é uma tripla — e
-   `kind` é o que separa as duas para quem lê. */
-
-/** Uma série e um episódio no cache, que é de onde a rota lê. */
 async function cachedEpisode(overrides) {
   const showId = 700000 + ++seq;
   const show = {
@@ -234,8 +186,6 @@ async function cachedEpisode(overrides) {
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(showId, show.title, show.year, show.genre, show.genre, show.poster, 22);
-  /* Dois: o T2E05 é o que os testes abrem, e o T2E06 existe para haver para
-     onde virar — passar ao seguinte é o gesto que marca o anterior. */
   for (const [numero, nome] of [[5, 'O Episódio'], [6, 'O Seguinte']]) {
     await db
       .prepare(
@@ -264,12 +214,9 @@ test('a sessão abre num episódio, e diz que é um', async () => {
   assert.equal(opened.body.movie.season, 2);
   assert.equal(opened.body.movie.episode, 5);
   assert.equal(opened.body.movie.episodeTitle, 'O Episódio');
-  // Do episódio e não da série: é a duração que limita a barra.
   assert.equal(opened.body.movie.runtime, 47);
-  // O pôster é o da série: o cabeçalho desenha um retrato, e o still é 16:9.
   assert.equal(opened.body.movie.poster, serie.poster);
 
-  // E o filme continua se dizendo filme, que é o que a tela lê para escolher.
   const film = await queuedFilm();
   const outro = await req('POST', at('/screening/open'), { movieId: film.id }, member.cookie);
   assert.equal(outro.body.movie.kind, 'movie');
@@ -282,7 +229,6 @@ test('um episódio que ninguém abriu ainda não é uma sessão', async () => {
   const member = await newMember();
   const serie = await cachedEpisode();
 
-  // A temporada existe em cache, este episódio não.
   const semCache = await req(
     'POST',
     at('/screening/open'),
@@ -302,22 +248,16 @@ test('um episódio que ninguém abriu ainda não é uma sessão', async () => {
   }
 });
 
-/* Passar ao seguinte é ter visto o anterior — para todo mundo que estava na
-   sala, e sem tocar no que já estava gravado, que é por onde uma nota se
-   perderia. Chegar não marca: quem abre um episódio ainda não o viu. */
 test('a virada de episódio marca o anterior para quem estava na sala', async () => {
   const ana = await newMember('Ana da Série');
   const bruno = await newMember('Bruno da Série');
   const deFora = await newMember('Longe da Série');
   const serie = await cachedEpisode({ title: 'A Vista Junto' });
-  /* O acervo é do CLUBE e vem com as fichas de todo mundo, então a pergunta
-     tem de dizer de quem: sem isto, "uma linha" conta a do outro membro junto. */
   const vistos = async who =>
     (await req('GET', at('/shows/takes'), null, who.cookie)).body.takes.filter(
       t => t.showId === serie.showId && t.reviewerId === who.id
     );
 
-  // O Bruno já tinha avaliado a temporada 2 antes desta noite.
   assert.equal(
     (
       await req(
@@ -338,7 +278,6 @@ test('a virada de episódio marca o anterior para quem estava na sala', async ()
   await req('POST', at('/screening/open'), { showId: serie.showId, season: 2, episode: 5 }, ana.cookie);
   assert.equal((await vistos(ana)).length, 0, 'chegar num episódio não é tê-lo visto');
 
-  // A virada. O T2E05 sai, o T2E06 entra.
   assert.equal(
     (await req('POST', at('/screening/open'), { showId: serie.showId, season: 2, episode: 6 }, ana.cookie))
       .status,
@@ -364,11 +303,8 @@ test('a virada de episódio marca o anterior para quem estava na sala', async ()
   await dela.close();
   await dele.close();
   await req('POST', at('/screening/close'), {}, ana.cookie);
-  // Encerrar não marca: fechar a sala no meio é uma noite que acabou.
   assert.equal((await vistos(ana)).length, 1);
 });
-
-/* ── commands ─────────────────────────────────────────────────────────────── */
 
 test('a command needs an open session and a real name', async () => {
   const member = await newMember();
@@ -390,11 +326,6 @@ test('a command needs an open session and a real name', async () => {
   await req('POST', at('/screening/close'), {}, member.cookie);
 });
 
-/* ── de quem é o controle ─────────────────────────────────────────────────
-   A sala é de quem abriu. As outras telas assistem, e a delas não manda: a
-   regra vale na rota e não só no botão, porque uma aba velha e um console
-   aberto chegam aqui pelo mesmo caminho que o player. */
-
 test('só quem abriu a sessão comanda o filme', async () => {
   const dona = await newMember('Dona da Sessão');
   const outro = await newMember('Outro da Sessão');
@@ -414,7 +345,6 @@ test('só quem abriu a sessão comanda o filme', async () => {
   const roubo = await req('POST', at('/screening/open'), { movieId: outroFilme.id }, outro.cookie);
   assert.equal(roubo.status, 403, 'trocar o filme por baixo da sessão é tomar o controle dela');
 
-  // E o filme continua exatamente onde a dona o deixou.
   const still = await req('GET', at('/screening'), null, outro.cookie);
   assert.equal(still.body.status, 'paused');
   assert.equal(still.body.host.name, 'Dona da Sessão');
@@ -423,8 +353,6 @@ test('só quem abriu a sessão comanda o filme', async () => {
   await req('POST', at('/screening/close'), {}, dona.cookie);
 });
 
-/* Sem isto o clube herda uma sessão que ninguém pode pausar: a dona fecha a aba
-   e o controle fica com uma pessoa que não está mais lá. */
 test('o controle passa a quem ficou quando a dona sai da sala', async () => {
   const dona = await newMember('Dona Que Sai');
   const resta = await newMember('Quem Fica');
@@ -450,15 +378,12 @@ test('o controle passa a quem ficou quando a dona sai da sala', async () => {
   await req('POST', at('/screening/close'), {}, resta.cookie);
 });
 
-/* ── the stream, which is the whole point ─────────────────────────────────── */
-
 test('one member presses play and the other member\'s stream says so', async () => {
   const ana = await newMember('Ana da Sessão');
   const bruno = await newMember('Bruno da Sessão');
   const film = await queuedFilm({ title: 'Sessão Sincronizada' });
 
   const ear = await listen(bruno.cookie);
-  // The first thing a connection gets is where the room stands.
   const hello = await ear.next(f => f.type === 'state');
   assert.equal(hello.status, 'paused');
   assert.ok(hello.viewers.some(v => v.name === 'Bruno da Sessão'), 'quem conecta entra na sala');
@@ -479,9 +404,6 @@ test('one member presses play and the other member\'s stream says so', async () 
   await ear.close();
 });
 
-/* Quem trava aparece no painel de todo mundo, e o filme não para. A sala já
-   parou sozinha por isso e o clube passou noites sentado no resultado — ver a
-   nota em screening.js. Quem decide esperar é uma pessoa, apertando pause. */
 test('uma travada chega ao painel do clube sem parar o filme', async () => {
   const ana = await newMember('Ana do Buffer');
   const bruno = await newMember('Bruno do Buffer');
@@ -489,8 +411,6 @@ test('uma travada chega ao painel do clube sem parar o filme', async () => {
 
   const ear = await listen(ana.cookie);
   const brunoEar = await listen(bruno.cookie);
-  // Ana's stream is the one that has to notice Bruno arriving, and it is the
-  // one every later assertion in this test reads from.
   await ear.next(f => f.type === 'state' && f.viewers.some(v => v.name === 'Bruno do Buffer'));
 
   await req('POST', at('/screening/open'), { movieId: film.id }, ana.cookie);
@@ -505,11 +425,6 @@ test('uma travada chega ao painel do clube sem parar o filme', async () => {
   assert.ok(stalled.revision >= playing.revision);
   assert.equal(stalled.viewers.find(v => v.name === 'Bruno do Buffer').sourceTag, 'abc123');
 
-  /* A volta é conferida pelo instantâneo e não pelo fluxo, de propósito: uma
-     leitura de buffer não é uma mutação da sala, então ela não avança a
-     revisão — e sem revisão não há como dizer, olhando os quadros, que um
-     "Bruno pronto" é o de agora e não o de antes de o filme começar. O
-     instantâneo é a sala neste instante, sem ordem para desempatar. */
   await req('POST', at('/screening/ready'), { ready: true }, bruno.cookie);
   const now = (await req('GET', at('/screening'), null, ana.cookie)).body;
   assert.equal(now.status, 'playing');
@@ -519,8 +434,6 @@ test('uma travada chega ao painel do clube sem parar o filme', async () => {
   await ear.close();
   await brunoEar.close();
 });
-
-/* ── the source, handed to whoever arrives ────────────────────────────────── */
 
 test('the link the club is on reaches a member who arrives later', async () => {
   const first = await newMember('Quem Abriu');
@@ -532,8 +445,6 @@ test('the link the club is on reaches a member who arrives later', async () => {
   const published = await req('POST', at('/screening/link'), { link: magnet }, first.cookie);
   assert.equal(published.status, 200);
 
-  /* The whole point: the newcomer's very first frame already names the source,
-     so nobody has to ask in the chat what everyone is watching. */
   const ear = await listen(late.cookie);
   const hello = await ear.next(f => f.type === 'state');
   assert.equal(hello.link, magnet);
@@ -579,10 +490,6 @@ test('arriving is announced to the people already in the room', async () => {
   await ear.next(f => f.type === 'state');
 
   const late = await listen(second.cookie);
-  /* Nothing else happens in this test on purpose. Arriving has to be news by
-     itself: the sync frames carry no viewers, so a room that only redrew on the
-     next command would hide whoever joined during a quiet stretch — which,
-     mid-film, is the entire film. */
   const seen = await ear.next(f => f.type === 'state' && f.viewers.some(v => v.name === 'Segundo a Chegar'));
   assert.ok(seen.viewers.some(v => v.name === 'Primeiro a Chegar'), 'e sem apagar quem já estava');
 
@@ -597,7 +504,6 @@ test('leaving the stream takes the viewer out of the room', async () => {
 
   await ear.close();
 
-  // The close travels back through the socket, so it is not instant.
   for (let i = 0; i < 40; i++) {
     const { body } = await req('GET', at('/screening'), null, member.cookie);
     if (!body.viewers.some(v => v.name === 'Quem Sai')) return;
@@ -605,8 +511,6 @@ test('leaving the stream takes the viewer out of the room', async () => {
   }
   assert.fail('o espectador continuou na sala depois de fechar a conexão');
 });
-
-/* ── the clock ────────────────────────────────────────────────────────────── */
 
 test('a subtitle posted by one member is announced to another, and collected', async () => {
   const film = await queuedFilm({ title: 'A Sessão Legendada' });
@@ -626,7 +530,6 @@ test('a subtitle posted by one member is announced to another, and collected', a
   assert.equal(sent.status, 200);
 
   const frame = await ear.next(f => f.type === 'state' && f.subtitle?.name === 'filme.srt');
-  // Announced only: the text must never ride on a frame the room re-emits.
   assert.equal(frame.subtitle.vtt, undefined);
 
   const got = await req('GET', at('/screening/subtitle'), null, bruno.cookie);
@@ -634,7 +537,6 @@ test('a subtitle posted by one member is announced to another, and collected', a
   assert.equal(got.body.vtt, vtt);
   assert.equal(got.body.id, frame.subtitle.id, 'o id busca exatamente o que foi anunciado');
 
-  // And removing it is the room's doing, not one screen's.
   assert.equal(
     (await req('POST', at('/screening/subtitle'), { subtitle: null }, bruno.cookie)).status,
     200

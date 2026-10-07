@@ -6,12 +6,6 @@ const {
   genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn, GENRE_PRIORITY
 } = require('../criteria');
 
-/* Todo gênero pergunta onze e todas pesam igual, então uma ficha cheia de dez é
-   um dez e dois filmes de gêneros diferentes estão na mesma régua. O que se
-   guarda é essa propriedade e não a constante que a produzia: o divisor é
-   contado da ficha (ver finalOf), que é o que deixa uma de dez critérios ainda
-   ser uma nota de zero a dez. */
-
 test('every genre asks eleven questions, all at the same weight', () => {
   for (const genre of GENRES) {
     const cs = critsFor(genre);
@@ -30,8 +24,6 @@ test('every genre is eight of craft, two of genre and one personal', () => {
 });
 
 test('the personal criterion is asked of every genre, and asked last', () => {
-  // Last on purpose: you say whether you enjoyed it after taking the film
-  // apart, and a card that asks it earlier invites the rest to agree with it.
   for (const genre of GENRES) {
     const cs = critsFor(genre);
     assert.equal(cs.at(-1).key, PERSONAL_KEY, `${genre} não termina em ${PERSONAL_KEY}`);
@@ -39,8 +31,6 @@ test('the personal criterion is asked of every genre, and asked last', () => {
 });
 
 test('criteria keys are unique within a genre', () => {
-  // A genre criterion reusing a TECH key would collapse both onto one slider
-  // and drop a score on the way to the database.
   for (const genre of GENRES) {
     const keys = critsFor(genre).map(c => c.key);
     assert.equal(new Set(keys).size, keys.length, `${genre} tem chaves repetidas: ${keys}`);
@@ -61,8 +51,6 @@ test('critsFor falls back to Drama for an unknown genre', () => {
   assert.deepEqual(critsFor(undefined), critsFor('Drama'));
   assert.deepEqual(critsFor(null), critsFor('Drama'));
 });
-
-/* ── finalOf ─────────────────────────────────────────────────────────── */
 
 function allScores(genre, value) {
   const o = {};
@@ -86,8 +74,6 @@ test('finalOf stays inside 0-10 for every genre at the midpoint', () => {
 test('no criterion counts more than any other', () => {
   const zeroed = allScores('Terror', 0);
 
-  // 'direcao' is craft, 'atmosfera' is what Terror brings, 'aproveitamento' is
-  // the personal one. Ten points in any of them move the score the same.
   const craft = finalOf('Terror', { ...zeroed, direcao: 10 });
   const genre = finalOf('Terror', { ...zeroed, atmosfera: 10 });
   const personal = finalOf('Terror', { ...zeroed, aproveitamento: 10 });
@@ -97,17 +83,10 @@ test('no criterion counts more than any other', () => {
   assert.equal(personal, craft);
 });
 
-/* ── o take que não respondeu tudo ───────────────────────────────────────
-   Every take recorded before 25/08/2026 has ten marks and no Aproveitamento.
-   Reading that silence as a zero would drop every historical score by about a
-   point, so the divisor is what the take answers. These two tests are the whole
-   reason finalOf counts instead of assuming. */
-
 test('a take from before Aproveitamento is scored out of what it answered', () => {
   const before = allScores('Terror', 8);
   delete before.aproveitamento;
 
-  // Ten eights is an eight. Divided by eleven it would have been 7,27.
   assert.equal(finalOf('Terror', before), 8);
   assert.equal(Object.keys(before).length, 10);
 });
@@ -143,8 +122,6 @@ test('answeredIn lists what a take carries, in the order the card asks it', () =
   );
 });
 
-/* ── genre mapping ───────────────────────────────────────────────────── */
-
 test('genreFromTmdbIds resolves known TMDB ids', () => {
   assert.equal(genreFromTmdbIds([27]), 'Terror');
   assert.equal(genreFromTmdbIds([9648]), 'Suspense');
@@ -152,7 +129,7 @@ test('genreFromTmdbIds resolves known TMDB ids', () => {
 });
 
 test('genreFromTmdbIds falls back to Drama for unknown or empty input', () => {
-  assert.equal(genreFromTmdbIds([10402]), 'Drama'); // Music: not in our taxonomy
+  assert.equal(genreFromTmdbIds([10402]), 'Drama');
   assert.equal(genreFromTmdbIds([]), 'Drama');
   assert.equal(genreFromTmdbIds(undefined), 'Drama');
   assert.equal(genreFromTmdbIds(null), 'Drama');
@@ -162,31 +139,22 @@ test('genreFromTmdbIds ignores ids it does not know', () => {
   assert.equal(genreFromTmdbIds([10402, 27]), 'Terror');
 });
 
-/* This is the fault the priority list exists for. Frewaka arrives from TMDB as
-   [18, 14, 27] — drama, fantasy, horror — and reading that left to right filed
-   an Irish folk horror as a drama, which decides which two criteria the club
-   is asked for. TMDB's order is not a ranking; ours is. */
 test('a film carrying several genres is rated as the most specific one', () => {
-  assert.equal(genreFromTmdbIds([18, 14, 27]), 'Terror'); // Frewaka
+  assert.equal(genreFromTmdbIds([18, 14, 27]), 'Terror');
   assert.equal(genreFromTmdbIds([18, 99]), 'Documentário');
   assert.equal(genreFromTmdbIds([16, 35]), 'Animação');
   assert.equal(genreFromTmdbIds([28, 878]), 'Ficção científica');
   assert.equal(genreFromTmdbIds([18, 10749]), 'Romance');
-  // Drama still answers when it is the only thing the film is.
   assert.equal(genreFromTmdbIds([18]), 'Drama');
 });
 
-/* The order of the ids must not change the answer: two films tagged with the
-   same genres in different orders are the same kind of film. */
 test('genreFromTmdbIds does not depend on the order TMDB sent', () => {
   assert.equal(genreFromTmdbIds([27, 14, 18]), genreFromTmdbIds([18, 14, 27]));
   assert.equal(genreFromTmdbIds([35, 16]), genreFromTmdbIds([16, 35]));
 });
 
-/* The single genre is a default now, not a verdict: what the rating screen
-   offers is every genre the film carries, and the person watching decides. */
 test('genresFromTmdbIds returns every genre the film carries', () => {
-  assert.deepEqual(genresFromTmdbIds([18, 14, 27]), ['Terror', 'Drama']); // Frewaka
+  assert.deepEqual(genresFromTmdbIds([18, 14, 27]), ['Terror', 'Drama']);
   assert.deepEqual(genresFromTmdbIds([16, 35]), ['Animação', 'Comédia']);
   assert.deepEqual(genresFromTmdbIds([27]), ['Terror']);
 });
@@ -197,8 +165,7 @@ test('genresFromTmdbIds sorts by the club priority, whatever TMDB sent', () => {
 });
 
 test('genresFromTmdbIds never answers with an empty list', () => {
-  // A film has to be rateable even when nothing it carries is in the taxonomy.
-  assert.deepEqual(genresFromTmdbIds([10402]), ['Drama']); // Music
+  assert.deepEqual(genresFromTmdbIds([10402]), ['Drama']);
   assert.deepEqual(genresFromTmdbIds([]), ['Drama']);
   assert.deepEqual(genresFromTmdbIds(undefined), ['Drama']);
 });
@@ -209,15 +176,7 @@ test('the single genre is the first of the list', () => {
   }
 });
 
-/* Um gênero pode SUBSTITUIR um slot da base quando a pergunta padrão não tem
-   referente — "Atuações" numa animação. O que ele não pode é acrescentar,
-   remover ou reordenar: a contagem é o que mantém toda ficha numa régua, e a
-   ordem é o que faz duas cartas comparáveis lado a lado.
-
-   `baseKeys` lê o grupo de ofício. Lia `w === 1`, que era o mesmo conjunto só
-   enquanto o par do gênero pesava 2. */
 const baseKeys = g => critsFor(g).filter(c => c.group === 'oficio').map(c => c.key);
-/** The base as declared, minus the personal slot, which critsFor moves to the end. */
 const declaredCraft = BASE.map(t => t[0]).filter(k => k !== PERSONAL_KEY);
 
 test('a genre that declares no swap is asked the default craft', () => {
@@ -241,17 +200,12 @@ test('a swap replaces a slot in place, never adds or reorders one', () => {
   }
 });
 
-/* Nobody gets to swap out "did you enjoy it". A genre that replaced it would be
-   deciding that taste is not a question worth asking about that kind of film. */
 test('no genre may swap away the personal criterion', () => {
   for (const swap of Object.values(BASE_SWAP)) {
     assert.ok(!swap[PERSONAL_KEY], `um gênero está trocando ${PERSONAL_KEY}`);
   }
 });
 
-/* The whole point of the swap. A criterion nobody can answer does not come back
-   empty — it comes back as whatever number was easiest to leave the slider on,
-   at full weight, indistinguishable from a measurement afterwards. */
 test('the genres with nothing to act in are not asked about acting', () => {
   assert.ok(!baseKeys('Animação').includes('atuacoes'), 'animação ainda pede atuações');
   assert.ok(baseKeys('Animação').includes('vozes'), 'animação precisa perguntar por vozes');
@@ -259,9 +213,6 @@ test('the genres with nothing to act in are not asked about acting', () => {
   assert.ok(!baseKeys('Documentário').includes('arte'), 'documentário ainda pede direção de arte');
 });
 
-/* Every genre still has to ask about the four systems a film is made of, plus
-   how it was directed and written. Those are not negotiable by genre — only
-   what fills the two slots that can be. */
 test('the craft every film has is asked of every genre', () => {
   for (const genre of GENRES) {
     for (const key of ['direcao', 'roteiro', 'fotografia', 'montagem', 'som', 'originalidade']) {
@@ -275,8 +226,6 @@ test('baseFor falls back to the default base for an unknown genre', () => {
   assert.deepEqual(baseFor(undefined), BASE);
 });
 
-/* A genre added to the taxonomy without a place in the priority list would be
-   unreachable — every film carrying it would fall through to Drama. */
 test('every genre has a place in the priority order', () => {
   for (const genre of GENRES) {
     assert.ok(GENRE_PRIORITY.includes(genre), `${genre} não está na ordem de prioridade`);
@@ -318,11 +267,6 @@ test('BASE is nine slots and every slot is named and described', () => {
   }
 });
 
-/* A rename inside a genre is free; a new key is not — it drops that criterion
-   out of every take already recorded unless the archive is migrated with it.
-   This is the list scripts/migrate-criteria-keys.js has to agree with, and it
-   is written down here so that adding a swap without a migration is a decision
-   somebody makes on purpose. */
 test('the keys a genre introduces are the ones the migration knows about', () => {
   const introduced = new Set();
   for (const [genre, swap] of Object.entries(BASE_SWAP)) {

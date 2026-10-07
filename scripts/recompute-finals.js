@@ -1,30 +1,10 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   Recalcula a nota gravada de cada avaliação com a fórmula atual.
-
-       npm run recalcular:notas           escreve
-       npm run recalcular:notas -- --dry  só mostra o que faria
-
-   Em 25/08/2026 os pesos ficaram todos iguais, o que muda a nota de toda
-   avaliação em que os dois critérios do gênero não estavam exatamente na média
-   das outras. O detalhamento se recalcula sozinho na tela; a coluna `final`,
-   que a média do clube e o pódio somam, não — sem isto o clube vê o
-   detalhamento com pesos iguais e a nota ao lado vinda de outra conta.
-
-   Não inventa Aproveitamento para quem não respondeu: `finalOf` divide pelo que
-   a ficha responde, então as duas continuam sendo médias na mesma escala.
-
-   Seguro de rodar duas vezes.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }
+try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
 const db = require('../db');
 const { finalOf, GENRES } = require('../criteria');
 
 const DRY = process.argv.includes('--dry');
 
-/* Duas casas: `final` é um REAL e a diferença que interessa é a que aparece na
-   tela, que mostra uma casa decimal. */
 const round = n => Math.round(n * 100) / 100;
 const fmt = n => n.toFixed(2).replace('.', ',');
 
@@ -58,15 +38,11 @@ async function main() {
     try {
       scores = JSON.parse(row.scores);
     } catch (e) {
-      /* Uma avaliação com scores ilegíveis não tem nota para recalcular, e
-         apagar ou zerar a que está lá seria pior do que deixá-la. */
       broken++;
       console.warn(`[notas] ${row.movie_title} (${row.reviewer_name}): scores ilegíveis, deixado como está`);
       continue;
     }
 
-    // Um gênero que saiu da taxonomia cai em Drama, que é o mesmo que critsFor
-    // faz — a conta tem que ser a mesma que o servidor faria hoje.
     const genre = GENRES.includes(row.movie_genre) ? row.movie_genre : 'Drama';
     const next = round(finalOf(genre, scores));
     const before = round(Number(row.final));
@@ -86,9 +62,6 @@ async function main() {
   }
 
   if (writes.length && !DRY) {
-    // Numa transação só: ou o acervo inteiro passa para a fórmula nova ou nada
-    // passa. Metade do acervo numa conta e metade em outra é o estado que este
-    // script existe para não deixar acontecer.
     await db.batch(writes);
   }
 

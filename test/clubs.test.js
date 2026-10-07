@@ -18,21 +18,6 @@ const throttle = require('../throttle');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Os clubes, e a parede entre eles.
-
-   Os outros arquivos protegem o que o produto FAZ; este protege o que ele NÃO
-   PODE fazer, e a diferença importa porque um vazamento não se parece com um
-   defeito: nada quebra, nada dá erro, nenhuma tela fica estranha. Alguém
-   simplesmente vê uma coisa que não é dele.
-
-   São quatro paredes, e cada uma pode cair sozinha: a leitura, a escrita, o
-   cano ao vivo e a sala de projeção. A terceira é a mais silenciosa — um aviso
-   de `social` não carrega conteúdo, só a palavra, mas ele diz "alguma coisa
-   aconteceu agora", e num clube privado isso já é mais do que quem está de fora
-   tem direito de saber.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -43,10 +28,6 @@ test.before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-/* Esta suíte cadastra e funda muito mais do que uma pessoa, e tudo do mesmo
-   endereço: sem zerar as travas ela bate na de `/register` e falha em testes
-   que não são sobre ela. Não afrouxa nada — quem verifica que as travas travam
-   é `abuse.test.js`. */
 test.beforeEach(() => throttle.reset());
 
 test.after(async () => {
@@ -58,7 +39,7 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -87,8 +68,6 @@ function scoresFor(genre, value) {
   return o;
 }
 
-/* ── fundar ─────────────────────────────────────────────────────────────── */
-
 test('quem funda um clube é ADM dele', async () => {
   const quem = await kit.signIn();
   const res = await req('POST', '/api/clubs', { name: `Clube ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
@@ -97,7 +76,6 @@ test('quem funda um clube é ADM dele', async () => {
   assert.equal(res.body.club.visibility, 'public', 'sem dizer nada, um clube nasce aberto');
 });
 
-/* Em duas contas porque fundar é um por pessoa — ver o teste logo abaixo. */
 test('nome de clube é único, e a caixa não faz diferença', async () => {
   const quem = await kit.signIn();
   const outra = await kit.signIn();
@@ -107,10 +85,6 @@ test('nome de clube é único, e a caixa não faz diferença', async () => {
   assert.equal(outro.status, 409, 'duas salas com o mesmo nome na lista são uma sala que ninguém sabe escolher');
 });
 
-/* ── um clube por pessoa ─────────────────────────────────────────────────
-   Quem funda é ADM, aprova quem entra e responde pelo que a sala é. Três salas
-   de uma pessoa são três salas vazias com um dono ocupado, e a vitrine é a
-   primeira tela do produto. */
 test('cada pessoa funda um clube só', async () => {
   const quem = await kit.signIn();
   const primeiro = await req('POST', '/api/clubs', { name: `Sala ${crypto.randomUUID().slice(0, 6)}` }, quem.cookie);
@@ -124,8 +98,6 @@ test('cada pessoa funda um clube só', async () => {
   assert.equal(body.founded, true, 'a lista precisa dizer que a chave de fundar não tem mais o que fazer');
 });
 
-/* Conta as salas que EXISTEM, e não as que já foram fundadas: quem encerrou a
-   sua pode começar outra. */
 test('encerrar a sua devolve o direito de fundar', async () => {
   const quem = await kit.signIn();
   const nome = `Sala ${crypto.randomUUID().slice(0, 6)}`;
@@ -142,13 +114,6 @@ test('encerrar a sua devolve o direito de fundar', async () => {
 test('fundar exige estar logado', async () => {
   assert.equal((await req('POST', '/api/clubs', { name: 'Anônimo' })).status, 401);
 });
-
-/* ── a parede da leitura ────────────────────────────────────────────────── */
-
-/* ── a fachada e o conteúdo ──────────────────────────────────────────────
-   São duas camadas, e é a confusão entre elas que faz um produto assim ficar
-   errado. Um clube fechado QUER ser achado — é como alguém pede para entrar; o
-   que ele não quer é ser lido. */
 
 test('um clube fechado tem fachada: nome, foto e quantas pessoas', async () => {
   const dono = await kit.signIn();
@@ -172,21 +137,9 @@ test('mas o conteúdo de um clube fechado é só de quem é dele', async () => {
     const res = await req('GET', at(sala, rota), null, fora.cookie);
     assert.equal(res.status, 403, `${rota} deveria estar atrás da porta`);
   }
-  // E nem deslogado.
   assert.equal((await req('GET', at(sala, '/reviews'))).status, 403);
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A política de leitura de um clube fechado: o ADM decide, em dois
-   interruptores, se um estranho vê as avaliações, os comentários, os dois ou
-   nenhum. Com os dois ligados o clube fica fechado APENAS NA PORTA.
-
-   Uma regra de leitura que erra não parece um defeito: ninguém vê um erro, uma
-   pessoa só vê o que não era dela. Por isso a matriz inteira está aqui, e não
-   uma amostra dela.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** Uma sala fechada com conteúdo dentro, e um estranho olhando de fora. */
 async function salaComConteudo(nome, politica = {}) {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
@@ -222,12 +175,9 @@ test('só avaliações: as fichas abrem, a conversa não', async () => {
 
   assert.equal((await req('GET', at(sala, '/social'), null, fora.cookie)).status, 403);
 
-  /* A fila e o elenco acompanham o interruptor mais permissivo: quem lê o que o
-     clube escreveu vê quem escreveu e o que ele pretende assistir. */
   assert.equal((await req('GET', at(sala, '/watchlist'), null, fora.cookie)).status, 200);
   assert.equal((await req('GET', at(sala, '/reviewers'), null, fora.cookie)).status, 200);
 
-  // E o mural fica com metade das linhas.
   const mural = await req('GET', at(sala, '/feed'), null, fora.cookie);
   assert.equal(mural.status, 200);
   assert.ok(mural.body.items.some(i => i.kind === 'review'));
@@ -255,11 +205,8 @@ test('as duas ligadas: fechado apenas na porta', async () => {
   for (const rota of ['/reviews', '/social', '/feed', '/watchlist', '/reviewers']) {
     assert.equal((await req('GET', at(sala, rota), null, fora.cookie)).status, 200, rota);
   }
-  // Até deslogado.
   assert.equal((await req('GET', at(sala, '/reviews'))).status, 200);
 
-  /* O que continua trancado é o que o usuário pediu que continuasse: entrar e
-     avaliar. Ler tudo não vira direito de escrever nada. */
   const escreve = await req(
     'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 5) }, fora.cookie
   );
@@ -329,15 +276,11 @@ test('um clube público é lido por qualquer um, até deslogado', async () => {
   assert.equal(semSessao.body.reviews.length, 1);
 });
 
-/* ── a parede da escrita ────────────────────────────────────────────────── */
-
 test('ler um clube aberto não dá direito de escrever nele — entrar dá', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
   const sala = await kit.makeClub({ name: `Aberto ${++seq}`, owner: dono.id, visibility: 'public' });
 
-  /* Aberto não quer dizer sem porta: quer dizer que a porta não tem tranca.
-     Quem só passou lendo ainda não entrou, e escrever é de quem entrou. */
   const antes = await req(
     'POST', at(sala, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 7) }, fora.cookie
   );
@@ -362,9 +305,6 @@ test('ser de um clube não dá direito nenhum sobre outro', async () => {
   const ficha = await req('POST', at(salaB, '/reviews'), { movie: movie(), scores: scoresFor('Terror', 9) }, b.cookie);
   assert.equal(ficha.status, 201);
 
-  /* O id de uma ficha da sala B, usado numa rota da sala A. É o ataque mais
-     natural que existe aqui — um id é público — e o que o barra é `club_id` na
-     CONDIÇÃO das consultas de escrita, não no que elas leem. */
   const comentario = await req(
     'POST', at(salaA, `/social/reviews/${ficha.body.id}/comments`), { body: 'oi' }, a.cookie
   );
@@ -375,18 +315,12 @@ test('ser de um clube não dá direito nenhum sobre outro', async () => {
   );
   assert.equal(voto.status, 404);
 
-  /* 403 e não 404: a ficha existe e é visível — o acervo de uma sala inclui o
-     de quem está nela —, e o que barra o apagar é ela não ser SUA. Uma ficha é
-     de quem a escreveu, em qualquer sala. */
   const apagar = await req('DELETE', at(salaA, `/reviews/${ficha.body.id}`), null, a.cookie);
   assert.equal(apagar.status, 403);
 
-  // E a ficha continua lá, inteira.
   const depois = await req('GET', at(salaB, '/reviews'), null, b.cookie);
   assert.equal(depois.body.reviews.length, 1);
 });
-
-/* ── a mesma pessoa, o mesmo filme, duas salas ──────────────────────────── */
 
 test('a ficha é da pessoa: avaliar o mesmo filme noutra sala regrava a mesma ficha', async () => {
   const quem = await kit.signIn();
@@ -401,9 +335,6 @@ test('a ficha é da pessoa: avaliar o mesmo filme noutra sala regrava a mesma fi
   assert.equal(a.body.id, b.body.id, 'uma ficha por pessoa por filme, no produto inteiro');
   assert.notEqual(a.body.final, b.body.final, 'a segunda gravação é a que vale');
 
-  /* As duas salas mostram a ficha, porque a pessoa é das duas. A de onde ela
-     saiu mostra de onde ela veio; a de onde ela foi gravada não etiqueta nada,
-     que é o caso comum. */
   const listaUm = await req('GET', at(um, '/reviews'), null, quem.cookie);
   assert.equal(listaUm.body.reviews.length, 1);
   assert.equal(listaUm.body.reviews[0].origin.slug, dois.slug);
@@ -411,8 +342,6 @@ test('a ficha é da pessoa: avaliar o mesmo filme noutra sala regrava a mesma fi
   assert.equal(listaDois.body.reviews.length, 1);
   assert.equal(listaDois.body.reviews[0].origin, null);
 });
-
-/* ── o acervo viaja com a pessoa ────────────────────────────────────────── */
 
 test('quem entra numa sala nova chega com o acervo, etiquetado de onde veio', async () => {
   const quem = await kit.signIn();
@@ -423,8 +352,6 @@ test('quem entra numa sala nova chega com o acervo, etiquetado de onde veio', as
   );
   assert.equal(ficha.status, 201);
 
-  /* Uma sala de outra gente, em que a pessoa entra depois. O acervo dela chega
-     junto — é o ponto inteiro — com a etiqueta dizendo onde foi avaliado. */
   const dono = await kit.signIn();
   const nova = await kit.makeClub({ name: `Nova ${++seq}`, owner: dono.id });
   const antes = await req('GET', at(nova, '/reviews'), null, dono.cookie);
@@ -436,12 +363,9 @@ test('quem entra numa sala nova chega com o acervo, etiquetado de onde veio', as
   assert.equal(depois.body.reviews[0].id, ficha.body.id);
   assert.equal(depois.body.reviews[0].origin.slug, casa.slug, 'a etiqueta diz de onde veio');
 
-  // E a média da sala nova conta a nota que chegou, ou a lista mentiria sobre si.
   const medias = await req('GET', at(nova, '/reviews/averages'), null, dono.cookie);
   assert.equal(medias.body.averages[filme.id].count, 1);
 
-  /* O que NÃO viaja é a conversa: comentário e voto acontecem na sala onde a
-     ficha foi gravada, senão um clube fechado leria o que se disse em outro. */
   const comentario = await req(
     'POST', at(nova, `/social/reviews/${ficha.body.id}/comments`), { body: 'oi' }, dono.cookie
   );
@@ -462,8 +386,6 @@ test('a fila também é por clube', async () => {
   assert.equal(a.body.watchlist.length, 1);
   assert.equal(b.body.watchlist.length, 1);
 });
-
-/* ── pedir para entrar ──────────────────────────────────────────────────── */
 
 test('pedir, aparecer para o ADM, e ser aceito', async () => {
   const dono = await kit.signIn();
@@ -490,12 +412,6 @@ test('pedir, aparecer para o ADM, e ser aceito', async () => {
     'aceito, ele escreve'
   );
 });
-
-/* ── um pedido tem que se anunciar ───────────────────────────────────────
-   Estes nasceram de um defeito de produto, não de código: a fila de pedidos
-   existia e funcionava, mas morava atrás de perfil → engrenagem → Ajustes, e
-   nada em lugar nenhum dizia que ela estava lá. Alguém pedia para entrar e
-   esperava indefinidamente porque o ADM não tinha como saber. */
 
 test('um pedido acende o sino do ADM', async () => {
   const dono = await kit.signIn();
@@ -578,10 +494,6 @@ test('num clube aberto ninguém fica esperando na fila', async () => {
   assert.equal(fila.body.requests.length, 0, 'entrar foi direto — não há o que aprovar');
 });
 
-/* ── abrir a sala admite quem estava esperando ───────────────────────────
-   Um pedido é alguém dizendo "quero entrar aqui". Abrindo o clube, entrar virou
-   um clique: deixar essas pessoas na fila seria fazê-las apertar um botão para
-   conseguir o que já lhes foi concedido. */
 test('abrir o clube admite quem estava na fila de pedidos', async () => {
   const dono = await kit.signIn();
   const quer = await kit.signIn();
@@ -597,8 +509,6 @@ test('abrir o clube admite quem estava na fila de pedidos', async () => {
   assert.equal(escreve.status, 201, 'quem pediu entrou junto com a porta abrindo');
 });
 
-/* ── quem manda ─────────────────────────────────────────────────────────── */
-
 test('só o ADM muda o que a sala é', async () => {
   const dono = await kit.signIn();
   const gente = await kit.signIn();
@@ -610,10 +520,6 @@ test('só o ADM muda o que a sala é', async () => {
 });
 
 test('o último ADM não sai e deixa a sala trancada', async () => {
-  /* Sem `owner`: uma sala sem fundador, como o clube que a migração criou. É o
-     único caso em que esta regra ainda aparece sozinha — num clube fundado por
-     alguém, quem barra a saída do último ADM é a regra de quem fundou, que é
-     mais forte e vem antes. */
   const sala = await kit.makeClub({ name: `Único ${++seq}` });
   const um = await kit.signIn();
   const dois = await kit.signIn();
@@ -622,7 +528,6 @@ test('o último ADM não sai e deixa a sala trancada', async () => {
   const sozinho = await req('DELETE', at(sala, `/members/${um.id}`), null, um.cookie);
   assert.equal(sozinho.status, 409, 'sem ADM ninguém aprova entrada nem muda nada, e as fichas ficam trancadas lá dentro');
 
-  // Com um segundo ADM, sai.
   await kit.join(sala.id, dois.id, 'admin');
   assert.equal((await req('DELETE', at(sala, `/members/${um.id}`), null, um.cookie)).status, 204);
 });
@@ -652,11 +557,6 @@ test('ninguém tira outra pessoa sem ser ADM', async () => {
   assert.equal((await req('DELETE', at(sala, `/members/${b.id}`), null, dono.cookie)).status, 204);
 });
 
-/* Duas regras que andam juntas: quem fundou é a única que encerra o clube, e a
-   única que não pode deixar de administrá-lo. A segunda existe por causa da
-   primeira — um clube cujo dono saiu continua existindo com o acervo de todo
-   mundo dentro e sem ninguém que possa encerrá-lo. */
-
 test('só quem fundou encerra o clube', async () => {
   const dono = await kit.signIn();
   const outroAdm = await kit.signIn();
@@ -672,7 +572,6 @@ test('só quem fundou encerra o clube', async () => {
   );
   assert.equal((await req('DELETE', at(sala, ''), null, dono.cookie)).status, 204);
 
-  // E some de verdade: nem a fachada sobra.
   assert.equal((await req('GET', at(sala, ''), null, dono.cookie)).status, 404);
 });
 
@@ -695,7 +594,6 @@ test('encerrar leva tudo o que estava dentro', async () => {
     .prepare('SELECT COUNT(*) AS n FROM review_comments WHERE review_id = ?').get(ficha.body.id);
   assert.equal(conversas, 0, 'a conversa pendura na ficha, e a ficha foi embora');
 
-  // A conta de quem fundou continua existindo: o clube acabou, a pessoa não.
   assert.ok(await db.prepare('SELECT id FROM reviewers WHERE id = ?').get(dono.id));
 });
 
@@ -720,8 +618,6 @@ test('quem fundou não sai do clube — a saída dela é encerrar', async () => 
   const sala = await kit.makeClub({ name: `Não sai ${++seq}`, owner: dono.id });
   await kit.join(sala.id, outroAdm.id, 'admin');
 
-  /* Com um segundo ADM na sala, a regra do "último ADM não sai" já não vale —
-     então o que barra aqui é a regra de quem fundou, e não a outra. */
   const sozinho = await req('DELETE', at(sala, `/members/${dono.id}`), null, dono.cookie);
   assert.equal(sozinho.status, 409);
   const tirado = await req('DELETE', at(sala, `/members/${dono.id}`), null, outroAdm.cookie);
@@ -729,17 +625,12 @@ test('quem fundou não sai do clube — a saída dela é encerrar', async () => 
 });
 
 test('o clube fundador não tem quem o encerre', async () => {
-  /* Cineclube foi criado pela migração, sem `created_by`. Ninguém casa com a
-     condição, e é a propriedade certa para a sala que guarda o histórico de
-     antes da rede. */
   const home = await db.prepare('SELECT id, slug FROM clubs WHERE name = ? COLLATE NOCASE').get('Cineclube');
   const dono = await kit.signInAdmin();
   await kit.join(home.id, dono.id, 'admin');
   const res = await req('DELETE', `/api/c/${home.slug}`, null, dono.cookie);
   assert.equal(res.status, 403);
 });
-
-/* ── a parede do cano ao vivo ───────────────────────────────────────────── */
 
 test('um aviso de outra sala não chega neste cano', async () => {
   const dono = await kit.signIn();
@@ -770,20 +661,18 @@ test('um aviso de outra sala não chega neste cano', async () => {
           if (chunk.startsWith('data: ')) kinds.push(JSON.parse(chunk.slice(6)).kind);
         }
       }
-    } catch { /* abortado no fim */ }
+    } catch { }
   })();
 
   const settle = () => new Promise(r => setTimeout(r, 250));
   await settle();
-  kinds.length = 0; // descarta o `hello`
+  kinds.length = 0;
 
   try {
-    // Uma escrita na OUTRA sala.
     await req('POST', at(outra, '/watchlist'), { movie: movie() }, dono.cookie);
     await settle();
     assert.deepEqual(kinds, [], 'nada da outra sala pode chegar aqui');
 
-    // E uma na própria, que tem de chegar.
     await req('POST', at(sala, '/watchlist'), { movie: movie() }, dono.cookie);
     await settle();
     assert.ok(kinds.includes('watchlist'), 'o que é desta sala tem de chegar');
@@ -802,11 +691,6 @@ test('quem não é do clube não abre o cano dele', async () => {
   assert.equal(res.status, 403);
 });
 
-/* ── o ADM geral é um só ─────────────────────────────────────────────────
-   Duas coisas com o mesmo nome em português, e confundir as duas é como poder
-   vaza num produto assim: ADM de um clube manda na sala dele e em nada mais; o
-   ADM da instalação cuida de contas. */
-
 test('quem funda um clube não ganha poder nenhum fora dele', async () => {
   const chefe = await kit.signIn();
   const alheio = await kit.signIn();
@@ -820,14 +704,10 @@ test('quem funda um clube não ganha poder nenhum fora dele', async () => {
   assert.equal((await req('GET', at(outra, '/requests'), null, chefe.cookie)).status, 403);
   assert.equal((await req('DELETE', `/api/reviewers/${alheio.id}`, null, chefe.cookie)).status, 403);
 
-  // E na dele, manda.
   assert.equal((await req('PATCH', at(minha, ''), { tagline: 'aqui sim' }, chefe.cookie)).status, 200);
 });
 
 test('uma conta criada por senha nunca vira ADM da instalação', async () => {
-  /* Um cadastro não verifica e-mail nenhum — este app não manda e-mail. Aceitar
-     a cadeira por e-mail auto-declarado seria uma porta dos fundos com o nome de
-     uma variável de ambiente. */
   const res = await req('POST', '/api/auth/register', {
     name: 'Espertinho',
     email: (process.env.CINECLUBE_ADMIN_EMAIL || 'dono@exemplo.com'),
@@ -838,8 +718,6 @@ test('uma conta criada por senha nunca vira ADM da instalação', async () => {
     assert.equal(res.body.reviewer.isAdmin, false);
   }
 });
-
-/* ── a parede da sala de projeção ───────────────────────────────────────── */
 
 test('duas salas, duas sessões independentes', async () => {
   const dono = await kit.signIn();
@@ -860,19 +738,11 @@ test('duas salas, duas sessões independentes', async () => {
 test('a sala de projeção é de dentro: nem ler, sem ser membro', async () => {
   const dono = await kit.signIn();
   const fora = await kit.signIn();
-  /* Aberta de propósito: mesmo num clube que qualquer um lê, a sala de projeção
-     não é. Assistir junto é uma coisa que se faz de dentro, e o painel diz quem
-     está nela agora — que é informação sobre pessoas, não sobre filmes. */
   const sala = await kit.makeClub({ name: `Projeção aberta ${++seq}`, owner: dono.id, visibility: 'public' });
 
   assert.equal((await req('GET', at(sala, '/screening'), null, fora.cookie)).status, 403);
   assert.equal((await req('GET', at(sala, '/reviews'), null, fora.cookie)).status, 200, 'mas o acervo continua aberto');
 });
-
-/* ── criar conta sem Google ──────────────────────────────────────────────
-   Nem todo mundo tem, ou quer usar, uma conta Google. Um produto cuja única
-   porta é a de outra empresa decidiu de quem os seus usuários precisam ser
-   clientes. */
 
 test('cria conta com e-mail e senha, e já entra logado', async () => {
   const mail = `nova-${crypto.randomUUID().slice(0, 8)}@exemplo.com`;

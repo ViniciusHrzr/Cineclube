@@ -7,34 +7,8 @@ const { SEASON_ROW } = require('../show');
 
 const router = express.Router({ mergeParams: true });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O mural do universo de séries: o irmão de routes/feed.js, com as mesmas duas
-   decisões estruturais — derivado das tabelas que já existem, e ordenado por
-   tempo.
-
-   O que muda é a unidade. No universo de filmes o acontecimento é raro; aqui o
-   gesto principal é MARCAR VISTO, treze vezes numa noite de maratona. Uma placa
-   por episódio seria uma pessoa enterrando o clube inteiro por ter passado o
-   domingo com uma série. Então há três tipos de linha:
-
-   · **avaliado** — a ficha com nota, e a linha rica: carrega o mais alto e o
-     mais baixo dos nove critérios. É de uma TEMPORADA; as de episódio são de
-     quando avaliar era por episódio, e continuam no mural onde sempre
-     estiveram.
-   · **visto** — AGRUPADO: os episódios que uma pessoa marcou da mesma série no
-     mesmo dia são uma linha só. Uma maratona é um acontecimento, não seis.
-   · **comentado** — alguém escreveu embaixo da ficha de outra pessoa.
-
-   O agrupamento é aqui e não na tela porque ele muda o QUE é um item: o mural
-   tem oitenta, e oitenta linhas de "viu um episódio" gastariam o limite inteiro
-   com uma noite de sofá.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** Quantos acontecimentos o mural carrega. Além disto é arquivo, não mural. */
 const LIMIT = 80;
 
-/* Mais linhas do que itens, porque as de "visto" se juntam: sem folga, uma
-   maratona de trinta episódios comeria o mural antes de ele começar. */
 const ROWS = LIMIT * 4;
 
 const recentTakes = db.prepare(`
@@ -64,15 +38,9 @@ const recentComments = db.prepare(`
 `);
 
 const actorOf = row => ({ id: row.actor_id, name: row.actor_name, dot: row.actor_dot });
-/** Nulo na ficha de uma temporada, que é a linha zero. Ver show.js. */
 const episodeOf = row => (row.episode === SEASON_ROW ? null : row.episode);
-/** O dia em que a coisa aconteceu, que é a janela do agrupamento. */
 const dayOf = at => String(at || '').slice(0, 10);
 
-/* Qual dos dois vem antes na série. A ordem do agrupamento é esta e não a da
-   consulta: marcar seis episódios de uma vez grava os seis no mesmo SEGUNDO, e
-   `ORDER BY` com empate devolve o que o banco quiser — então o começo e o fim
-   do trecho saíam trocados conforme a sorte. Temporada e episódio não empatam. */
 const antes = (a, b) => a.season < b.season || (a.season === b.season && a.episode < b.episode);
 
 router.get('/', clubs.requireReadable, wrap(async (req, res) => {
@@ -82,10 +50,6 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   ]);
 
   const items = [];
-  /* Os "vistos" abertos, por (pessoa, série, dia). O primeiro do dia cria a
-     linha e os seguintes engordam ela — e é o primeiro porque a consulta desce
-     do mais novo, então a linha fica com a hora do episódio mais recente
-     daquela sessão. */
   const juntando = new Map();
 
   for (const row of takes) {
@@ -105,9 +69,6 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
         genre: row.show_genre,
         takeId: row.id,
         final: row.final,
-        /* Nulo numa nota rápida: ela não tem critério por dentro, e um alto e
-           um baixo inventados a partir de um número só seriam a tela dizendo o
-           que ninguém disse. */
         ends: row.scores ? seasonEndsOf(row.show_genre, row.scores) : null,
         excerpt: row.comment ? excerpt(row.comment) : null,
       });
@@ -130,21 +91,12 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
       id: `v:${row.id}`,
       kind: 'seen',
       at,
-      /* Onde o polegar e a conversa da placa pousam. Uma sessão de seis
-         episódios não tem linha própria em tabela nenhuma — ela é um
-         agrupamento feito aqui —, então o alvo tem de ser uma marca de verdade,
-         e é a do ÚLTIMO episódio do trecho: é o que a placa nomeia quando conta
-         um só, e é o único que a pessoa não desmarca ao voltar atrás um
-         episódio. Desmarcar leva junto o que se disse ali, do mesmo jeito que
-         apagar uma ficha leva. */
       takeId: row.id,
       actor: actorOf(row),
       showId: Number(row.show_id),
       showTitle: row.show_title,
       showPoster: row.show_poster,
       genre: row.show_genre,
-      /* O último episódio da sessão, que é o que a linha nomeia quando ela
-         conta um só. */
       to: { season: row.season, episode: row.episode, title: row.episode_title ?? null },
       from: { season: row.season, episode: row.episode },
       count: 1,
@@ -173,8 +125,6 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
     });
   }
 
-  /* A mesma política de leitura do mural de filmes, linha a linha: decidir isso
-     no cliente seria o dado saindo daqui com a tela prometendo não desenhá-lo. */
   const filtrado =
     req.club.isMember || req.club.visibility === 'public'
       ? items

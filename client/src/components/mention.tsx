@@ -4,29 +4,12 @@ import { initialsOf, reelColor, type Reviewer } from '@/lib/api';
 import { cn, norm } from '@/lib/utils';
 import { useWorld } from '@/lib/world';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Chamar alguém pelo nome. Duas coisas escrevem neste produto — o comentário
-   numa conversa e o que a pessoa deixa ao avaliar — e as duas ganham o mesmo
-   campo: um `@` que funciona num e não no outro é um `@` que ninguém confia.
-
-   Uma lista e não só texto, porque o apelido não é o nome: "Beren Costa" é
-   `@beren`, e dois Brunos viram `@brunosa` e `@brunolima` — regra que o servidor
-   calcula sobre o clube inteiro (ver handles.js). Ninguém deveria ter de
-   adivinhar isso.
-
-   Tudo aqui gira em torno de uma pergunta: onde o `@` que estou escrevendo
-   começa? É o último `@` antes do cursor que não tem letra colada atrás dele —
-   sem essa segunda metade, um e-mail no meio da frase abriria a lista. */
-
-/** O `@` aberto imediatamente antes do cursor, ou null. */
 function openMention(text: string, caret: number) {
   const upto = text.slice(0, caret);
   const at = upto.lastIndexOf('@');
   if (at < 0) return null;
-  // Colado em letra ou número: é e-mail, não menção.
   if (at > 0 && /[a-zA-Z0-9._-]/.test(upto[at - 1])) return null;
   const typed = upto.slice(at + 1);
-  // Uma menção não tem espaço dentro. Passou disso, a pessoa seguiu escrevendo.
   if (/\s/.test(typed)) return null;
   return { at, typed };
 }
@@ -43,12 +26,10 @@ export function MentionField({
 }: {
   value: string;
   onChange: (v: string) => void;
-  /** Enter sem shift. Ausente onde Enter deve apenas quebrar a linha. */
   onSubmit?: () => void;
   placeholder?: string;
   rows?: number;
   maxLength?: number;
-  /** Para quem lê a tela em vez de olhar para ela. */
   label: string;
   className?: string;
 }) {
@@ -57,10 +38,6 @@ export function MentionField({
   const [open, setOpen] = useState<{ at: number; typed: string } | null>(null);
   const [pick, setPick] = useState(0);
 
-  /* Quem pode ser chamado: todo mundo, inclusive você — mencionar-se não avisa
-     ninguém (o servidor recusa avisar a si mesmo), mas escrever "como o @gipico
-     disse" sobre si próprio é uma frase legítima e a lista não deveria fingir
-     que você não existe. */
   const found = useMemo(() => {
     if (!open) return [];
     const typed = norm(open.typed);
@@ -77,8 +54,6 @@ export function MentionField({
     setOpen(openMention(el.value, el.selectionStart ?? el.value.length));
   }
 
-  /* Troca o pedaço que está sendo digitado pelo apelido inteiro e deixa um
-     espaço: a frase continua sem a pessoa ter de sair do meio dela. */
   function choose(who: Reviewer) {
     const el = box.current;
     if (!el || !open || !who.handle) return;
@@ -107,13 +82,10 @@ export function MentionField({
           aria-expanded={!!found.length}
           onChange={e => {
             onChange(e.target.value);
-            // Depois do valor novo, senão a leitura é do texto anterior.
             requestAnimationFrame(readCaret);
           }}
           onClick={readCaret}
           onBlur={() => {
-            /* Um quadro de atraso: o clique na lista acontece depois do blur do
-               campo, e fechar na hora tiraria o alvo debaixo do dedo. */
             window.setTimeout(() => setOpen(null), 120);
           }}
           onKeyDown={e => {
@@ -135,8 +107,6 @@ export function MentionField({
                 return setOpen(null);
               }
             }
-            /* Enter envia — mas nunca enquanto a lista está aberta, senão
-               escolher alguém publicaria o comentário pela metade. */
             if (onSubmit && e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               onSubmit();
@@ -148,9 +118,6 @@ export function MentionField({
       </label>
 
       {found.length ? (
-        /* Acima do campo e não abaixo: numa conversa o campo é a última coisa
-           da gaveta, e uma lista para baixo abriria fora da carta ou empurraria
-           a página inteira enquanto a pessoa digita. */
         <ul
           role="listbox"
           aria-label="Quem chamar"
@@ -184,15 +151,6 @@ export function MentionField({
   );
 }
 
-/* ── e o nome, depois de escrito ──────────────────────────────────────────
-   Um comentário guardado é texto puro; quem foi chamado é decidido na leitura,
-   contra o clube de agora. Isso tem uma consequência que vale conhecer: se
-   alguém trocar o próprio nome, menções antigas deixam de acender. O texto
-   continua dizendo o que foi escrito, que é o registro honesto — o link é que
-   é uma leitura do presente.
-
-   Em latão, que é a cor de estado desta sala: uma menção é uma pessoa apontada,
-   não uma ação nem um destaque. */
 export function WithMentions({ text }: { text: string }) {
   const club = useWorld();
   const handles = useMemo(
@@ -206,9 +164,6 @@ export function WithMentions({ text }: { text: string }) {
 
   if (!text.includes('@') || !handles.length) return <>{text}</>;
 
-  /* O maior apelido primeiro, senão "@brunosa" sairia como "@bruno" mais um
-     "sa" solto — a mesma ordem que o servidor usa para decidir quem foi
-     chamado, pela mesma razão. */
   const pattern = new RegExp(`(^|[^a-zA-Z0-9@._-])@(${handles.join('|')})(?![a-z0-9])`, 'gi');
   const out: React.ReactNode[] = [];
   let last = 0;

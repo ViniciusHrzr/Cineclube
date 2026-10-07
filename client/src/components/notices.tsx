@@ -5,61 +5,16 @@ import { auth, initialsOf, notifications, reelColor, type Notice } from '@/lib/a
 import { useLive } from '@/lib/live';
 import { cn, plural, whenOf } from '@/lib/utils';
 
-/* ── para onde um aviso leva ──────────────────────────────────────────────
-   O endereço completo, com o clube na frente, porque o sino junta as salas
-   todas e é lido de dentro de uma delas falando de outra. Um destino relativo à
-   sala atual mandaria a pessoa para o lugar errado da própria sala.
-
-   `location.hash` e não uma função vinda por prop: quem monta este endereço é o
-   App (`clubHash`), e passá-la por duas telas para o sino chamar seria
-   encanamento para uma linha de texto. */
 const go = (slug: string, rest: string) =>
   (location.hash = `c/${encodeURIComponent(slug)}/${rest}`);
 
-/* O mesmo, do outro lado do produto: a lente de séries mora no endereço, antes
-   do clube. Ver `clubHash` no App, que é quem monta isto para as telas. */
 const goSeries = (slug: string, rest: string) =>
   (location.hash = `series/c/${encodeURIComponent(slug)}/${rest}`);
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O sino: quem reagiu ao que é seu.
-
-   O clube discute por voz e escreve depois, em horas diferentes. Sem isto, a
-   única forma de descobrir que alguém discordou da sua fotografia era abrir a
-   própria ficha e reparar num contador que antes era zero.
-
-   Um sino e não um centro de notificações: são três coisas, num clube de seis
-   pessoas, com talvez uma dúzia de eventos por semana. Uma tela própria, uma
-   rota e estado por item seriam máquina para um volume que cabe num painel.
-
-   O feed vem derivado do servidor e a única coisa gravada sobre ele é uma data
-   por pessoa. Abrir o sino é o que move essa data.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* De um minuto e meio, e só com a aba à vista. Era o único jeito de o sino
-   saber de alguma coisa; hoje o aviso ao vivo é o caminho normal, e este é o
-   que segura o produto quando aquele cai — sessão expirada, abas demais, um
-   proxy que fechou a conexão. Ao vivo é mais rápido; isto garante que nada fica
-   escondido para sempre.
-
-   `visibilitychange` evita que uma aba esquecida num monitor secundário fique
-   batendo no servidor a noite inteira. */
 const POLL_MS = 90_000;
 
-/** Quanto tempo o distintivo fica pulando quando chega coisa nova. */
 const POP_MS = 700;
 
-/* O único aviso de CONTA que existe, e a razão de ele morar no sino: viveu um
-   dia numa faixa embaixo de "Suas salas", e uma faixa permanente sobre algo que
-   a pessoa pode não querer fazer agora não informa — cobra, toda vez que a tela
-   abre.
-
-   O link já foi mandado sozinho no instante do cadastro; este botão é o
-   conserto e não o caminho.
-
-   A frase nomeia as duas coisas que a confirmação destrava: "confirme seu
-   e-mail" sozinho é uma ordem sem motivo, e um motivo não dito é um motivo que
-   a pessoa inventa. */
 function ConfirmNotice() {
   const [state, setState] = useState<'parado' | 'indo' | 'foi' | 'falhou'>('parado');
 
@@ -91,9 +46,6 @@ function ConfirmNotice() {
             Mandamos de novo. Vale por 24 horas — se não chegar, olhe no spam.
           </p>
         ) : state === 'falhou' ? (
-          /* O envio pode falhar por fora — provedor caído, cota do dia. Dizer
-             isso é melhor que um sucesso falso que deixa a pessoa esperando uma
-             mensagem que não vem. */
           <p className="mt-3 text-[12.5px] leading-relaxed text-dye-red-lit">
             Não conseguimos mandar agora. Tente de novo daqui a pouco.
           </p>
@@ -120,9 +72,6 @@ function iconOf(kind: Notice['kind'], value?: number) {
 export function Notices() {
   const [items, setItems] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
-  /* O que a conta está esperando. Não é um acontecimento e por isso não está na
-     lista: um estado não tem hora, não envelhece, e o botão de limpar não pode
-     dispensá-lo — limpar esconde o que já aconteceu, e isto ainda não. */
   const [verify, setVerify] = useState(false);
   const [clubs, setClubs] = useState(0);
   const [open, setOpen] = useState(false);
@@ -139,9 +88,6 @@ export function Notices() {
       setClubs(got.clubs ?? 0);
       setFailed(false);
     } catch {
-      /* Um sino que não carregou não é um erro que merece um toast por cima da
-         tela: a pessoa não pediu nada. Fica quieto e tenta de novo no próximo
-         ciclo; só o painel aberto conta o que houve. */
       setFailed(true);
     }
   }, []);
@@ -159,20 +105,9 @@ export function Notices() {
     };
   }, [load]);
 
-  /* `social` cobre comentário, resposta, curtida e voto; `reviews` cobre a
-     menção escrita no comentário da própria ficha ao avaliar. O aviso não diz o
-     que houve, só que houve: quem monta a frase é o servidor, na segunda
-     pessoa, o que só pode ser feito por quem sabe quem está perguntando.
-
-     Com o painel aberto, chegar é ser visto: um contador subindo para "1"
-     enquanto o "1" está na tela é o painel dizendo que não acredita nos
-     próprios olhos. */
   const openRef = useRef(open);
   openRef.current = open;
   useLive(kinds => {
-    /* `club` entrou aqui junto com o aviso de pedido de entrada: sem ele, quem
-       bate na porta só aparecia no sino na volta da pergunta periódica, até um
-       minuto e meio depois. */
     if (!kinds.has('social') && !kinds.has('reviews') && !kinds.has('club')) return;
     void (async () => {
       await load();
@@ -181,20 +116,10 @@ export function Notices() {
       try {
         await notifications.seen();
       } catch {
-        /* a conta volta no próximo carregamento, que é o certo */
       }
     })();
   });
 
-  /* ── o pulo ─────────────────────────────────────────────────────────────
-     Um aviso que aparece sem mover nada não aparece: o distintivo é uma
-     etiqueta de quinze pixels no canto de um ícone de dezoito, num cabeçalho
-     que a pessoa não está olhando — ela está lendo a conversa embaixo. O pulo é
-     o que faz o olho subir.
-
-     Só quando SOBE, e nunca na primeira carga. Um sino que chacoalha a cada F5
-     está anunciando o carregamento da página, não uma novidade — e o que se
-     pediu é que a novidade apareça ao vivo. */
   const [pop, setPop] = useState(false);
   const before = useRef(0);
   const first = useRef(true);
@@ -211,10 +136,6 @@ export function Notices() {
     return () => window.clearTimeout(id);
   }, [unread]);
 
-  /* Abrir é ver. A conta zera na hora, sem esperar o servidor, porque a pessoa
-     está olhando para a lista enquanto o pedido viaja — e um contador que
-     insiste em "3" enquanto os três estão na tela é o painel dizendo que não
-     acredita nos próprios olhos. */
   async function toggle() {
     const next = !open;
     setOpen(next);
@@ -224,15 +145,9 @@ export function Notices() {
     try {
       await notifications.seen();
     } catch {
-      /* A marca não subiu: a conta volta no próximo carregamento, o que é o
-         comportamento certo — nada foi visto do ponto de vista do servidor. */
     }
   }
 
-  /* A lista some na hora, sem esperar a resposta: quem apertou está olhando
-     para ela, e um painel que continua cheio por meio segundo depois do clique
-     parece um botão que não funcionou. Se o pedido falhar, o próximo
-     carregamento traz tudo de volta, que é a verdade. */
   async function wipe() {
     if (clearing) return;
     setClearing(true);
@@ -248,8 +163,6 @@ export function Notices() {
     }
   }
 
-  /* Fecha ao clicar fora e no Escape. Um painel que só fecha pelo próprio botão
-     obriga a mirar de volta no alvo que acabou de sair do lugar. */
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => {
@@ -266,16 +179,6 @@ export function Notices() {
     };
   }, [open]);
 
-  /* ── onde o painel se ancora ──────────────────────────────────────────
-     NÃO no sino. O sino não mora no fim da barra: depois dele vêm o retrato e
-     a saída, uns cento e trinta pixels. Um painel de 340px alinhado pela
-     direita DO SINO começa, num telefone, bem antes da borda esquerda da tela
-     — e era isso que cortava "Novidades" em "des" e todo nome pela metade.
-
-     Sem `relative` aqui de propósito: quem posiciona é o bloco de ações do
-     cabeçalho, que é `relative` nos dois lugares onde este sino aparece (o
-     bloco de ações da marquise). Alinhado pela direita DELE, o painel cai junto
-     da margem da página, que é onde ele cabe em qualquer largura. */
   return (
     <div ref={box}>
       <button
@@ -286,32 +189,16 @@ export function Notices() {
           unread ? `Novidades: ${plural(unread, 'aviso novo', 'avisos novos')}` : 'Novidades'
         }
         className={cn(
-          /* Trinta pixels era o menor alvo permanente do produto, e ele fica na
-             barra de cima — a faixa mais difícil de acertar num telefone que se
-             segura com uma mão. O sino desenhado continua com 18px; o que cresce
-             é o quadrado que ele oferece ao dedo. */
           'relative flex h-[30px] w-[30px] coarse:h-11 coarse:w-11 items-center justify-center rounded-cell transition-colors duration-150',
           open || unread ? 'text-dye-brass' : 'text-ink-dim hover:text-ink'
         )}
       >
-        {/* O badalo é curto e não se repete: o sino balança uma vez quando
-            chega alguma coisa e volta a ser um ícone. Um chacoalhar em laço
-            seria a marquise pedindo atenção o tempo todo, que é a versão de
-            interface de alguém falando alto até ser respondido.
-
-            `motion-reduce` aqui, ao contrário das gavetas: uma gaveta que abre
-            é a resposta a um clique que a pessoa deu, e isto é movimento que
-            começa sozinho no canto do olho — exatamente o que a preferência do
-            sistema existe para desligar. O distintivo continua aparecendo. */}
+        {}
         <Bell
           className={cn('h-[18px] w-[18px]', pop && 'animate-nudge motion-reduce:animate-none')}
           strokeWidth={1.8}
         />
-        {/* O contador é latão porque ter avisos por ler é um estado, e o
-            vermelho desta sala é reservado para ação e gravação. Um distintivo
-            vermelho permanente na marquise competiria com a chave de gravar em
-            todas as telas — e a regra da lâmpada diz uma superfície vermelha
-            por tela, no máximo. */}
+        {}
         {unread ? (
           <span
             className={cn(
@@ -328,17 +215,11 @@ export function Notices() {
         <div
           role="region"
           aria-label="Novidades"
-          /* Alinhado pela direita do bloco de ações e caindo logo abaixo dele:
-             assim o painel encosta na margem da página em vez de sair pela
-             esquerda, e o topo acompanha a altura da barra sem número fixo. */
           className="plate absolute right-0 top-[calc(100%+8px)] z-40 max-h-[min(calc(70dvh/var(--ui-zoom)),520px)] w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
         >
           <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-white/[0.07] bg-house-seat px-4 py-3">
             <span className="legend">Novidades</span>
-            {/* Limpar esvazia a sua lista e nada mais: o comentário, o voto e a
-                curtida continuam onde estão, para o clube inteiro. Sem confirmar
-                — não há o que desfazer porque não há o que se perde, e o que
-                chegar depois volta a aparecer. */}
+            {}
             {items.length ? (
               <button
                 type="button"
@@ -351,9 +232,7 @@ export function Notices() {
             ) : null}
           </div>
 
-          {/* O aviso de conta vem primeiro e fora da lista: ele não concorre por
-              recência com um comentário de ontem, porque não é uma coisa que
-              aconteceu — é uma coisa que falta. */}
+          {}
           {verify ? <ConfirmNotice /> : null}
 
           {failed && !items.length ? (
@@ -378,10 +257,7 @@ export function Notices() {
                     key={n.id}
                     className="flex gap-2.5 border-b border-white/[0.05] px-4 py-3 transition-colors last:border-0 hover:bg-beam/[0.05]"
                   >
-                    {/* ── a estreia de hoje ──────────────────────────────
-                        Sem rosto e sem nome de gente: não houve quem. O cartaz
-                        ocupa o lugar do retrato e a linha inteira é um alvo só,
-                        porque há um destino só — a série. */}
+                    {}
                     {n.kind === 'airing' ? (
                       <button
                         type="button"
@@ -416,15 +292,7 @@ export function Notices() {
                       </button>
                     ) : !n.actor ? null : (
                       <>
-                    {/* Com o retrato de quem reagiu, e ele leva ao perfil dessa
-                        pessoa. Ficou fora do botão da linha porque um controle
-                        não se aninha em outro, e porque são dois destinos
-                        diferentes: o rosto pergunta "quem é essa pessoa" e o
-                        resto da linha responde "o que ela fez".
-
-                        O painel se fecha antes de navegar: ele é ancorado ao
-                        sino e ficaria aberto por cima do perfil que acabou de
-                        abrir, falando de uma tela que não está mais embaixo. */}
+                    {}
                     <button
                       type="button"
                       aria-label={n.actor.name}
@@ -444,15 +312,9 @@ export function Notices() {
                     </button>
                     <button
                       type="button"
-                      /* Leva à ficha de que o aviso fala, aberta e à vista —
-                         não à aba onde ela está em algum lugar. Um aviso que
-                         entrega uma lista de quarenta cartas e deixa a busca
-                         com o leitor não terminou de avisar. */
                       onClick={() => {
                         setOpen(false);
                         if (!n.club) return;
-                        /* Um pedido de entrada não aponta para ficha nenhuma:
-                           ele leva à porta, que é onde se aceita ou recusa. */
                         if (n.kind === 'join' || !n.reviewId) {
                           go(n.club.slug, 'ajustes');
                           return;
@@ -471,9 +333,7 @@ export function Notices() {
                           </span>{' '}
                           {n.text}
                         </span>
-                        {/* De qual sala, e só quando há mais de uma: com um
-                            clube só, a mesma palavra em toda linha não informa
-                            nada e ainda empurra o texto para baixo. */}
+                        {}
                         {clubs > 1 && n.club ? (
                           <span className="mt-1 block font-display text-[10.5px] uppercase leading-none tracking-[0.12em] text-dye-brass">
                             {n.club.name}

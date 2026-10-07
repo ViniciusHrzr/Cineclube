@@ -3,13 +3,6 @@ const assert = require('node:assert/strict');
 
 const { watchIn } = require('../tmdbapi');
 
-/* ── one service, one logo ───────────────────────────────────────────────
-   JustWatch is a catalogue of ways to pay and the club asks a much smaller
-   question, so the answer is squeezed on the way through: resellers, ad tiers
-   and plan tiers all collapse onto the service they are a version of. Every
-   payload below is shaped like a real one, because these rules are string
-   rules and string rules rot the moment somebody renames a plan. */
-
 const P = (provider_id, provider_name, display_priority) => ({
   provider_id, provider_name, display_priority, logo_path: `/${provider_id}.jpg`
 });
@@ -33,9 +26,6 @@ test('only Brazil is read, however many countries came back', () => {
   assert.deepEqual(names(watchIn(payload).streaming), ['Disney Plus']);
 });
 
-/* Rental and purchase are dropped on the floor. Almost every film ever made is
-   for sale on the same three storefronts, so the rental row was a constant
-   under every poster — and a constant carries no information. */
 test('rental and purchase are not carried at all', () => {
   const watch = watchIn(wrap({
     flatrate: [P(8, 'Netflix', 0)],
@@ -50,15 +40,11 @@ test('a film only for rent answers null, as if it were nowhere', () => {
   assert.equal(watchIn(wrap({ rent: [P(3, 'Google Play Movies', 14)], buy: [P(2, 'Apple TV Store', 9)] })), null);
 });
 
-/* Free and ad-supported are a different deal to JustWatch and the same answer
-   to somebody asking whether they have to pay again tonight. */
 test('free and ad-supported count as streaming', () => {
   const watch = watchIn(wrap({ free: [P(283, 'Crunchyroll', 5)], ads: [P(613, 'Pluto TV', 7)] }));
   assert.deepEqual(names(watch.streaming), ['Crunchyroll', 'Pluto TV']);
 });
 
-/* This is Inception's real payload, trimmed: the same subscription arriving
-   three times because three storefronts resell it. */
 test('storefronts that resell a service are dropped', () => {
   const watch = watchIn(wrap({
     flatrate: [
@@ -70,7 +56,6 @@ test('storefronts that resell a service are dropped', () => {
   assert.deepEqual(names(watch.streaming), ['HBO Max']);
 });
 
-/* And this is Fight Club's: Netflix listed once plainly and once as a plan. */
 test('plan tiers collapse onto the service they are a tier of', () => {
   const watch = watchIn(wrap({
     flatrate: [
@@ -90,9 +75,6 @@ test('an ad tier is folded into the service, not listed beside it', () => {
   assert.deepEqual(names(watch.streaming), ['Amazon Prime Video']);
 });
 
-/* The collapse must never eat a genuinely different service. These two are one
-   word apart and are not the same thing, which is why the tier rule matches on
-   a word boundary rather than on any shared prefix. */
 test('two services with overlapping names both survive', () => {
   const watch = watchIn(wrap({
     flatrate: [P(119, 'Amazon Prime Video', 1), P(10, 'Amazon Video', 13)]
@@ -106,8 +88,6 @@ test('the list is capped before it becomes a directory', () => {
 });
 
 test('the first entry wins, and JustWatch decides which one that is', () => {
-  // Same service, listed out of order: the lower display_priority is the one
-  // JustWatch considers primary, and it has to survive whatever order we got.
   const watch = watchIn(wrap({
     flatrate: [P(1796, 'Netflix Standard', 40), P(8, 'Netflix', 0)]
   }));

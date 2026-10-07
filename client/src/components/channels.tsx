@@ -3,16 +3,6 @@ import { motion, useMotionValue, useSpring, useTransform, useVelocity } from 'fr
 import { fmt, type Criterion } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-/* ── as réguas de critério ────────────────────────────────────────────────
-   Um critério por linha: nome e nota em cima, a régua embaixo, e a explicação
-   sob ela — impressa para todo mundo em vez de ficar atrás de um hover. A régua
-   continua sendo um `input[type=range]` nativo, que é o que mantém o teclado e
-   o leitor de tela funcionando.
-
-   Virou peça quando um EPISÓDIO passou a ter ficha própria: as duas fichas são
-   a mesma interação sobre listas de critérios diferentes, e esta é a
-   interação-assinatura do produto — a que não pode ter duas versões. */
-
 export function Channels({
   criteria,
   scores,
@@ -23,20 +13,11 @@ export function Channels({
 }: {
   criteria: Criterion[];
   scores: Record<string, number>;
-  /** Só para a legenda do grupo de gênero. Uma ficha sem esse grupo não a usa. */
   genre?: string;
-  /** Quem assina cada critério. Vazio quando ninguém está creditado. */
   crew?: Record<string, string[]>;
-  /* Sem a entrada escalonada de cada linha. Numa PÁGINA ela é o que faz a ficha
-     se montar em vez de aparecer pronta; dentro de uma folha modal, que já entra
-     com a própria animação, são nove animações a mais correndo por cima de uma
-     — e é isso que se sente como travamento ao abrir a criteriosa. */
   still?: boolean;
   onChange: (key: string, value: number) => void;
 }) {
-  /* Agrupado pelo que o servidor declara, e não pelo peso. O peso era o atalho —
-     ×1 era ofício, ×2 era gênero — e no dia em que todo peso virou 1 esse atalho
-     passou a juntar as perguntas numa lista só. */
   const craft = criteria.filter(c => c.group === 'oficio');
   const gen = criteria.filter(c => c.group === 'genero');
   const personal = criteria.filter(c => c.group === 'pessoal');
@@ -55,18 +36,11 @@ export function Channels({
 
   return (
     <div className="plate overflow-hidden px-4 pb-4 sm:px-5">
-      {/* Não "técnicos". Dois gêneros substituem uma vaga destes oito — animação
-          é perguntada sobre elenco de voz e não sobre atuação, documentário
-          sobre acesso e material —, então a palavra que descrevia o grupo o
-          descreveria errado para dois deles. */}
+      {}
       <p className="legend py-4">Como {gen.length ? 'o filme' : 'o episódio'} é feito</p>
       {craft.map(row)}
 
-      {/* ── o grupo do gênero, e só quando ele existe ──────────────────────
-          Uma ficha de episódio não tem esse par: um gênero é uma promessa que
-          uma OBRA faz, e o quinto episódio de uma série de terror pode ser o de
-          tribunal (ver criteria.js). Sem a guarda, a legenda apareceria sobre
-          uma lista vazia — um cabeçalho anunciando nada. */}
+      {}
       {gen.length ? (
         <>
           <p className="legend mt-5 border-t border-white/[0.07] pt-5 text-dye-brass">
@@ -76,9 +50,7 @@ export function Channels({
         </>
       ) : null}
 
-      {/* Região própria, no fim, porque é outra pergunta: tudo acima pergunta o
-          que a obra faz, e este pergunta o que ela fez com você — e se responde
-          depois de ter desmontado a obra, nunca antes. */}
+      {}
       {personal.length ? (
         <>
           <p className="legend mt-5 border-t border-white/[0.07] pt-5">E o seu</p>
@@ -101,7 +73,6 @@ function Channel({
   index: number;
   value: number;
   signers?: string[];
-  /** Sem a entrada escalonada. Ver `still` em `Channels`. */
   still?: boolean;
   onChange: (key: string, value: number) => void;
 }) {
@@ -123,9 +94,7 @@ function Channel({
       {...entrada}
       className="group border-t border-white/[0.06] py-4 first-of-type:border-0"
     >
-      {/* Sem distintivo de peso. Ele lia ×1 ou ×2 e carregava o único fato que
-          separava as duas metades da ficha; com todo critério no mesmo peso ele
-          imprimiria ×1 onze vezes, que é uma coluna de nada vestida de dado. */}
+      {}
       <div className="flex items-baseline gap-2">
         <span className="font-display text-[15px] uppercase tracking-[0.1em] text-ink">{c.name}</span>
         <span className="q ml-auto text-[21px] font-medium tabular-nums text-ink transition-colors duration-150 group-hover:text-beam group-focus-within:text-beam">
@@ -133,15 +102,7 @@ function Channel({
         </span>
       </div>
 
-      {/* ── quem assina ────────────────────────────────────────────────────
-          O nome vai ACIMA da régua e não na explicação embaixo dela, porque é a
-          coisa sendo julgada e não uma explicação do julgamento. Arrastar
-          Fotografia de 5 para 8 é um juízo sobre o trabalho de alguém, e a ficha
-          deve dizer de quem enquanto a mão está nela.
-
-          Calado quando ninguém é creditado. Numa animação raramente há diretor
-          de fotografia e ninguém assina Originalidade — uma linha com "—"
-          inventaria uma ausência que não existe. */}
+      {}
       {signers?.length ? (
         <p className="mt-1 text-[12px] leading-snug text-beam-dim">{signers.join(' · ')}</p>
       ) : null}
@@ -160,15 +121,6 @@ function Channel({
   );
 }
 
-/* ── a régua, sozinha ─────────────────────────────────────────────────────
-   Extraída de `Channel` no dia em que a nota rápida de um episódio precisou de
-   uma régua sem critério em volta. Ela saiu porque a alternativa era pior: o
-   `film-range` é um input TRANSPARENTE — tudo o que se vê são irmãos desenhados
-   ao lado dele —, então usá-lo solto produz um controle invisível. Foi
-   exatamente o que aconteceu, e o defeito não parece um defeito: a régua
-   funciona, arrasta e responde ao teclado, e simplesmente não tem corpo.
-
-   Uma peça só, então, e as duas notas do produto usam a mesma. */
 export function Gauge({
   value,
   onChange,
@@ -196,10 +148,6 @@ export function Gauge({
   const spread = useTransform(flare, [0, 1], [0.9, 1.85]);
 
   return (
-    /* Tudo o que se vê é desenhado aqui; o input é invisível e fica por cima,
-       onde continua recebendo o arrasto, as setas e o leitor de tela. Ele vem
-       primeiro no DOM para que as partes desenhadas reajam a ele como irmãs —
-       pressionado, focado — e o z-10 o devolve para cima delas no ponteiro. */
     <div className={cn('relative h-[34px]', className)}>
       <input
         type="range"
@@ -213,13 +161,10 @@ export function Gauge({
         className="peer film-range absolute inset-0 z-10 w-full"
       />
 
-      {/* Recuado por metade da área de pega, para 0% e 100% caírem sob o meio da
-          comporta em vez de fora da ponta da película. */}
+      {}
       <span aria-hidden className="pointer-events-none absolute inset-x-2 top-3 h-[10px]">
         <span className="film-strip absolute inset-0" />
-        {/* Largura, e não scaleX: escalar estica o gradiente rasterizado e o
-            brilho interno junto, e a borda borrada tremendo de quadro em quadro
-            era metade do que parecia flicker. */}
+        {}
         <span className="film-strip-lit absolute inset-y-0 left-0" style={{ width: `${value * 10}%` }} />
         <motion.span
           style={{ left: `${value * 10}%`, marginLeft: -13, opacity: bloom, scale: spread }}
@@ -227,8 +172,7 @@ export function Gauge({
         />
       </span>
 
-      {/* A comporta. Pressionada, ela cresce no quadro e queima mais forte;
-          focada pelo teclado, ela recebe o anel que o input abriu mão. */}
+      {}
       <span
         aria-hidden
         style={{ left: `calc(0.5rem + (100% - 1rem) * ${value / 10})` }}

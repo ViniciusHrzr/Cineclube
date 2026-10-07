@@ -1,13 +1,7 @@
 const { GENRES } = require('./criteria');
 const { MAX_TITLE, MAX_POSTER, MAX_ID } = require('./movie');
 
-/* O mesmo trabalho de movie.js, pelo motivo escrito lá. O que muda é o que
-   identifica a coisa: um filme é um id, um episódio é uma TRIPLA — série,
-   temporada, número —, e as três viram chave primária. */
-
 const MAX_EPISODE_TITLE = 300;
-/* Uma novela passa de mil capítulos. Folgados de propósito: barram o absurdo,
-   não uma série de verdade. */
 const MAX_SEASON = 200;
 const MAX_EPISODE = 5000;
 const MIN_YEAR = 1870;
@@ -46,8 +40,6 @@ function cleanShow(raw) {
   };
 }
 
-/* Temporada zero é aceita e não é engano: o TMDB numera especiais e piloto não
-   exibido como zero. O que a lista de temporadas esconde é decisão da tela. */
 function cleanEpisodeRef(params) {
   const showId = whole(params?.showId, { min: 1, max: MAX_ID });
   const season = whole(params?.season, { min: 0, max: MAX_SEASON });
@@ -58,15 +50,6 @@ function cleanEpisodeRef(params) {
   return { ref: { showId, season, episode } };
 }
 
-/* ── onde a ficha de uma temporada mora ───────────────────────────────────
-   Na MESMA tabela das marcas de episódio, na linha de número zero: o TMDB
-   numera episódios a partir de 1, e `cleanEpisodeRef` exige isso, então o zero
-   é um lugar que episódio nenhum ocupa.
-
-   Uma tabela à parte pediria uma segunda tabela de comentários, uma segunda de
-   votos e um segundo caminho no mural para cada uma — a conversa e o polegar
-   penduram no id de uma ficha, e um id que às vezes é de uma tabela e às vezes
-   de outra não é uma chave estrangeira. */
 const SEASON_ROW = 0;
 
 function cleanSeasonRef(params) {

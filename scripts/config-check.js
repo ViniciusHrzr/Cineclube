@@ -1,21 +1,4 @@
-try { require('node:process').loadEnvFile('.env'); } catch (e) { /* .env é opcional */ }
-
-/* ══════════════════════════════════════════════════════════════════════════
-   O QUE ESTÁ LIGADO NESTA INSTALAÇÃO.
-
-       npm run check
-
-   Cada recurso deste produto que depende de configuração externa tem a mesma
-   regra: sem a variável, ele não existe — a tela não oferece o interruptor, a
-   rota responde 404, o Gradle não aplica o plugin. Nada quebra, e é justamente
-   isso que torna difícil descobrir que falta alguma coisa.
-
-   Então isto lista, de uma vez: o que está de pé, o que está desligado, e a
-   linha exata que liga cada um.
-
-   Roda contra o ambiente DESTA máquina. Para conferir o servidor, as duas
-   perguntas que respondem de fora estão no fim da lista.
-   ══════════════════════════════════════════════════════════════════════════ */
+try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
 const has = nome => !!String(process.env[nome] || '').trim();
 const algum = (...nomes) => nomes.some(has);

@@ -7,157 +7,49 @@ type HolographicWallProps = {
   intensity?: number;
   radius?: number;
   className?: string;
-  /** Full-viewport fixed backdrop instead of a bounded panel. */
   asBackdrop?: boolean;
 };
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The film wall: a dark field of marks that ignite where the pointer is, with a
-   soft halo riding the cursor.
-
-   THE CONTENT is celluloid — a 4-perforation film strip grid — because this is
-   a cinema and the wall should be made of the thing the club is arguing about.
-
-   THE ENGINE is CSS, not four hundred springs. The reference mounts one
-   motion.div per glyph and re-animates every one on every mouse move: as a
-   full-viewport backdrop that is ~1500 spring animations per pointer event, and
-   it drops frames on contact. The same image comes from three composited
-   layers — the dark field, a warm copy revealed through a radial mask at the
-   pointer, and the halo — with the pointer writing two CSS variables, throttled
-   to one frame.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* The wall is hung at its own scale, over and above the interface's 125%: the
-   room should be a size larger than the thing standing in front of it, or the
-   frames start to compete with the cards for the same grain of attention. One
-   knob, and the whole material follows it. */
 const GAUGE = 1.7;
 
-/* ── the second wall, and where it cannot go ──────────────────────────────
-   The beam draws the wall twice: once dark, once in tungsten, with the second
-   copy revealed only inside a mask that follows the cursor. The two copies have
-   to creep in exact step, or the light shows a wall that does not line up with
-   the wall it is lighting.
-
-   In Gecko they do not. Every strip is its own animation, and once there are
-   more than the engine will keep off the main thread, some run on the
-   compositor and the rest on the main thread — two clocks. The wall appears
-   doubled: same frame lines, same angle, a few pixels out. The doubling and the
-   jank are one fault seen twice.
-
-   So on Gecko the room keeps one wall. Detected by a property only Gecko
-   implements, rather than by reading the user agent string, which is a claim
-   and not a capability. */
 const GECKO =
   typeof document !== 'undefined' && 'MozAppearance' in document.documentElement.style;
 
-/* ── and the same decision, for a machine with no GPU to spare ────────────
-   The second wall is the most expensive thing this component builds: a masked
-   render surface with a second full set of animating strips inside it. With a
-   compositor that is a transform and a texture; in software it is a large area
-   of pixels composited by the CPU sixty times a second.
-
-   So it is not built there either — the cursor still lights the one wall, and
-   the light is still real. index.html decides this and writes it on the root
-   before the first paint. */
 const SOFTWARE =
   typeof document !== 'undefined' &&
   document.documentElement.getAttribute('data-render') === 'software';
 
-/** One wall, not two: on Gecko for a registration fault, here for a budget. */
 const ONE_WALL = GECKO || SOFTWARE;
 
-/* Lido uma vez, como os dois acima. Serve a uma coisa só neste arquivo: saber
-   se a altura da janela pode mudar sozinha durante uma rolagem, o que é a
-   assinatura de um navegador de celular escondendo a barra de endereço. */
 const COARSE =
   typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-const CELL = 46 * GAUGE;     // px — one frame, top to bottom
-const STRIP = 188 * GAUGE;   // px — the width of a length of 35mm, edge to edge
-const PERF_IN = 10 * GAUGE;  // px — the sprocket column, inset from the edge
-const HOLE = 2 * GAUGE;      // px — the radius of one perforation
+const CELL = 46 * GAUGE;
+const STRIP = 188 * GAUGE;
+const PERF_IN = 10 * GAUGE;
+const HOLE = 2 * GAUGE;
 
-/** One plane's geometry. Fractional on purpose: the film's proportions come
-    first, and snapping these to whole pixels was tried as a cure for the
-    doubling Gecko shows. It cured nothing and it changed the wall — a frame on
-    the furthest plane went from 51.6px to 48, seven per cent denser, which is
-    visible. */
 function geo(s: number) {
   return { w: STRIP * s, cell: CELL * s, inset: PERF_IN * s, hole: HOLE * s };
 }
 
-/* ── depth ────────────────────────────────────────────────────────────────
-   The strips hang at four distances, interleaved so no two neighbours share a
-   plane. Depth is four cues keyed to the same number `s`, because a single cue
-   reads as a mistake and four read as distance:
-
-     scale     a strip further off is narrower — the only honest one
-     speed     parallax: the near plane crosses more of the screen per second
-     light     atmospheric perspective, the far planes sit back into the dark
-     shadow    the near planes throw the projector's shadow onto what hangs
-               behind them, which is the cue that puts a plane BEHIND another
-               plane BEHIND another. */
 type Plane = {
   s: number;
-  /** On-screen travel, px per second. The whole parallax lives in this column. */
   speed: number;
   dir: -1 | 1;
-  /** Whole frames travelled per loop. Whole, or the loop would jump. */
   cells: number;
   alpha: number;
-  /** Paint order. Without it the strips stack by document order and a near
-      strip's shadow lands under the strip it is supposed to fall on. */
   z: number;
-  /** Offset down and to the right of the beam, which comes from the box at the
-      back of the room. Cast outside the border box only, so a strip darkens its
-      neighbours and never its own frames.
-
-      Every plane casts, including the ones at the back. Only the front two had
-      one at first, and the wall gave itself away: the second plane reads as
-      "in front" too, so half the strips near the eye appeared to be lying flat
-      against the wall. What sorts the planes is not whether there is a shadow
-      but how far it is thrown and how soft it has gone — a strip further back
-      is closer to what it falls on.
-
-      The spread is always larger than the horizontal offset, and that is the
-      whole rule. An outer shadow is clipped to outside the box it comes from,
-      so once the offset exceeds the spread the shadow's own edge retreats
-      inside the strip on the upwind side, and all that survives there is the
-      weak half of a blur. A heavy shadow on one flank and nothing on the other
-      does not read as light coming from a direction; it reads as broken. Every
-      strip here darkens both its neighbours, one of them more. */
   shade: string;
 };
 
 const PLANES: Plane[] = [
-  // nearest: widest, brightest, fastest, and the shadow thrown furthest
   { s: 1.0, speed: 2.2, dir: -1, cells: 2, alpha: 1, z: 4, shade: '3px 5px 30px 7px rgba(2,3,7,0.55)' },
-  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '1px 2px 15px 3px rgba(2,3,7,0.34)' }, // far
-  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 22px 5px rgba(2,3,7,0.45)' }, // mid
-  // furthest: barely there, barely moves, and its shadow lands on the wall itself
+  { s: 0.74, speed: 0.8, dir: 1, cells: 1, alpha: 0.54, z: 2, shade: '1px 2px 15px 3px rgba(2,3,7,0.34)' },
+  { s: 0.89, speed: 1.4, dir: -1, cells: 2, alpha: 0.82, z: 3, shade: '2px 4px 22px 5px rgba(2,3,7,0.45)' },
   { s: 0.66, speed: 0.45, dir: 1, cells: 1, alpha: 0.44, z: 1, shade: '1px 1px 9px 2px rgba(2,3,7,0.22)' },
 ];
 
-/* Celluloid, built the way the material actually is: one length of 35mm as one
-   element — a stack of frames divided by frame lines, with sprocket holes down
-   both edges. Four background layers rather than a two-axis grid, because an
-   even grid reads as graph paper.
-
-   A strip is its own element and not a repeat of one field, because a repeating
-   background can only ever move as one sheet, and these have to move apart. `s`
-   scales the whole material, so a distant strip is the same film seen from
-   further away and not a different gauge of it.
-
-   `fill` is the base the strip is printed on, and it is the reason the shadows
-   read at all: a strip made only of hairlines is very nearly a hole in the
-   wall, and a shadow falling across it has nothing to darken but the black of
-   the room. Physically it is also the right answer — film hung on a dark wall
-   reflects some light back, and being lighter than the wall is precisely the
-   condition under which a shadow becomes visible.
-
-   The wall stays far darker than the type in front of it: cream text over a
-   strip is about 14.9:1, where the floor for body copy is 4.5:1. */
 function stripFace(line: string, edge: string, perf: string, fill: string, s: number) {
   const { w: strip, cell, hole, inset } = geo(s);
   return {
@@ -178,9 +70,6 @@ function stripFace(line: string, edge: string, perf: string, fill: string, s: nu
   } as const;
 }
 
-/* Widths now differ per plane, so the strips are laid out by running total
-   rather than by index × pitch. The field is overscanned by 12% on each side so
-   the tilt never exposes a corner, and it is filled until it is covered. */
 function layOut(width: number) {
   const field = width * 1.3;
   const out: { x: number; plane: Plane }[] = [];
@@ -192,10 +81,6 @@ function layOut(width: number) {
   return out;
 }
 
-/* The wall itself, at one colour. It is rendered twice — once unlit, once in
-   tungsten behind the beam's mask — and the two copies have to stay registered
-   with each other, so every strip's phase comes from its index rather than from
-   when it happened to mount. */
 const Reel = memo(function Reel({
   width,
   line,
@@ -209,30 +94,17 @@ const Reel = memo(function Reel({
   edge: string;
   perf: string;
   fill: string;
-  /** Whether the strips throw their shadow. The lit copy does not: it is only
-      ever seen through a hole the size of the beam, where the light is what the
-      eye is reading, and a blurred 30px shadow on every strip of a second wall
-      is the most expensive thing on it for the least visible return. */
   cast?: boolean;
 }) {
   const strips = useMemo(() => layOut(width), [width]);
   return (
-    /* The whole field is rotated a degree and a half and overscanned. An
-       axis-aligned field of hairlines is a UI grid overlay no matter what it is
-       made of; strips pinned up off-square are cloth, paper, film. The tilt is
-       what stops this reading as graph paper, and it costs nothing. */
     <div className="absolute -inset-[12%] origin-center -rotate-[1.5deg]">
       {strips.map(({ x, plane }, i) => {
-        /* A whole number of frames, so the loop closes on itself and the creep
-           has no seam to catch the eye — and whole pixels, so the frames it
-           travels are the same frames the strip is printed with. */
         const { w, cell } = geo(plane.s);
         const travel = plane.cells * cell;
         return (
           <div
             key={i}
-            /* Taller than the field it sits in, so a strip that has run up does
-               not drag its own end into view. */
             className="strip-creep absolute -top-32 -bottom-32"
             style={
               {
@@ -243,9 +115,6 @@ const Reel = memo(function Reel({
                 boxShadow: cast ? plane.shade : undefined,
                 '--creep': `${plane.dir * travel}px`,
                 '--dur': `${(travel / plane.speed).toFixed(1)}s`,
-                /* Strips of the same plane repeat every fourth column; without
-                   an offset they run in step and the wall reads as one sheet
-                   with a pattern printed on it. */
                 '--phase': `${(-i * 6.7).toFixed(1)}s`,
                 ...stripFace(line, edge, perf, fill, plane.s),
               } as React.CSSProperties
@@ -258,34 +127,12 @@ const Reel = memo(function Reel({
 });
 
 function Wall({
-  /* Dimmer than it was, three times over now: the wall should suggest itself,
-     not announce itself. The halo is taken from this same number, so the whole
-     beam — reveal and scatter — comes down together, which is the only way to
-     dim it without the two halves of the light drifting apart in weight.
-
-     It has been going one direction the whole time, and that is worth reading
-     as a finding rather than as taste: every time this was looked at with
-     fresh eyes it was too bright. A light in a dark room is convincing at the
-     level where you are not sure whether it is on. */
   intensity = 0.38,
-  /* ── how big the light is, and what that costs ─────────────────────────
-     This number sizes both moving surfaces: the beam is a box of `2r`, the
-     halo a box of `2 × 1.9r`. Area goes with its square, so coming down from
-     340 to 240 does not make the light thirty per cent smaller to pay for —
-     it halves what has to be blended on every frame the pointer produces.
-
-     Smaller also reads better here. At 340 the pool of light was wide enough
-     to be a lit region of the page; at 240 it is a torch, which is what the
-     room was always describing. */
   radius = 240,
   className,
   asBackdrop = false,
 }: HolographicWallProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  /* The three things the pointer moves. None of them is React state: a light
-     following a cursor is sixty writes a second, and a component that
-     re-rendered on each of them would be reconciling the whole wall to move a
-     highlight. */
   const beamRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
   const haloRef = useRef<HTMLDivElement>(null);
@@ -299,25 +146,11 @@ function Wall({
     const host = hostRef.current;
     if (!host) return;
     const ro = new ResizeObserver(() => {
-      // Same numbers, same wall: a resize observer fires more often than the box
-      // actually changes, and every spurious update re-lays a hundred strips.
       setSize(s => {
         const w = host.clientWidth;
         const h = host.clientHeight;
         if (s.w === w && s.h === h) return s;
 
-        /* ── a barra de endereço do celular não é um redimensionamento ────
-           No Android, rolar recolhe e devolve a barra de endereço, e cada uma
-           dessas vezes muda a ALTURA da janela. Aqui isso chegava como um
-           redimensionamento de verdade: a parede inteira refeita e
-           re-rasterizada — oito faixas de gradientes com sombra, do tamanho da
-           tela — no meio de uma rolagem. Explicava dois sintomas ao mesmo
-           tempo: o app pesado ao rolar, e a barra de baixo tremendo.
-
-           A largura continua valendo à risca, porque girar o aparelho tem de
-           refazer a parede. A altura ganha tolerância: a parede já é
-           transbordada em 12%, então cem pixels a mais ou a menos não mudam
-           nada do que se vê. */
         if (COARSE && s.w === w && Math.abs(s.h - h) < 160) return s;
 
         return { w, h };
@@ -339,26 +172,8 @@ function Wall({
     const host = hostRef.current;
     if (!host) return;
 
-    // A touch screen has no pointer to follow, so there is nothing to wire up.
-    // Reduced motion, however, does NOT switch the light off: this backdrop is
-    // the product's commissioned interactive surface, and a light that tracks
-    // the cursor is direct feedback, not an animation playing at the visitor.
-    // What the preference removes is the easing of the beam — see `calm`. The
-    // creep of the strips is deliberately exempt; the reason is in index.css.
     if (!fine) return;
 
-    /* The box is measured when it changes, not when the mouse moves. The
-       pointer arrives in screen pixels and leaves as a CSS length inside a
-       zoomed page, and those are not the same unit — the element reports both
-       of its own widths and the ratio converts one to the other, which also
-       keeps it right if the visitor zooms the browser on top of everything.
-
-       That conversion used to be computed inside the move handler, where a
-       client rect and an offset width are two forced synchronous layouts. A
-       mouse can fire hundreds of events a second, and the handler was making
-       the browser stop and re-measure the page on every one of them — the
-       single most expensive thing in this file, and it cost exactly nothing to
-       move it here, because a fixed full-screen box only changes on resize. */
     const box = { left: 0, top: 0, k: 1 };
     const measure = () => {
       const r = host.getBoundingClientRect();
@@ -369,25 +184,6 @@ function Wall({
     };
     measure();
 
-    /* ── moving light without repainting anything ─────────────────────────
-       The beam used to be a mask whose centre was a CSS variable on this
-       element, and the halo a full-screen gradient with the same variable in
-       it. Both were wrong in the same way, and it is the fault behind the
-       report of a fast machine dropping frames here.
-
-       Writing a custom property on the host invalidates style for everything
-       under it — the whole wall, every strip and its inline geometry — sixty
-       times a second. And a gradient whose centre has moved has to be
-       rasterised again: a full-viewport repaint per frame.
-
-       Nothing is drawn where the cursor is any more; it is *carried* there. The
-       beam is a box with a fixed mask in the middle, and inside it the lit wall
-       is pushed back by exactly the distance the box was pushed forward — the
-       two translations cancel, so the celluloid stays registered to the pixel
-       while the hole moves. The halo is one gradient, rasterised once, moved.
-
-       Every one of those is a transform on a promoted layer: no style recalc,
-       no paint. */
     const beamOffset = radius;
     const haloOffset = radius * 1.9;
 
@@ -403,8 +199,6 @@ function Wall({
         haloRef.current.style.transform = `translate3d(${p.x - haloOffset}px, ${p.y - haloOffset}px, 0)`;
     };
 
-    /* On and off is a class away, not a render away — the wall does not need to
-       be reconciled because a light came on. */
     let on = false;
     const show = (v: boolean) => {
       if (on === v) return;
@@ -435,8 +229,6 @@ function Wall({
     };
   }, [asBackdrop, fine, intensity, radius]);
 
-  /* Fixed, in the middle of its own box, and therefore rasterised exactly once
-     for the life of the page. */
   const beamBox = radius * 2;
   const haloBox = radius * 1.9 * 2;
   const mask = `radial-gradient(${radius}px circle at 50% 50%, #000 0%, #000 22%, rgba(0,0,0,0.6) 52%, transparent 78%)`;
@@ -454,7 +246,7 @@ function Wall({
         className
       )}
     >
-      {/* the unlit wall: celluloid you can just make out in a dark room */}
+      {}
       <Reel
         width={size.w}
         line="rgba(184,200,224,0.075)"
@@ -463,18 +255,7 @@ function Wall({
         fill="rgba(184,200,224,0.05)"
       />
 
-      {/* The lit wall: the same strip in tungsten, seen through a hole the size
-          of the beam. Three boxes, and each one has exactly one job — the outer
-          fades the whole thing in and out, the middle carries the hole and is
-          what travels with the cursor, and the inner is the wall itself, pushed
-          back by the distance the hole came forward so that it never actually
-          moves. What the eye sees is a light passing over a still wall, which is
-          what it is.
-
-          It exists only for a cursor, so on a touch screen it is not built at
-          all. It used to be: a second full set of strips, every one of them
-          animating, behind a full-screen mask, on a phone that could never
-          light a single one of them. Same for the halo below. */}
+      {}
       {fine && !ONE_WALL ? (
         <div className="absolute inset-0" style={{ opacity: 0, transition: fade }}>
           <div
@@ -509,14 +290,7 @@ function Wall({
         </div>
       ) : null}
 
-      {/* The halo: light scattering in the air of the room. Held well under the
-          reveal, because the two do different amounts of damage to the text
-          over them — the reveal is hairlines, which the type reads between,
-          while the halo is a flat wash across everything the cursor is near,
-          and a wash is what actually lifts a background off the page.
-
-          Where the second wall cannot be drawn it carries the beam alone, so it
-          is given back the strength that copy would have added. */}
+      {}
       {fine ? (
         <div
           ref={haloRef}
@@ -534,15 +308,7 @@ function Wall({
         />
       ) : null}
 
-      {/* The screen surround: the room falls off toward its edges. It is also
-          the legibility floor, and that is the more important of its two jobs —
-          the app's headings and body copy sit straight on this wall with no
-          plate under them, so the wall is never allowed to reach full strength
-          anywhere text can land. It used to be fully transparent for the first
-          30%, which is exactly the band the page titles occupy. Now it never
-          drops below a fifth, and every layer above is dimmed by it, the beam
-          included. Worst case measured through this scrim — cream text over a
-          lit frame line, right under the cursor — is about 7.9:1. */}
+      {}
       <div
         className="absolute inset-0"
         style={{
@@ -554,9 +320,6 @@ function Wall({
   );
 }
 
-/* The room does not change because the app did. Without this, every toast,
-   every tab, every list that came back from the server re-rendered a hundred
-   strips of celluloid that had not moved. */
 export const HolographicWall = memo(Wall);
 
 export default HolographicWall;

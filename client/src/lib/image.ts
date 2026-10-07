@@ -1,32 +1,13 @@
-/* ── the portrait, cut down to size before it leaves the browser ──────────
-   A phone camera produces four megabytes for something this interface draws at
-   twenty pixels across. The shrinking happens here, where the file already is,
-   and what reaches the server is tens of kilobytes — the server enforces its
-   own ceiling regardless, so this is the courtesy and not the rule.
-
-   What it does *not* do any more is decide the framing. Cutting a square out of
-   the middle is wrong exactly as often as a face is not dead centre, which in a
-   photo somebody chose of themselves is most of the time. */
-
-/** The side of the square that is stored. Twelve times what it is drawn at. */
 export const PORTRAIT_SIDE = 256;
-/** What a browser will attempt to decode. Past this it is not a portrait. */
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
 
 export type Loaded = {
   source: CanvasImageSource;
   width: number;
   height: number;
-  /** Frees the decoded image. The caller owns this. */
   release: () => void;
 };
 
-/* `createImageBitmap` is the direct route and the only one that honours the
-   orientation an EXIF tag asks for — a portrait shot on a phone is stored
-   sideways with a flag saying so, and drawing the pixels without reading the
-   flag is how someone ends up lying on their side. Where it is unavailable, an
-   <img> decodes the same file and the browser applies the orientation itself
-   as part of loading it. */
 export async function loadImage(file: File): Promise<Loaded> {
   if (!file.type.startsWith('image/')) throw new Error('Escolha um arquivo de imagem.');
   if (file.size > MAX_FILE_BYTES) throw new Error('A imagem é grande demais (máximo 12 MB).');
@@ -60,15 +41,8 @@ export async function loadImage(file: File): Promise<Loaded> {
   }
 }
 
-/** A square region of the source, in source pixels. */
 export type Crop = { x: number; y: number; side: number };
 
-/**
- * The chosen square, encoded small. WebP where it exists — about a third of
- * the JPEG for the same picture — and JPEG where it does not. A browser that
- * cannot encode WebP does not fail, it quietly returns a PNG, which is why the
- * result is checked rather than trusted.
- */
 export function encodeCrop(loaded: Loaded, crop: Crop): string {
   const canvas = document.createElement('canvas');
   canvas.width = PORTRAIT_SIDE;

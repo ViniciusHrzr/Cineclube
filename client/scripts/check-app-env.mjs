@@ -1,12 +1,3 @@
-/* O build do aplicativo precisa saber ONDE a API mora — o site fala com a
-   própria origem, o app não tem servidor dentro dele. A variável vive em
-   `client/.env.app`, que não é versionado: o endereço do serviço fica só na
-   máquina, como render.yaml.
-
-   Isto existe porque a falha silenciosa é cara: sem a variável, o build sai
-   inteiro e o APK instalado tenta chamar `https://localhost/api` — que é ele
-   mesmo. O app abre, desenha a moldura, e nada carrega. */
-
 import { existsSync, readFileSync } from 'node:fs';
 
 const arquivo = new URL('../.env.app', import.meta.url);

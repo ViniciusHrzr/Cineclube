@@ -1,10 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-/* The room is pure state plus a set of open responses, and it touches neither
-   the database nor the network. So it is tested as what it is: a reducer.
-   Every call takes an explicit `now`, which is what lets a two hour screening
-   be exercised in a millisecond. */
 const screening = require('../screening');
 
 const T0 = 1_700_000_000_000;
@@ -12,17 +8,10 @@ const FILM = { id: 1, title: 'Duna: Parte Dois', year: 2024, genre: 'Ficção', 
 
 const session = (id, name) => ({ reviewer_id: id, name, dot: '#b5abfc' });
 
-/** Quem abriu a sessão, e portanto a única pessoa que a rota deixa comandar. */
 const HOST = { id: 'dono', name: 'Vinicius', dot: '#b5abfc' };
 
-/* Uma fonte aberta, que e o que faz alguem contar para a roda de travada: nao
-   se trava num filme que nao se abriu. Os testes daqui para baixo mandam a
-   fonte em toda leitura, do jeito que o player manda. */
 const SRC = 'a1b2c3d4e5f6';
 
-/* Um clube só, porque este arquivo é sobre o que UM quarto faz — a separação
-   entre quartos é assunto do teste de API. `reset` esvazia o prédio, então o
-   quarto é pedido de novo a cada teste: o de antes já não está no mapa. */
 const CLUBE = 'c-teste';
 let room;
 
@@ -44,7 +33,6 @@ test('a playing room moves with the clock, and stops where it is paused', () => 
 
   screening.pause(room, null, T0 + 30_000);
   assert.equal(screening.positionAt(room, T0 + 30_000), 30);
-  // A minute later it is still thirty seconds in: this is the whole contract.
   assert.equal(screening.positionAt(room, T0 + 90_000), 30);
 });
 
@@ -99,11 +87,7 @@ test('closing clears the film but keeps the people', () => {
   assert.equal(room.viewers.size, 1);
 });
 
-/* ── what a bad request may not do ────────────────────────────────────────── */
-
 test('a position that is not a number cannot enter the room', () => {
-  // Infinity is not finite, so it is refused outright rather than clamped —
-  // there is no sensible "very far into the film".
   assert.equal(screening.clampPosition(room, NaN), 0);
   assert.equal(screening.clampPosition(room, Infinity), 0);
   assert.equal(screening.clampPosition(room, -Infinity), 0);
@@ -115,14 +99,12 @@ test('a position that is not a number cannot enter the room', () => {
 
 test('a position past the end of the film is clamped to the film', () => {
   screening.open(room, FILM, HOST, T0);
-  // 166 minutes plus the slack, and not a second more.
   assert.equal(screening.clampPosition(room, 999_999), 166 * 60 + 900);
 });
 
 test('a playing room never derives a position past the film either', () => {
   screening.open(room, FILM, HOST, T0);
   screening.play(room, null, T0);
-  // A year later. Without the clamp inside positionAt this is astronomical.
   assert.equal(screening.positionAt(room, T0 + 31_536_000_000), 166 * 60 + 900);
 });
 
@@ -146,7 +128,6 @@ test('a source that could execute is not a source', () => {
   assert.equal(screening.isAllowedSource('https://exemplo.com/f.mp4'), true);
   assert.equal(screening.isAllowedSource('magnet:?xt=urn:btih:abc'), true);
   assert.equal(screening.isAllowedSource('blob:http://localhost/123'), true);
-  // A bare infohash carries no scheme and is judged by shape.
   assert.equal(screening.isAllowedSource('08ada5a7a6183aae1e09d831df6748d566095a10'), true);
   assert.equal(screening.isAllowedSource('<img src=x onerror=1>'), false);
 });
@@ -158,20 +139,6 @@ test('text a member sent is trimmed and capped', () => {
   assert.equal(screening.text('x'.repeat(9999)).length, screening.MAX_TEXT);
 });
 
-/* ── a roda de carregar, que só informa ───────────────────────────────────
-   A sala já parou sozinha pela travada de um membro, e voltou sozinha quando
-   ele voltou. O argumento era o certo no papel — seguir sem quem travou é a
-   dessincronia que este módulo existe para evitar — e o clube passou noites
-   sentado no resultado: uma sessão que para quando ninguém pediu e volta
-   quando ninguém pediu.
-
-   Era um laço de controle com quatro navegadores, um enxame e um filme dentro
-   dele. Todo amortecedor que se somou (carência, teto por filme, almofada
-   medida, "chegar não é travar") mudou a frequência e não a natureza.
-
-   Estes testes são a garantia de que não volta. O que a roda faz agora é
-   gravar quem está carregando; o filme só para quando uma pessoa para. */
-
 test('a travada de um membro não para mais o filme de ninguém', () => {
   screening.attach(room, session('p1', 'Ana'));
   screening.attach(room, session('p2', 'Bruno'));
@@ -182,8 +149,6 @@ test('a travada de um membro não para mais o filme de ninguém', () => {
 
   assert.equal(room.status, 'playing');
   assert.equal(screening.positionAt(room, T0 + 60_000), 60, 'o filme parou de correr');
-  // E o clube fica sabendo: é isso que o painel desenha, e é com isso que
-  // alguém decide apertar pause.
   assert.equal(room.viewers.get('p2').ready, false);
 });
 
@@ -199,9 +164,6 @@ test('nem quando todo mundo trava ao mesmo tempo', () => {
   assert.equal(room.status, 'playing');
 });
 
-/* O outro lado, e o que mais incomodava: a sala também não recomeça sozinha.
-   Uma sessão que volta a rodar sem ninguém apertar nada é a mesma surpresa da
-   pausa, na direção contrária — e pega o clube fora da sala. */
 test('e a sala não recomeça sozinha quando o buffer enche', () => {
   screening.attach(room, session('p1', 'Ana'));
   screening.attach(room, session('p2', 'Bruno'));
@@ -209,8 +171,6 @@ test('e a sala não recomeça sozinha quando o buffer enche', () => {
   screening.play(room, null, T0);
   screening.setReady(room, 'p2', false, SRC, T0 + 20_000);
 
-  // Alguém para de propósito para esperar o Bruno, que é como isto se resolve
-  // agora: uma pessoa decide.
   screening.pause(room, null, T0 + 22_000);
   screening.setReady(room, 'p2', true, SRC, T0 + 25_000);
 
@@ -244,8 +204,6 @@ test('a roda continua dizendo quem está carregando e o que cada um abriu', () =
   assert.equal(room.viewers.get('p1').ready, true);
 });
 
-/* ── who is in the room ───────────────────────────────────────────────────── */
-
 test('two tabs are one person, and closing one leaves them in the room', () => {
   screening.attach(room, session('p1', 'Ana'));
   screening.attach(room, session('p1', 'Ana'));
@@ -272,7 +230,6 @@ test('a runaway loop of commands is cut off', () => {
   for (let i = 0; i < 50; i++) if (screening.withinRate('p1', T0)) allowed++;
 
   assert.ok(allowed > 0 && allowed < 50, `let ${allowed} through`);
-  // A different person is unaffected by their neighbour's loop.
   assert.equal(screening.withinRate('p2', T0), true);
 });
 
@@ -280,8 +237,6 @@ test('the bucket refills once the window has passed', () => {
   for (let i = 0; i < 50; i++) screening.withinRate('p1', T0);
   assert.equal(screening.withinRate('p1', T0 + 10_000), true);
 });
-
-/* ── what goes over the wire ──────────────────────────────────────────────── */
 
 test('the snapshot carries the derived position and the server clock', () => {
   screening.attach(room, session('p1', 'Ana'));
@@ -297,10 +252,6 @@ test('the snapshot carries the derived position and the server clock', () => {
   assert.equal(frame.viewers[0].name, 'Ana');
 });
 
-/* ── the shared pointer ───────────────────────────────────────────────────
-   This one string is handed to every browser that joins, so what it is allowed
-   to contain is the whole of its security surface. */
-
 test('only a magnet or an http(s) link may be shared', () => {
   for (const good of [
     'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567',
@@ -313,7 +264,6 @@ test('only a magnet or an http(s) link may be shared', () => {
   for (const bad of [
     'javascript:alert(1)',
     'data:text/html,<script>alert(1)</script>',
-    // A reference into one browser's own memory: meaningless in anyone else's.
     'blob:http://localhost:3000/8f2e',
     'ftp://arquivo.exemplo/filme.mp4',
     'só um texto',
@@ -363,12 +313,6 @@ test('the snapshot carries the link, so whoever arrives can load it', () => {
   assert.equal(screening.snapshot(room, T0).link, link);
 });
 
-/* ── the subtitle the club shares ─────────────────────────────────────────
-   The one file small enough to travel. What these cover is mostly the split
-   between the announcement and the text: the room broadcasts its snapshot on
-   every mutation it has, so anything heavy in there is multiplied by every
-   member and every buffer report. */
-
 const CUE = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nboa noite';
 
 test('a subtitle needs both a name and some text', () => {
@@ -409,8 +353,6 @@ test('the snapshot announces the subtitle without carrying it', () => {
   const announced = screening.snapshot(room, T0).subtitle;
   assert.deepEqual(Object.keys(announced).sort(), ['id', 'name']);
   assert.equal(announced.name, 'duna.srt');
-  // The text lives behind its own route. On every frame, to everybody, it would
-  // be the fan-out every ceiling in this module exists to prevent.
   assert.equal(announced.vtt, undefined);
 });
 

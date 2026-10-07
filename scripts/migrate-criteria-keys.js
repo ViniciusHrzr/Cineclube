@@ -1,37 +1,9 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   Renomeia as chaves de critério guardadas nas avaliações antigas.
-
-       npm run migrate:criterios
-       npm run migrate:criterios -- --dry
-
-   A nota é gravada como um objeto JSON chaveado pelos critérios que existiam no
-   dia em que foi dada. Quando um gênero troca uma pergunta por outra —
-   "Atuações" por "Vozes" numa animação — a chave muda, e sem isto toda
-   avaliação anterior perde aquele critério: ele lê zero na abertura da nota.
-
-   Não mexe na coluna `final` porque toda troca abaixo cai num slot do mesmo
-   peso, e renomear preserva a soma. Uma troca futura que mude de peso deixa
-   isto insuficiente, e a nota precisa ser recalculada.
-
-   Idempotente: uma chave já renomeada não é encontrada de novo. `--dry` existe
-   por causa do banco de produção — quando o alvo é o clube inteiro e não este
-   notebook, a primeira rodada deve ser a que não pode dar errado.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-try { require('node:process').loadEnvFile('.env'); } catch (e) { /* env may come from elsewhere */ }
+try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
 const db = require('../db');
 
 const DRY = process.argv.includes('--dry');
 
-/* ── o que virou o quê ────────────────────────────────────────────────────
-   Por gênero, porque uma chave só muda dentro do gênero que a trocou:
-   `atuacoes` continua sendo `atuacoes` num drama e vira `vozes` numa animação,
-   e uma renomeação cega trocaria as duas.
-
-   Esta tabela é o par de criteria.js. O teste
-   "the keys a genre introduces are the ones the migration knows about" existe
-   para que uma troca nova lá sem uma linha nova aqui quebre em vez de passar. */
 const RENAMES = {
   'Animação': { atuacoes: 'vozes' },
   'Documentário': { arte: 'material', atuacoes: 'acesso', relevancia: 'etica' },
@@ -41,16 +13,11 @@ const RENAMES = {
 const readStmt = db.prepare('SELECT id, movie_genre, movie_title, scores FROM reviews');
 const writeStmt = db.prepare('UPDATE reviews SET scores = ? WHERE id = ?');
 
-/* Rebuilt key by key rather than deleted-and-set, so the criteria keep the
-   order they were written in. Nothing depends on that order — the card is built
-   from criteria.js — but a diff of the archive is worth being able to read. */
 function rename(scores, map) {
   const out = {};
   let changed = 0;
   for (const [key, value] of Object.entries(scores)) {
     const to = map[key];
-    /* Only when the new key is not already there: a row half-migrated by an
-       interrupted run would otherwise have the old value overwrite the new. */
     if (to && !(to in scores)) {
       out[to] = value;
       changed++;
@@ -64,10 +31,6 @@ function rename(scores, map) {
 async function main() {
   await db.ready;
 
-  /* Which database this is about to touch, said before anything happens. The
-     script reads the same env the server does, so running it with the
-     production variables unset is not an error — it quietly migrates the copy
-     on this machine instead, which looks exactly like success. */
   const target = process.env.TURSO_DATABASE_URL;
   console.log(`[critérios] banco: ${target ? `Turso — ${target}` : 'arquivo local (data/cineclube.db)'}`);
   if (DRY) console.log('[critérios] simulação: nada será escrito');
@@ -92,8 +55,6 @@ async function main() {
     try {
       scores = JSON.parse(row.scores);
     } catch (e) {
-      /* A row whose JSON does not parse is a row this script must not rewrite:
-         whatever is wrong with it, guessing is worse. */
       console.warn(`[critérios] ${row.movie_title}: notas ilegíveis, deixada como está`);
       continue;
     }

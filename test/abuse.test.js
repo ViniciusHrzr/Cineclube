@@ -17,19 +17,6 @@ const { cleanMovie, MAX_TITLE, MAX_POSTER } = require('../movie');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O que o produto faz com quem não está usando o produto: um cliente que faz
-   exatamente o que a API permite, muitas vezes por segundo. Dois assuntos:
-
-   1. **O tamanho do que entra.** Um título de novecentos mil caracteres é o
-      corpo de 1 MB usado como foi permitido. Como o `id` do filme é escolhido
-      por quem escreve, a unicidade não segura nada — e o plano do banco tem
-      500 MB, cuja punição por estourar é a suspensão.
-
-   2. **Quantas vezes.** O cadastro é o que mais importa: toda outra trava conta
-      por conta, e uma conta nova custa uma requisição.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -49,13 +36,10 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
-/* Cada teste começa com todas as janelas limpas. Sem isto a ordem dos testes
-   passaria a importar: o teto de trás (300/min por endereço) é compartilhado, e
-   todos eles falam com 127.0.0.1. */
 test.beforeEach(() => throttle.reset());
 
 async function req(method, pathname, body, cookie) {
@@ -84,10 +68,6 @@ function scoresFor(genre, value) {
   critsFor(genre).forEach(c => { o[c.key] = value; });
   return o;
 }
-
-/* ══════════════════════════════════════════════════════════════════════════
-   1. O TAMANHO
-   ══════════════════════════════════════════════════════════════════════════ */
 
 test('o filme é saneado antes de virar linha', () => {
   const gigante = cleanMovie({
@@ -143,18 +123,6 @@ test('a fila também corta', async () => {
   assert.equal(row.movie_title.length, MAX_TITLE);
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   1b. SQL DENTRO DO TEXTO
-
-   Nada aqui escapa nem filtra aspas, de propósito: escapar é a defesa de quem
-   monta SQL com texto, e este produto nunca monta — todo valor viaja como
-   parâmetro, então o banco recebe consulta e dados por caminhos separados.
-
-   O que estes testes fixam é a consequência: uma carga de injeção é gravada e
-   devolvida LETRA POR LETRA. O dia em que ela voltar modificada, ou faltando um
-   pedaço, é o dia em que alguém começou a tratar texto como comando.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const CARGAS = [
   `'');SELECT * FROM review_comments;`,
   `'; DROP TABLE reviews; --`,
@@ -178,8 +146,6 @@ test('injeção no comentário de uma ficha é gravada como texto', async () => 
     assert.equal(posted.body.comment, carga, 'volta letra por letra');
   }
 
-  /* E as tabelas que as cargas mandavam apagar continuam de pé. Se alguma
-     tivesse sido executada, isto é o que teria sumido. */
   for (const tabela of ['reviews', 'review_comments', 'reviewers']) {
     const row = await db.prepare(`SELECT COUNT(*) AS n FROM ${tabela}`).get();
     assert.ok(Number.isFinite(Number(row.n)), `${tabela} deixou de existir`);
@@ -190,8 +156,6 @@ test('injeção na conversa, no nome do clube e no título do filme, idem', asyn
   const dono = await kit.signIn();
   const carga = CARGAS[0];
 
-  /* Um nome de clube é o caso mais interessante dos três: ele é comparado com
-     COLLATE NOCASE numa consulta de unicidade e vira um slug. */
   const feito = await req('POST', '/api/clubs', { name: `Sala ${carga}`.slice(0, 40) }, dono.cookie);
   assert.equal(feito.status, 201);
   const sala = feito.body.club;
@@ -212,18 +176,8 @@ test('injeção na conversa, no nome do clube e no título do filme, idem', asyn
   assert.equal(dito.status, 201);
   assert.equal(dito.body.body, carga);
 
-  // E o clube ainda é encontrável pelo slug que saiu daquele nome.
   assert.equal((await req('GET', `/api/c/${sala.slug}`, null, dono.cookie)).status, 200);
 });
-
-/* ══════════════════════════════════════════════════════════════════════════
-   1c. O QUE VAI PARA O LOG
-
-   Um corpo com JSON torto fazia o `body-parser` levantar um erro com o corpo
-   cru pendurado, e o tratador imprimia o erro inteiro: qualquer um escrevia no
-   log da instância a partir de fora, e um corpo quase-válido para
-   `/api/auth/login` levava uma senha em texto puro junto.
-   ══════════════════════════════════════════════════════════════════════════ */
 
 test('JSON torto é 400 do cliente, e não 500 do servidor', async () => {
   const res = await fetch(baseUrl + '/api/auth/login', {
@@ -240,10 +194,6 @@ test('JSON torto é 400 do cliente, e não 500 do servidor', async () => {
   );
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   2. QUANTAS VEZES
-   ══════════════════════════════════════════════════════════════════════════ */
-
 test('cadastrar em rajada bate na porta', async () => {
   const conta = n => ({
     name: `Bot ${n}`,
@@ -258,16 +208,10 @@ test('cadastrar em rajada bate na porta', async () => {
   const travadas = feitas.filter(r => r.status === 429);
   assert.equal(criadas, 5, 'cinco entram');
   assert.equal(travadas.length, 2, 'e o resto bate no 429');
-  /* A mensagem tem de dizer quando passa: um "agora não" sem prazo é uma porta
-     sem maçaneta, e quem está do outro lado costuma ser gente. */
   assert.match(travadas[0].body.error, /Tente de novo em/);
   assert.ok(Number(travadas[0].retryAfter) > 0, 'e o cabeçalho, para quem não é navegador');
 });
 
-/* Duas paredes, uma atrás da outra. A da frente é a regra do produto — cada
-   pessoa funda um clube —, e a de trás é a torneira: a tentativa recusada também
-   consome a cota do dia, então um programa insistindo bate no 429 mesmo sem
-   nunca conseguir criar a segunda sala. */
 test('fundar clube em rajada também', async () => {
   const dono = await kit.signIn();
   const feitos = [];
@@ -296,10 +240,6 @@ test('comentar em rajada bate na porta', async () => {
   assert.equal(ditos.filter(r => r.status === 429).length, 3);
 });
 
-/* A trava tem de ter fim: uma requisição recusada não conta. Se contasse, quem
-   esbarrasse no limite e continuasse tentando empurraria a própria janela para
-   sempre, e uma trava sem fim é um banimento que ninguém decidiu aplicar. */
-
 test('bater na porta trancada não estende a tranca', async () => {
   const dono = await kit.signIn();
   const nome = () => ({ name: `Sala ${crypto.randomUUID().slice(0, 8)}` });
@@ -317,9 +257,6 @@ test('bater na porta trancada não estende a tranca', async () => {
   );
 });
 
-/* Duas pessoas não dividem a mesma cota. Se dividissem, uma noite de clube em
-   que alguém escreve muito calaria todo mundo — e o limite deixaria de ser
-   sobre abuso para ser sobre quem chegou primeiro. */
 test('o limite é de cada conta, não do clube', async () => {
   const um = await kit.signIn();
   const outro = await kit.signIn();

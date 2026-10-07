@@ -6,34 +6,6 @@ import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
 import { inShell, openOutside } from '@/lib/shell';
 import { cn, plural } from '@/lib/utils';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A PORTA DA RUA.
-
-   Isto era um formulário centrado numa parede vazia: a única tela do produto
-   que não mostrava o produto. Quem chegava por um link do Discord via o nome do
-   app, dois botões e nada do que o clube tinha feito — e a coisa mais
-   convincente que este produto tem é justamente o acervo dele.
-
-   Então a porta virou uma sala com alguma coisa dentro. À esquerda a frase e as
-   duas chaves; à direita as FICHAS EM DESTAQUE, que são filmes de verdade,
-   avaliados de verdade, com a nota que o clube deu.
-
-   Saem do CINECLUBE, que é a sala em que toda conta nasce e a única coisa que
-   esta tela pode prometer a quem ainda não entrou: ele é público, e num clube
-   público o acervo é lido de fora, inclusive deslogado. Vinham de uma média da
-   rede inteira enquanto havia um saguão que a somasse; sem ele, uma "nota da
-   rede" seria um número sem tela que o explique.
-
-   O formulário não virou uma segunda tela: ele ocupa a coluna da esquerda no
-   lugar da frase. Quem clicou em "entrar" já decidiu, e as fichas continuam ali
-   ao lado enquanto ele digita.
-
-   Duas portas para a mesma conta. O Google é a normal; a senha existe para a
-   porta não ser única, e é o que garante que ninguém perca o clube por um
-   motivo que não tem nada a ver com o clube.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** O erro que a volta do Google escreve no endereço, se houver. */
 function errorFromHash() {
   const raw = (location.hash || '').replace(/^#/, '');
   const q = raw.indexOf('?');
@@ -42,7 +14,6 @@ function errorFromHash() {
   return got || null;
 }
 
-/** Um filme que a rede avaliou, com a nota que ela deu. */
 type Ficha = {
   id: number;
   title: string;
@@ -55,17 +26,8 @@ type Ficha = {
 
 const MAX_MOSTRA = 3;
 
-/* A sala que esta tela mostra, e a mesma que o app abre sem endereço: toda conta
-   nasce dentro dela, e ela é pública, então o acervo é legível por quem ainda
-   não entrou. Ver `EnterFirstClub` em App.tsx e `joinHomeClub` no servidor. */
 const CLUBE = 'cineclube';
 
-/* ── a entrada pelo Google, e a casca ─────────────────────────────────────
-   No navegador o link é um link: uma navegação de topo para a porta do Google.
-   Dentro de um aplicativo, uma navegação dessas ficaria presa no WebView — e o
-   Google recusa OAuth ali dentro. Então o clique é interceptado e a porta abre
-   no navegador DO SISTEMA; a volta chega por `cineclube://auth`, tratada no
-   App. Ver lib/shell.ts. */
 function abrirGoogle(e: React.MouseEvent<HTMLAnchorElement>) {
   if (!inShell()) return;
   e.preventDefault();
@@ -74,27 +36,12 @@ function abrirGoogle(e: React.MouseEvent<HTMLAnchorElement>) {
 
 export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [google, setGoogle] = useState(true);
-  /* O erro só é escrito no primeiro render, pela volta do Google. Nada nesta
-     tela produz um segundo — o formulário de senha tem o seu próprio. */
   const [error] = useState<string | null>(() => errorFromHash());
-  /* Qual porta está aberta. Fechada, a coluna da esquerda é o convite. Quem
-     voltou do Google com um erro chega com ela aberta: essa pessoa não está
-     sendo convidada, está tentando entrar e não conseguiu. */
   const [door, setDoor] = useState<'entrar' | 'criar' | null>(error ? 'entrar' : null);
-  /* Pedir o link de volta. É um terceiro estado desta mesma coluna e não uma
-     tela nova: quem chegou aqui já digitou o e-mail, e mandá-lo para outro
-     lugar seria pedir que digitasse de novo. */
   const [forgot, setForgot] = useState<string | null>(null);
-  /* Se esta instalação sabe mandar e-mail. Sem isso "esqueci minha senha" não
-     aparece — um botão que não tem como funcionar é pior que a ausência dele. */
   const [canMail, setCanMail] = useState(false);
-  /* `null` enquanto o acervo não respondeu: vazio é uma resposta diferente de
-     "ainda não sei", e as duas telas são outras. */
   const [fichas, setFichas] = useState<Ficha[] | null>(null);
 
-  /* Se esta instalação sequer tem a porta do Google configurada. Sem as
-     variáveis no servidor o botão não aparece: um botão que leva a um 503 é pior
-     do que um botão que não está lá. */
   useEffect(() => {
     void auth
       .me()
@@ -105,14 +52,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
       .catch(() => setGoogle(true));
   }, []);
 
-  /* O acervo cru, agrupado aqui e não no servidor: são as fichas do clube, uma
-     por pessoa por filme, e o que a porta mostra é a OBRA — três pessoas que
-     avaliaram Parasita são um cartaz com três fichas dentro, não três cartazes.
-
-     Da maior nota para a menor, porque o que o clube mais gostou é a melhor
-     coisa que ele tem para mostrar a quem está decidindo se entra. Sem pôster
-     não entra: um retângulo vazio numa mão de três cartazes é o buraco onde
-     deveria haver filme. */
   useEffect(() => {
     let vivo = true;
     void api<{ reviews: Review[] }>(`/api/c/${CLUBE}/reviews`)
@@ -152,8 +91,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
     };
   }, []);
 
-  /* O erro veio no endereço e já foi lido. Limpar evita que ele reapareça a cada
-     recarga de uma aba que ficou aberta com o endereço sujo. */
   useEffect(() => {
     if (errorFromHash()) history.replaceState(null, '', location.pathname + '#entrar');
   }, []);
@@ -163,10 +100,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
     setDoor(qual);
   }
 
-  /* Enquanto o acervo não respondeu a coluna existe com as celas vazias, para a
-     página não pular quando os cartazes chegarem. Se o clube não avaliou nada,
-     ela deixa de existir e a frase fica sozinha no meio: melhor uma coluna a
-     menos do que três buracos onde deveria haver filme. */
   const mostra = fichas === null || fichas.length > 0;
 
   return (
@@ -179,8 +112,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
             <span className="font-display text-[30px] leading-none tracking-[0.16em] text-beam sm:text-[38px]">
               CINECLUBE
             </span>
-            {/* A lâmpada de gravação, no lugar em que ela fica numa sala: acesa,
-                e respirando. É a primeira coisa desta página que se mexe. */}
+            {}
             <span
               aria-hidden
               className="inline-block h-[7px] w-[7px] flex-none animate-lamp rounded-full bg-dye-red shadow-[0_0_10px_rgba(242,86,74,0.85)]"
@@ -261,9 +193,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   );
 }
 
-/* ── o convite ────────────────────────────────────────────────────────────
-   O que a página diz antes de pedir qualquer coisa. Duas chaves do mesmo
-   tamanho e não um botão de marca com um formulário de consolação embaixo. */
 function Convite({
   google,
   onCriar,
@@ -286,8 +215,7 @@ function Convite({
         <span className="text-dye-red-lit">A conversa continua.</span>
       </h1>
 
-      {/* "Onze critérios" e não "critérios com peso": os pesos foram igualados
-          em 25/08/2026, e a ficha continua tendo onze perguntas. */}
+      {}
       <p className="mt-6 max-w-[52ch] text-[14px] leading-relaxed text-ink-dim">
         Nada de estrelinha solta. Aqui cada filme passa por onze critérios, cada
         nota fica registrada com quem deu — e a média do clube vira o placar da
@@ -333,10 +261,6 @@ function Convite({
   );
 }
 
-/* ── a porta aberta ───────────────────────────────────────────────────────
-   Mesma coluna, mesmo lugar na página. O título continua em Staatliches e na
-   altura de uma marquise, porque uma coluna que troca uma manchete por três
-   campos de 14px derruba o peso da página inteira para um lado só. */
 function Porta({
   mode,
   onMode,
@@ -429,43 +353,18 @@ function Porta({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   AS FICHAS EM DESTAQUE.
-
-   Três cartazes na mão, como quem abre um leque: o do meio é o assunto e os
-   dois de trás são o resto da mão. Não são enfeite — cada um é um filme que
-   alguma sala avaliou e emprestou à rede, com a nota que ela deu, e clicar num
-   dos de trás o traz para a frente.
-
-   Tudo se move por transformação e só por transformação: os três são o MESMO
-   retângulo, na mesma posição, e o que os separa é rotação, escala e
-   deslocamento em porcentagem da própria largura. É o que faz a troca ser uma
-   carta voando, e não três caixas sendo remedidas.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* Da esquerda para a direita. O centro é o índice 1, e a troca é sempre com
-   ele: um rodízio circular move as três cartas para responder a um clique em
-   uma, e o olho perde qual delas foi escolhida.
-
-   Em porcentagem da própria carta, nunca em pixels — a mão inteira encolhe com
-   a coluna, e as distâncias precisam encolher junto. */
 const SLOTS = [
   { x: '-106%', y: '8.7%', rotate: -9, scale: 0.879, zIndex: 1, opacity: 0.9 },
   { x: '-50%', y: '0%', rotate: -2, scale: 1, zIndex: 3, opacity: 1 },
   { x: '6%', y: '3.8%', rotate: 8, scale: 0.879, zIndex: 1, opacity: 0.9 },
 ];
 
-/* Onde a carta vai quando a mão chega perto dela: dois graus mais aberta e um
-   palmo acima. Só as de trás — a do meio não leva a lugar nenhum, e um cartaz
-   que responde ao ponteiro sem ter para onde ir é uma promessa falsa. */
 const HOVER: ({ rotate: number; y: string } | null)[] = [
   { rotate: -11, y: '6.8%' },
   null,
   { rotate: 10, y: '1.9%' },
 ];
 
-/** Quais posições a mão usa quando tem menos de três cartas. Duas viram centro
-    e uma atrás; uma fica sozinha no centro, e não torta na ponta. */
 function posicoesDe(n: number) {
   if (n >= 3) return [0, 1, 2];
   if (n === 2) return [0, 1];
@@ -481,8 +380,6 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
   const posicoes = posicoesDe(n);
   const meio = posicoes.indexOf(1);
 
-  /* Qual carta está em cada posição da mão. Estado de composição, e por isso
-     mora aqui: `SignIn` sabe quais fichas existem, não qual está na frente. */
   const [ordem, setOrdem] = useState<number[]>(() => posicoes.map((_, i) => i));
   useEffect(() => {
     setOrdem(Array.from({ length: n }, (_, i) => i));
@@ -509,9 +406,6 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
           const atras = slot !== 1;
 
           return (
-            /* A carta é sempre uma `div`, e o botão mora dentro dela. Trocar a
-               tag conforme a posição desmontaria o elemento no meio da troca, e
-               a carta pularia para o lugar novo em vez de voar até ele. */
             <motion.div
               key={ficha ? `f${ficha.id}` : `vazia-${k}`}
               className={cn(
@@ -522,9 +416,6 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
                   ? 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_34px_70px_-20px_rgba(0,0,0,0.9),0_0_60px_-18px_rgba(255,233,196,0.4)]'
                   : 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_24px_50px_-18px_rgba(0,0,0,0.9)]'
               )}
-              /* A cela vazia não entra: ela é o lugar guardado enquanto o
-                 acervo responde, e uma cela que chega voando anuncia a espera
-                 em vez de escondê-la. Quem entra é a carta, quando existe. */
               initial={
                 quieto || !ficha ? alvo : { ...alvo, y: '16%', opacity: 0, rotate: alvo.rotate * 0.3 }
               }
@@ -547,9 +438,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
 
               {ficha && atras ? (
                 <>
-                  {/* A nota fica no canto que sobrou de fora, e cada carta tem
-                      o seu: a da esquerda mostra o pé, a da direita mostra a
-                      cabeça — o pé dela é onde a placa da média está. */}
+                  {}
                   <span
                     aria-hidden
                     className={cn(
@@ -568,8 +457,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
                   >
                     {fmt(ficha.average)}
                   </span>
-                  {/* O anel de foco entra para dentro: a carta corta o que
-                      passa da borda dela, e um anel de fora sumiria. */}
+                  {}
                   <button
                     type="button"
                     onClick={() => trazer(k)}
@@ -582,9 +470,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
           );
         })}
 
-        {/* A placa: a nota, do tamanho de uma nota. Fica sobre a mão e não
-            dentro de um cartaz porque ela não é sobre a imagem — é o que a sala
-            escreveu depois de ver o filme. */}
+        {}
         {centro ? (
           <motion.div
             key={`placa-${centro.id}`}
@@ -596,8 +482,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
             <span className="q font-display text-[32px] leading-none text-beam sm:text-[38px]">
               {fmt(centro.average)}
             </span>
-            {/* Uma ficha só não é média de nada. A placa diz o que o número de
-                fato é nos dois casos. */}
+            {}
             <span className="font-display text-[11px] uppercase leading-[1.5] tracking-[0.12em] text-dye-brass">
               {centro.takes > 1 ? 'Média' : 'Nota'}
               <br />
@@ -607,8 +492,7 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
         ) : null}
       </div>
 
-      {/* A legenda da mão. Um filme, quem dirigiu, quando, e quantas fichas ele
-          já tem — que é a única coisa aqui que não é do TMDB. */}
+      {}
       <div
         aria-live="polite"
         className="mx-auto mt-6 flex min-h-[72px] max-w-[560px] items-end justify-between gap-4 border-t border-white/[0.06] pt-4"
@@ -646,10 +530,6 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
   );
 }
 
-/* ── e-mail e senha ───────────────────────────────────────────────────────
-   Uma frase só de erro para senha errada e para e-mail que não existe, porque o
-   servidor também responde uma só: um formulário que distingue os dois casos é
-   um jeito de descobrir quem tem conta aqui. */
 function PasswordEntry({
   mode,
   onMode,
@@ -660,9 +540,7 @@ function PasswordEntry({
   mode: 'entrar' | 'criar';
   onMode: (m: 'entrar' | 'criar') => void;
   onSignedIn: (u: SessionUser) => void;
-  /** Esta instalação sabe mandar e-mail. Sem isso, não há o que oferecer. */
   canMail: boolean;
-  /** Leva o e-mail já digitado junto, para não pedir que seja escrito de novo. */
   onForgot: (email: string) => void;
 }) {
   const [name, setName] = useState('');
@@ -701,9 +579,7 @@ function PasswordEntry({
 
   return (
     <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
-      {/* O nome vem primeiro porque é a única pergunta sobre a pessoa; o resto
-          é credencial. Só existe ao criar — entrar não precisa saber quem você
-          diz que é, precisa saber quem você prova ser. */}
+      {}
       {criando ? (
         <Field
           ref={first}
@@ -738,8 +614,7 @@ function PasswordEntry({
         <Key tone="commit" type="submit" disabled={busy || !pronto}>
           {busy ? (criando ? 'Criando' : 'Entrando') : criando ? 'Criar conta' : 'Entrar'}
         </Key>
-        {/* Troca de modo sem perder o que já foi digitado: quem errou a porta
-            não deveria redigitar o e-mail que acabou de escrever. */}
+        {}
         <Key
           tone="ghost"
           onClick={() => {
@@ -751,9 +626,7 @@ function PasswordEntry({
         </Key>
       </div>
 
-      {/* Só ao entrar, e só se esta instalação sabe mandar e-mail. Num
-          formulário de criar conta ele não quer dizer nada, e sem envio
-          configurado seria um botão que não tem como funcionar. */}
+      {}
       {!criando && canMail ? (
         <button
           type="button"
@@ -767,13 +640,6 @@ function PasswordEntry({
   );
 }
 
-/* A tela responde a mesma coisa exista a conta ou não, e a frase diz isso em voz
-   alta em vez de fingir sucesso: "se existir uma conta com esse endereço".
-   Fingir que mandou seria mentir para quem digitou o e-mail errado — o caso
-   comum —, e essa pessoa ficaria esperando uma mensagem que nunca vem.
-
-   O servidor faz o mesmo, e lá é uma regra de segurança: uma resposta diferente
-   transformaria a rota numa lista de quem tem conta aqui. */
 function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () => void }) {
   const [email, setEmail] = useState(inicial);
   const [busy, setBusy] = useState(false);
@@ -839,13 +705,6 @@ function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () 
   );
 }
 
-/* Aparece depois do Google e antes do clube, e é a única coisa entre a pessoa
-   e o produto — então ela diz por que existe. Um formulário que pede uma senha
-   sem explicar por quê, logo depois de a pessoa ter provado quem é, parece
-   trabalho repetido.
-
-   Dá para pular: é um seguro, e um seguro obrigatório na porta de entrada é um
-   pedágio. Quem pular volta a ver o convite, porque o motivo dele não expira. */
 export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
@@ -927,10 +786,6 @@ export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: ()
   );
 }
 
-/* ── um campo ─────────────────────────────────────────────────────────────
-   Recuado na sala, como todo campo deste produto: fundo `house-deep`, anel
-   `house-rail`, cantos de 2px e o cursor vermelho — a única aparição de vermelho
-   em repouso no sistema, porque um cursor é uma cabeça de gravação. */
 type FieldProps = {
   label: string;
   value: string;
@@ -966,8 +821,6 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   );
 });
 
-/* A marca do Google, desenhada e não uma fonte de ícone: é a única coisa neste
-   produto que pertence a outra pessoa, e ela tem uma forma exata. */
 function GoogleMark() {
   return (
     <svg viewBox="0 0 48 48" aria-hidden className="h-[18px] w-[18px] flex-none">

@@ -1,29 +1,9 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   UMA CÓPIA DO BANCO, NUM ARQUIVO.
-
-       npm run backup
-
-   Sai em `data/backups/cineclube-AAAA-MM-DD-HHMM.db`, um arquivo SQLite comum.
-
-   O plano grátis do Turso restaura para um ponto no tempo dos últimos dias, o
-   que cobre o acidente e não cobre os dois casos que fazem alguém querer
-   backup: a conta acabar, e o serviço mudar de ideia sobre o que oferece de
-   graça. Nos dois, a restauração some junto com o banco.
-
-   Entra toda tabela que o banco tiver, descoberta na hora: uma lista fixa
-   envelhece em silêncio, e ninguém descobre isso até precisar da tabela de
-   volta. Inclusive as sessões e os hashes de senha — um banco restaurado sem
-   credencial é um banco em que ninguém entra. O que isso exige é do lado de
-   fora: o arquivo é um segredo, e `data/` já está no .gitignore.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const fs = require('node:fs');
 const path = require('node:path');
 const { createClient } = require('@libsql/client');
 
 const CHUNK = 200;
 
-/** `2026-09-05-1432`, em hora local, que é a que a pessoa reconhece. */
 function stamp() {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
@@ -43,16 +23,10 @@ async function main() {
   fs.mkdirSync(destinoDir, { recursive: true });
   const destinoPath = path.join(destinoDir, `cineclube-${stamp()}.db`);
 
-  /* Um arquivo novo a cada vez: sobrescrever transformaria o backup numa cópia
-     só, e a cópia só é a que já foi estragada quando você descobre que
-     precisava dela. */
   if (fs.existsSync(destinoPath)) fs.rmSync(destinoPath);
   const destino = createClient({ url: 'file:' + destinoPath });
 
   try {
-    /* O ESQUEMA vem do banco de origem, e não do db.js: é a diferença entre uma
-       cópia e uma reconstrução. Com o esquema do código, um backup restaurado
-       depois de uma migração traria as tabelas de hoje com os dados de ontem. */
     const esquema = await origem.execute(
       `SELECT type, name, sql FROM sqlite_master
        WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'`
@@ -62,15 +36,6 @@ async function main() {
 
     for (const row of tabelas) await destino.execute(row.sql);
 
-    /* ── as chaves ficam desligadas durante a carga ────────────────────────
-       As tabelas são copiadas na ordem em que foram criadas, e essa ordem não é
-       a das dependências: `review_comments` referencia `reviews` e foi criada
-       antes dela. Ordenar por dependência não bastaria — `parent_id` aponta
-       para a própria tabela, e aí a ordem teria de valer entre as LINHAS.
-
-       Desligar é correto porque a origem JÁ é consistente: isto é uma cópia, e
-       não uma escrita nova. E não é voto de confiança — a conferência no fim
-       liga as chaves de volta e manda o banco verificar cada uma. */
     await destino.execute('PRAGMA foreign_keys = OFF');
     const off = (await destino.execute('PRAGMA foreign_keys')).rows[0];
     if (Number(Object.values(off)[0]) !== 0) {
@@ -93,26 +58,14 @@ async function main() {
           );
         }
       } catch (e) {
-        /* Sem o nome da tabela, uma falha de cópia é uma mensagem do SQLite sem
-           endereço — e foi exatamente assim que este defeito apareceu. */
         throw new Error(`ao copiar ${tabela}: ${e.message}`);
       }
       total += rows.length;
       console.log(`[backup] ${tabela}: ${rows.length} linha(s)`);
     }
 
-    /* Índices e gatilhos DEPOIS das linhas: durante a carga um índice é
-       reordenado a cada lote; no fim é uma passada só. Um índice único que falhe
-       aqui é sinal de origem inconsistente, e é melhor falhar do que gravar um
-       arquivo que esconde isso. */
     for (const row of resto) await destino.execute(row.sql);
 
-    /* ── conferir antes de dizer que deu certo ─────────────────────────────
-       Um backup que ninguém abriu é uma esperança, não uma cópia. Duas
-       conferências, cada uma pegando o que a outra não vê: AS CONTAGENS pegam a
-       tabela que não copiou — a falha que não levanta erro nenhum —, e
-       `foreign_key_check`, com as chaves ligadas de volta, prova que
-       desligá-las durante a carga não escondeu nada. */
     for (const { name: tabela } of tabelas) {
       const aqui = (await destino.execute(`SELECT COUNT(*) AS n FROM "${tabela}"`)).rows[0].n;
       const la = (await origem.execute(`SELECT COUNT(*) AS n FROM "${tabela}"`)).rows[0].n;

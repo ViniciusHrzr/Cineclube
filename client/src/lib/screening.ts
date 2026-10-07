@@ -2,29 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { capi, cpost, clubPath } from '@/lib/api';
 import { authHeaders, credentialsMode, streamUrl, urlFor } from '@/lib/session';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The client half of the screening room. The server owns where the film is;
-   this file's job is to know that number as accurately as a browser can.
-
-   A message takes time to arrive, so a frame saying "we are at 00:42" is
-   already wrong when it is read: every frame carries the instant it was true,
-   and the position is derived from that instant rather than taken at face
-   value.
-
-   And the browser's clock is not the server's — a machine set a minute fast
-   would derive every position a minute ahead and spend the whole film convinced
-   everyone else had drifted. The offset between the two clocks is measured
-   before anything else happens, and every derivation goes through it.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* ── o que está tocando ───────────────────────────────────────────────────
-   Um filme ou um episódio, na mesma sala. O clube é a mesma gente nas duas
-   lentes, e nada do que esta sala faz — sincronizar, legendar, transmitir uma
-   tela — muda por o que toca ter uma temporada.
-
-   `kind` existe porque a identidade muda: num episódio `id` é o id da SÉRIE, e
-   lê-lo como id de filme aponta para outra obra no TMDB. Toda tela que sai
-   daqui para buscar detalhe pergunta isto primeiro. */
 export type ScreeningMovie = {
   kind?: 'movie' | 'episode';
   id: number;
@@ -32,16 +9,12 @@ export type ScreeningMovie = {
   year: number | null;
   genre: string;
   poster: string | null;
-  /* Minutes. Num episódio é a duração DELE — um piloto de 70 numa série de 22 é
-     o caso em que o número da série está errado. Null quando o cache nunca a
-     aprendeu. */
   runtime: number | null;
   season?: number;
   episode?: number;
   episodeTitle?: string | null;
 };
 
-/** `T2E05`, ou null num filme. O jeito curto de dizer qual episódio é. */
 export function episodeTag(movie: ScreeningMovie | null) {
   if (!movie || movie.season == null || movie.episode == null) return null;
   return `T${movie.season}E${String(movie.episode).padStart(2, '0')}`;
@@ -51,31 +24,17 @@ export type ScreeningViewer = {
   id: string;
   name: string;
   dot: string;
-  /** False while their player is buffering — which pauses everybody. */
   ready: boolean;
-  /** What they are playing. Infohash, URL, or size:duration for a local file. */
   sourceTag: string | null;
 };
 
-/* ── quem está com a tela no ar ───────────────────────────────────────────
-   Nulo quase sempre, e quando não é a sala mudou de natureza: em vez de cada
-   um tocar a própria cópia com um relógio comum, existe UM vídeo saindo da
-   máquina desta pessoa. Este campo é o que faz cada navegador descobrir o
-   próprio papel sem perguntar — quem se lê aqui transmite, quem não se lê pede
-   imagem a quem está. Ver lib/liveshare.ts. */
 export type ScreeningLive = {
   hostId: string;
   hostName: string;
   hostDot: string;
-  /** Instante do servidor em que a transmissão começou. */
   since: number;
 };
 
-/* ── de quem é a sessão ───────────────────────────────────────────────────
-   Quem abriu o filme, e a única pessoa cujo play, pause e seek a sala aceita.
-   Chega a todas as telas e não só à do dono: as outras precisam dizer por que o
-   player delas não manda, e um controle que não obedece sem explicar lê como
-   defeito. Nulo enquanto não há sessão. */
 export type ScreeningHost = { id: string; name: string; dot: string };
 
 export type ScreeningState = {
@@ -83,22 +42,15 @@ export type ScreeningState = {
   movie: ScreeningMovie | null;
   host: ScreeningHost | null;
   status: 'playing' | 'paused';
-  /** Seconds, true as of `serverTime` — never read this without deriving. */
   position: number;
   revision: number;
-  /** The magnet or URL the club is on, for whoever arrives next. Null: none. */
   link: string | null;
-  /* Which subtitle the room is on — the announcement, never the text. The text
-     is fetched once, by `fetchSubtitle`, because this state arrives on every
-     mutation and the file is a hundred kilobytes. `id` is what changes when
-     somebody swaps the file, and therefore the only thing worth comparing. */
   subtitle: { id: number; name: string } | null;
   live: ScreeningLive | null;
   serverTime: number;
   viewers: ScreeningViewer[];
 };
 
-/** The subtitle itself, as WebVTT at offset zero. Each member shifts their own. */
 export type SubtitleFile = { id: number; name: string; vtt: string };
 
 export type CommandType = 'play' | 'pause' | 'seek';
@@ -117,28 +69,13 @@ const IDLE: ScreeningState = {
   viewers: [],
 };
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A sala vista de fora: tudo acima é para quem está assistindo, isto é para
-   quem NÃO está — a marquise, que só precisa acender a lâmpada.
-
-   Uma rota e não o stream da sala, por uma razão mecânica: assinar
-   `/api/screening/stream` chama `attach` no servidor, ou seja, entrar na sala
-   pelo simples fato de ter o app aberto. O clube inteiro apareceria na lista de
-   quem está dentro, e cada aba gastaria uma das três conexões de cada pessoa.
-
-   Quatro campos e não o snapshot inteiro: `position` e `serverTime` mudam
-   sozinhos e não param nunca, e guardá-los na raiz do app seria redesenhar o
-   produto todo a cada quadro para acender um ponto de oito pixels.
-   ══════════════════════════════════════════════════════════════════════════ */
 export type ScreeningPulse = {
-  /** Há sessão aberta. Pausada continua sendo sessão aberta. */
   open: boolean;
   status: 'playing' | 'paused';
   title: string | null;
   viewers: number;
 };
 
-/** A sala escura. O estado antes de perguntar, e o estado quando não há nada. */
 export const DARK: ScreeningPulse = { open: false, status: 'paused', title: null, viewers: 0 };
 
 export async function readPulse(): Promise<ScreeningPulse> {
@@ -151,26 +88,17 @@ export async function readPulse(): Promise<ScreeningPulse> {
   };
 }
 
-/** Dois pulsos são o mesmo pulso. Ver o uso em App.tsx: é o que evita que uma
- *  pergunta periódica redesenhe o app inteiro para dizer que nada mudou. */
 export function samePulse(a: ScreeningPulse, b: ScreeningPulse) {
   return (
     a.open === b.open && a.status === b.status && a.title === b.title && a.viewers === b.viewers
   );
 }
 
-/** Where the film is now, according to a state and a server clock reading. */
 export function positionAt(state: ScreeningState, serverNow: number) {
   if (state.status !== 'playing') return state.position;
   return state.position + Math.max(0, serverNow - state.serverTime) / 1000;
 }
 
-/* ── the two clocks ───────────────────────────────────────────────────────
-   The classic round-trip estimate: the server's instant, minus the midpoint of
-   when we asked and when we heard back. Each sample is wrong by half the
-   difference between the two legs of its round trip, so several are taken and
-   the median kept — a median throws away the one sample that queued behind a
-   garbage collection, which an average would smear across the result. */
 async function measureOffset(samples = 5): Promise<number> {
   const offsets: number[] = [];
   for (let i = 0; i < samples; i++) {
@@ -185,7 +113,6 @@ async function measureOffset(samples = 5): Promise<number> {
       const t2 = Date.now();
       offsets.push(t - (t0 + t2) / 2);
     } catch {
-      /* one lost sample is not a reason to give up on the estimate */
     }
   }
   if (!offsets.length) return 0;
@@ -193,20 +120,13 @@ async function measureOffset(samples = 5): Promise<number> {
   return offsets[Math.floor(offsets.length / 2)];
 }
 
-/* A `sync` frame is the room restating where it is, unprompted. It is not a
-   change, so it carries no new revision — it exists so a client that drifted,
-   joined late, or came back from a locked phone converges without asking. */
 type Frame =
   | ({ type: 'state' } & ScreeningState)
   | { type: 'sync'; status: 'playing' | 'paused'; position: number; revision: number; serverTime: number }
-  /* O aperto de mão da tela ao vivo, de um membro para outro. Não é estado da
-     sala e não passa pelo reducer: é um recado endereçado, e quem trata dele é
-     o motor de WebRTC. Ver `onSignal` abaixo e lib/liveshare.ts. */
   | { type: 'signal'; from: string; kind: SignalKind; data: unknown };
 
 export type SignalKind = 'want' | 'offer' | 'answer' | 'ice';
 
-/** O que o servidor devolve em `/screening/ice`. Ver turn.js. */
 export type IceConfig = { iceServers: RTCIceServer[]; relayed: boolean };
 
 export function useScreening(onError?: (msg: string) => void) {
@@ -214,9 +134,6 @@ export function useScreening(onError?: (msg: string) => void) {
   const [connected, setConnected] = useState(false);
   const [offset, setOffset] = useState(0);
 
-  /* The engine reads the state on a timer and inside DOM event handlers, both
-     of which outlive the render that created them. A ref is the copy that is
-     never stale. */
   const stateRef = useRef(state);
   stateRef.current = state;
   const offsetRef = useRef(0);
@@ -224,13 +141,6 @@ export function useScreening(onError?: (msg: string) => void) {
 
   const serverNow = useCallback(() => Date.now() + offsetRef.current, []);
 
-  /* Um recado de sinalização não é estado da sala: é endereçado, chega em
-     rajada e não tem nada a ver com onde o filme está. Passá-lo pelo `setState`
-     redesenharia a tela a cada candidato de rede — dezenas deles por pessoa,
-     nos primeiros segundos.
-
-     O conjunto vive numa ref porque o efeito do EventSource não pode depender
-     dele: abrir e fechar o stream a cada inscrição derrubaria a sala. */
   const listeners = useRef(new Set<(from: string, kind: SignalKind, data: unknown) => void>());
 
   const onSignal = useCallback((fn: (from: string, kind: SignalKind, data: unknown) => void) => {
@@ -251,19 +161,6 @@ export function useScreening(onError?: (msg: string) => void) {
   }, []);
 
   useEffect(() => {
-    /* ── uma conexão, e quem a reabre é este código ───────────────────────
-       `EventSource` não manda cabeçalho: no site ele se identifica pelo cookie,
-       e num aplicativo o endereço carrega um BILHETE de um minuto e de um uso —
-       ver streamUrl em lib/session.ts.
-
-       É por causa do bilhete que a retentativa é nossa. A do `EventSource` usa
-       a MESMA URL, e a URL de um aplicativo traz um bilhete já gasto: ela
-       bateria numa porta que não abre mais até desistir. Então a conexão morre
-       no primeiro erro e volta daqui, com bilhete novo e um passo de espera a
-       cada tentativa.
-
-       Cinco seguidas e a sala desiste de vez: aqui não há pergunta periódica
-       que cubra — o que chega por este cano é o comando de tocar e pausar. */
     let vivo = true;
     let source: EventSource | null = null;
     let failures = 0;
@@ -298,9 +195,6 @@ export function useScreening(onError?: (msg: string) => void) {
             const { type: _drop, ...next } = frame;
             return next;
           }
-          /* A sync frame only moves the clock. Dropping one that is older than
-             what we hold keeps a frame that overtook another from rewinding the
-             film under somebody's hands. */
           if (frame.revision < prev.revision) return prev;
           return {
             ...prev,
@@ -341,9 +235,6 @@ export function useScreening(onError?: (msg: string) => void) {
   const send = useCallback(
     async (type: CommandType, position: number) => {
       try {
-        /* The reply carries the new snapshot and is deliberately thrown away:
-           the stream is the one place state arrives from, so there is exactly
-           one order of events and no way for the two paths to disagree. */
         await cpost('/screening/command', { type, position });
       } catch (e) {
         onError?.((e as Error).message);
@@ -363,9 +254,6 @@ export function useScreening(onError?: (msg: string) => void) {
     [onError]
   );
 
-  /* A mesma porta, com a outra identidade dentro. Não é um segundo motor: o que
-     volta pelo stream é a mesma sala, e o resto desta tela não sabe a diferença
-     — ver `ScreeningMovie`. */
   const openEpisode = useCallback(
     async (showId: number, season: number, episode: number) => {
       try {
@@ -385,22 +273,13 @@ export function useScreening(onError?: (msg: string) => void) {
     }
   }, [onError]);
 
-  /* Leaving the club a pointer to what you are watching. Failing is not worth a
-     toast — the room simply keeps the pointer it had, and the next person to
-     choose a source publishes again. */
   const publishLink = useCallback(async (link: string | null) => {
     try {
       await cpost('/screening/link', { link });
     } catch {
-      /* the room keeps whatever it had */
     }
   }, []);
 
-  /* ── the subtitle, both directions ───────────────────────────────────────
-     Publishing is an action a person took and worth a toast when it fails:
-     they chose a file and nothing appeared, and without a word they would
-     re-choose it, which fails the same way. Passing null removes it — for
-     everyone, because it is the room's and not this browser's. */
   const publishSubtitle = useCallback(
     async (subtitle: { name: string; vtt: string } | null) => {
       try {
@@ -414,13 +293,8 @@ export function useScreening(onError?: (msg: string) => void) {
     [onError]
   );
 
-  /** The text the room announced. Throws, so the caller can leave it alone. */
   const fetchSubtitle = useCallback(() => capi<SubtitleFile>('/screening/subtitle'), []);
 
-  /* ── a tela ao vivo ──────────────────────────────────────────────────────
-     Assumir a transmissão é um pedido que pode ser recusado: a vaga é de uma
-     pessoa só, e quem chega depois precisa saber disso com o nome de quem está
-     nela. Devolve se conseguiu, e o erro já foi dito. */
   const startLive = useCallback(async () => {
     try {
       await cpost('/screening/live', { on: true });
@@ -431,19 +305,13 @@ export function useScreening(onError?: (msg: string) => void) {
     }
   }, [onError]);
 
-  /* Largar não falha de um jeito que interesse a alguém: ou já não era sua, ou
-     a sala vai contar pelo stream que não é mais. */
   const stopLive = useCallback(async () => {
     try {
       await cpost('/screening/live', { on: false });
     } catch {
-      /* o stream corrige */
     }
   }, []);
 
-  /* Um recado do aperto de mão. Silencioso de propósito: um candidato de rede
-     perdido é normal — o navegador manda vários caminhos e basta um funcionar
-     —, e um toast por candidato seria a tela piscando durante a conexão. */
   const sendSignal = useCallback(async (to: string, kind: SignalKind, data?: unknown) => {
     try {
       await cpost('/screening/signal', { to, kind, data: data ?? null });
@@ -453,18 +321,12 @@ export function useScreening(onError?: (msg: string) => void) {
     }
   }, []);
 
-  /** Onde os navegadores se procuram. Estoura, e quem chama decide o que fazer. */
   const fetchIce = useCallback(() => capi<IceConfig>('/screening/ice'), []);
 
-  /* Reporting readiness is chatter, not an action: it fires on every stall and
-     every recovery, and a failed one is corrected by the next. Errors are
-     swallowed on purpose — surfacing them would put a toast on screen for
-     something the club can neither see nor act on. */
   const setReady = useCallback(async (ready: boolean, sourceTag?: string | null) => {
     try {
       await cpost('/screening/ready', { ready, sourceTag });
     } catch {
-      /* the next report corrects it */
     }
   }, []);
 

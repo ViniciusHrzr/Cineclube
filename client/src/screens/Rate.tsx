@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Search } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
-/* As réguas saíram daqui e viraram peça no dia em que um episódio ganhou ficha
-   própria: são a mesma interação sobre listas de critérios diferentes. */
 import { Channels } from '@/components/channels';
 import { MentionField } from '@/components/mention';
 import {
@@ -37,19 +35,10 @@ export function RateScreen({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  /* Quase nenhum filme é de um gênero só, e até agora algo tinha de escolher —
-     uma lista de prioridade escolhia, adivinhando o que a pessoa que assistiu já
-     sabe. Então a escolha passa a ser dela: todo gênero que o filme carrega é
-     oferecido, e a carta segue o que ela escolher.
-
-     Guardado aqui e não lido do filme porque é uma decisão sobre ESTA ficha e
-     não um fato sobre o filme: dois membros podem avaliar o mesmo filme como
-     coisas diferentes, e os dois estão certos sobre o que assistiram. */
   const [genre, setGenre] = useState<string>('');
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
 
-  /** Every genre offered for a film, and never an empty list. */
   const choices = movie ? (movie.genres?.length ? movie.genres : [movie.genre]) : [];
 
   const selectMovie = useCallback(
@@ -59,15 +48,6 @@ export function RateScreen({
       try {
         const m = await api<Movie>(`/api/catalog/movie/${id}`);
         setMovie(m);
-        /* Um filme que esta pessoa já avaliou abre nas marcas que ela deu, e
-           não numa carta limpa. "Editar" vinha para cá também e devolvia dez
-           cincos — que não é uma edição, é o mesmo formulário com a resposta
-           anterior jogada fora, convidando em silêncio a sobrescrever uma ficha
-           que alguém só queria ajustar.
-
-           Abre no gênero daquela ficha pelo mesmo motivo: as marcas respondem
-           àqueles critérios, e outro gênero mostraria os números dela sob
-           perguntas que ela nunca viu. */
         const mine = club.reviews.find(r => r.reviewerId === club.me.id && r.movieId === m.id);
         const opening = mine?.movieGenre ?? m.genre;
         setGenre(opening);
@@ -85,15 +65,6 @@ export function RateScreen({
     [club]
   );
 
-  /* Switching genre keeps every mark that still has a question to answer, and
-     opens whatever is new at five. Most of the card survives the switch — the
-     eight at weight 1 are the same in every genre but the two that swap a slot
-     (see BASE_SWAP in criteria.js), and a pair is sometimes shared, as Drama and
-     Romance both are on impacto.
-
-     Seeding matters more than it looks: a criterion with no entry reads as five
-     on its slider and counts as zero in the total, so leaving one unseeded
-     would show a card that does not add up to its own score. */
   const pickGenre = useCallback(
     (next: string) => {
       setGenre(next);
@@ -124,11 +95,6 @@ export function RateScreen({
     if (!movie || saving) return;
     setSaving(true);
     try {
-      // The server signs the take with the session, so no reviewer travels in
-      // the body: whoever is logged in is who rated it.
-      // The genre travels as the one that was chosen, not the one the film
-      // opened on: it is what decides which two criteria these marks answer,
-      // and the record has to keep the pair the person actually saw.
       const rec = await cpost<Review>('/reviews', { movie: { ...movie, genre }, scores, comment });
       club.reload({
         reviews: club.reviews
@@ -136,9 +102,6 @@ export function RateScreen({
           .concat([rec]),
         watchlist: club.watchlist.filter(w => String(w.id) !== String(rec.movieId)),
       });
-      /* Each member is at their own browser, so the take is finished when it is
-         saved. The film stays on screen so the score can be adjusted, and the
-         notice offers the archive rather than handing the desk to someone else. */
       setSaved(true);
     } catch (e) {
       club.fault('Não foi possível gravar a avaliação: ' + (e as Error).message);
@@ -149,9 +112,7 @@ export function RateScreen({
 
   return (
     <section>
-      {/* Quantas perguntas esta ficha faz, e nada além disso: a escala e o passo
-          já estão escritos na legenda dos critérios logo abaixo, e dizer duas
-          vezes na mesma tela faz o leitor conferir se são a mesma coisa. */}
+      {}
       <Bill title="Avaliar filme" note={movie ? plural(weight, 'critério', 'critérios') : undefined} />
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
@@ -202,13 +163,7 @@ export function RateScreen({
               </Bay>
 
               <Bay legend="Comentário" note="opcional · @ chama alguém">
-                {/* O mesmo campo da conversa, e por isso o mesmo `@`. Chamar
-                    alguém é a mesma ação nos dois lugares, e um arroba que
-                    funciona num e não no outro é um arroba que ninguém confia.
-
-                    Sem `onSubmit`: aqui Enter quebra linha. Este texto é um
-                    parágrafo sobre um filme e não uma fala numa conversa, e
-                    gravar é a chave vermelha ali do lado. */}
+                {}
                 <MentionField
                   label="Comentário sobre o filme"
                   value={comment}
@@ -282,9 +237,7 @@ function Slate({
           {movie.original ? (
             <p className="q mt-1.5 text-[12.5px] text-ink-dim">{movie.original}</p>
           ) : null}
-          {/* The same three facts the projection sheet states, in the same
-              order, because this is the same film seen from the other side of
-              the desk. */}
+          {}
           <p className="q mt-2 text-[12.5px] text-ink-dim">
             {[
               movie.year ?? '—',
@@ -295,17 +248,9 @@ function Slate({
               .join(' · ')}
           </p>
 
-          {/* ── what this film is being rated as ──────────────────────────
-              A film with one genre states it; a film with several asks. The
-              two criteria the genre brings change with the answer, so this is
-              not a label — it is the second half of the form, and it is placed
-              before the criteria because it decides what they are. */}
+          {}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {/* O componente do sistema, não uma cópia dele. Isto era um chip
-                escrito à mão aqui, com a mesma marcação e a mesma lógica de
-                aceso/apagado — e no dia em que o chip do catálogo virou latão,
-                este continuou vermelho. Uma escolha entre opções tem uma forma
-                só neste produto. */}
+            {}
             {choices.length > 1 ? (
               choices.map(g => (
                 <Chip key={g} size="sm" on={g === genre} onClick={() => onGenre(g)}>
@@ -313,9 +258,6 @@ function Slate({
                 </Chip>
               ))
             ) : (
-              /* Um gênero só: não há escolha a oferecer, mas o filme está sendo
-                 avaliado como aquilo. Ocupa a posição exata de um chip aceso e
-                 usa a mesma tinta, sem ser um botão que não faz nada. */
               <span className="rounded-[1px] bg-house-seat/70 px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.14em] text-dye-brass ring-1 ring-dye-brass/70">
                 {genre || movie.genre}
               </span>
@@ -430,10 +372,6 @@ function MovieSearch({ onPick }: { onPick: (id: number) => void }) {
   );
 }
 
-/* ── the title card ───────────────────────────────────────────────────────
-   The final score, set like the card that opens a film: the number is the
-   largest thing on the screen, and the arithmetic that produced it is printed
-   underneath rather than hidden. */
 function MasterCard({
   hasMovie,
   final,
@@ -450,7 +388,6 @@ function MasterCard({
   hasMovie: boolean;
   final: number;
   sum: number;
-  /** The divisor: how many questions this card is asking. */
   weight: number;
   canSave: boolean;
   saving: boolean;
@@ -470,18 +407,13 @@ function MasterCard({
               {fmt(final)}
             </span>
           ) : (
-            // An em dash set at 76px in a condensed display face reads as a
-            // stray rule, not as "no value yet".
             <span className="font-display text-[54px] leading-[0.85] tracking-[0.02em] text-ink-faint lg:text-[76px]">
               0,0
             </span>
           )}
           <span className="q text-[13px] text-ink-dim">/10</span>
         </div>
-        {/* The arithmetic, printed rather than hidden — and the divisor is read
-            off the card instead of being a constant in this line, because it is
-            one now: a take answers eleven questions today and answered ten
-            before Aproveitamento existed. */}
+        {}
         <p className="q ml-auto pb-1 text-[11px] text-ink-dim lg:ml-0 lg:mt-3 lg:pb-0">
           {hasMovie ? `${fmt(sum)} pontos ÷ ${weight} critérios` : '11 critérios, todos iguais'}
         </p>
@@ -500,12 +432,7 @@ function MasterCard({
         </Key>
       </div>
 
-      {/* ── the receipt, where the hand is ──────────────────────────────────
-          It used to be printed at the top of the page. The button that produces
-          it is here — sticky at the foot of a phone, sticky at the side of a
-          laptop — so the confirmation appeared entirely off-screen, and the
-          only way to learn that anything had happened was to scroll up and
-          look. A message about an action belongs where the action was. */}
+      {}
       <AnimatePresence>
         {saved ? (
           <motion.div
@@ -513,10 +440,6 @@ function MasterCard({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             role="status"
-            /* Green, because this is the one message in the product that says
-               something went right. It was wearing the red the destructive
-               actions wear, which made a saved rating look like a warning
-               about a saved rating. */
             className="mt-4 rounded-cell bg-dye-green/10 px-3 py-2.5 text-[12.5px] leading-relaxed ring-1 ring-dye-green/40"
           >
             <span className="flex items-center gap-2">

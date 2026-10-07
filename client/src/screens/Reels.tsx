@@ -30,85 +30,27 @@ import {
 import { cn, norm, plural, useFinePointer } from '@/lib/utils';
 import { useClub, type TabId } from '@/App';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   SUGESTÕES — O REEL DE TRAILERS.
-
-   A pergunta que ela responde é "o que a gente vê hoje?", e a resposta não é
-   texto: é o trailer tocando.
-
-   ── ela é destino, não porta ─────────────────────────────────────────────
-   Chega-se aqui pela chave no alto do catálogo. Foi a porta da sala por um dia,
-   e ser a tela de chegada custava a resposta à pergunta de quem volta — o que
-   aconteceu por aqui —, que é do mural e continua sendo.
-
-   ── a forma é a do protótipo do usuário ─────────────────────────────────
-   Uma COLUNA 9:16, e tudo mora dentro dela: o filtro de gênero é uma chave no
-   alto que abre um painel por cima, a legenda deita sobre o degradê no pé, e os
-   controles são um trilho vertical na borda direita que não rola com o
-   conteúdo. Nada disso é enfeite — é o que faz o quadro inteiro ser o vídeo. A
-   primeira versão desta tela empilhava vídeo, legenda e controles em coluna, e
-   no telefone os controles caíam para fora da moldura.
-
-   ── o que o clube fez continua na frente ────────────────────────────────
-   O reel abre pelo que o clube avaliou, e não pelo que o TMDB acha popular: o
-   filme que alguém acabou de avaliar é o primeiro que rola, com a chave da ficha
-   acesa e uma dica dizendo que já tem nota. É o princípio *"o grupo é visível"*
-   dito pelo material do produto em vez de por uma linha de texto.
-
-   ── uma tela, dois universos ─────────────────────────────────────────────
-   Filme e série rolam no mesmo componente. O que muda entre eles chega por
-   propriedade; ver `MovieReels` e `SeriesReels` no fim do arquivo.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** Uma obra que o clube já avaliou, do jeito que o reel precisa saber disso. */
 export type RatedTitle = {
   id: number;
-  /** A média do clube. Null quando existe ficha mas nenhuma delas tem nota. */
   score: number | null;
-  /** Quantas fichas. É o que separa "eu achei" de "a gente achou". */
   takes: number;
-  /** Se uma delas é sua: a dica fala na segunda pessoa quando é. */
   mine: boolean;
-  /** Quando foi a mais recente. Só ordena — nunca é desenhado. */
   at: string;
 };
 
-/* A que distância do fim a próxima página é pedida. Quatro quadros é cerca de
-   um segundo de rolagem contínua: tempo de a resposta chegar antes de alguém
-   encostar no vazio. */
 const AHEAD = 4;
 
-/* Quantos quadros em volta do ativo existem de verdade. Três de cada lado cobre
-   qualquer rolagem que o dedo consiga fazer entre dois quadros de tela, e é o
-   que separa quarenta imagens carregadas de sete. */
 const WINDOW = 3;
 
-/* A largura da coluna contra a altura dela. 9:16 é o formato do reel e é
-   estreito demais num monitor: numa coluna de 850px de altura sobra um trailer
-   de 269px, que é um filme visto de longe. Sete décimos guarda o gesto vertical
-   e devolve a imagem ao tamanho de assistir. */
 const COLUMN = 0.7;
 
-/* Quanto o trilho fica à vista depois do último gesto. Generoso o bastante para
-   a dica da ficha ser lida inteira na chegada, e curto o bastante para o filme
-   ficar limpo enquanto ninguém está comandando nada. */
 const HUD_MS = 3600;
 
-/* Quantas obras do clube alimentam a sugestão do servidor. O teto de verdade é
-   dele; aqui é só não mandar o acervo inteiro por uma consulta. */
 const SEEDS = 4;
 
-/* A folga entre uma obra avaliada e a próxima, no meio da descoberta. Mínimo e
-   quantos passos acima dele — dois a quatro. Elas vinham todas emendadas na
-   frente, o que fazia o reel abrir como um resumo do acervo em vez de como uma
-   sala projetando. */
 const GAP_MIN = 2;
 const GAP_SPREAD = 3;
 
-/* Uma folga que não se repete e não muda. Sorteio de verdade reembaralharia a
-   ordem a cada render — a obra debaixo do dedo trocaria sozinha —, então o
-   "acaso" sai do próprio id: sempre o mesmo para a mesma obra, e sem padrão
-   nenhum entre obras diferentes. */
 function gapOf(id: number) {
   return GAP_MIN + ((Math.imul(id, 2654435761) >>> 0) % GAP_SPREAD);
 }
@@ -126,15 +68,12 @@ export function ReelsScreen({
 }: {
   kind: ReelItem['kind'];
   rated: RatedTitle[];
-  /** O que a chave principal da ficha faz: avaliar um filme, abrir uma série. */
   openLabel: string;
   onOpen: (item: ReelItem) => void;
   queued: (id: number) => boolean;
   onQueue: (item: ReelItem) => void;
   queueLabel: [off: string, on: string];
-  /** As fichas do clube sobre esta obra, desenhadas pelo universo que as tem. */
   renderTakes: (id: number) => React.ReactNode;
-  /** Fechar as sugestões e voltar ao catálogo, que é a porta por onde se entrou. */
   onExit: () => void;
 }) {
   const [genre, setGenre] = useState<string | null>(null);
@@ -152,29 +91,16 @@ export function ReelsScreen({
   const [full, setFull] = useState(false);
   const [ficha, setFicha] = useState<ReelItem | null>(null);
   const [toast, setToast] = useState('');
-  /* O trilho começa à vista e se recolhe sozinho — ver `showHud`. */
   const [hud, setHud] = useState(true);
 
   const stage = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const alarm = useRef<number>();
   const hudTimer = useRef<number>();
-  /* O quadro de agora, para `jump` mirar sem ser refeito a cada rolagem. */
   const atRef = useRef(0);
 
-  /* ── no dedo, o reel é a tela ─────────────────────────────────────────
-     Sem marquise em cima e sem barra de seções embaixo. Não é gosto: numa coluna
-     9:16 dentro de uma casca de 130px, o vídeo termina menor que a legenda que
-     fala dele — foi o que aconteceu quando esta tela nasceu encaixada. Um reel
-     ou é a tela toda ou é um cartão sobre um trailer.
-
-     No computador a casca fica: lá sobra largura, a coluna cabe inteira embaixo
-     dela, e esconder a navegação seria tirar o que ninguém pediu. */
   const immersive = !useFinePointer();
 
-  /* A lista de ids é a identidade da fixação, e não o array: `rated` é derivado
-     a cada render do acervo em memória, então comparar por referência pediria a
-     mesma página de novo a cada tecla digitada em qualquer lugar do app. */
   const pinIds = useMemo(
     () =>
       rated
@@ -187,9 +113,6 @@ export function ReelsScreen({
 
   const scoreOf = useMemo(() => new Map(rated.map(r => [r.id, r])), [rated]);
 
-  /* O que o clube mais gostou, que é do que a sugestão é feita. Por nota e não
-     por data: o reel já abre pelo que foi avaliado por último, e sugerir a
-     partir do mais RECENTE faria uma noite ruim contaminar a semana inteira. */
   const seeds = useMemo(
     () =>
       rated
@@ -201,9 +124,6 @@ export function ReelsScreen({
     [rated]
   );
 
-  /* A taxonomia vem do servidor e não do clube: são nove nomes de cada lado e
-     não são a mesma lista — o TMDB não tem gênero de terror em série, e um chip
-     que ele não sabe descobrir mostraria tudo dizendo que filtrou. */
   useEffect(() => {
     let alive = true;
     reels
@@ -224,8 +144,6 @@ export function ReelsScreen({
     reels
       .pinned(kind, pinIds.split(',').map(Number))
       .then(got => alive && setPinned(got.results))
-      /* Uma fixação que não veio não é um erro na tela: o reel continua inteiro
-         com o que o TMDB está passando, e é só a frente dele que muda. */
       .catch(() => alive && setPinned([]));
     return () => {
       alive = false;
@@ -237,10 +155,6 @@ export function ReelsScreen({
       setLoading(true);
       try {
         const got = await reels.page(kind, genre, want, seeds ? seeds.split(',').map(Number) : []);
-        /* Uma página de sugestão não sabe quantas são — ela é montada de quatro
-           listas —, então o servidor devolve sempre "tem mais uma". Quem sabe
-           que acabou é esta linha: página vazia é o fim, e sem ela o reel
-           pediria a próxima para sempre. */
         setPages(got.results.length ? got.totalPages : want);
         setFound(prev => (want === 1 ? got.results : prev.concat(got.results)));
         setPage(want);
@@ -263,18 +177,6 @@ export function ReelsScreen({
     void load(1);
   }, [load]);
 
-  /* ── o que o clube avaliou entra ESPALHADO ─────────────────────────────
-     A primeira continua sendo uma delas: a obra avaliada por último abre o reel,
-     que é o que faz o clube ser a primeira coisa que se vê. As outras entram no
-     meio da descoberta, com folgas de dois a quatro quadros que não se repetem.
-
-     Emendadas, como estavam, o reel abria com uma sequência do acervo e só
-     depois começava a mostrar filme — o clube virava uma introdução a ser
-     passada em vez de uma presença ao longo da rolagem.
-
-     Sem repetir: a mesma obra pode voltar como descoberta, e vê-la duas vezes
-     num reel é o produto perdendo o fio. Com um gênero escolhido, uma avaliada
-     de outro gênero sairia do filtro que a pessoa acabou de pedir. */
   const items = useMemo(() => {
     const mine = genre ? pinned.filter(p => p.genres.includes(genre)) : pinned;
     const seen = new Set(mine.map(p => p.id));
@@ -285,8 +187,6 @@ export function ReelsScreen({
     let at = 0;
     mine.forEach((p, i) => {
       out.push(p);
-      /* A última leva todo o resto atrás de si: uma folga aqui deixaria a
-         descoberta terminando antes do fim da página que já chegou. */
       const gap = i === mine.length - 1 ? rest.length - at : gapOf(p.id);
       out.push(...rest.slice(at, at + gap));
       at += gap;
@@ -295,14 +195,8 @@ export function ReelsScreen({
   }, [pinned, found, genre]);
 
   const here = items[active] ?? null;
-  /* O quadro que o projetor serve: o ativo depois de o dedo parar. Ver
-     `settled`, logo abaixo. */
   const seat = items[settled] ?? null;
 
-  /* ── qual quadro está na tela ──────────────────────────────────────────
-     Observado e não calculado da rolagem: o mesmo sinal serve para o dedo, para
-     a roda, para as setas e para o snap terminando sozinho, e nenhum deles
-     precisa avisar ninguém. */
   useEffect(() => {
     const box = track.current;
     if (!box) return;
@@ -321,11 +215,6 @@ export function ReelsScreen({
     return () => spy.disconnect();
   }, [items.length]);
 
-  /* ── o vídeo espera o dedo parar ───────────────────────────────────────
-     Passar cinco trailers de uma vez pediria cinco vídeos ao YouTube em meio
-     segundo, e o telefone gastaria tudo o que tem carregando o que ninguém ia
-     ver. O quadro ativo muda na hora — a legenda, a luz da parede, o trilho —,
-     e só o VÍDEO espera um instante de quietude para trocar. */
   useEffect(() => {
     const t = window.setTimeout(() => setSettled(active), 320);
     return () => window.clearTimeout(t);
@@ -336,11 +225,6 @@ export function ReelsScreen({
     if (active >= items.length - AHEAD) void load(page + 1);
   }, [active, items.length, loading, page, pages, load]);
 
-  /* Mira o quadro de destino pelo topo dele, e não um deslocamento relativo:
-     `scrollBy` suave dentro de um rolador com encaixe obrigatório é disputado
-     pelo próprio encaixe, que recalcula o alvo no meio da animação e devolve a
-     rolagem para onde ela estava — a chave de passar não fazia nada, e só o
-     dedo andava. Um destino absoluto não tem o que ser recalculado. */
   const jump = useCallback((delta: number) => {
     const box = track.current;
     if (!box) return;
@@ -349,32 +233,17 @@ export function ReelsScreen({
     if (target) box.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   }, []);
 
-  /* ── o trilho é um HUD, e um HUD se recolhe ────────────────────────────
-     Cinco teclas paradas em cima do filme são cinco pedaços de imagem que
-     ninguém vê, e o reel existe para mostrar a imagem. Elas aparecem quando a
-     pessoa demonstra querer comandar alguma coisa — o ponteiro se move no
-     computador, o dedo toca no telefone — e somem sozinhas depois disso, como
-     em qualquer player.
-
-     Começa à vista: um controle que só existe depois de um gesto que ninguém
-     ensinou é um controle que não existe. A primeira aparição dura o bastante
-     para a dica da ficha ser lida inteira antes de as duas saírem juntas. */
   const showHud = useCallback(() => {
     window.clearTimeout(hudTimer.current);
     setHud(true);
     hudTimer.current = window.setTimeout(() => setHud(false), HUD_MS);
   }, []);
 
-  /* E a cada quadro novo, uma vez. É o que faz a dica de "já foi avaliado"
-     existir: ela mora pendurada na chave da ficha, e uma dica que só aparece
-     depois de um gesto não é uma dica. As duas entram juntas e saem juntas. */
   useEffect(() => {
     showHud();
     return () => window.clearTimeout(hudTimer.current);
   }, [active, showHud]);
 
-  /* No dedo o toque alterna, que é o que um player faz: um segundo toque sobre
-     controles à vista é a pessoa pedindo a imagem de volta. */
   const toggleHud = useCallback(() => {
     if (!hud) return showHud();
     window.clearTimeout(hudTimer.current);
@@ -390,9 +259,6 @@ export function ReelsScreen({
   }, []);
   useEffect(() => () => window.clearTimeout(alarm.current), []);
 
-  /* Uma camada por vez escuta o teclado, de cima para baixo: com a ficha aberta
-     as setas pertencem ao texto que está sendo lido, e o Esc fecha o que estiver
-     por cima antes de qualquer outra coisa. */
   useEffect(() => {
     if (ficha) return;
     const key = (e: KeyboardEvent) => {
@@ -417,11 +283,6 @@ export function ReelsScreen({
   }, [jump, ficha, filtering, full]);
 
   const height = useReelHeight(stage);
-  /* A coluna do protótipo: 9:16 quando há altura para isso, e a largura inteira
-     quando não há. Na tela cheia não há o que calcular — ela É a tela.
-
-     Antes da primeira medida ela é só larga: uma largura derivada de altura zero
-     é uma coluna de zero pixel, ou seja um quadro em branco no primeiro pintar. */
   const column: React.CSSProperties =
     !immersive && height
       ? { height: '100%', width: `min(100%, ${Math.round(height * COLUMN)}px)` }
@@ -433,27 +294,16 @@ export function ReelsScreen({
     flash(on ? `“${it.title}” ${queueLabel[1].toLowerCase()}` : `Tirado: ${it.title}`);
   };
 
-  /* Só na tela cheia, e não com o painel de gênero aberto: lá o deslize
-     horizontal pertence a quem está rolando a lista de gêneros. */
   const sideways = useSideSwipe(immersive && !filtering ? onExit : undefined);
 
   return (
-    /* Presa à janela e por cima de tudo, inclusive da marquise e da barra de
-       seções — que continuam montadas atrás e voltam inteiras quando esta tela
-       sai. Esconder é o que uma camada opaca faz; desmontar a navegação do app
-       para servir uma aba seria a aba mandando na casca. */
     <section
       className={cn(immersive ? 'fixed inset-0 z-40 bg-house-deep' : 'flex flex-col')}
-      /* Esta tela já tem o arrasto dela — de lado se sai dos reels —, e o do
-         app trocaria de aba por baixo dele. Ver lib/swipe.ts. */
       data-noswipe
       onTouchStart={sideways.onTouchStart}
       onTouchEnd={sideways.onTouchEnd}
     >
-      {/* Os recuos do `<main>` são devolvidos: a coluna começa colada na
-          marquise e termina colada no fim da janela, que é a altura inteira que
-          sobrou. Um respiro em volta de uma tela de projeção é tela que ela
-          deixou de ter. */}
+      {}
       <div
         ref={stage}
         style={!immersive && height ? { height } : undefined}
@@ -466,9 +316,6 @@ export function ReelsScreen({
       >
         <div
           style={column}
-          /* O ponteiro que se move é a intenção de comandar alguma coisa; o que
-             sai da moldura desistiu dela. Só o mouse: um `pointermove` de toque
-             chega junto com a rolagem, e o trilho piscaria a cada arrasto. */
           onPointerMove={e => {
             if (e.pointerType === 'mouse') showHud();
           }}
@@ -484,14 +331,9 @@ export function ReelsScreen({
         >
           <div
             ref={track}
-            /* Focável porque é uma caixa de rolagem: sem isto, quem navega por
-               teclado não tem onde pousar para folhear. */
             tabIndex={0}
             role="region"
             aria-label="Sugestões — o reel de trailers"
-            /* No próprio rolador e não na moldura: assim um toque nas teclas do
-               trilho comanda a tecla em vez de recolher o trilho debaixo do
-               dedo. */
             onClick={toggleHud}
             className={cn(
               'absolute inset-0 snap-y snap-mandatory overflow-y-auto overscroll-contain',
@@ -511,9 +353,7 @@ export function ReelsScreen({
                     within={Math.abs(i - active) <= WINDOW}
                   />
                 ))}
-                {/* Irmão dos quadros e não filho de um deles: é o mesmo player
-                    atravessando o reel, e um player que troca de pai é um player
-                    que o navegador recarrega. */}
+                {}
                 <Projector
                   at={settled}
                   videoKey={seat?.trailerKey ?? null}
@@ -538,17 +378,9 @@ export function ReelsScreen({
             )}
           </div>
 
-          {/* ── a barra de cima ──────────────────────────────────────────
-              Sobre um degradê que garante contraste contra qualquer quadro que
-              passe por baixo. `pointer-events-none` na faixa e `auto` em cada
-              chave: a faixa é só a sombra. */}
+          {}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] flex items-center gap-2 bg-gradient-to-b from-house-deep/90 via-house-deep/40 to-transparent p-3">
-            {/* Em qualquer largura: esta é rota escondida, nenhuma aba da
-                marquise fica acesa nela, e sem esta chave o computador não teria
-                porta de volta. No dedo ela é também a marca do deslize, que não
-                deixa nenhuma. A palavra cai lá, onde a faixa corre por cima do
-                vídeo — o `title` e o rótulo acessível continuam dizendo aonde
-                vai. */}
+            {}
             <button
               type="button"
               onClick={onExit}
@@ -586,10 +418,7 @@ export function ReelsScreen({
             ) : null}
           </div>
 
-          {/* ── o trilho ─────────────────────────────────────────────────
-              Fora do rolador, de propósito: os controles são da SALA e não do
-              quadro, então eles ficam parados enquanto os trailers passam por
-              trás. */}
+          {}
           {here ? (
             <div
               className={cn(
@@ -614,9 +443,7 @@ export function ReelsScreen({
                 <Maximize2 className="h-[17px] w-[17px]" strokeWidth={1.8} />
               </RailKey>
 
-              {/* A chave da ficha, acesa quando há ficha do clube atrás dela, com
-                  a dica pendurada à esquerda — para dentro da coluna, que é o
-                  único lado onde ela cabe. */}
+              {}
               <div className="relative">
                 {scoreOf.has(here.id) ? (
                   <RatedTip key={here.id} rated={scoreOf.get(here.id)!} />
@@ -709,14 +536,6 @@ export function ReelsScreen({
   );
 }
 
-/* ── a altura que sobra ───────────────────────────────────────────────────
-   O reel é o único rolador da sua aba, e para ser isso ele precisa terminar
-   exatamente onde a janela termina: um pixel a mais e a página inteira ganha
-   uma segunda barra de rolagem, com dois roladores disputando cada gesto do
-   dedo — o defeito que a folha de projeção já teve e que está escrito lá.
-
-   Medido e não escrito em `calc`, porque o que está acima dele varia com a
-   largura da janela e um número fixo estaria errado em metade dos tamanhos. */
 function useReelHeight(ref: React.RefObject<HTMLElement>) {
   const [height, setHeight] = useState(0);
 
@@ -724,17 +543,7 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
     const el = ref.current;
     if (!el) return;
     const measure = () => {
-      /* ── as duas réguas da sala ──────────────────────────────────────
-         A interface inteira roda sob `zoom` (ver `--ui-zoom` em index.css), e
-         `zoom` divide o mundo em duas unidades: `getBoundingClientRect` e
-         `innerHeight` respondem em pixels da JANELA, e a altura que este
-         elemento recebe é lida em pixels DELE. A conta corre toda na primeira
-         régua e converte uma vez, no fim. */
       const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
-      /* Até o fim da janela, sem descontar nada: o recuo do `<main>` é anulado
-         por margem negativa na própria moldura, então ele não está mais aqui
-         para ser descontado. Isto só vale para o ponteiro fino — no dedo a tela
-         é a camada presa à janela, que não mede nada. */
       setHeight(Math.max(380, (window.innerHeight - el.getBoundingClientRect().top) / zoom));
     };
     measure();
@@ -750,17 +559,6 @@ function useReelHeight(ref: React.RefObject<HTMLElement>) {
   return height;
 }
 
-/* ── sair de lado ─────────────────────────────────────────────────────────
-   O reel toma a tela inteira no dedo, então o gesto de sair tem de ser um que
-   ele mesmo não usa: a rolagem é vertical, e o que sobra é o horizontal.
-
-   Para os dois lados, e os dois chegam ao catálogo: as sugestões têm uma porta
-   só, e um gesto que caísse na seção vizinha da barra deixaria a pessoa num
-   lugar que ela não escolheu nem sabe como fechar.
-
-   O limiar é generoso e é comparado com o eixo vertical: ninguém rola trailers
-   em linha reta, e um limiar apertado tiraria a pessoa da tela no meio de um
-   gesto que era para passar de filme. */
 const SIDE = 72;
 
 function useSideSwipe(onExit?: () => void) {
@@ -784,7 +582,6 @@ function useSideSwipe(onExit?: () => void) {
   };
 }
 
-/** Se a pessoa pediu para o mundo parar de se mexer. */
 function useGentle() {
   const [gentle, setGentle] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -798,31 +595,11 @@ function useGentle() {
   return gentle;
 }
 
-/* ── o endereço do player ─────────────────────────────────────────────────
-   `bare` é o reel: ali o vídeo não é um player, é a imagem projetada. Barra de
-   controle, teclado, legendas, anotações e tela cheia do YouTube saem todos —
-   quem comanda é o trilho do clube, e dois conjuntos de controle sobre a mesma
-   imagem é a pessoa tendo de escolher em qual acreditar.
-
-   O que os parâmetros não tiram, o `pointer-events: none` da moldura tira: a
-   faixa de título e a parede de "mais vídeos" do fim aparecem por PASSAGEM DE
-   PONTEIRO, e um vídeo que não recebe ponteiro nunca é passado por cima.
-
-   ── e ele NASCE MUDO, nos dois lugares ───────────────────────────────────
-   Autoplay mudo é o único que navegador nenhum bloqueia. Um player montado com
-   `mute=0&autoplay=1` é recusado, e o que o YouTube desenha ao recusar é a
-   abertura inteira dele — cartaz, título, canal, botão grande de tocar —, que
-   numa moldura sem ponteiro nem podia ser apertado. Quem liga o som depois é
-   `useSound`, num player já tocando.
-
-   Na tela cheia a barra de controle volta: lá a pessoa foi assistir, e arrastar
-   pelo minuto 2:10 é exatamente o que ela quer poder fazer. */
 const embedOf = (key: string, bare: boolean) =>
   `https://www.youtube-nocookie.com/embed/${key}?autoplay=1&mute=1` +
   `&rel=0&modestbranding=1&playsinline=1&enablejsapi=1` +
   (bare ? '&controls=0&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0' : '');
 
-/** Uma ordem para um player já montado. Ver `embedOf`. */
 function command(frame: React.RefObject<HTMLIFrameElement>, func: string, args: unknown[] = []) {
   frame.current?.contentWindow?.postMessage(
     JSON.stringify({ event: 'command', func, args }),
@@ -830,31 +607,11 @@ function command(frame: React.RefObject<HTMLIFrameElement>, func: string, args: 
   );
 }
 
-/* ── as legendas ──────────────────────────────────────────────────────────
-   `cc_load_policy=0` promete não LIGAR a legenda e não promete desligar a que o
-   YouTube liga sozinho por conta do idioma do navegador — e era o que aparecia:
-   duas linhas de texto branco sobre tarja preta atravessando o quadro, no lugar
-   exato onde a legenda do próprio reel escreve o nome do filme.
-
-   Descarregar o módulo é o único jeito que funciona nos dois players que o
-   embed serve, e os dois nomes existem conforme a versão. Mandar os dois é mais
-   barato do que descobrir qual é. */
 function hushCaptions(frame: React.RefObject<HTMLIFrameElement>) {
   command(frame, 'unloadModule', ['captions']);
   command(frame, 'unloadModule', ['cc']);
 }
 
-/* ── o som ────────────────────────────────────────────────────────────────
-   Dito ao player, não escrito no endereço dele: o endereço só é lido no
-   nascimento, e nascer com som é nascer recusado (ver `embedOf`).
-
-   Amarrado a `rolling` e não só a `muted`, porque todo player nasce mudo por
-   obrigação: é ao começar a correr que ele descobre que a chave do trilho já
-   estava ligada.
-
-   E manda tocar DEPOIS de desmudar: tirar o mudo de um vídeo que o navegador só
-   deixou tocar porque estava mudo é o navegador pausando o vídeo, e um player
-   pausado desenha a abertura do YouTube inteira em cima do quadro. */
 function useSound(frame: React.RefObject<HTMLIFrameElement>, muted: boolean, rolling: boolean) {
   useEffect(() => {
     if (!rolling) return;
@@ -863,16 +620,6 @@ function useSound(frame: React.RefObject<HTMLIFrameElement>, muted: boolean, rol
   }, [frame, muted, rolling]);
 }
 
-/* ── o que o player diz de si ─────────────────────────────────────────────
-   Entre carregar a moldura e o filme começar a correr, o YouTube desenha a
-   própria abertura: título, canal, botões grandes e a palavra "Mais vídeos".
-   Nenhum parâmetro tira isso, porque não é a barra de controle — é o que o
-   player desenha enquanto NÃO está tocando. A única forma de nunca mostrá-la é
-   saber a diferença, e quem diz é o próprio player: com `enablejsapi`, a moldura
-   publica o estado dela por `postMessage` depois de a gente se apresentar.
-
-   Filtrado por `e.source`: dois players convivem quando a tela cheia abre, e
-   todos os dois falam para a janela inteira. */
 const UNSTARTED = -1;
 const ENDED = 0;
 const PLAYING = 1;
@@ -905,16 +652,12 @@ function useYtState(frame: React.RefObject<HTMLIFrameElement>, on: unknown) {
       } catch {
         return;
       }
-      /* O player fala de duas formas conforme a versão: `onStateChange` com o
-         estado solto, e `infoDelivery` com ele dentro de `info`. */
       const box = said as { event?: string; info?: number | { playerState?: number } };
       const told = typeof box?.info === 'number' ? box.info : box?.info?.playerState;
       if (typeof told === 'number') setState(told);
     };
 
     window.addEventListener('message', heard);
-    /* A apresentação se repete até ser ouvida: mandada antes de a moldura estar
-       pronta ela cai no vazio, e aí o player nunca fala. */
     const ping = window.setInterval(() => !greeted && hello(), HELLO_MS);
     hello();
 
@@ -927,7 +670,6 @@ function useYtState(frame: React.RefObject<HTMLIFrameElement>, on: unknown) {
   return state;
 }
 
-/** O host de uma origem, sem explodir num `origin` que não é URL. */
 function hostOf(origin: string) {
   try {
     return new URL(origin).hostname;
@@ -936,27 +678,6 @@ function hostOf(origin: string) {
   }
 }
 
-/* ── um quadro ────────────────────────────────────────────────────────────
-   A moldura 16:9 no meio da coluna com o quadro parado do filme, a legenda
-   deitada sobre o degradê no pé, e atrás de tudo o próprio quadro do filme
-   desfocado — não é vidro decorativo, é a luz da projeção batendo na parede.
-
-   O VÍDEO não mora aqui: é um player só para o reel inteiro, que se muda de
-   quadro em quadro. Ver `Projector`.
-
-   A legenda recua da direita pela largura do trilho: os controles são uma
-   coluna fixa, e texto que passa por baixo deles é texto que não se lê.
-
-   ── memorizado, e vazio quando está longe ───────────────────────────────
-   Uma rolagem troca o quadro ativo, e trocar o quadro ativo redesenharia os
-   quarenta que existem: `memo` deixa passar só aqueles cujas propriedades
-   mudaram de verdade, que são três.
-
-   E quem está a mais de três quadros da tela desenha só a própria altura. A
-   altura é a mesma sempre — cada quadro é exatamente a moldura —, então a
-   rolagem não escorrega quando um deles volta a ter conteúdo, e o telefone deixa
-   de carregar quarenta imagens, quarenta legendas e quarenta camadas de luz para
-   mostrar uma. */
 const Frame = memo(function Frame({
   index,
   item,
@@ -967,9 +688,7 @@ const Frame = memo(function Frame({
   index: number;
   item: ReelItem;
   rated: RatedTitle | null;
-  /** Se este quadro está à vista ou é o vizinho de quem está. */
   near: boolean;
-  /** Se vale a pena existir: fora da janela ele é só altura. */
   within: boolean;
 }) {
   const still = item.backdrop ?? item.poster;
@@ -990,10 +709,7 @@ const Frame = memo(function Frame({
       aria-label={item.title}
       className="relative h-full w-full snap-start snap-always overflow-hidden bg-house-deep"
     >
-      {/* Acesa só perto da tela, e a partir do CARTAZ e não do quadro deitado:
-          o custo de um desfoque é o número de pixels que ele atravessa, e o
-          cartaz é cinco vezes menor. Borrado a este ponto os dois são a mesma
-          mancha de cor. */}
+      {}
       {near ? (
         <>
           {item.poster ?? still ? (
@@ -1007,10 +723,7 @@ const Frame = memo(function Frame({
         </>
       ) : null}
 
-      {/* Nada aqui entra animando. O quadro já chega pela rolagem, e uma
-          animação disparada quando o vídeo assumia — um terço de segundo depois
-          de a pessoa ter passado o dedo — apagava o quadro inteiro e o trazia de
-          volta: era a piscada a cada troca de reel. */}
+      {}
       <div className="absolute inset-0 grid place-items-center">
         <div className="relative aspect-video w-full overflow-hidden bg-black ring-1 ring-white/10">
           {still ? (
@@ -1018,9 +731,6 @@ const Frame = memo(function Frame({
               src={still}
               alt=""
               loading="lazy"
-              /* Não é um cartaz de espera que sai: é a cama em que o projetor
-                 pousa, e o que fica no lugar do vídeo em todo instante em que o
-                 player não está TOCANDO. Ver `Projector`. */
               className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             />
           ) : null}
@@ -1030,7 +740,6 @@ const Frame = memo(function Frame({
       <div
         className={cn(
           'absolute inset-x-0 bottom-0 px-5 pb-6 pt-5',
-          // O recuo do trilho: 12 de margem + 44 de alvo + 12 de folga.
           'pr-[68px]',
           'bg-gradient-to-t from-house-deep/[0.96] via-house-deep/[0.86] to-transparent'
         )}
@@ -1066,37 +775,6 @@ const Frame = memo(function Frame({
   );
 });
 
-/* ══ O PROJETOR ═══════════════════════════════════════════════════════════
-   UM player para o reel inteiro, que nunca é desmontado: o vídeo troca por
-   `loadVideoById` e a moldura se muda de quadro em quadro.
-
-   Era um player por quadro, montado quando o quadro assumia, e os três defeitos
-   saíam todos daí. Um player recém-montado passa obrigatoriamente pelo estado de
-   quem ainda não começou, e o que o YouTube desenha nesse estado é a abertura
-   dele — cartaz, título, canal, botão grande de tocar. A cada rolagem se pagava
-   essa abertura de novo, e no telefone ela ficava: o player nascia, o navegador
-   o pausava na hora de desmudar, e a abertura era tudo o que se via. Um player
-   que já está tocando não tem esse estado para mostrar.
-
-   ── a moldura mora DENTRO do rolador ────────────────────────────────────
-   Pendurada em `top: quadro × 100%`, que é onde o quadro dela está: assim ela
-   rola junto com o conteúdo em vez de ter de perseguir a rolagem a cada pixel.
-
-   ── nada do YouTube desenha em cima deste quadro ────────────────────────
-   `controls=0` tira a barra, `pointer-events: none` tira o que só aparece por
-   passagem de ponteiro, e o resto é estado: o player fica à vista TOCANDO e em
-   nenhuma outra hora. Pausado, terminado ou ainda não começado ele é invisível
-   no mesmo quadro de tela em que passa a ser — sem transição de saída, que seria
-   a abertura do YouTube aparecendo devagar —, e embaixo dele está o quadro
-   parado do filme, que é a mesma imagem. E, invisível, ele é reanimado: pausa
-   volta a tocar, fim volta ao começo.
-
-   O fim volta ao começo aqui e não por `loop=1`: o loop de um embed é uma
-   playlist de um item, e a playlist morre no primeiro `loadVideoById`. */
-
-/* Quanto se espera antes de cutucar um player que não pegou. Dois cutucões, o
-   vídeo de novo, e então a porta: um toque de gente é a única permissão que
-   navegador nenhum recusa. */
 const NUDGE_MS = 1200;
 
 function Projector({
@@ -1107,40 +785,28 @@ function Projector({
   onBalk,
   parked,
 }: {
-  /** O quadro que o projetor serve. */
   at: number;
   videoKey: string | null;
   label: string;
   muted: boolean;
-  /** O navegador recusou o som: a chave do trilho tem de dizer a verdade. */
   onBalk: () => void;
-  /** Alguma coisa abriu por cima do reel: o trailer para e sai da vista. */
   parked: boolean;
 }) {
   const beam = useRef<HTMLIFrameElement>(null);
   const gentle = useGentle();
-  /* Sob `prefers-reduced-motion` nada começa a se mexer sozinho: o reel fica
-     folheável em quadros parados, com a chave de tocar. Perguntado uma vez para
-     o reel todo, e não a cada quadro — quem respondeu já respondeu. */
   const [asked, setAsked] = useState(false);
   const armed = !gentle || asked;
   const want = armed && !parked ? videoKey : null;
 
-  /* O endereço é lido uma vez na vida do player: trocar o `src` seria remontá-lo,
-     que é justamente o que esta tela deixou de fazer. */
   const seed = useRef<string | null>(null);
   if (want && !seed.current) seed.current = want;
   const born = seed.current;
 
   const state = useYtState(beam, born);
-  /* Qual vídeo já foi visto tocando. É o que separa "o player diz que toca" de
-     "o player diz que toca O QUE EU PEDI": entre o pedido e a resposta o estado
-     que está no ar ainda é do trailer anterior. */
   const [aired, setAired] = useState<string | null>(null);
   const [offer, setOffer] = useState(false);
   const wanted = useRef<string | null>(null);
   const loaded = useRef<string | null>(null);
-  /* Quantas vezes este vídeo parou sozinho. Ver o conserto da pausa. */
   const balks = useRef(0);
 
   useEffect(() => {
@@ -1154,7 +820,6 @@ function Projector({
       return;
     }
     if (loaded.current === want) command(beam, 'playVideo');
-    /* Nulo é o player que acabou de nascer com este vídeo no endereço. */
     else if (loaded.current) command(beam, 'loadVideoById', [{ videoId: want }]);
     loaded.current = want;
   }, [want]);
@@ -1170,16 +835,8 @@ function Projector({
       command(beam, 'seekTo', [0, true]);
       command(beam, 'playVideo');
     }
-    /* Carregado e parado na primeira imagem: `loadVideoById` promete tocar e uma
-       promessa não é um estado. */
     if (state === CUED) command(beam, 'playVideo');
     if (state === PAUSED) {
-      /* Ninguém pede pausa neste reel — não há botão para isso —, então uma
-         pausa é sempre coisa do navegador, e a resposta é voltar a tocar.
-
-         Se ela volta sempre, é o som: um vídeo que só pôde tocar por estar mudo
-         é pausado na hora em que desmuda. Aí o som cede, porque o som é o extra
-         e o filme correndo é o que esta tela É. */
       balks.current += 1;
       if (balks.current > 2) {
         command(beam, 'mute');
@@ -1236,10 +893,6 @@ function Projector({
           {door ? (
             <button
               type="button"
-              /* A porta não se fecha ao ser aberta: ela sai quando o filme
-                 ESTÁ correndo (ver o laço do cutucão). Fechada no toque, um
-                 toque que o navegador recusasse deixaria a pessoa diante de um
-                 quadro parado sem nada para apertar. */
               onClick={() => {
                 setAsked(true);
                 command(beam, 'playVideo');
@@ -1259,21 +912,6 @@ function Projector({
   );
 }
 
-/* ── uma tecla do trilho ──────────────────────────────────────────────────
-   Quadrada, de 44, sobre uma placa: elas ficam por cima de um vídeo que muda
-   todo quadro, e um anel em volta de nada deixaria o ícone se virar contra o
-   que estivesse passando naquele segundo.
-
-   **Opaca e não desfocada.** Ela já foi `backdrop-blur`, e sete destas por cima
-   de um vídeo tocando obrigam o navegador a reler e reborrar o que está atrás
-   A CADA QUADRO DO FILME — no telefone é a conta que faz o reel engasgar. Uma
-   superfície opaca diz a mesma coisa e não custa nada.
-
-   `lit` é a chave da ficha quando há ficha do clube atrás dela: latão, porque a
-   regra da sala é que latão diz "isto tem alguma coisa sua". Quem pulsa é uma
-   camada por cima, em opacidade, e não a sombra da tecla — ver `bulb` em
-   tailwind.config. Termina acesa, então com menos movimento pedido index.css
-   corta o laço em uma volta e sobra a lâmpada parada. */
 function RailKey({
   label,
   active,
@@ -1315,17 +953,6 @@ function RailKey({
   );
 }
 
-/* ── a dica que flutua ────────────────────────────────────────────────────
-   Pendurada NA chave da ficha, à esquerda dela porque é o único lado que tem
-   coluna. Não intercepta ponteiro nenhum: o que está embaixo continua clicável.
-
-   E ela vai embora sozinha. Uma dica é uma apresentação, não um rótulo: dita
-   uma vez ela cumpriu o que tinha para dizer, e ficar pendurada sobre o filme
-   até o fim do reel é a interface repetindo a mesma frase para sempre. O que
-   fica é a chave acesa, que é o mesmo fato dito pelo tamanho certo.
-
-   Montada com `key` no id da obra lá em cima, então cada quadro novo recomeça
-   o relógio dela. */
 const TIP_MS = 3200;
 
 function RatedTip({ rated }: { rated: RatedTitle }) {
@@ -1356,14 +983,6 @@ function RatedTip({ rated }: { rated: RatedTitle }) {
   );
 }
 
-/* ── o painel do gênero ───────────────────────────────────────────────────
-   Cai POR CIMA da coluna e não empurra nada: escolher é uma visita, e uma visita
-   não reorganiza a sala. Uma linha por gênero, em coluna, porque em coluna os
-   nomes alinham e truncam num lugar só.
-
-   Sem contagem ao lado de cada um, ao contrário do protótipo: lá o acervo era
-   uma lista fixa de dezoito filmes e dava para contar. Aqui o outro lado é o
-   TMDB inteiro, e um número inventado ao lado de um filtro é pior que nenhum. */
 function GenrePanel({
   genres,
   value,
@@ -1432,10 +1051,6 @@ function GenreRow({ label, on, onClick }: { label: string; on: boolean; onClick:
   );
 }
 
-/* ── o trailer inteiro ────────────────────────────────────────────────────
-   A coluna 9:16 é o folhear; isto é o assistir. Sai da moldura e ocupa a tela,
-   com a barra de baixo carregando o mesmo trilho na horizontal — passar de
-   trailer sem sair do modo cheio é o gesto que este modo existe para servir. */
 function FullTrailer({
   item,
   muted,
@@ -1460,8 +1075,6 @@ function FullTrailer({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  /* A barra de controle do YouTube fica aqui, de propósito: quem abriu a tela
-     cheia foi assistir. O que não fica é o autoplay recusado. */
   const beam = useRef<HTMLIFrameElement>(null);
   const rolling = useYtState(beam, item.trailerKey) === PLAYING;
   useSound(beam, muted, rolling);
@@ -1549,14 +1162,6 @@ function FullTrailer({
   );
 }
 
-/* ══ a ficha ══════════════════════════════════════════════════════════════
-   Tudo o que se sabe da obra, e embaixo o que o clube escreveu sobre ela — com
-   o polegar e a conversa em cada ficha, que é onde eles moram desde que a lista
-   de acontecimentos deixou de existir.
-
-   Um `<dialog>` e não uma rota, pela mesma razão da folha de projeção: a posição
-   do reel é o que a pessoa volta a encontrar, e a plataforma dá a armadilha de
-   foco, o Esc e a inércia do fundo de graça. */
 type FichaData = {
   title: string;
   original: string | null;
@@ -1600,8 +1205,6 @@ function Ficha({
     ref.current?.showModal();
   }, []);
 
-  /* O Esc fecha pelo nosso caminho: fechado por fora, o React continuaria
-     achando a folha aberta e o trailer atrás dela não voltaria a tocar. */
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -1637,8 +1240,7 @@ function Ficha({
         'backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4'
       )}
     >
-      {/* Um rolador só, e ele é a placa — ver a folha de projeção em film.tsx,
-          onde está escrito por que o diálogo sai da disputa. */}
+      {}
       <div className="plate relative max-h-[calc(100dvh/var(--ui-zoom)-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh/var(--ui-zoom)-2rem)] sm:p-7">
         <IconKey aria-label="Fechar" onClick={onClose} className="absolute right-3 top-3 z-10">
           <X className="h-4 w-4" strokeWidth={1.8} />
@@ -1720,8 +1322,7 @@ function Ficha({
               </div>
             </div>
 
-            {/* O que o clube achou, embaixo de tudo o que o TMDB sabe: a ordem é
-                a do produto, não a da fonte. */}
+            {}
             <div className="mt-7 border-t border-white/[0.07] pt-5">{renderTakes(item.id)}</div>
           </>
         )}
@@ -1730,9 +1331,6 @@ function Ficha({
   );
 }
 
-/* O clube contra a multidão, na ficha do reel. Gêmeo do bloco da folha de
-   projeção e mais curto que ele: aqui a média do clube já chegou pronta com o
-   quadro, e não há o que buscar. */
 function Verdicts({ rated, crowd }: { rated: RatedTitle | null; crowd: FichaData['crowd'] }) {
   const votes = (n: number) =>
     new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
@@ -1781,8 +1379,6 @@ const showFicha = (s: ShowDetail): FichaData => ({
   year: s.year,
   poster: s.poster,
   facts: [
-    /* Uma série se datamarca por um intervalo, e o fim dele é a resposta de "já
-       acabou?" — a pergunta que se faz antes de começar a acompanhar. */
     s.year ? (s.endedYear && s.endedYear !== s.year ? `${s.year}–${s.endedYear}` : String(s.year)) : null,
     s.totalEpisodes ? `${s.totalEpisodes} ${plural(s.totalEpisodes, 'episódio', 'episódios')}` : null,
     runtimeOf(s.runtime),
@@ -1796,9 +1392,6 @@ const showFicha = (s: ShowDetail): FichaData => ({
   watch: s.watch,
 });
 
-/* A chave que abre isto, no alto dos dois catálogos. Mora aqui e não em
-   components/bits: a porta é da tela que ela abre, e as duas cascas do App a
-   montam sem saber uma da outra. */
 export function SuggestionsKey({ onOpen }: { onOpen: () => void }) {
   return (
     <Key
@@ -1807,27 +1400,16 @@ export function SuggestionsKey({ onOpen }: { onOpen: () => void }) {
       title="Trailers do que ver, por gênero — começando pelo que o clube já avaliou"
       className="flex-none"
     >
-      {/* Cheio, como o triângulo que toca um trailer na folha: nesta sala um
-          preenchimento quer dizer ligado. */}
+      {}
       <Play className="h-3 w-3 fill-current" strokeWidth={0} aria-hidden />
       Sugestões
     </Key>
   );
 }
 
-/* ══ as duas montagens ════════════════════════════════════════════════════
-   O reel é um só; o que muda é de onde vem "o clube já avaliou isto" e o que a
-   chave principal abre. Cada casca do App monta a sua e não sabe da outra.
-
-   Do lado dos filmes o adaptador lê o contexto grande, porque ele existe. Do
-   lado das séries chega por propriedade, porque lá não há contexto nenhum — e
-   inventar um segundo seria uma segunda verdade sobre a mesma sala. */
 export function MovieReels() {
   const club = useClub();
 
-  /* Uma linha por FILME e não por ficha: o reel mostra a obra, e três pessoas
-     que avaliaram Parasita são um quadro com três fichas dentro, não três
-     quadros. A média e a contagem vêm do acervo que o clube já tem em memória. */
   const rated = useMemo(() => {
     const by = new Map<number, RatedTitle>();
     for (const r of club.reviews) {
@@ -1885,12 +1467,8 @@ export function SeriesReels({
   queued: (id: number) => boolean;
   onQueue: (s: { id: number; title: string; year: number | null; genre: string; poster: string | null }) => void;
   onOpen: (showId: number) => void;
-  /** A casca de séries não tem contexto: a troca de seção chega por aqui. */
   onTab: (t: TabId) => void;
 }) {
-  /* Uma série é avaliada por TEMPORADA, então a nota que o reel mostra é a
-     média das temporadas que o clube avaliou. Uma série só marcada como vista
-     não entra: ela não tem o que dizer. */
   const rated = useMemo(() => {
     const by = new Map<number, RatedTitle & { sum: number }>();
     for (const t of takes ?? []) {
@@ -1934,15 +1512,6 @@ export function SeriesReels({
   );
 }
 
-/* ══ as fichas do clube, por universo ═════════════════════════════════════
-   O reel é o mesmo dos dois lados; isto não é. Uma ficha de filme é uma por
-   pessoa por obra, e uma de série é uma por TEMPORADA — a mesma pessoa tem
-   quatro sobre a mesma série. Um componente só, com um `if` dentro, seria os
-   dois universos disputando as mesmas linhas.
-
-   O que os dois têm igual é o que importa: cada ficha aceita o polegar do clube
-   e uma conversa embaixo. As duas peças são as mesmas — ver components/social —
-   e é por isso que elas não sabem em qual universo estão. */
 export function MovieTakes({ movieId }: { movieId: number }) {
   const club = useClub();
   const here = club.reviews
@@ -2004,9 +1573,6 @@ export function ShowTakes({ showId, takes }: { showId: number; takes: ShowTake[]
   );
 }
 
-/* Uma ficha, inteira: quem, quanto, os critérios abertos, o polegar do clube e
-   a conversa. É o que a linha do mural mostrava depois de dois cliques, e aqui
-   ela chega aberta — a ficha já é o lugar onde se veio parar. */
 function TakePlate({
   take,
   person,
@@ -2017,7 +1583,6 @@ function TakePlate({
   take: { id: string; reviewerId: string; reviewerName: string };
   person: { id: string; name: string; dot: string | null };
   final: number;
-  /** O que esta ficha é, quando não é a obra inteira: a temporada. */
   line: string | null;
   review: Review | ShowTake;
 }) {

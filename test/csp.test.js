@@ -15,16 +15,6 @@ const screening = require('../screening');
 const throttle = require('../throttle');
 const csp = require('../csp');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A política de conteúdo, conferida sem navegador. O que dá para verificar aqui
-   é que ela PERMITE tudo que os arquivos publicados referenciam, e que não
-   permite as duas coisas que a esvaziariam.
-
-   O valor é no futuro: no dia em que uma dependência nova trouxer um `eval`, ou
-   alguém apontar uma imagem para outro domínio, é aqui que aparece — em vez de
-   aparecer como um pedaço branco na tela de outra pessoa.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -44,7 +34,7 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -52,7 +42,6 @@ test.beforeEach(() => throttle.reset());
 
 const PUBLIC_INDEX = path.join(__dirname, '..', 'public', 'index.html');
 
-/** As diretivas como um mapa, para um teste falar sobre uma delas por vez. */
 function directivesOf(header) {
   const out = {};
   for (const part of header.split(';')) {
@@ -71,12 +60,6 @@ async function headerFromServer() {
   return value;
 }
 
-/* ── o que não pode estar lá ──────────────────────────────────────────────
-   As duas exceções que transformam uma CSP em decoração. Este é o teste mais
-   importante do arquivo: as duas entram por conveniência, quando alguma coisa
-   quebra e a saída rápida é abrir a política.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 test('a política não abre mão de nenhuma das duas', async () => {
   const d = directivesOf(await headerFromServer());
   assert.ok(!d['script-src'].includes(`'unsafe-eval'`), 'unsafe-eval esvazia a política');
@@ -87,8 +70,6 @@ test('a política não abre mão de nenhuma das duas', async () => {
 });
 
 test('nem os pacotes publicados precisam delas', () => {
-  /* O que justifica a ausência acima. No dia em que uma dependência trouxer um
-     `eval`, a página quebra em produção — e a explicação começa aqui. */
   const dir = path.join(__dirname, '..', 'public');
   const arquivos = [
     ...fs.readdirSync(path.join(dir, 'assets')).filter(f => f.endsWith('.js'))
@@ -102,12 +83,8 @@ test('nem os pacotes publicados precisam delas', () => {
   }
 });
 
-/* ── os dois scripts de dentro do HTML ────────────────────────────────────── */
-
 test('cada script inline entra pelo hash, e são exatamente dois', async () => {
   const html = fs.readFileSync(PUBLIC_INDEX, 'utf8');
-  /* Contados por um caminho diferente do que o csp.js usa: se o regex de lá
-     deixar um de fora — ou pegar o do bundle por engano — os números divergem. */
   const todos = (html.match(/<script/g) || []).length;
   const comSrc = (html.match(/<script[^>]*\ssrc=/g) || []).length;
   assert.equal(todos - comSrc, 2, 'index.html tem dois scripts inline');
@@ -121,16 +98,6 @@ test('cada script inline entra pelo hash, e são exatamente dois', async () => {
   for (const h of hashes) assert.ok(d['script-src'].includes(h), `falta o hash ${h}`);
 });
 
-/* ── o que a árvore tem e o navegador não recebe ──────────────────────────
-   `npm audit` no cliente aponta quatro falhas altas no mesmo caminho:
-   webtorrent → torrent-discovery → bittorrent-tracker → `ip`.
-
-   Elas não chegam ao navegador: o build de browser do WebTorrent não inclui o
-   rastreador de rede que usa `ip`, e o pacote publicado não tem uma linha dele.
-   Além disso SSRF é falha de quem faz requisições a partir de um servidor.
-
-   Isto é uma AFIRMAÇÃO SOBRE O ARTEFATO, então é medida e não anotada: no dia
-   em que uma versão nova passar a embarcar aquele caminho, é aqui que aparece. */
 test('o rastreador de rede do Node não vai junto para o navegador', () => {
   const dir = path.join(__dirname, '..', 'public', 'assets');
   const publicados = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
@@ -138,30 +105,11 @@ test('o rastreador de rede do Node não vai junto para o navegador', () => {
 
   for (const f of publicados) {
     const code = fs.readFileSync(path.join(dir, f), 'utf8');
-    /* As marcas são as da API do pacote `ip`, e só elas. `toBuffer` e `fromLong`
-       chegaram a entrar nesta lista e saíram no mesmo minuto: são nomes que meia
-       dúzia de utilitários de bytes usam, e um teste que acusa o pacote errado é
-       pior que nenhum — ele ensina a ignorar o próprio alarme. `isPublic` é a
-       função nomeada no aviso. */
     for (const marca of ['isPublic', 'isPrivate', 'isLoopback']) {
       assert.ok(!code.includes(marca), `${f} embarcou o pacote 'ip' (${marca})`);
     }
   }
 });
-
-/* ══════════════════════════════════════════════════════════════════════════
-   O FIM DE LINHA, que é como este arquivo errou uma vez.
-
-   O navegador não hasheia os bytes que recebeu: o parser de HTML normaliza o
-   fluxo antes — CRLF e CR solto viram LF — e hasheia o resultado. Lendo o HTML
-   do disco, gravado em CRLF, os dois hashes diferiam por um caractere que o
-   navegador já tinha descartado, e a política recusava os scripts do próprio
-   produto. Em modo de bloquear, a página teria perdido o ajuste de zoom e a
-   detecção de GPU sem uma única mensagem de erro.
-
-   O teste é o que impede a volta: o mesmo script com os dois fins de linha tem
-   de produzir o mesmo hash, e ele tem de ser o do LF.
-   ══════════════════════════════════════════════════════════════════════════ */
 
 test('o hash é o do texto que o parser vê, e não o dos bytes em disco', () => {
   const corpo = '\n  var a = 1;\n  var b = 2;\n';
@@ -183,8 +131,6 @@ test('o hash é o do texto que o parser vê, e não o dos bytes em disco', () =>
     assert.deepEqual(comCrlf, comLf, 'CRLF tem de dar o mesmo hash que LF');
     assert.deepEqual(comCr, comLf, 'e um CR solto também — o parser normaliza os dois');
 
-    /* E que esse hash é o do texto normalizado, não o de outra coisa: é o
-       número que o navegador vai calcular. */
     const esperado = crypto.createHash('sha256').update(corpo, 'utf8').digest('base64');
     assert.deepEqual(comLf, [`'sha256-${esperado}'`]);
   } finally {
@@ -193,9 +139,6 @@ test('o hash é o do texto que o parser vê, e não o dos bytes em disco', () =>
 });
 
 test('o index.html publicado é hasheado sem os CR que ele tem', () => {
-  /* O arquivo de verdade, que é onde isto aconteceu. Se ele estiver em CRLF, o
-     hash publicado tem de ser o da versão normalizada — e se um dia ele passar
-     a ser LF, a asserção continua valendo sem mudar nada. */
   const html = fs.readFileSync(PUBLIC_INDEX, 'utf8');
   const corpos = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)];
   assert.equal(corpos.length, 2);
@@ -207,29 +150,19 @@ test('o index.html publicado é hasheado sem os CR que ele tem', () => {
   assert.deepEqual(csp.inlineHashes(PUBLIC_INDEX), esperados);
 });
 
-/* ── e tudo que a página de fato carrega ─────────────────────────────────── */
-
 test('a política permite cada origem que os arquivos publicados referenciam', async () => {
   const d = directivesOf(await headerFromServer());
 
-  // As duas famílias, pelo <link> em index.html.
   assert.ok(d['style-src-elem'].includes('https://fonts.googleapis.com'));
   assert.ok(d['font-src'].includes('https://fonts.gstatic.com'));
-  // Pôsteres e logos de serviço — ver IMG_BASE e LOGO_BASE em tmdb.js.
   assert.ok(d['img-src'].includes('https://image.tmdb.org'));
-  // O retrato recortado (data:) e o arquivo escolhido do disco (blob:).
   assert.ok(d['img-src'].includes('data:') && d['img-src'].includes('blob:'));
-  // Os trackers do WebTorrent, e o filme.
   assert.ok(d['connect-src'].includes('wss:'));
   assert.ok(d['media-src'].includes('blob:'));
-  // O service worker do torrent e o worker que a engine cria de um blob.
   assert.ok(d['worker-src'].includes('blob:'));
 });
 
 test('o atributo de estilo passa, e um bloco de estilo injetado não', async () => {
-  /* O React escreve `style={{...}}` por toda parte — a cor de cada avaliador, a
-     fração acesa de uma régua —, e isso é atributo. Um `<style>` injetado é
-     outra coisa e continua recusado. */
   const d = directivesOf(await headerFromServer());
   assert.ok(d['style-src-attr'].includes(`'unsafe-inline'`));
   assert.ok(!d['style-src-elem'].includes(`'unsafe-inline'`));
@@ -241,13 +174,8 @@ test('a única moldura é a do trailer, e ninguém emoldura o produto', async ()
   assert.deepEqual(d['object-src'], [`'none'`]);
   assert.deepEqual(d['base-uri'], [`'self'`]);
 
-  /* A folha do trailer, e nada mais. A lista tem UM endereço de propósito:
-     `frame-src` é permissão para rodar outro site dentro do nosso, e um `https:`
-     aqui daria essa permissão ao mundo inteiro. */
   assert.deepEqual(d['frame-src'], ['https://www.youtube-nocookie.com']);
 });
-
-/* ── vigiar antes de trancar ─────────────────────────────────────────────── */
 
 test('nasce em modo aviso, e a variável de ambiente é o que tranca', async () => {
   const res = await fetch(baseUrl + '/');
@@ -270,7 +198,6 @@ test('o coletor aceita os dois formatos e não discute', async () => {
       body: JSON.stringify(body),
     });
 
-  // O formato do `report-uri`, que é o que esta política pede.
   const velho = await mandar({
     'csp-report': {
       'violated-directive': 'img-src',
@@ -280,11 +207,9 @@ test('o coletor aceita os dois formatos e não discute', async () => {
   });
   assert.equal(velho.status, 204);
 
-  // E o do `report-to`, que é para onde a especificação foi.
   const novo = await mandar({ body: { effectiveDirective: 'img-src', blockedURL: 'https://outro.invalido' } });
   assert.equal(novo.status, 204);
 
-  // Um corpo que não é nada disso também não derruba nada.
   assert.equal((await mandar({ qualquer: 'coisa' })).status, 204);
 });
 

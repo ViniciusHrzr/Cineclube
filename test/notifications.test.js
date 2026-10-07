@@ -13,25 +13,6 @@ const db = require('../db');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O sino.
-
-   O feed é derivado das três tabelas de reação, e é por isso que estes testes
-   olham tanto para o que NÃO aparece nele quanto para o que aparece:
-
-   · o que você mesmo fez nunca vira aviso;
-   · um evento desfeito some do feed, porque não há cópia dele em lugar nenhum;
-   · a marca d'água é uma data, então "não lidas" é quantos eventos são mais
-     novos que ela — e ver o sino zera a conta sem apagar nada.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo.
-
-   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
-   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
-   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -50,7 +31,7 @@ test.after(async () => {
   await new Promise(resolve => server.close(resolve));
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -71,7 +52,6 @@ const cookieOf = s => (s ? s.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
   const who = await kit.signIn(name || `Sócio ${++seq}`);
   await kit.join(CLUB.id, who.id);
@@ -102,8 +82,6 @@ const vote = (take, value, who) =>
   req('PUT', at(`/social/reviews/${take.id}/vote`), { value }, who.cookie);
 const like = (c, liked, who) =>
   req('PUT', at(`/social/comments/${c.id}/like`), { liked }, who.cookie);
-
-/* ── as três coisas que acendem o sino ───────────────────────────────── */
 
 test('um comentário na minha ficha vira aviso, com trecho do que foi dito', async () => {
   const author = await newReviewer();
@@ -144,9 +122,6 @@ test('discordar diz discordou, e não concordou com sinal trocado', async () => 
   assert.match(body.items[0].text, /discordou da sua avaliação de/);
 });
 
-/* Um por pessoa por ficha. Quando o voto era por critério, a mesma pessoa
-   podia encher o sino com onze avisos sobre a mesma avaliação — e o que ela
-   estava dizendo era uma coisa só. */
 test('a mesma pessoa votando de novo não vira um segundo aviso', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
@@ -175,8 +150,6 @@ test('curtir meu comentário vira aviso, mesmo na ficha de outra pessoa', async 
   assert.equal(mine[0].excerpt, 'a cena do corredor');
 });
 
-/* ── responder e mencionar ───────────────────────────────────────────── */
-
 test('responder meu comentário me avisa, mesmo na ficha de outra pessoa', async () => {
   const host = await newReviewer();
   const writer = await newReviewer();
@@ -195,9 +168,6 @@ test('responder meu comentário me avisa, mesmo na ficha de outra pessoa', async
 });
 
 test('o dono da ficha não recebe dois avisos pelo mesmo texto', async () => {
-  // Uma resposta pendurada num comentário da minha ficha me avisaria como
-  // "comentou sua avaliação" E como resposta, sendo que nem fui eu que escrevi
-  // o comentário respondido.
   const host = await newReviewer();
   const a = await newReviewer();
   const b = await newReviewer();
@@ -227,7 +197,6 @@ test('ser mencionado num comentário acende o sino', async () => {
 });
 
 test('ser mencionado no comentário de uma avaliação também acende', async () => {
-  // O outro lugar do produto onde se escreve.
   const chamado = await newReviewer('Cauro Neves');
   const quemAvalia = await newReviewer();
   await req('POST', at('/reviews'), {
@@ -272,8 +241,6 @@ test('um e-mail no comentário não menciona ninguém', async () => {
   assert.equal((await feed(chamado)).body.items.length, 0);
 });
 
-/* ── o que não acende ────────────────────────────────────────────────── */
-
 test('o que você mesmo faz nunca vira aviso para você', async () => {
   const author = await newReviewer();
   const take = await newTake(author);
@@ -317,8 +284,6 @@ test('apagar o comentário apaga o aviso sobre ele', async () => {
   assert.equal((await feed(author)).body.items.length, 0);
 });
 
-/* ── a marca d'água ──────────────────────────────────────────────────── */
-
 test('tudo é novo até a primeira vez que o sino é aberto', async () => {
   const author = await newReviewer();
   const a = await newReviewer();
@@ -354,10 +319,6 @@ test('o que chega depois de visto conta como novo de novo', async () => {
   await comment(take, 'antes', a);
   await seen(author);
 
-  // datetime('now') tem resolução de um segundo, então um evento gravado no
-  // mesmo segundo da marca não conta como posterior a ela. Espera o relógio
-  // virar antes de gerar o segundo, senão este teste mede a resolução do
-  // banco em vez da regra.
   await new Promise(r => setTimeout(r, 1100));
   await comment(take, 'depois', b);
 
@@ -379,8 +340,6 @@ test('a marca de uma pessoa não mexe na de outra', async () => {
   assert.equal((await feed(a)).body.unread, 0);
   assert.equal((await feed(b)).body.unread, 1, 'ver o sino de um zerou o do outro');
 });
-
-/* ── limpar ──────────────────────────────────────────────────────────── */
 
 const clear = who => req('POST', at('/notifications/clear'), {}, who.cookie);
 
@@ -408,8 +367,6 @@ test('limpar não apaga o comentário nem o voto — só a projeção deles', as
 
   await clear(author);
 
-  // O sino do autor esvaziou, mas o que as outras pessoas escreveram continua
-  // lá para o clube inteiro ver.
   const social = (await req('GET', at('/social'))).body;
   assert.ok(social.comments.some(x => x.id === c.id), 'o comentário foi apagado');
   assert.equal(social.votes.filter(v => v.reviewId === take.id).length, 1, 'o voto foi apagado');
@@ -423,8 +380,6 @@ test('o que chega depois de limpar volta a aparecer', async () => {
   await comment(take, 'antes', a);
   await clear(author);
 
-  // datetime('now') tem resolução de um segundo: um evento gravado no mesmo
-  // segundo da marca não é posterior a ela.
   await new Promise(r => setTimeout(r, 1100));
   await comment(take, 'depois', b);
 
@@ -452,8 +407,6 @@ test('limpar exige sessão', async () => {
   assert.equal((await req('POST', at('/notifications/clear'), {})).status, 401);
 });
 
-/* ── quem pode ler ───────────────────────────────────────────────────── */
-
 test('o sino exige sessão — nas duas rotas', async () => {
   assert.equal((await req('GET', at('/notifications'))).status, 401);
   assert.equal((await req('POST', at('/notifications/seen'), {})).status, 401);
@@ -465,8 +418,6 @@ test('o feed é o de quem está logado, e não aceita um id no caminho', async (
   const take = await newTake(author);
   await comment(take, 'só o autor vê isto', reader);
 
-  // A sessão é a única coisa que escolhe o destinatário: o leitor, com a
-  // própria sessão, não vê o aviso que é do autor.
   assert.equal((await feed(reader)).body.items.length, 0);
   assert.equal((await feed(author)).body.items.length, 1);
 });

@@ -2,18 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Key } from '@/components/bits';
 import { encodeCrop, loadImage, type Crop, type Loaded } from '@/lib/image';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The gate: a square hole with the picture behind it, moved and scaled until
-   what is in the hole is what the person wants. The film is larger than the
-   frame, and framing is choosing which part of it the light goes through.
-
-   What is on screen is not a preview of the crop — it *is* the crop, at a
-   larger size. The image is laid out in the frame's own coordinates and the
-   region handed to the encoder is read back out of those same numbers, so there
-   is no second calculation that could disagree with what was seen.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** The gate on screen, in CSS pixels. */
 const GATE = 264;
 const MAX_ZOOM = 4;
 
@@ -34,15 +22,11 @@ export function PortraitGate({
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<Frame>({ zoom: 1, x: 0, y: 0 });
 
-  /* At zoom 1 the shorter side of the picture exactly fills the gate, so there
-     is never a corner with nothing behind it. Everything else is measured
-     against this one number. */
   const base = loaded ? GATE / Math.min(loaded.width, loaded.height) : 1;
   const shown = loaded
     ? { w: loaded.width * base * frame.zoom, h: loaded.height * base * frame.zoom }
     : { w: 0, h: 0 };
 
-  /** The picture may never uncover the gate, which is what bounds the drag. */
   const clamp = (f: Frame, w: number, h: number): Frame => ({
     zoom: f.zoom,
     x: Math.min(0, Math.max(GATE - w, f.x)),
@@ -58,8 +42,6 @@ export function PortraitGate({
         if (!alive) return img.release();
         opened = img;
         setLoaded(img);
-        // Centred to begin with — the middle is a fair opening guess, it just
-        // is not a decision.
         const b = GATE / Math.min(img.width, img.height);
         setFrame({ zoom: 1, x: (GATE - img.width * b) / 2, y: (GATE - img.height * b) / 2 });
       })
@@ -87,9 +69,6 @@ export function PortraitGate({
     return () => el.removeEventListener('cancel', cancel);
   }, [onCancel]);
 
-  /* The page is zoomed, so a pointer's client pixels and the CSS pixels this
-     component lays out in are two different units. The gate reports both of
-     its own widths and the ratio converts one to the other. */
   function drag(e: React.PointerEvent) {
     if (!loaded || e.button !== 0) return;
     const gate = gateRef.current;
@@ -123,7 +102,6 @@ export function PortraitGate({
     window.addEventListener('pointercancel', up);
   }
 
-  /** Zooming holds the middle of the gate still, which is what the eye is on. */
   function zoomTo(next: number) {
     if (!loaded) return;
     const z = Math.min(MAX_ZOOM, Math.max(1, next));
@@ -149,16 +127,8 @@ export function PortraitGate({
 
   function use() {
     if (!loaded) return;
-    /* Back out of the gate's coordinates into the picture's own. Everything
-       divides by the same factor the layout multiplied by, so what is encoded
-       is exactly the square that was on screen. */
     const scale = base * frame.zoom;
     const side = Math.min(GATE / scale, loaded.width, loaded.height);
-    /* Held inside the picture by hand. The clamp above already keeps the gate
-       covered, but it works in laid-out pixels and this works in source ones,
-       and a division between the two can land a hair past the last row —
-       enough for the encoder to sample nothing and leave a transparent edge on
-       a portrait that looked perfect. */
     const crop: Crop = {
       x: Math.min(Math.max(0, -frame.x / scale), loaded.width - side),
       y: Math.min(Math.max(0, -frame.y / scale), loaded.height - side),
@@ -178,7 +148,6 @@ export function PortraitGate({
       onClick={e => {
         if (e.target === dialogRef.current) onCancel();
       }}
-      /* Fundo sem desfoque, pela razão em components/film.tsx. */
       className="w-full max-w-[420px] bg-transparent p-3 text-ink backdrop:bg-house-deep/95 open:animate-beam-in"
     >
       <div className="plate p-5">
@@ -195,11 +164,10 @@ export function PortraitGate({
               sua foto.
             </p>
 
-            {/* The gate itself. It takes the drag, the keyboard and the wheel. */}
+            {}
             <div
               ref={gateRef}
               role="application"
-              /* Aqui o arrasto ENQUADRA a foto. Ver lib/swipe.ts. */
               data-noswipe
               aria-label="Área de enquadramento. Use as setas para mover e as teclas mais e menos para aproximar."
               tabIndex={0}
@@ -224,8 +192,7 @@ export function PortraitGate({
                 w={shown.w}
                 h={shown.h}
               />
-              {/* The corners of the frame, so the square reads as a frame and
-                  not as a hole the picture happens to end at. */}
+              {}
               <span className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-beam/25" />
             </div>
 
@@ -239,10 +206,6 @@ export function PortraitGate({
                 value={frame.zoom}
                 onChange={e => zoomTo(parseFloat(e.target.value))}
                 aria-label="Aproximação"
-                /* Native, and left native on purpose: `appearance-none` strips
-                   the thumb along with everything else, and this control does
-                   not earn the twenty lines that would draw a new one. The
-                   accent colour is enough to keep it in the room. */
                 className="w-full cursor-pointer accent-dye-brass"
               />
             </label>
@@ -270,13 +233,6 @@ export function PortraitGate({
   );
 }
 
-/* One layer for both kinds of decoded picture. An ImageBitmap cannot be the
-   source of an <img>, and an <img> would need a second branch here for no
-   gain, so both go through a canvas — which is also what the encoder draws
-   into, so what is on screen and what is stored come from the same call.
-
-   It is redrawn only when its size changes, which means when the zoom does.
-   Dragging lays the same canvas out somewhere else and repaints nothing. */
 function PictureLayer({
   source,
   left,

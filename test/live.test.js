@@ -14,28 +14,8 @@ const live = require('../live');
 const { critsFor } = require('../criteria');
 const kit = require('../testkit');
 
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo, e `at('/reviews')` é como se escreve isso. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
-
-/* ══════════════════════════════════════════════════════════════════════════
-   O clube ao vivo.
-
-   Dois riscos, e são de naturezas diferentes.
-
-   O primeiro é o silêncio: uma escrita que não emite deixa a tela de todo mundo
-   parada sem que nada acuse — não há erro, não há log, só um comentário que
-   ninguém vê até apertar F5. É o defeito que este arquivo existe para pegar, e
-   por isso os testes de emissão passam pela ROTA e não pela função: o que se
-   quer garantir não é que `emit` funciona, é que gravar um comentário emite.
-
-   O segundo é o contrário — falar demais, ou falar cedo. Um aviso emitido antes
-   do commit manda o clube buscar um estado que ainda não existe, e não há
-   segundo aviso a caminho para consertar. Daí o teste que lê a coleção no
-   instante do quadro: quando ele chega, o dado tem de estar lá.
-   ══════════════════════════════════════════════════════════════════════════ */
 
 let baseUrl;
 let server;
@@ -53,7 +33,7 @@ test.after(async () => {
   await new Promise(resolve => server.close(resolve));
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -72,7 +52,6 @@ async function req(method, pathname, body, cookie) {
 
 let seq = 0;
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
   const who = await kit.signIn(name || `Sócio ${++seq}`);
   await kit.join(CLUB.id, who.id);
@@ -94,11 +73,6 @@ async function newTake(who) {
   return { ...res.body, movie: m };
 }
 
-/* ── uma orelha ───────────────────────────────────────────────────────────
-   Uma conexão de verdade, aberta pela rota, lida quadro a quadro. Testar o
-   `emit` contra um objeto de mentira provaria que o Set funciona; o que precisa
-   de prova é o caminho inteiro — sessão, cabeçalhos, e o quadro chegando do
-   outro lado de um socket. */
 async function listen(cookie) {
   const control = new AbortController();
   const res = await fetch(baseUrl + at('/live/stream'), {
@@ -111,18 +85,8 @@ async function listen(cookie) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  /* ── a leitura que sobrevive ao relógio ─────────────────────────────────
-     A espera abaixo é uma corrida entre ler e desistir, e quando o relógio
-     ganha a leitura CONTINUA pendente — ela não é cancelável. Sem guardá-la
-     aqui, a chamada seguinte pediria uma segunda leitura ao mesmo reader, a
-     primeira comeria o próximo pedaço, e o quadro sumiria no meio de duas
-     asserções que parecem não ter relação nenhuma uma com a outra.
-
-     Sem consequência enquanto ninguém esperava um silêncio; virou um teste que
-     falhava sozinho no dia em que alguém quis provar que uma rota NÃO emite. */
   let pending = null;
 
-  /** O próximo quadro `data:`, ou uma falha se ele não vier a tempo. */
   async function next(ms = 4000) {
     const deadline = Date.now() + ms;
     for (;;) {
@@ -130,7 +94,6 @@ async function listen(cookie) {
       if (line >= 0) {
         const chunk = buffer.slice(0, line);
         buffer = buffer.slice(line + 2);
-        // Os `: ping` são para o proxy, não para quem está ouvindo.
         if (!chunk.startsWith('data: ')) continue;
         return JSON.parse(chunk.slice(6));
       }
@@ -150,8 +113,6 @@ async function listen(cookie) {
   return { next, close: () => control.abort() };
 }
 
-/* ── o cano ───────────────────────────────────────────────────────────── */
-
 test('a conexão abre com um quadro que não é aviso de nada', async () => {
   const who = await newReviewer();
   const ear = await listen(who.cookie);
@@ -168,8 +129,6 @@ test('sem sessão não há conexão', async () => {
   await res.text();
 });
 
-/* ── as emissões ──────────────────────────────────────────────────────── */
-
 test('um comentário avisa o clube, e o comentário já está lá quando o aviso chega', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
@@ -185,12 +144,6 @@ test('um comentário avisa o clube, e o comentário já está lá quando o aviso
     assert.equal(frame.kind, 'social');
     assert.equal(frame.by, reader.id);
 
-    /* O ponto do teste: buscar AGORA, no instante do aviso, tem de trazer o
-       comentário. Se a emissão acontecesse antes da escrita, isto viria vazio —
-       e seria exatamente o que o clube veria na tela. */
-    /* Com cookie: a sala deste arquivo é privada, e ler um clube privado é de
-       quem é dele. A leitura aberta continua existindo — em clube público — e
-       tem os próprios testes. */
     const all = await req('GET', at('/social'), null, author.cookie);
     assert.ok(all.body.comments.some(c => c.reviewId === take.id));
   } finally {
@@ -238,7 +191,6 @@ test('gravar uma nota avisa o acervo E a fila, porque mexe nas duas', async () =
     assert.ok(kinds.has('reviews'));
     assert.ok(kinds.has('watchlist'), 'a fila perdeu o filme e ninguém foi avisado');
 
-    // E a fila realmente perdeu o filme: o aviso não estava mentindo.
     const queue = await req('GET', at('/watchlist'), null, who.cookie);
     assert.ok(!queue.body.watchlist.some(w => Number(w.id) === m.id));
   } finally {
@@ -276,14 +228,6 @@ test('trocar o próprio nome avisa, porque ele aparece ao lado de tudo', async (
   }
 });
 
-/* ── a sala falando para fora ─────────────────────────────────────────────
-   A sala de projeção tem o próprio cano, e ele é caro: um quadro a cada cinco
-   segundos, e assinar ele te PÕE dentro da sala. Quem não está assistindo não
-   pode pagar nenhuma das duas coisas — mas precisa saber que a sessão começou,
-   senão a lâmpada da marquise nunca acende para quem ela existe.
-
-   Por isso a sala emite aqui também, e por isso emite pouco. */
-
 test('abrir e fechar a sessão avisa o clube que não está na sala', async () => {
   const who = await newReviewer();
   const m = movie();
@@ -297,8 +241,6 @@ test('abrir e fechar a sessão avisa o clube que não está na sala', async () =
     assert.equal(opened.status, 201);
     assert.equal((await ear.next()).kind, 'screening');
 
-    /* O aviso não chega antes da sala: quando ele chega, a rota já responde que
-       há sessão aberta. Mesma regra do resto do arquivo, mesmo motivo. */
     const now = await req('GET', at('/screening'), null, who.cookie);
     assert.equal(now.body.open, true);
 
@@ -323,12 +265,6 @@ test('play e pause avisam, e arrastar a barra não', async () => {
     await req('POST', at('/screening/command'), { type: 'play', position: 0 }, who.cookie);
     assert.equal((await ear.next()).kind, 'screening');
 
-    /* ── o silêncio que é o ponto deste teste ─────────────────────────────
-       Procurar uma cena dispara comandos aos punhados, e cada um deles é o
-       mesmo filme, rodando, na mesma sala. Se `seek` emitisse, uma pessoa
-       arrastando a barra mandaria toda aba aberta do clube buscar a sala
-       dezenas de vezes para receber a mesma resposta — e a lâmpada não teria
-       mudado em nenhuma delas. O filtro é a virada do status, não o comando. */
     await req('POST', at('/screening/command'), { type: 'seek', position: 90 }, who.cookie);
     await req('POST', at('/screening/command'), { type: 'seek', position: 120 }, who.cookie);
     await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
@@ -336,7 +272,6 @@ test('play e pause avisam, e arrastar a barra não', async () => {
     await req('POST', at('/screening/command'), { type: 'pause', position: 120 }, who.cookie);
     assert.equal((await ear.next()).kind, 'screening');
 
-    // Pausar o que já está pausado não é uma virada, e portanto não é notícia.
     await req('POST', at('/screening/command'), { type: 'pause', position: 120 }, who.cookie);
     await assert.rejects(() => ear.next(400), /nenhum quadro chegou a tempo/);
   } finally {
@@ -345,17 +280,12 @@ test('play e pause avisam, e arrastar a barra não', async () => {
   }
 });
 
-/* ── o que o cano recusa ──────────────────────────────────────────────── */
-
 test('uma palavra que não está na lista não vira quadro', () => {
   const seen = [];
   const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-teste');
   try {
     live.emit('qualquer-coisa', 'p-teste', 'c-teste');
     live.emit('social', 'p-teste', 'c-teste');
-    /* Um quadro de abertura mais UM aviso. Sem a lista, qualquer string que
-       chegasse a `emit` viraria uma palavra que nenhuma tela sabe atender — e
-       o defeito apareceria como uma tela que não atualiza, longe daqui. */
     assert.equal(seen.length, 2);
     assert.match(seen[1], /"kind":"social"/);
   } finally {
@@ -363,11 +293,6 @@ test('uma palavra que não está na lista não vira quadro', () => {
   }
 });
 
-/* ── e um aviso sem sala não sai ──────────────────────────────────────────
-   O modo de falhar de um `emit` que esqueceu de dizer de qual clube fala tem de
-   ser o silêncio. Um broadcast por omissão seria clube privado vazando no cano
-   de estranhos, que é um defeito que ninguém vê; uma tela que não atualiza é um
-   defeito visível. Ver live.js. */
 test('um aviso sem clube não vira quadro nenhum', () => {
   const seen = [];
   const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-teste');
@@ -380,8 +305,6 @@ test('um aviso sem clube não vira quadro nenhum', () => {
   }
 });
 
-/* E um aviso de OUTRA sala também não chega — a prova de que a comparação em
-   `emit` é o que separa os clubes, e não um filtro do lado do cliente. */
 test('um aviso de outro clube não chega nesta conexão', () => {
   const seen = [];
   const entry = live.subscribe({ write: s => seen.push(s) }, 'p-teste', 'c-um');
@@ -403,7 +326,6 @@ test('há um teto de conexões por pessoa', () => {
       held.push(live.subscribe({ write() {} }, 'p-teto'));
     }
     assert.equal(live.canSubscribe('p-teto'), false);
-    // E o teto é por pessoa: outra pessoa continua entrando.
     assert.ok(live.canSubscribe('p-outra'));
   } finally {
     held.forEach(live.unsubscribe);

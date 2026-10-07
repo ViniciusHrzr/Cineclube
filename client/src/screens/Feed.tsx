@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, ChevronDown, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Bill, Blank, Drawer, Fault, Poster, Skeleton, Strip } from '@/components/bits';
-/* As mesmas peças do acervo, não uma cópia compacta: regras escritas duas vezes
-   divergem na terceira. */
 import { Conversation, TakeVotes } from '@/components/social';
 import { Breakdown } from '@/components/take';
 import { PersonName, PersonReel } from '@/components/person';
@@ -11,26 +9,7 @@ import { useLive } from '@/lib/live';
 import { clockOf, cn, dayOf, plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
-/* ── o feed ───────────────────────────────────────────────────────────────
-   O sino é privado: se alguém avaliou ontem e outra pessoa discordou, os dois
-   sabem e mais ninguém. Esta é a tela do princípio "o grupo é visível".
-
-   A linha da avaliação carrega os onze critérios, e é disso que sai conversa —
-   "fulano avaliou Parasita — 8,5" seria intercambiável com qualquer app.
-
-   Dois tipos de acontecimento, com pesos diferentes de propósito: a avaliação é
-   o assunto e ganha placa, o comentário é uma linha. Um feed em que tudo pesa
-   igual é uma lista, e lista se lê do começo ao fim ou não se lê.
-
-   Tudo se faz aqui: reagir, ler os onze critérios, responder. Cada viagem ao
-   acervo desmontava o feed e custava a rolagem de volta. */
-
-/* Mais lento que o sino porque um aviso é sobre você e um feed é sobre todo
-   mundo. Só com a aba à vista: isto fica aberto por horas. */
 const POLL_MS = 120_000;
-
-/* A quebra por dia e o relógio da linha moram em lib/utils.ts: o mural do outro
-   universo lê o tempo do mesmo jeito, e duas cópias divergem na terceira. */
 
 export function FeedScreen() {
   const [items, setItems] = useState<FeedEvent[] | null>(null);
@@ -59,8 +38,6 @@ export function FeedScreen() {
     };
   }, [load]);
 
-  /* A linha nasce na tela de todo mundo no instante em que alguém escreve. O
-     relógio acima é a rede de baixo, para quando a conexão ao vivo cair. */
   useLive(kinds => {
     if (kinds.has('social') || kinds.has('reviews')) void load();
   });
@@ -80,8 +57,7 @@ export function FeedScreen() {
     return (
       <section>
         <Bill title="Feed" note="carregando…" />
-        {/* No formato do que vai chegar: a página não muda de forma quando o
-            conteúdo pousa. */}
+        {}
         <div className="flex flex-col gap-3">
           {[0, 1, 2].map(i => (
             <div key={i} className="plate flex gap-4 p-4">
@@ -110,8 +86,6 @@ export function FeedScreen() {
     );
   }
 
-  /* Agrupado na renderização e não no estado: guardado, este valor fica velho à
-     meia-noite. */
   let lastDay = '';
 
   return (
@@ -129,8 +103,6 @@ export function FeedScreen() {
           return (
             <div key={e.id}>
               {opensDay ? (
-                /* Grudado no que vem depois: um cabeçalho a igual distância dos
-                   dois lados pertence a ambos e a nenhum. */
                 <p className="legend mb-3 mt-7 first:mt-0">{day}</p>
               ) : null}
               {e.kind === 'review' ? <Rated e={e} /> : <Aside e={e} />}
@@ -142,46 +114,23 @@ export function FeedScreen() {
   );
 }
 
-/* Quatro coisas empilhadas, e não um botão só: o corpo (com três alvos), o
-   detalhamento, a barra de ação e a conversa. Um `<button>` dentro de outro não
-   é coisa que o navegador monte, então a barra teve de sair do corpo. A régua
-   acima dela diz que dali para baixo o clique faz outra coisa.
-
-   O corpo também não é um alvo só: o pôster e o nome levam ao FILME, e o resto
-   desdobra a avaliação. O porquê está lá embaixo, onde eles são desenhados.
-
-   Duas gavetas e não uma: são duas perguntas — "o que ela achou de cada coisa"
-   e "o que o clube disse disso" —, e juntá-las faria quem quer responder passar
-   por onze números. */
 function Rated({ e }: { e: FeedEvent }) {
   const club = useClub();
-  /* Do acervo que o clube tem em memória desde o boot — nada é buscado. Nula só
-     entre alguém apagar uma avaliação e o feed recarregar; aí a barra some, que
-     oferecer um polegar para uma ficha morta é prometer um 404. */
   const review = club.reviews.find(r => r.id === e.reviewId) ?? null;
   const talk = club.comments.filter(c => c.reviewId === e.reviewId).length;
   const clock = clockOf(e.at);
 
   const [talking, setTalking] = useState(false);
-  /* Aberta uma vez, montada para sempre: desmontar ao fechar faria a gaveta
-     recolher de altura zero para altura zero, e montar as oitenta de saída é
-     uma tela inteira de trabalho que ninguém pediu. */
   const [touched, setTouched] = useState(false);
-  /* O mesmo par para o detalhamento. */
   const [open, setOpen] = useState(false);
   const [unfolded, setUnfolded] = useState(false);
 
-  /* A placa já mostra o que a pessoa escreveu, cortado em 120 caracteres (ver
-     `excerpt` em routes/feed.js). O detalhamento recebe o comentário exatamente
-     quando o resumo não é ele — senão é a mesma frase duas vezes. */
   const written = review?.comment?.replace(/\s+/g, ' ').trim() ?? '';
   const clipped = !!written && written !== (e.excerpt ?? '');
 
   return (
     <div className="plate mb-3">
-      {/* Fora do botão: dentro dele o rosto era pixel morto, porque um
-          `<button>` dentro de outro não é coisa que o navegador monte. O
-          `px-4 pt-4` daqui e o `pt-2.5` do botão somam o `p-4` de antes. */}
+      {}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4">
         <PersonReel person={e.actor} size="sm" />
         <PersonName
@@ -192,28 +141,14 @@ function Rated({ e }: { e: FeedEvent }) {
         {clock ? <span className="q ml-auto text-[10.5px] text-ink-faint">{clock}</span> : null}
       </div>
 
-      {/* ── o corpo, e ele tem três alvos ────────────────────────────────
-          O pôster e o nome abrem a FICHA DO FILME. Quem toca num pôster quer o
-          filme — a sinopse, onde assistir, a fila, quem no clube já avaliou —,
-          e não a opinião de quem postou; a placa já mostra essa opinião inteira
-          aqui em cima. Antes os dois desdobravam os onze critérios, que é a
-          única coisa que a placa não tem e a ficha do filme também não.
-
-          O resto do corpo continua desdobrando. Irmãos e não aninhados: um
-          `<button>` dentro de outro não é coisa que o navegador monte. */}
+      {}
       <div className="px-4 pb-4 pt-2.5">
         <div className="flex gap-4">
-          {/* O pôster estica até o fim das notas, e não até o fim da placa: ele
-              é irmão do bloco de números, e o que a pessoa escreveu passou a
-              morar embaixo dos dois, na largura inteira. Uma observação de três
-              linhas esticava um cartaz de 54px até virar uma tira. */}
+          {}
           <button
             type="button"
             onClick={() => club.openSheet(e.movieId)}
             aria-label={`Abrir a ficha de ${e.movieTitle}`}
-            /* A altura sai do estica do flex, e o piso é a forma de um cartaz:
-               sem ele, uma placa sem extremos e sem observação teria o bloco de
-               números mais baixo que 2:3 e o cartaz sairia achatado. */
             className="group/cartaz min-h-[81px] flex-none sm:min-h-[93px]"
           >
             <Poster
@@ -261,10 +196,7 @@ function Rated({ e }: { e: FeedEvent }) {
                 ) : null}
               </span>
 
-              {/* Ausente quando a ficha não tem distância entre o alto e o
-                  baixo — ver `endsOf` no servidor: onze notas iguais não têm
-                  extremos, e apontá-los seria inventar uma opinião que ninguém
-                  teve. */}
+              {}
               {e.ends ? (
                 <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
                   <span className="flex items-center gap-1.5 text-ink-dim">
@@ -283,9 +215,7 @@ function Rated({ e }: { e: FeedEvent }) {
           </div>
         </div>
 
-        {/* A linha inteira, embaixo de tudo: uma frase é texto corrido e pede
-            largura, e espremida ao lado do cartaz ela virava uma coluna estreita
-            que empurrava a placa para baixo. */}
+        {}
         {e.excerpt ? (
           <button
             type="button"
@@ -302,7 +232,7 @@ function Rated({ e }: { e: FeedEvent }) {
         ) : null}
       </div>
 
-      {/* Antes da barra de ação: é mais da ficha, não mais uma ação sobre ela. */}
+      {}
       <Drawer open={open}>
         {unfolded && review ? (
           <div className="px-4 pb-4">
@@ -311,9 +241,7 @@ function Rated({ e }: { e: FeedEvent }) {
         ) : null}
       </Drawer>
 
-      {/* Os números moram dentro dos próprios controles: o polegar que diz "duas
-          pessoas concordaram" é o mesmo que se aperta para ser a terceira. Some
-          junto com a ficha, senão a régua ficaria com nada embaixo. */}
+      {}
       {review ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] px-4 py-2.5">
           <TakeVotes take={review} labelled />
@@ -338,18 +266,14 @@ function Rated({ e }: { e: FeedEvent }) {
             )}
           >
             <MessageSquare className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
-            {/* Em tela estreita cai a palavra, nunca o número: sem rótulo sobra
-                um balão, que se entende; sem número sobra um placar mentindo. */}
+            {}
             <span className="hidden font-display text-[11px] uppercase leading-none tracking-[0.12em] sm:inline">
               {talking ? 'Fechar' : 'Comentar'}
             </span>
             {talk ? <span className="q text-[10.5px] leading-none opacity-80">{talk}</span> : null}
           </button>
 
-          {/* O acervo como escolha, no fim da barra: lá a ficha aparece entre as
-              outras do mesmo filme, que é a única coisa que o feed não mostra.
-              Sem rótulo — uma quarta palavra quebraria a linha antes do
-              tablet. */}
+          {}
           <button
             type="button"
             onClick={() => club.goReview(review.id)}
@@ -364,8 +288,6 @@ function Rated({ e }: { e: FeedEvent }) {
 
       <Drawer open={talking}>
         {touched && review ? (
-          /* Sem régua e sem título: a gaveta não contém mais nada além dela. No
-             acervo a régua separa os onze números do que se disse deles. */
           <div className="px-4 pb-4">
             <Conversation take={review} ruled={false} />
           </div>
@@ -375,22 +297,11 @@ function Rated({ e }: { e: FeedEvent }) {
   );
 }
 
-/* Uma linha, sem placa e sem pôster: dar a ela a mesma superfície da ficha faria
-   o feed inteiro pesar igual. O ícone à esquerda é a coluna fixa que deixa o
-   feed ser varrido.
-
-   Ela também abre a ficha embaixo de si, com o texto anunciado já aceso —
-   `aimComment` diz qual é, e a conversa cresce até ele, rola e o acende (ver
-   `focusComment` em components/social.tsx). */
 function Aside({ e }: { e: FeedEvent }) {
   const club = useClub();
   const clock = clockOf(e.at);
-  /* Nula se a ficha foi apagada entre a busca do feed e a do acervo; aí a linha
-     abre a folha do filme, que também não tira ninguém daqui. */
   const review = club.reviews.find(r => r.id === e.reviewId) ?? null;
   const [open, setOpen] = useState(false);
-  /* Montada só depois de pedida e nunca desmontada — o mesmo par das gavetas da
-     placa. */
   const [unfolded, setUnfolded] = useState(false);
   const { aimComment } = club;
 
@@ -402,8 +313,6 @@ function Aside({ e }: { e: FeedEvent }) {
     const next = !open;
     setOpen(next);
     setUnfolded(true);
-    /* Só ao ABRIR: reapontar ao fechar faria a conversa rolar atrás de um texto
-       que acabou de sair da tela. */
     if (next && e.commentId) aimComment(e.commentId);
   }
 
@@ -421,13 +330,10 @@ function Aside({ e }: { e: FeedEvent }) {
           aria-hidden
         />
         <span className="min-w-0 flex-1">
-          {/* Montada aqui e não no servidor como no sino: lá a frase é sobre
-              você, na segunda pessoa. */}
+          {}
           <span className="block text-[12.5px] leading-snug text-ink-dim">
             <span className="font-display uppercase tracking-[0.08em] text-ink">{e.actor.name}</span>{' '}
-            {/* Responder é outro gesto que comentar: anunciar uma resposta como
-                "comentou a ficha" faz quem chega procurar um comentário de
-                primeiro nível que não existe. */}
+            {}
             {e.parentId ? 'respondeu um comentário na avaliação de ' : 'comentou a avaliação de '}
             <Who name={e.owner?.name} me={e.owner?.id === club.me.id} /> em{' '}
             <span className="text-ink transition-colors group-hover:text-beam">{e.movieTitle}</span>
@@ -453,9 +359,7 @@ function Aside({ e }: { e: FeedEvent }) {
         ) : null}
       </button>
 
-      {/* Sobre uma superfície própria: a linha não tem placa, e sem uma caixa em
-          volta o detalhamento flutuaria solto entre duas linhas do feed sem
-          dizer de qual das duas é. */}
+      {}
       <Drawer open={open}>
         {unfolded && review ? (
           <div className="ml-6 mr-1 mb-2 mt-1 rounded-cell bg-house-seat/55 p-3 ring-1 ring-inset ring-white/[0.06]">
@@ -471,9 +375,6 @@ function Aside({ e }: { e: FeedEvent }) {
   );
 }
 
-/* Só a linha de conversa precisa disto: a placa já diz filme, rosto, nome e nota
-   antes de desdobrar. Sem o cabeçalho, o detalhamento seriam onze números sem
-   dizer de quem são. */
 function TakeHead({ review }: { review: Review }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -502,8 +403,6 @@ function TakeHead({ review }: { review: Review }) {
   );
 }
 
-/* "a ficha de Beren" e "a sua ficha": quando o acontecimento é sobre você, a
-   frase diz isso. */
 function Who({ name, me }: { name?: string; me?: boolean }) {
   if (me) return <span className="text-dye-brass">você</span>;
   return <span className="text-ink">{name ?? 'alguém'}</span>;

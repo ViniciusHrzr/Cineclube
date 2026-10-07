@@ -7,59 +7,11 @@ import { type TakeComment } from '@/lib/api';
 import { cn, plural, whenOf } from '@/lib/utils';
 import { useWorld, type TakeRef } from '@/lib/world';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A REAÇÃO A UMA FICHA: concordar, discordar, escrever embaixo, curtir o que
-   alguém escreveu.
-
-   Morava dentro da tela de avaliados, porque por um tempo o acervo era o único
-   lugar onde uma ficha aparecia por inteiro. Deixou de ser: o feed é a porta de
-   entrada do clube, e uma conversa que só existe a dois cliques de distância é
-   uma conversa que não acontece.
-
-   Uma cópia compacta destes controles no feed teria sido o caminho curto e o
-   errado: são as MESMAS regras — não votar na própria ficha, contador mudo no
-   zero, latão para o que é seu, profundidade um na resposta.
-
-   E valem nos dois UNIVERSOS: estas peças leem de `useWorld` e não de
-   `useClub`, porque o que elas precisam da sala é a pessoa, as três coleções e
-   as quatro escritas — e as duas lentes sabem entregar isso. Elas não sabem em
-   qual universo estão desenhando, que é o ponto.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** O mesmo teto que routes/social.js aplica. Espelhado, nunca decidido aqui. */
 export const MAX_COMMENT = 1000;
 
-/* ── concordar com a ficha de alguém ──────────────────────────────────────
-   O voto era por critério, e o argumento era bom no papel. Na tela virou outra
-   coisa: onze polegares por ficha por pessoa não é opinião, é formulário — e o
-   detalhamento, que existe para se ler onze números de uma vez, ganhou uma
-   coluna de controles larga o bastante para expulsar a segunda coluna da grade.
-   O que o clube diz de verdade é sobre o take: "boa avaliação", "achei alto
-   demais". É um voto.
-
-   Mudo, e na fileira: o par teve rótulos escritos enquanto morava dentro da
-   gaveta, onde havia largura sobrando. Na linha da ficha, ao lado da nota, duas
-   palavras em versalete a mais empurrariam o título para fora antes do tablet —
-   e o polegar não é enigma: o `title` diz a palavra e o `aria-label` a frase.
-
-   O resto das regras:
-
-   · Sem verde e sem vermelho. O que separa concordar de discordar é a palavra e
-     a direção do ícone; o que marca o SEU voto é latão. Um placar que fica
-     verde no positivo estaria pintando um limiar.
-   · Contador só quando existe: um zero em cada lado de cada ficha é ruído com
-     formato de dado.
-   · Na própria ficha os botões somem e só o placar fica. Não é moral, é
-     aritmética: um placar em que o autor pode se somar não mede mais o clube. */
 export function TakeVotes({
   take,
   className,
-  /* No feed o par ganha o rótulo escrito que o acervo não tem espaço para dar.
-     Lá a fileira já carrega pôster, título, ficha técnica, nota e o TMDB numa
-     linha só; aqui a barra de ação existe SÓ para os controles, e a placa é
-     larga. E é a diferença que importa: no acervo a pessoa abriu a ficha
-     procurando o que achar dela, e no feed ela está passando o olho — a palavra
-     é o que faz o polegar ser notado por quem não veio procurá-lo. */
   labelled = false,
 }: {
   take: TakeRef;
@@ -79,8 +31,6 @@ export function TakeVotes({
     if (busy) return;
     setBusy(true);
     try {
-      // Pressing the vote you already cast takes it back — the same key does
-      // both, which is the only way a toggle can be undone without a second one.
       await club.voteOn(take.id, mine === value ? 0 : value);
     } catch (e) {
       club.fault('Não foi possível registrar o voto: ' + (e as Error).message);
@@ -89,9 +39,6 @@ export function TakeVotes({
     }
   }
 
-  /* Na própria ficha: o placar, sem os controles. Silencioso enquanto ninguém
-     reagiu — e presente no instante em que alguém reage, porque o autor tem de
-     ficar sabendo. */
   if (own) {
     if (!up && !down) return null;
     return (
@@ -133,9 +80,6 @@ export function TakeVotes({
         }
         title={on ? `${word} — clique para tirar seu voto` : word}
         onClick={() => void press(side)}
-        /* Altura de 28px e um mínimo de largura mesmo sem contador: sem o
-           rótulo o botão encolheria para o tamanho do ícone, e um alvo de
-           14px não é um alvo de dedo. */
         className={cn(
           'flex h-7 min-w-[30px] items-center justify-center gap-1 rounded-cell px-1.5 ring-1 transition-colors duration-150',
           'disabled:opacity-40',
@@ -146,9 +90,7 @@ export function TakeVotes({
         )}
       >
         <Icon className="h-3.5 w-3.5 flex-none" strokeWidth={1.9} aria-hidden />
-        {/* A palavra some antes do contador em telas estreitas: perder o rótulo
-            deixa um polegar, que ainda se entende; perder o número deixa um
-            placar que mente por omissão. */}
+        {}
         {labelled ? (
           <span className="hidden font-display text-[11px] uppercase leading-none tracking-[0.12em] sm:inline">
             {word}
@@ -167,15 +109,6 @@ export function TakeVotes({
   );
 }
 
-/* ── curtir o que alguém escreveu ─────────────────────────────────────────
-   Um botão só, e não o par de polegares que a nota tem. Lá o par existe porque
-   se concorda ou se discorda de um número; aqui o contrário de curtir não é a
-   mesma informação com o sinal trocado — é outra coisa, e num clube de seis
-   amigos que se falam por voz ela custa mais do que informa.
-
-   Segue as mesmas regras do voto na ficha, porque é o mesmo tipo de gesto:
-   latão quando é seu, contador só quando existe, e no que você mesmo escreveu
-   sobra o placar sem o botão. */
 export function CommentLikes({ comment }: { comment: TakeComment }) {
   const club = useWorld();
   const [busy, setBusy] = useState(false);
@@ -232,17 +165,8 @@ export function CommentLikes({ comment }: { comment: TakeComment }) {
   );
 }
 
-/** Quantos comentários a conversa mostra antes de pedir licença. */
 const FIRST_PAGE = 3;
 
-/* O comentário, as respostas dele e o campo para responder, tudo numa unidade,
-   porque é assim que se lê: ninguém lê "a terceira resposta da segunda
-   conversa", lê-se um argumento e o que disseram sobre ele.
-
-   As respostas ficam recolhidas atrás de "ver N respostas" pela razão que levou
-   Instagram e Facebook ao mesmo lugar: uma discussão longa dentro de um fio
-   empurra os OUTROS fios para fora da tela. A exceção é chegar por link — aí
-   não se está folheando, se está indo buscar um texto. */
 function Comment({
   c,
   replies,
@@ -254,29 +178,14 @@ function Comment({
   c: TakeComment;
   replies: TakeComment[];
   take: TakeRef;
-  /** O texto que um aviso apontou, aceso por alguns segundos. */
   lit: string | null;
-  /* O mesmo texto, no valor que NÃO apaga. É ele que abre as respostas, e a
-     separação é a mesma que a ficha já fazia: um brilho tem de acabar, uma
-     gaveta aberta não. Ligar a abertura ao brilho fecharia tudo sozinho dois
-     segundos e meio depois de chegar. */
   arrived: string | null;
   onRemove: (id: string) => void;
 }) {
   const club = useWorld();
-  /* ── recolhidas ao folhear, abertas ao chegar por link ──────────────────
-     Recolhido é o padrão certo para quem está lendo o acervo: as respostas de
-     um fio pertencem a ele, não à varredura, e abri-las todas empurra os outros
-     comentários para fora da tela.
-
-     Mas quem clica em "respondeu você" no sino não está folheando — está indo
-     buscar uma resposta específica, e chegar num botão que a esconde é o aviso
-     não ter terminado de avisar. Então o link abre, e só o link. */
   const [open, setOpen] = useState(false);
   const [writing, setWriting] = useState(false);
 
-  /* Uma vez, quando o alvo é este comentário ou uma resposta dele. Depois disso
-     a gaveta é de quem está lendo, inclusive para fechar. */
   const targeted = !!arrived && (arrived === c.id || replies.some(r => r.id === arrived));
   useEffect(() => {
     if (targeted) setOpen(true);
@@ -293,8 +202,6 @@ function Comment({
       await club.comment(take.id, body, c.id);
       setDraft('');
       setWriting(false);
-      // Responder é querer ver: a resposta recém-escrita não pode nascer
-      // escondida atrás do botão que a esconderia.
       setOpen(true);
     } catch (e) {
       club.fault('Não foi possível responder: ' + (e as Error).message);
@@ -306,22 +213,15 @@ function Comment({
   return (
     <li
       id={`comment-${c.id}`}
-      /* `scroll-mt-24` pela marquise fixa, igual às fichas. O acender é a mesma
-         folha de facho por trás, e some sozinho. */
       className={cn(
         'flex scroll-mt-24 gap-2.5 rounded-cell transition-colors duration-700',
         lit === c.id && 'bg-beam/[0.07]'
       )}
     >
-      {/* O rosto e o nome levam ao perfil de quem escreveu. Aqui isto é de
-          graça: o comentário é um item de lista e não um botão, então nenhum
-          controle está sendo aninhado em outro. */}
+      {}
       <PersonReel person={{ id: c.reviewerId, name: c.reviewerName, dot: c.reviewerDot }} size="sm" />
       <div className="min-w-0 flex-1">
-        {/* A curtida fica na linha do nome e da hora, empurrada para o fim: é
-            sobre o comentário inteiro, e uma linha de ação própria embaixo de
-            cada um somaria uma altura por comentário numa gaveta que já é a
-            mais alta da tela. */}
+        {}
         <p className="flex flex-wrap items-center gap-x-2">
           <PersonName
             person={{ id: c.reviewerId, name: c.reviewerName, dot: c.reviewerDot }}
@@ -344,8 +244,7 @@ function Comment({
             ) : null}
           </span>
         </p>
-        {/* `break-words` porque um link colado sem espaço é uma palavra de
-            duzentos caracteres, e ela empurraria a gaveta para fora da carta. */}
+        {}
         <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-dim">
           <WithMentions text={c.body} />
         </p>
@@ -374,9 +273,6 @@ function Comment({
         </div>
 
         {open && (replies.length || writing) ? (
-          /* Uma régua à esquerda em vez de recuo puro: a coluna já é estreita,
-             e uma segunda margem tiraria dez caracteres de cada linha. A linha
-             diz "isto pende daquilo" sem gastar largura. */
           <ul className="mt-2.5 flex flex-col gap-2.5 border-l border-white/[0.07] pl-3">
             {replies.map(r => {
               const own = r.reviewerId === club.me.id;
@@ -448,21 +344,8 @@ function Comment({
   );
 }
 
-/* O clube discute por voz e a discussão morre com a chamada. Isto é a primeira
-   coisa no produto que guarda alguma parte dela.
-
-   Pendurada na avaliação e não no filme: o que se discute é a ficha de alguém —
-   "teu 9 em fotografia" —, e um fio por filme juntaria as quatro conversas numa
-   e descolaria a resposta de quem foi respondido.
-
-   Sem chave commit vermelha: no máximo uma superfície vermelha por tela, e uma
-   tela pode ter seis conversas abertas ao mesmo tempo. */
 export function Conversation({
   take,
-  /* O acervo abre a conversa dentro de uma gaveta que já tem o detalhamento em
-     cima, e a régua separa os dois. No feed a conversa é a única coisa que a
-     gaveta contém, e uma linha no topo dela desenharia a borda de uma caixa
-     que não existe. */
   ruled = true,
 }: {
   take: TakeRef;
@@ -471,41 +354,18 @@ export function Conversation({
   const club = useWorld();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  /* Quantos comentários a lista está mostrando. Cresce de três em três e nunca
-     encolhe: recolher sozinho o que a pessoa acabou de pedir para ver seria a
-     tela discordando dela. */
   const [showing, setShowing] = useState(FIRST_PAGE);
-  /* Na sua própria ficha você está respondendo quem te respondeu; na dos outros
-     você está comentando. O campo e a chave dizem o mesmo verbo — um botão que
-     diz "Comentar" embaixo de um campo que diz "Responder" faz a pessoa parar
-     para conferir se são duas coisas. */
   const own = take.reviewerId === club.me.id;
 
   const here = club.comments.filter(c => c.takeId === take.id);
-  /* Só os de primeiro nível entram na paginação; uma resposta pertence ao pai e
-     conta dentro dele. Contar respostas aqui faria "carregar mais" aparecer numa
-     conversa de dois comentários só porque um deles rendeu. */
   const roots = here
     .filter(c => !c.parentId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const repliesOf = (id: string) =>
     here.filter(c => c.parentId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-  /* Os mais NOVOS ficam à vista e os antigos recuam para trás do botão. Uma
-     conversa é lida do começo, mas retomada pelo fim: quem abre a gaveta quer
-     saber o que disseram por último. */
-  /* ── o texto que um aviso apontou ───────────────────────────────────────
-     Chegar aqui pelo sino tem de terminar com o comentário À VISTA, e havia
-     dois jeitos de ele não estar: recolhido dentro do pai (resolvido abrindo
-     por padrão) ou atrás do "carregar mais", que é este.
-
-     Uma resposta conta pelo pai: é a posição DELE na lista que decide se o par
-     está visível. Achado o índice, a lista cresce o quanto for preciso — não
-     três, o suficiente. */
   const wanted = club.focusComment;
   const { clearFocusComment } = club;
-  /* Dois valores para a mesma chegada, pela razão que a ficha já ensinou: o
-     brilho tem de apagar, a abertura não pode. */
   const [flash, setFlash] = useState<string | null>(null);
   const [arrived, setArrived] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
@@ -513,7 +373,6 @@ export function Conversation({
   useEffect(() => {
     if (!wanted) return;
     const target = here.find(c => c.id === wanted);
-    // De outra ficha, ou já apagado: não é desta conversa e não é problema dela.
     if (!target) return;
 
     const rootId = target.parentId || target.id;
@@ -524,10 +383,6 @@ export function Conversation({
     clearFocusComment();
 
     const gentle = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    /* Guardados em ref e limpos só na desmontagem: este efeito apaga o próprio
-       gatilho, então o cleanup dele roda no instante seguinte e cancelaria os
-       dois temporizadores que acabaram de ser marcados. Mesma armadilha do foco
-       da ficha, mesmo conserto. */
     timers.current.push(
       window.setTimeout(() => {
         document
@@ -617,10 +472,6 @@ export function Conversation({
           value={draft}
           onChange={setDraft}
           onSubmit={() => void send()}
-          /* O mesmo teto do servidor. Sem isto, quem escrevesse um parágrafo a
-             mais só descobria no 400 depois de apertar — o erro chegava como um
-             toast vermelho no fim de um texto já escrito, que é a pior hora
-             possível para descobrir um limite. */
           maxLength={MAX_COMMENT}
           rows={2}
           placeholder={own ? 'Responder' : 'Comentar'}

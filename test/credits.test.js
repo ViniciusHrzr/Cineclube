@@ -3,19 +3,12 @@ const assert = require('node:assert/strict');
 
 const { signedBy } = require('../tmdb');
 
-/* ── quem assina cada critério ───────────────────────────────────────────
-   An allowlist of job titles per criterion, matched by exact string. TMDB does
-   not spell these one way and never promised to, so every rule below is written
-   against a payload shaped like the real thing — the fault this guards against
-   is not a crash, it is a name quietly going missing from a card. */
-
 const C = (name, job) => ({ name, job });
 const A = name => ({ name });
 
 test('a criterion with nobody credited is absent, not empty', () => {
   const out = signedBy([C('Alguém', 'Best Boy Grip')], []);
   assert.deepEqual(out, {});
-  // Originalidade has no job at all, and never should.
   assert.equal('originalidade' in out, false);
 });
 
@@ -23,15 +16,11 @@ test('the director is read from the crew, as before', () => {
   assert.deepEqual(signedBy([C('David Fincher', 'Director')], []).direcao, ['David Fincher']);
 });
 
-/* Oppenheimer and Inception say `Writer`; Fight Club says `Screenplay`. A find
-   on one string is right about one of them and silent about the other. */
 test('both spellings of the writing credit are found', () => {
   assert.deepEqual(signedBy([C('Christopher Nolan', 'Writer')], []).roteiro, ['Christopher Nolan']);
   assert.deepEqual(signedBy([C('Jim Uhls', 'Screenplay')], []).roteiro, ['Jim Uhls']);
 });
 
-/* The fault the allowlist exists for. Fight Club credits Chuck Palahniuk under
-   `Novel`; he did not write the film. A department scan would have him here. */
 test('the author of the source is not the writer of the film', () => {
   const out = signedBy([C('Jim Uhls', 'Screenplay'), C('Chuck Palahniuk', 'Novel')], []);
   assert.deepEqual(out.roteiro, ['Jim Uhls']);
@@ -39,7 +28,6 @@ test('the author of the source is not the writer of the film', () => {
   assert.deepEqual(book.roteiro, ['Christopher Nolan']);
 });
 
-/* `som` is one slider over two crafts, and they are two different people. */
 test('sound carries the composer and the sound designer, composer first', () => {
   const out = signedBy(
     [C('Richard King', 'Sound Designer'), C('Ludwig Göransson', 'Original Music Composer')],
@@ -79,8 +67,6 @@ test('several people on one job all arrive, up to the cap', () => {
   assert.deepEqual(out.direcao, ['Conrad Vernon', 'Kelly Asbury', 'Andrew Adamson']);
 });
 
-/* An animation's cast is its voice cast — the same people, asked about under a
-   different name because the genre swapped that slot of the base. */
 test('the cast answers both the acting and the voice criteria', () => {
   const out = signedBy([], [A('Mike Myers'), A('Eddie Murphy'), A('Cameron Diaz'), A('Quarto')]);
   assert.deepEqual(out.atuacoes, ['Mike Myers', 'Eddie Murphy', 'Cameron Diaz']);

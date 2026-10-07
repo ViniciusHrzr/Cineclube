@@ -1,38 +1,7 @@
-try { require('node:process').loadEnvFile('.env'); } catch { /* .env é opcional */ }
+try { require('node:process').loadEnvFile('.env'); } catch { }
 
 const db = require('../db');
 const auth = require('../auth');
-
-/* ══════════════════════════════════════════════════════════════════════════
-   JUNTAR DUAS CONTAS DA MESMA PESSOA.
-
-       node scripts/merge-accounts.js --list
-       node scripts/merge-accounts.js --list beren
-       node scripts/merge-accounts.js --old <id> --new <id>            (ensaio)
-       node scripts/merge-accounts.js --old <id> --new <id> --apply
-
-   É o único caminho de fusão que existe: a ponte de dentro do produto, que
-   pedia o PIN da conta adormecida, foi retirada. Serve para quem entrou pelo
-   Google e ganhou uma conta nova em vez de cair na antiga — o que não é
-   defeito: `accountForGoogle` liga por e-mail apenas quando a conta antiga JÁ
-   TEM aquele endereço, senão quem escrevesse o e-mail de outra pessoa herdaria
-   a conta dela.
-
-   ── a direção, e ela não é a que se diz em voz alta ───────────────────────
-   Pede-se "migrar do antigo para o novo", e o mecanismo é o contrário: a conta
-   ANTIGA sobrevive e absorve as credenciais da nova. Mover o histórico seria
-   reescrever a chave estrangeira em seis tabelas com restrição de unicidade em
-   cada uma; mover a credencial é mexer em quatro colunas de uma linha. E
-   preserva o que importa — as fichas continuam apontando para o mesmo id, e
-   todo link já colado no Discord continua valendo. O nome, o retrato e a bio
-   que sobrevivem são os da conta antiga.
-
-   ── e por que nada acontece sem `--apply` ─────────────────────────────────
-   Porque a fusão apaga uma linha de `reviewers`, e apagar uma pessoa leva em
-   cascata tudo que ainda apontar para ela. O ensaio mostra o que move e o que
-   COLIDE — as linhas que o `OR IGNORE` descarta em silêncio, que são a única
-   perda possível aqui e a única que não dá para desfazer sem o backup.
-   ══════════════════════════════════════════════════════════════════════════ */
 
 const arg = name => {
   const i = process.argv.indexOf(name);
@@ -83,10 +52,6 @@ function mostrar(rows) {
   console.log('');
 }
 
-/* As seis tabelas movidas têm restrição de unicidade, e a fusão usa
-   `UPDATE OR IGNORE`: onde a conta antiga já tem a linha equivalente, a da nova
-   é descartada. Isso é o certo — entre duas fichas do mesmo filme, a antiga tem
-   histórico — mas descartar em silêncio não é. */
 async function colisoes(oldId, newId) {
   const um = (sql, ...args) => db.prepare(sql).get(...args).then(r => Number(r.n));
   return {
@@ -141,8 +106,6 @@ async function main() {
   if (!antiga) { console.error(`Não existe conta com o id ${oldId}.`); process.exit(1); }
   if (!nova) { console.error(`Não existe conta com o id ${newId}.`); process.exit(1); }
 
-  /* A que fica é a que TEM histórico, e a que some é a que tem a credencial
-     nova. Trocar as duas por engano apagaria as fichas — daí a conferência. */
   if (!nova.google_sub && !nova.password_hash) {
     console.error('A conta em --new não entra por Google nem por senha: ela não tem credencial para emprestar.');
     console.error('Provavelmente os ids estão trocados. Confira com --list.');

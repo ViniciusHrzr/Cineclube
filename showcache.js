@@ -1,19 +1,6 @@
 const db = require('./db');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O QUE O TMDB DISSE DE UMA SÉRIE, GUARDADO.
-
-   Duas rotas escrevem nas mesmas duas tabelas: a do catálogo, quando alguém
-   abre uma série, e a de "o que eu vejo a seguir", que precisa saber quantos
-   episódios existem sem perguntar de novo a cada carga da lista. Estava só na
-   primeira, e a segunda ia nascer com uma cópia do mesmo INSERT.
-
-   Gravar nunca derruba quem pediu: o cache é conveniência, e a resposta que o
-   TMDB deu já está na mão de quem perguntou. O erro para aqui.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-const upsertShow = db.prepare(`
-  INSERT INTO shows_cache
+const upsertShow = db.prepare(`  INSERT INTO shows_cache
     (tmdb_id, title, original_title, english_title, year, genre, genres, poster,
      backdrop, overview, status, seasons, episodes, runtime, tmdb_score, tmdb_votes, cached_at)
   VALUES
@@ -25,9 +12,7 @@ const upsertShow = db.prepare(`
     backdrop = COALESCE(excluded.backdrop, shows_cache.backdrop),
     overview = COALESCE(excluded.overview, shows_cache.overview),
     original_title = excluded.original_title,
-    -- COALESCE nos campos que só o detalhe carrega: uma página de busca
-    -- escrevendo por cima desta linha não sabe nada sobre eles, e não pode
-    -- apagar o que uma abertura de série já descobriu.
+
     english_title = COALESCE(excluded.english_title, shows_cache.english_title),
     status = COALESCE(excluded.status, shows_cache.status),
     seasons = COALESCE(excluded.seasons, shows_cache.seasons),

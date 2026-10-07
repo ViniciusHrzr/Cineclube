@@ -32,12 +32,7 @@ import {
   TrailerKey,
 } from '@/components/bits';
 import { Channels, Gauge } from '@/components/channels';
-/* A fileira de marcas do cartão de filme, e não uma cópia dela: é a mesma
-   resposta à mesma pergunta, e duas cópias divergiriam na terceira mexida. */
 import { OnCell, WatchOn } from '@/components/film';
-/* As mesmas peças do universo de filmes: o voto na ficha, a conversa, o
-   detalhamento dos critérios, o retrato clicável. Elas leem a sala pelo
-   `useWorld`, e a raiz de séries entrega uma — ver lib/world.tsx. */
 import { Conversation, TakeVotes } from '@/components/social';
 import { Breakdown } from '@/components/take';
 import { PersonName, PersonReel } from '@/components/person';
@@ -46,9 +41,6 @@ import {
   initialsOf,
   reelColor,
   seriesApi,
-  /* Renomeado porque `shows` também é o nome da fila numa das telas daqui, e
-     duas coisas com o mesmo nome no mesmo arquivo é uma delas sendo lida como a
-     outra em algum momento. */
   shows as showsApi,
   type Criterion,
   type Episode,
@@ -70,25 +62,6 @@ import { useWorld } from '@/lib/world';
 import { SuggestionsKey } from '@/screens/Reels';
 import type { TabId } from '@/App';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O UNIVERSO DE SÉRIES, DENTRO DE UM CLUBE.
-
-   O de filmes gira em torno de uma noite; este gira em torno de SEMANAS. Isso
-   parte o gesto em dois, e cada um tem a sua unidade:
-
-   · **marcar** é do EPISÓDIO, e é o de toda semana: um toque, dizendo "vi
-     esse". Não é opinião nenhuma.
-   · **avaliar** é da TEMPORADA, porque é ela que tem uma forma para julgar —
-     um arco que abre e fecha, um elenco que muda, um fôlego. Dar nota a cada
-     episódio era pedir um veredito sobre quarenta minutos de um capítulo.
-
-   Por isso a lista de episódios é a tela central com um check em cada linha, e
-   a ficha da temporada é uma folha que se abre por cima dela. */
-
-/* ── o catálogo ───────────────────────────────────────────────────────────
-   Irmão do catálogo de filmes: populares do TMDB, busca, filtro por gênero. O
-   que muda é o destino do clique — aqui um cartaz abre a SÉRIE, com as
-   temporadas e os episódios, e não uma folha de leitura. */
 export function SeriesCatalogScreen({
   queued,
   onQueue,
@@ -99,7 +72,6 @@ export function SeriesCatalogScreen({
   queued: Set<number>;
   onQueue: (s: SeriesItem) => void;
   onOpen: (showId: number) => void;
-  /** A casca de séries não tem contexto: a troca de seção chega por aqui. */
   onTab: (t: TabId) => void;
   fault: (msg: string) => void;
 }) {
@@ -135,8 +107,6 @@ export function SeriesCatalogScreen({
     };
   }, [busca, genre, page, fault]);
 
-  /* Trocar de busca ou de gênero é outra lista: manter a página seria abrir a
-     página 7 de uma lista que a pessoa nunca viu a primeira. */
   const cut = `${busca}|${genre}`;
   const lastCut = useRef(cut);
   if (lastCut.current !== cut) {
@@ -151,8 +121,7 @@ export function SeriesCatalogScreen({
         note={busca ? `buscando "${busca}"` : 'as séries mais vistas no TMDB'}
       />
 
-      {/* A mesma linha do catálogo de filmes: quem sabe o nome escreve, quem
-          não sabe pede que sugiram. */}
+      {}
       <div className="mb-5 flex flex-wrap items-start gap-3">
         <div className="min-w-[240px] max-w-[440px] flex-1">
           <SearchField
@@ -165,7 +134,7 @@ export function SeriesCatalogScreen({
         <SuggestionsKey onOpen={() => onTab('sugestoes')} />
       </div>
 
-      {/* O filtro só faz sentido sem busca: uma busca já é o filtro. */}
+      {}
       {!busca ? (
         <div className="mb-6 flex flex-wrap items-center gap-2">
           {['Todos', ...GENRES].map(g => (
@@ -219,28 +188,11 @@ export function SeriesCatalogScreen({
   );
 }
 
-/* Os nove gêneros internos. Escritos aqui e não buscados porque a lista é a
-   mesma do universo de filmes e já é constante no servidor — uma requisição
-   para nove strings que nunca mudam seria encanamento. */
 const GENRES = [
   'Ação', 'Animação', 'Comédia', 'Documentário', 'Drama',
   'Ficção científica', 'Romance', 'Suspense', 'Terror',
 ];
 
-/* ── o cartaz de uma série ────────────────────────────────────────────────
-   A MESMA peça do catálogo de filmes, e não uma parecida: um catálogo com duas
-   físicas diferentes é o app dizendo que são dois apps.
-
-   A tarja que sobe muda de texto porque o destino é outro — num filme abre a
-   folha de leitura, aqui abrem as temporadas. Prometer "sinopse e trailer" e
-   entregar uma lista de episódios seria a tarja mentindo pela metade.
-
-   Os controles moram na fileira de baixo e não sobre o cartaz: era um `+`
-   flutuando no canto do pôster, brigando com as camadas em relevo e com a
-   tarja.
-
-   Sem ponteiro fino, `CardContainer` não constrói nada — nem perspectiva, nem
-   contexto 3D, nem manipuladores. */
 function SeriesCell({
   show,
   inQueue,
@@ -256,15 +208,11 @@ function SeriesCell({
 }: {
   show: SeriesItem;
   inQueue?: boolean;
-  /** O progresso do clube, quando esta célula está na lista de acompanhadas. */
   seen?: string | null;
   average?: number | null;
-  /* E o SEU: o próximo episódio que falta a você, ou o próximo a estrear
-     quando não falta nenhum. Ausentes no catálogo — lá não há o que retomar. */
   upNext?: EpisodeRef | null;
   upcoming?: EpisodeRef | null;
   caughtUp?: boolean;
-  /** Quem acompanha, para o selo no pé do pôster. Vazio no catálogo. */
   wants?: Reviewer[];
   onOpen: () => void;
   onQueue?: () => void;
@@ -280,23 +228,14 @@ function SeriesCell({
             aria-label={`Ver as temporadas de ${show.title}`}
             className="group/cell block w-full text-left"
           >
-            {/* A tarja está escondida por um translate, então precisa de uma
-                caixa posicionada que a corte — senão ela resolve contra um
-                ancestral distante e fica permanentemente sobre o título. */}
+            {}
             <span className="relative block overflow-hidden rounded-cell">
               <Poster src={show.poster} alt={`Pôster de ${show.title}`} className="aspect-[2/3] w-full" />
               <span className="pointer-events-none absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center gap-1.5 bg-beam px-2 py-2 font-display text-[11px] uppercase tracking-[0.14em] text-house-deep transition-transform duration-200 ease-beam group-hover/cell:translate-y-0 group-focus-visible/cell:translate-y-0 motion-reduce:transition-none">
                 <Layers className="h-3.5 w-3.5" strokeWidth={2} />
                 Temporadas
               </span>
-              {/* ── quem acompanha ──────────────────────────────────────
-                  O mesmo selo da fila de filmes, no mesmo canto e pelo mesmo
-                  motivo: numa sala de seis, a primeira pergunta feita a uma
-                  lista comum é de quem é cada coisa. Quantos retratos couberem,
-                  e o número do que não cabe.
-
-                  Sem desfoque e sem eventos de ponteiro: hover neste canto é
-                  hover no pôster, e é ele que sobe a tarja das temporadas. */}
+              {}
               {wants?.length ? (
                 <span
                   aria-hidden
@@ -328,14 +267,9 @@ function SeriesCell({
           <p className="q mt-0.5 text-[11.5px] text-ink-dim">
             {show.year ?? '—'} · {show.genre}
           </p>
-          {/* As mesmas marcas do cartão de filme, e aqui elas decidem mais: um
-              filme quase sempre dá para alugar, uma série o clube ou tem numa
-              assinatura ou não maratona. Ficam acima do progresso porque a
-              pergunta "dá para ver?" vem antes de "onde a gente parou?". */}
+          {}
           <OnCell watch={show.watch} title={show.title} />
-          {/* O progresso do clube, e a média só quando existe: um clube que
-              acompanha sem avaliar não tem nota, e imprimir 0,0 ali seria a tela
-              inventando um veredito. */}
+          {}
           {seen ? (
             <div className="mt-2 flex items-center gap-2">
               {average != null ? (
@@ -351,9 +285,7 @@ function SeriesCell({
           {seen ? <p className="q mt-1 text-[11px] text-ink-faint">{seen}</p> : null}
         </CardItem>
 
-        {/* A chave repete o destino do cartaz, e isso não é redundância: a tarja
-            que anuncia esse destino é de HOVER, e no dedo ela não existe. Sem a
-            palavra escrita aqui, um cartaz no telefone não diz o que faz. */}
+        {}
         <CardItem translateZ={18} className="mt-auto flex w-full items-center gap-2 pt-3">
           <Key tone="flush" className="flex-1 px-2" onClick={onOpen}>
             Episódios
@@ -379,11 +311,7 @@ function SeriesCell({
           ) : null}
         </CardItem>
 
-        {/* Embaixo das chaves, e não junto do progresso do clube: no meio da
-            coluna esta linha lia como mais um dado do cartão, e ela é a
-            resposta que faz alguém tocar em "Episódios". Fora da pilha de
-            texto, com um fio separando, ela é a última coisa do cartaz — que é
-            onde o olho para. */}
+        {}
         <CardItem translateZ={12} className="w-full">
           <UpNext upNext={upNext} upcoming={upcoming} caughtUp={caughtUp} />
         </CardItem>
@@ -392,14 +320,6 @@ function SeriesCell({
   );
 }
 
-/* ── o seu próximo ────────────────────────────────────────────────────────
-   Três respostas e uma ausência, e a ausência é o caso de o servidor não saber
-   — ver upnext.js. Calar é a resposta certa para "não sei": um "você está em
-   dia" que o produto não pode provar é pior do que nada.
-
-   O número do episódio em latão porque é o que se procura de relance; o nome
-   ao lado, e ele trunca — a coluna do cartaz é estreita, e quem reconhece o
-   episódio reconhece pelo T3E07. */
 function UpNext({
   upNext,
   upcoming,
@@ -442,17 +362,6 @@ function UpNext({
   return null;
 }
 
-/* Texto corrido e não uma fileira: o nome de um episódio passa da largura do
-   cartaz com frequência, e numa fileira ele só podia truncar. Aqui ele desce
-   para a linha de baixo, que é onde ele cabe.
-
-   DUAS LINHAS SEMPRE, e é o que mantém a grade de pé: o rodapé é a última coisa
-   do cartaz, então a altura dele empurra as chaves para cima — um cartaz de uma
-   linha e o vizinho de duas desalinhavam a fileira inteira de "Episódios". A
-   altura é reservada mesmo com uma linha só, e o que passar de duas corta.
-
-   O fio em cima separa esta linha das chaves, que são de outro assunto — e é o
-   que faz ela ser lida como o rodapé do cartaz e não como mais um botão. */
 function Strap({ children }: { children: React.ReactNode }) {
   return (
     <p className="mt-3 line-clamp-2 min-h-[44px] break-words border-t border-white/[0.07] pt-2.5 text-[12px] leading-snug">
@@ -463,8 +372,6 @@ function Strap({ children }: { children: React.ReactNode }) {
 
 const tag = (ep: EpisodeRef) => `T${ep.season}E${String(ep.episode).padStart(2, '0')}`;
 
-/* A data de uma estreia, curta. Contada em dias enquanto a resposta é "logo" —
-   "em 3 dias" é o que se quer saber, e "15 de set." obriga a fazer a conta. */
 function soonBR(iso: string) {
   const at = new Date(iso + 'T12:00:00');
   if (Number.isNaN(at.getTime())) return iso;
@@ -480,17 +387,10 @@ function soonBR(iso: string) {
   });
 }
 
-/* Quantos retratos o selo do cartaz desenha antes de virar contagem. O mesmo da
-   fila de filmes, e pela mesma conta: três é o que cabe sem atravessar a arte. */
 const ROSTOS = 3;
 
-/** O balde de quem não tem dono registrado. Nunca é um id de gente. */
 const NINGUEM = '\0sem-dono';
 
-/* ── a fila do clube ──────────────────────────────────────────────────────
-   O que a sala combinou de acompanhar. Cada linha carrega o progresso DO CLUBE
-   — episódios distintos vistos, não linhas —, porque quem abre esta tela está
-   perguntando onde a sala está, e não onde ela mesma está. */
 export function SeriesQueueScreen({
   shows,
   roster,
@@ -499,32 +399,16 @@ export function SeriesQueueScreen({
   onRemove,
 }: {
   shows: QueuedShow[] | null;
-  /** Quem está no clube, para a tira de quem escolheu. */
   roster: Reviewer[];
-  /* Quem está olhando: o filtro abre nele, e a tesoura é dele. Inteiro e não só
-     o id porque o zelador da instalação também corta — ver a célula abaixo. */
   me: SessionUser;
   onOpen: (showId: number) => void;
   onRemove: (showId: number) => void;
 }) {
-  /* Qual pessoa a grade está mostrando, ou null para a lista inteira.
-
-     Abre em VOCÊ, como a fila de filmes: a pergunta que traz alguém a esta aba é
-     "o que eu acompanho", e numa sala de seis a lista inteira é a resposta certa
-     para outra pergunta. A do clube volta em um toque, no "Todos". */
   const [quem, setQuem] = useState<string | null>(me.id);
 
-  /* A MESMA tira da fila de filmes, contada da própria lista e não do clube
-     inteiro: seis retratos em que quatro levam a uma grade vazia é uma tira que
-     promete o que não tem.
-
-     Um id em `wanters` pode apontar para quem já saiu do clube — a coluna não tem
-     chave estrangeira —, e isso cai no mesmo balde de quem nunca teve dono. */
   const { donos, orfas } = useMemo(() => {
     const conta = new Map<string, number>();
     for (const s of shows ?? []) {
-      /* Um cartaz conta para cada pessoa que o acompanha: a lista é de séries e o
-         gesto é de gente. */
       const seus = s.wanters.filter(id => roster.some(p => p.id === id));
       for (const dono of seus.length ? seus : [NINGUEM]) {
         conta.set(dono, (conta.get(dono) ?? 0) + 1);
@@ -538,8 +422,6 @@ export function SeriesQueueScreen({
     };
   }, [shows, roster]);
 
-  /* Quem sai do clube, ou tem a última série tirada da lista, não pode deixar a
-     grade vazia e sem explicação: o filtro cai sozinho para a lista inteira. */
   if (quem && quem !== NINGUEM && !donos.some(d => d.id === quem)) setQuem(null);
   if (quem === NINGUEM && !orfas) setQuem(null);
 
@@ -588,18 +470,7 @@ export function SeriesQueueScreen({
         }
       />
 
-      {/* ── a chave de quem escolheu ─────────────────────────────────────
-          A mesma da fila de filmes, pela mesma razão: numa sala de seis, a
-          primeira pergunta feita a uma lista comum é de quem é cada coisa.
-
-          "Todos" primeiro: um filtro sem a porta de volta em cima é um filtro
-          em que dá para ficar preso.
-
-          E aparece com UMA pessoa também. A chave não é só o filtro: é onde se
-          lê de quem é a lista, e numa sala que está começando "isto aqui é
-          tudo seu" é uma resposta. Escondê-la até chegar a segunda pessoa faz
-          o recurso nascer invisível justamente para quem montou a sala — e ele
-          apareceria sozinho, num dia qualquer, sem ninguém ter pedido. */}
+      {}
       {donos.length || orfas ? (
         <div className="mb-5">
           <ReelPicker
@@ -619,8 +490,6 @@ export function SeriesQueueScreen({
                   </Reel>
                 ),
               })),
-              /* Só aparece quando existe: as séries postas antes de a coluna
-                 existir, e as de quem saiu do clube. */
               ...(orfas
                 ? [
                     {
@@ -642,15 +511,7 @@ export function SeriesQueueScreen({
         </Blank>
       ) : null}
 
-      {/* A MESMA célula do catálogo, com a tesoura no lugar do marcador. É o que
-          o universo de filmes já faz — a fila e o catálogo desenham o mesmo
-          `FilmCell` —, e duas células parecidas para a mesma coisa divergem na
-          terceira mexida.
-
-          Mais colunas nas telas largas do que o catálogo de filmes tem: um
-          cartaz de série carrega duas linhas a mais — o progresso e o próximo
-          episódio —, e num monitor grande a coluna de 285px empurrava o rodapé
-          do cartão para fora da tela. Cartaz menor, cartão inteiro à vista. */}
+      {}
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
         {naTela.map(s => {
           const segue = quemSegue(s);
@@ -677,10 +538,6 @@ export function SeriesQueueScreen({
                 caughtUp={s.caughtUp}
                 wants={segue}
                 onOpen={() => onOpen(s.id)}
-                /* A tesoura aparece para quem acompanha — cada um tira o seu — e
-                   para o zelador, que é quem tira o que sobrou de gente que saiu
-                   do clube. Um botão que existe para dar 403 é pior do que botão
-                   nenhum. */
                 onRemove={
                   segue.some(p => p.id === me.id) || me.isAdmin
                     ? () => onRemove(s.id)
@@ -695,12 +552,6 @@ export function SeriesQueueScreen({
   );
 }
 
-/* ══ a série, que é a tela central deste universo ══════════════════════════
-   Cabeçalho, um seletor de temporada, a ficha DA TEMPORADA aberta, e a lista de
-   episódios com um check em cada linha.
-
-   A temporada é carregada sozinha, e não todas de uma vez: uma série longa são
-   dez requisições ao TMDB para desenhar uma lista que cabe em uma. */
 export function ShowScreen({
   showId,
   takes,
@@ -713,7 +564,6 @@ export function ShowScreen({
   fault,
 }: {
   showId: number;
-  /** Tudo o que o clube gravou nesta série: as marcas e as fichas. */
   takes: ShowTake[];
   criteria: Record<string, Criterion[]> | null;
   meId: string;
@@ -738,8 +588,6 @@ export function ShowScreen({
       .then(r => {
         if (!vivo) return;
         setShow(r.show);
-        /* A primeira temporada com episódio, e não a de número 1: uma série
-           relançada pode começar na 2, e uma minissérie tem só a 1. */
         setSeason(r.show.seasons?.[0]?.season ?? null);
       })
       .catch(e => vivo && setErro((e as Error).message));
@@ -761,7 +609,6 @@ export function ShowScreen({
     };
   }, [showId, season, fault]);
 
-  /** O que VOCÊ já viu, para a chave de marcar a temporada saber o que falta. */
   const meusVistos = useMemo(
     () =>
       new Set(
@@ -772,9 +619,6 @@ export function ShowScreen({
     [takes, meId]
   );
 
-  /* As marcas indexadas por episódio, uma vez: a lista pergunta por cada linha
-     que desenha, e varrer o array inteiro por episódio é o mesmo trabalho
-     repetido vinte vezes. */
   const porEpisodio = useMemo(() => {
     const mapa = new Map<string, ShowTake[]>();
     for (const t of takes) {
@@ -787,7 +631,6 @@ export function ShowScreen({
     return mapa;
   }, [takes]);
 
-  /** As fichas da temporada aberta, de todo o clube. */
   const daTemporada = useMemo(
     () => takes.filter(t => t.kind === 'season' && t.season === season),
     [takes, season]
@@ -855,8 +698,7 @@ export function ShowScreen({
                 <span>{plural(show.totalEpisodes, 'episódio', 'episódios')}</span>
               </>
             ) : null}
-            {/* Se ainda vem episódio. Acompanhar uma série no ar é outra
-                relação com ela, e é a primeira coisa que se pergunta. */}
+            {}
             {show.inProduction ? (
               <>
                 <span aria-hidden>·</span>
@@ -891,10 +733,7 @@ export function ShowScreen({
               }
             >
               {inQueue ? <Check className="h-3.5 w-3.5" strokeWidth={2.2} /> : <Plus className="h-3.5 w-3.5" strokeWidth={2} />}
-              {/* "Você" e não "o clube": acompanhar é de cada um, e a chave fala
-                  do seu gesto. Dizer que o clube acompanha uma série que só outra
-                  pessoa pôs na lista era a tela atribuindo a escolha a quem não
-                  a fez — e deixava quem está lendo sem o botão. */}
+              {}
               {inQueue ? 'Você acompanha' : 'Acompanhar'}
             </Key>
             {show.trailerUrl ? (
@@ -908,20 +747,14 @@ export function ShowScreen({
             ) : null}
           </div>
 
-          {/* O mesmo bloco da folha de projeção de um filme, e a pergunta que
-              esta tela mais provoca: o cartão da grade já traz as marcas, e a
-              ficha aberta — onde se decide começar vinte horas — não trazia
-              nada. Numa série a resposta vale mais: ou está numa assinatura que
-              alguém já paga, ou o clube não maratona. */}
+          {}
           <WatchOn watch={show.watch} title={show.title} />
 
           <ShowRoster takes={takes} />
         </div>
       </header>
 
-      {/* ── as temporadas ──────────────────────────────────────────────────
-          `null` e não lista vazia quando a série veio do cache: a diferença
-          entre "o TMDB não respondeu agora" e "esta série não tem temporada". */}
+      {}
       {show.seasons === null ? (
         <p className="mt-8 text-[13px] leading-relaxed text-ink-dim">
           O TMDB não respondeu agora, então as temporadas não puderam ser lidas. O que o clube
@@ -937,8 +770,7 @@ export function ShowScreen({
             ))}
           </div>
 
-          {/* A ficha da temporada aberta, antes da lista: é o veredito sobre o
-              que a lista embaixo enumera. */}
+          {}
           {season != null ? (
             <SeasonPanel
               season={season}
@@ -955,8 +787,7 @@ export function ShowScreen({
             </div>
           ) : (
             <>
-              {/* Sobre a coluna dos checks, que é o que ela mexe: uma chave de
-                  marcar tudo longe do que ela marca é uma chave sem endereço. */}
+              {}
               <div className="mt-6 flex justify-end pr-2">
                 <MarkSeason
                   episodes={temporada.episodes}
@@ -1003,9 +834,6 @@ export function ShowScreen({
           season={season}
           name={temporada?.name ?? null}
           overview={temporada?.overview ?? null}
-          /* A folha recebe TODAS as fichas da temporada, e não só a sua: ela
-             mostra o que o clube achou logo abaixo do que você achou, e
-             descobrir isso pedia sair da folha antes. */
           takes={daTemporada}
           meId={meId}
           criteria={criteria?.[genero] ?? null}
@@ -1018,20 +846,6 @@ export function ShowScreen({
   );
 }
 
-/* ── quem no clube está nesta série ───────────────────────────────────────
-   A lista de episódios diz quem viu CADA UM, e a ficha da temporada diz quem
-   deu nota — as duas respostas existiam, e as duas custavam abrir a série,
-   escolher a temporada e descer a lista. A pergunta que se faz antes de
-   qualquer uma delas é mais simples: quem aqui está vendo isto.
-
-   Uma linha por pessoa e dois números, que são os dois gestos deste universo:
-   episódios marcados e temporadas avaliadas. Ordenada por quem viu mais, que é
-   quem está mais adiantado — e adiantado é o que importa saber antes de falar
-   de um episódio na mesa.
-
-   Só quem TEM alguma coisa aqui: uma fileira com o clube inteiro e zeros na
-   maioria diria que ninguém acompanha, que é o contrário do que esta lista
-   existe para dizer. */
 function ShowRoster({ takes }: { takes: ShowTake[] }) {
   const gente = useMemo(() => {
     const mapa = new Map<
@@ -1046,8 +860,6 @@ function ShowRoster({ takes }: { takes: ShowTake[] }) {
         vistos: 0,
         notas: 0,
       };
-      /* A ficha de temporada sem nota não conta como nota — ela existe quando
-         alguém só escreveu, e imprimir "1 nota" ali seria inventar um veredito. */
       if (t.kind === 'season') {
         if (t.final != null) achado.notas += 1;
       } else achado.vistos += 1;
@@ -1084,20 +896,6 @@ function ShowRoster({ takes }: { takes: ShowTake[] }) {
   );
 }
 
-/* ── a temporada inteira, de uma vez ──────────────────────────────────────
-   Quem chega a uma série no meio já viu as três primeiras temporadas, e marcar
-   isso eram trinta cliques — o suficiente para ninguém marcar nada, e um
-   progresso do clube que mente para baixo.
-
-   Só o que FALTA: reescrever uma linha que já existe é uma requisição por
-   nada, e a chave diz no rótulo quantas ela vai gravar.
-
-   E nunca o que ainda não foi ao ar. Uma série em exibição lista o resto da
-   temporada com data futura, e "marcar tudo" ali dentro marcaria como visto o
-   que não existe.
-
-   Só marca. O caminho de desfazer continua sendo a linha, uma a uma: desmarcar
-   vinte episódios de uma vez é o tipo de gesto que se faz sem querer. */
 const LANES_MARCAR = 4;
 
 function MarkSeason({
@@ -1111,7 +909,6 @@ function MarkSeason({
   fault,
 }: {
   episodes: Episode[];
-  /** `${season}x${episode}` do que você já viu. */
   mine: Set<string>;
   showId: number;
   showTitle: string;
@@ -1127,8 +924,6 @@ function MarkSeason({
     e => !mine.has(`${e.season}x${e.episode}`) && (!e.airDate || e.airDate <= hoje)
   );
 
-  /* Sem nada a fazer, nenhuma chave: uma temporada inteira marcada não precisa
-     de um botão desabilitado dizendo isso — a fileira de checks já diz. */
   if (!faltando.length) return null;
 
   const marcar = async () => {
@@ -1156,8 +951,6 @@ function MarkSeason({
                 genre,
               });
             } catch {
-              /* Contado e seguido: um episódio que não gravou não pode custar os
-                 outros dezenove, e a releitura no fim diz a verdade sobre todos. */
               falhou += 1;
             }
           }
@@ -1165,8 +958,6 @@ function MarkSeason({
       );
     } finally {
       setMarcando(false);
-      // Uma releitura só, e no fim: uma por episódio seriam vinte recargas do
-      // acervo inteiro para desenhar a mesma lista.
       onSaved();
       if (falhou) fault(`${plural(falhou, 'episódio ficou', 'episódios ficaram')} sem marcar.`);
     }
@@ -1180,14 +971,6 @@ function MarkSeason({
   );
 }
 
-/* ── a ficha da temporada, em cima da lista que ela julga ─────────────────
-   O veredito da sala sobre a temporada aberta: a média, a sua nota, e a chave
-   que abre a folha. Fica acima da lista porque é a resposta que a pergunta
-   "vale a pena?" espera — e quem rola até o fim dos vinte episódios para achar
-   onde se opina já desistiu de opinar.
-
-   Cala quando ninguém disse nada, menos a chave: uma média de zero notas seria
-   a tela inventando um veredito, mas sem a chave não haveria por onde começar. */
 function SeasonPanel({
   season,
   name,
@@ -1196,7 +979,6 @@ function SeasonPanel({
   onRate,
 }: {
   season: number;
-  /** O nome que o TMDB dá à temporada, quando não é só "Temporada N". */
   name: string | null;
   takes: ShowTake[];
   meId: string;
@@ -1239,8 +1021,7 @@ function SeasonPanel({
         </Key>
       </div>
 
-      {/* O que cada um achou, embaixo: numa sala de seis a média esconde
-          justamente o assunto, que é quem discordou. */}
+      {}
       {comNota.length ? (
         <ul className="w-full border-t border-white/[0.07] pt-3">
           {[...comNota]
@@ -1274,15 +1055,6 @@ function SeasonPanel({
   );
 }
 
-/* A linha tem dois gestos, e nenhum deles é opinião — ela é da temporada, no
-   painel acima da lista.
-
-   · **o check** marca e desmarca, no próprio controle. Ele era um símbolo do
-     estado — parecia um check e não era —, e mudar de estado obrigava a abrir
-     uma folha e achar um botão lá dentro.
-   · **a linha** abre a sinopse e quem do clube já viu. Uma gaveta e não uma
-     folha: é leitura curta sobre o que está ali do lado, e uma tela por cima
-     da outra para ler três frases é o produto cobrando caro por pouco. */
 function EpisodeRow({
   ep,
   takes,
@@ -1295,7 +1067,6 @@ function EpisodeRow({
   fault,
 }: {
   ep: Episode;
-  /** Quem do clube marcou este episódio. */
   takes: ShowTake[];
   meId: string;
   showId: number;
@@ -1307,16 +1078,10 @@ function EpisodeRow({
 }) {
   const world = useWorld();
   const minha = takes.find(t => t.reviewerId === meId) ?? null;
-  /* Quem mais do clube viu. É a pergunta que a lista responde melhor do que
-     qualquer outra tela: onde a sala está nesta temporada. */
   const outros = takes.filter(t => t.reviewerId !== meId);
 
   const [aberta, setAberta] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  /* O check responde ao toque e não à volta da rede: gravar recarrega o acervo
-     inteiro, e esperar por ele deixava o gesto mais barato do produto com meio
-     segundo de silêncio depois do clique. O palpite cai sozinho quando a ficha
-     volta do servidor — ou na hora, se ela não voltar. */
   const [otimista, setOtimista] = useState<boolean | null>(null);
   useEffect(() => {
     setOtimista(null);
@@ -1326,8 +1091,6 @@ function EpisodeRow({
   const alternar = useCallback(async () => {
     if (salvando) return;
     const marcar = minha == null;
-    /* Sem pergunta: a linha é só o "eu vi", e desmarcar por engano se desfaz no
-       toque seguinte. A opinião é da temporada, e não passa por aqui. */
     setSalvando(true);
     setOtimista(marcar);
     try {
@@ -1369,9 +1132,7 @@ function EpisodeRow({
 
   return (
     <li className="border-t border-white/[0.06] first:border-t-0">
-      {/* O contêiner não é um botão: dentro dele há dois alvos com dois
-          destinos, e um botão dentro de outro é HTML inválido antes de ser
-          confuso. O realce de linha continua, agora no grupo. */}
+      {}
       <div className="group flex w-full items-center gap-3 rounded-cell px-2 py-3 transition-colors duration-150 hover:bg-beam/[0.05]">
         <button
           type="button"
@@ -1380,9 +1141,7 @@ function EpisodeRow({
           onClick={() => setAberta(v => !v)}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          {/* O quadro do episódio é 16:9 e não um cartaz: é uma cena, não uma
-              capa. Sem quadro, uma caixa vazia da mesma medida — o buraco tem de
-              ter forma, ou a lista desalinha. */}
+          {}
           {ep.still ? (
             <img
               src={ep.still}
@@ -1402,8 +1161,7 @@ function EpisodeRow({
               <span className="truncate text-[14px] text-ink transition-colors group-hover:text-beam">
                 {ep.title}
               </span>
-              {/* O TMDB marca fim de arco e fim de temporada. É informação que o
-                  clube usaria de cor, e ela vem de graça. */}
+              {}
               {ep.kind === 'finale' ? (
                 <span className="legend flex-none text-[9px] text-dye-brass">Final</span>
               ) : null}
@@ -1417,8 +1175,7 @@ function EpisodeRow({
         </button>
 
         <div className="flex flex-none items-center gap-2 sm:gap-3">
-          {/* Quem mais já viu, em retratos. Sem nome e sem data: é a posição da
-              sala nesta temporada, e o resto está na gaveta. */}
+          {}
           {outros.length ? (
             <span
               aria-hidden
@@ -1455,8 +1212,7 @@ function EpisodeRow({
         </div>
       </div>
 
-      {/* A sinopse e quem já viu. Nada é buscado para abrir isto: a sinopse veio
-          com a temporada, e quem viu já está em memória desde o boot. */}
+      {}
       <Drawer open={aberta}>
         <div className="px-2 pb-4 pl-[120px]">
           {ep.overview ? (
@@ -1493,11 +1249,6 @@ function EpisodeRow({
   );
 }
 
-/* ── o check ──────────────────────────────────────────────────────────────
-   Um alternador, e ele diz isso antes de ser tocado: apagado tem a moldura de
-   uma caixa vazia e o V só insinuado, e aceso é o latão que carrega estado no
-   resto do produto. Sem os dois desenhos, "marcado" e "não marcado" seriam a
-   mesma caixa com o mesmo V dentro — que era exatamente o problema. */
 function SeenCheck({ on, busy, onToggle }: { on: boolean; busy: boolean; onToggle: () => void }) {
   return (
     <button
@@ -1523,7 +1274,6 @@ function SeenCheck({ on, busy, onToggle }: { on: boolean; busy: boolean; onToggl
   );
 }
 
-/** A sua nota, quando você deu uma. */
 function MineNote({ take }: { take: ShowTake }) {
   return (
     <span
@@ -1531,8 +1281,6 @@ function MineNote({ take }: { take: ShowTake }) {
       title={take.scores ? 'Avaliação criteriosa' : 'Sua nota'}
       className={cn(
         'flex h-9 min-w-[38px] items-center justify-center rounded-cell px-1.5 ring-1',
-        /* A criteriosa é creme e a rápida é tinta: as duas são notas, e a
-           diferença entre elas é quanto se olhou. */
         take.scores
           ? 'bg-beam/10 text-beam ring-beam/45'
           : 'text-ink ring-house-rail'
@@ -1543,23 +1291,12 @@ function MineNote({ take }: { take: ShowTake }) {
   );
 }
 
-/** A data de exibição, curta. Um episódio de 2009 não precisa do dia da semana. */
 function whenBR(iso: string) {
   const at = new Date(iso + 'T12:00:00');
   if (Number.isNaN(at.getTime())) return iso;
   return at.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/* ── a folha da temporada ─────────────────────────────────────────────────
-   Onde a opinião se escreve. Abre no modo em que a pessoa já está: quem tem uma
-   criteriosa volta nela, quem não tem começa na nota rápida.
-
-   A criteriosa não é oferecida como "avançado": ela é o que este produto faz de
-   diferente, então tem o mesmo peso visual que a rápida. O que decide o padrão
-   é o que a pessoa já disse.
-
-   O que o clube achou não se repete aqui: está no painel atrás da folha, que é
-   a superfície de LER. Esta é a de escrever. */
 export function SeasonSheet({
   showId,
   showTitle,
@@ -1582,7 +1319,6 @@ export function SeasonSheet({
   season: number;
   name: string | null;
   overview: string | null;
-  /** Todas as fichas do clube nesta temporada, a sua inclusive. */
   takes: ShowTake[];
   meId: string;
   criteria: Criterion[] | null;
@@ -1629,8 +1365,6 @@ export function SeasonSheet({
     [salvando, showId, season, showTitle, showPoster, genre, onSaved, fault]
   );
 
-  /* Tirar a nota não tira o que você viu: os episódios marcados são outras
-     linhas, e é por isso que isto não pergunta nada sobre eles. */
   const apagar = useCallback(async () => {
     if (salvando) return;
     if (
@@ -1665,8 +1399,6 @@ export function SeasonSheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      /* Um rolador só e o fundo sem desfoque — os dois porquês estão em
-         components/film.tsx. */
       className="w-full max-w-[760px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 open:animate-beam-in sm:p-4"
     >
       <div className="plate relative max-h-[calc(100dvh/var(--ui-zoom)-1rem)] overflow-y-auto overscroll-contain p-5 sm:max-h-[calc(100dvh/var(--ui-zoom)-2rem)] sm:p-6">
@@ -1688,9 +1420,7 @@ export function SeasonSheet({
 
         <div className="mt-6 border-t border-white/[0.07] pt-5">
           <div className="flex flex-wrap items-center gap-2">
-            {/* A rápida não some quando há criteriosa — trocar de ideia é
-                legítimo. O aviso do que ela custa está dentro do modo, junto do
-                botão que cobra o preço, e não num `title` que só o mouse lê. */}
+            {}
             <Chip size="sm" on={modo === 'rapida'} onClick={() => setModo('rapida')}>
               Nota rápida
             </Chip>
@@ -1705,9 +1435,7 @@ export function SeasonSheet({
                 <span className="q text-[34px] font-medium leading-none text-beam">{fmt(quick)}</span>
                 <span className="q text-[12px] text-ink-faint">/10</span>
               </div>
-              {/* A MESMA régua dos critérios, e não um `input` solto: o
-                  `film-range` é transparente por desenho, então usá-lo sozinho
-                  produzia um controle invisível — funcionava e não tinha corpo. */}
+              {}
               <Gauge value={quick} onChange={setQuick} label="Nota da temporada" className="mt-4" />
               {mine?.scores ? (
                 <p className="mt-3 text-[12.5px] leading-relaxed text-dye-brass">
@@ -1729,13 +1457,10 @@ export function SeasonSheet({
             <p className="mt-5 text-[13px] text-ink-dim">Carregando os critérios…</p>
           ) : (
             <div className="mt-5">
-              {/* As mesmas réguas da ficha de um filme, sobre nove critérios em
-                  vez de onze: os dois do gênero são promessa da obra inteira. */}
+              {}
               <Channels
                 criteria={criteria}
                 scores={scores}
-                /* A folha já entra animada; nove entradas escalonadas por cima
-                   dela é o que se sentia como travamento ao abrir. */
                 still
                 onChange={(key, value) => setScores(s => ({ ...s, [key]: value }))}
               />
@@ -1750,9 +1475,6 @@ export function SeasonSheet({
                 className="mt-4"
                 disabled={salvando}
                 onClick={() => {
-                  /* O que não foi tocado vale 5, que é o que a régua mostra. Um
-                     critério sem resposta seria uma pergunta em branco numa
-                     ficha que a pessoa acabou de dizer que preencheu. */
                   const cheio: Record<string, number> = {};
                   for (const c of criteria) cheio[c.key] = scores[c.key] ?? 5;
                   void gravar({ scores: cheio, comment: comment.trim() || null });
@@ -1788,25 +1510,12 @@ export function SeasonSheet({
   );
 }
 
-
-/* ══ o acervo, na forma da coisa ══════════════════════════════════════════
-   O que o clube guarda aqui não é uma pilha de fichas: é uma SÉRIE, feita de
-   temporadas, feitas de episódios — e a pergunta "o que a gente achou da
-   terceira?" só tem resposta se a tela tiver essa forma.
-
-   Três níveis, dois fechados: uma série de sessenta episódios abriria sessenta
-   linhas para responder uma pergunta sobre uma temporada.
-
-   O filtro é por pessoa porque a segunda pergunta do acervo é "o que ELA
-   achou". Ele recorta os três níveis de uma vez, e uma série em que ela não
-   avaliou nada some em vez de ficar vazia. */
 export function SeriesArchiveScreen({
   takes,
   roster,
   onOpen,
 }: {
   takes: ShowTake[] | null;
-  /** Quem está no clube. A ficha traz o nome e a cor, mas não o retrato. */
   roster: Reviewer[];
   onOpen: (showId: number) => void;
 }) {
@@ -1814,14 +1523,6 @@ export function SeriesArchiveScreen({
   const [abertas, setAbertas] = useState<ReadonlySet<number>>(() => new Set());
   const [temporadas, setTemporadas] = useState<ReadonlySet<string>>(() => new Set());
 
-  /* Quem já marcou alguma coisa, na ordem em que aparece. Contado do próprio
-     acervo e não do elenco do clube: uma tira com seis rostos em que quatro
-     levam a uma lista vazia é uma tira que promete o que não tem.
-
-     Com quantos episódios cada um, que é o que transforma a tira de seis botões
-     iguais numa resposta a "quem está assistindo" antes de qualquer clique. O
-     retrato vem do elenco e o resto da própria ficha: quem saiu do clube
-     continua assinando o que assinou, e perde só a foto. */
   const gente = useMemo(() => {
     const mapa = new Map<string, { id: string; name: string; dot: string | null; count: number }>();
     for (const t of takes ?? []) {
@@ -1841,9 +1542,6 @@ export function SeriesArchiveScreen({
     }));
   }, [takes, roster]);
 
-  /* Série > temporada > episódio, montado de uma vez. A nota mora no nível do
-     meio: uma temporada carrega as fichas do clube, e os episódios embaixo dela
-     carregam só quem viu. */
   const arvore = useMemo(() => {
     const vistos = (takes ?? []).filter(t => !quem || t.reviewerId === quem);
     const series = new Map<
@@ -1883,9 +1581,6 @@ export function SeriesArchiveScreen({
       ep.takes.push(t);
     }
 
-    /* Nulo e não zero quando ninguém avaliou: uma temporada que a sala só
-       assistiu não entra em média nenhuma, e imprimir 0,0 seria inventar um
-       veredito. */
     const medir = (lista: ShowTake[]) => {
       const comNota = lista.filter(x => x.final != null);
       return comNota.length
@@ -1910,9 +1605,6 @@ export function SeriesArchiveScreen({
           ...s,
           seasons,
           episodes: seasons.reduce((n, t) => n + t.episodios.length, 0),
-          /* A média das TEMPORADAS, e não a das fichas soltas: uma temporada
-             que seis pessoas avaliaram não pesa seis vezes mais do que a que
-             uma avaliou. */
           average: todas.length ? todas.reduce((a, b) => a + b, 0) / todas.length : null,
         };
       })
@@ -1954,20 +1646,7 @@ export function SeriesArchiveScreen({
         note={`${plural(marcados, 'episódio visto', 'episódios vistos')} · ${plural(fichas, 'ficha', 'fichas')}`}
       />
 
-      {/* ── a chave de quem avaliou ──────────────────────────────────────
-          Retrato, nome e quantos, a mesma da fila de filmes. O retrato é o que
-          faz uma sala de seis pessoas ser lida sem soletrar nome nenhum, e o
-          número é o que dá à lista uma resposta antes do clique — quem está
-          assistindo mais.
-
-          "O clube" e não "Todos", porque aqui a soma é uma leitura de verdade:
-          a média de uma temporada com o clube inteiro é o veredito da sala.
-
-          Fica de pé com uma pessoa só, e aí as duas linhas mostram a mesma
-          lista. Não é redundância à toa: é a sala dizendo que ainda é de um. A
-          alternativa era o filtro brotar do nada no dia em que a segunda
-          pessoa marcasse um episódio, que é pior — um acervo que muda de forma
-          sozinho é um acervo em que não se confia. */}
+      {}
       {gente.length ? (
         <div className="mb-6">
           <ReelPicker
@@ -2035,9 +1714,7 @@ export function SeriesArchiveScreen({
                       <span className="q flex-none text-[17px] text-beam">{fmt(serie.average)}</span>
                     ) : null}
                   </button>
-                  {/* A porta para a série continua existindo, e fora do botão que
-                      desdobra: são duas perguntas na mesma linha, e um controle
-                      não se aninha em outro. */}
+                  {}
                   <IconKey aria-label={`Abrir ${serie.title}`} onClick={() => onOpen(serie.id)}>
                     <ChevronLeft className="h-4 w-4 rotate-180" strokeWidth={1.8} />
                   </IconKey>
@@ -2078,12 +1755,6 @@ export function SeriesArchiveScreen({
   );
 }
 
-/* ── uma temporada no acervo ──────────────────────────────────────────────
-   O nível onde a nota mora: uma pastilha por pessoa que avaliou, e ela abre a
-   ficha embaixo. A média fica na ponta, e é a da sala.
-
-   A pastilha é o gesto, e não a linha inteira: a linha desdobra os episódios,
-   que é outra pergunta. */
 function ArchiveSeason({
   numero,
   episodios,
@@ -2094,7 +1765,6 @@ function ArchiveSeason({
 }: {
   numero: number;
   episodios: { numero: number; title: string | null; takes: ShowTake[] }[];
-  /** As fichas da temporada, de quem a avaliou. */
   takes: ShowTake[];
   average: number | null;
   aberta: boolean;
@@ -2180,12 +1850,6 @@ function ArchiveSeason({
   );
 }
 
-/* ── um episódio no acervo ────────────────────────────────────────────────
-   Número, título, e quem viu — em retratos, sem nome escrito ao lado: o nome de
-   quem não disse nada, repetido linha após linha, era o acervo gastando a sua
-   largura para não responder nada.
-
-   A opinião não está aqui: ela é da temporada, uma linha acima. */
 function ArchiveEpisode({
   numero,
   title,
@@ -2225,15 +1889,6 @@ function ArchiveEpisode({
   );
 }
 
-/* ══ o mural do universo de séries ═════════════════════════════════════════
-   Irmão de screens/Feed.tsx, desenhando as MESMAS peças. O que muda é o que
-   este universo tem para contar, em três tipos de linha:
-
-   · **avaliado** ganha placa, porque é o assunto — carrega onde a pessoa se
-     entusiasmou e onde se decepcionou.
-   · **visto** é uma linha, agrupada pelo servidor: "viu 6 episódios de Fringe"
-     e não seis linhas. Uma maratona é um acontecimento.
-   · **comentado** abre a ficha embaixo de si com o texto anunciado já aceso. */
 const FEED_POLL_MS = 120_000;
 
 export function SeriesFeedScreen({
@@ -2241,7 +1896,6 @@ export function SeriesFeedScreen({
   onOpenShow,
   onAimComment,
 }: {
-  /** O acervo que o clube já tem em memória: é dele que sai a ficha de cada linha. */
   takes: ShowTake[] | null;
   onOpenShow: (showId: number) => void;
   onAimComment: (commentId: string) => void;
@@ -2272,9 +1926,6 @@ export function SeriesFeedScreen({
     };
   }, [load]);
 
-  /* A linha nasce na tela de todo mundo no instante em que alguém marca ou
-     escreve. O relógio acima é a rede de baixo, para quando a conexão ao vivo
-     cair. */
   useLive(kinds => {
     if (kinds.has('shows') || kinds.has('social')) void load();
   });
@@ -2322,8 +1973,6 @@ export function SeriesFeedScreen({
     );
   }
 
-  /* Agrupado na renderização e não no estado: guardado, este valor fica velho à
-     meia-noite. */
   let ultimoDia = '';
 
   return (
@@ -2361,31 +2010,9 @@ export function SeriesFeedScreen({
   );
 }
 
-/* `T1E05` sem o zero perdido, que é como um episódio é chamado por gente — e
-   `T1` quando a linha é de uma temporada, que não tem episódio nenhum. */
 const epTag = (season?: number, episode?: number | null) =>
   episode == null ? `T${season ?? 0}` : `T${season ?? 0}E${String(episode).padStart(2, '0')}`;
 
-/* ── uma maratona é um acontecimento, e não seis ──────────────────────────
-   Ver quatro episódios seguidos e avaliar os quatro enchia o mural com quatro
-   placas do mesmo pôster, do mesmo nome e da mesma noite: o mural virava a
-   lista de episódios de uma série só, e o resto do clube sumia debaixo dela.
-
-   Juntado aqui e não no servidor, ao contrário do "viu": lá o agrupamento é a
-   linha inteira — seis vistos viram uma frase e nada se perde. Aqui cada ficha
-   continua sendo uma ficha, com a nota dela, a conversa dela e o polegar dela;
-   o que se junta é a MOLDURA. Um agrupamento que apagasse isso apagaria o
-   assunto.
-
-   Três condições, e cada uma é um jeito de a junção mentir:
-
-   · **Encostadas no mural.** Uma ficha de terça e uma de sexta com coisas do
-     clube entre elas não são uma sessão, e passar por cima do que aconteceu no
-     meio é reescrever a ordem dos fatos.
-   · **Do mesmo dia.** O mural já separa por dia, e um bloco atravessando a
-     virada ficaria pendurado sob a data errada.
-   · **Da mesma pessoa e da mesma série**, que é o que "avaliou do T1E04 ao
-     T1E06" quer dizer. */
 function runsOf(items: ShowFeedEvent[]) {
   const blocos: ShowFeedEvent[][] = [];
   for (const e of items) {
@@ -2403,14 +2030,9 @@ function runsOf(items: ShowFeedEvent[]) {
   return blocos;
 }
 
-/** Do primeiro episódio ao último, que é a ordem em que foram vistos. */
 const inOrder = (events: ShowFeedEvent[]) =>
   [...events].sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0));
 
-/* A placa: o mesmo empilhamento do mural de filmes — corpo que desdobra,
-   detalhamento, barra de ação, conversa. Um `<button>` dentro de outro não é
-   coisa que o navegador monte, e é por isso que a barra é irmã do corpo e não
-   filha dele. */
 function FeedRated({
   e,
   takes,
@@ -2421,9 +2043,6 @@ function FeedRated({
   onOpenShow: (showId: number) => void;
 }) {
   const world = useWorld();
-  /* Do acervo que já está em memória — nada é buscado. Nula só entre alguém
-     desmarcar um episódio e o mural recarregar; aí a barra some, porque
-     oferecer um polegar para uma ficha morta é prometer um 404. */
   const take = takes?.find(t => t.id === e.takeId) ?? null;
   const quem = take
     ? { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' }
@@ -2436,9 +2055,6 @@ function FeedRated({
   const [aberta, setAberta] = useState(false);
   const [desdobrada, setDesdobrada] = useState(false);
 
-  /* A placa já mostra o que a pessoa escreveu, cortado em 120 caracteres. O
-     detalhamento recebe o texto exatamente quando o resumo não é ele — senão é
-     a mesma frase duas vezes. */
   const escrito = take?.comment?.replace(/\s+/g, ' ').trim() ?? '';
   const cortado = !!escrito && escrito !== (e.excerpt ?? '');
 
@@ -2454,21 +2070,10 @@ function FeedRated({
         {hora ? <span className="q ml-auto text-[10.5px] text-ink-faint">{hora}</span> : null}
       </div>
 
-      {/* ── o corpo, e ele tem três alvos ────────────────────────────────
-          O pôster e o nome abrem a SÉRIE: as temporadas, os episódios, quem já
-          viu cada um, onde assistir e a chave de acompanhar. Quem toca num
-          pôster quer a série, e não a opinião de quem postou — essa a placa já
-          mostra inteira aqui em cima.
-
-          O resto do corpo desdobra os nove critérios desta ficha, que é a única
-          coisa que nem a placa nem a tela da série têm. Irmãos e não aninhados:
-          um `<button>` dentro de outro não é coisa que o navegador monte. */}
+      {}
       <div className="px-4 pb-4 pt-2.5">
         <div className="flex gap-4">
-          {/* Estica até o fim das notas e não até o fim da placa: o cartaz é
-              irmão do bloco de números, e o que a pessoa escreveu mora embaixo
-              dos dois. O piso é a forma de um cartaz — sem ele, uma ficha sem
-              extremos sairia com o cartaz achatado. */}
+          {}
           <button
             type="button"
             onClick={() => onOpenShow(e.showId)}
@@ -2493,8 +2098,7 @@ function FeedRated({
               <span className="q text-[11.5px] text-ink-dim">{epTag(e.season, e.episode)}</span>
             </div>
 
-            {/* O nome do episódio embaixo do da série: é dele que a ficha fala,
-                e "T1E05" sozinho não é o nome de nada. */}
+            {}
             {e.episodeTitle ? (
               <p className="mt-1 truncate text-[13px] text-ink-dim">{e.episodeTitle}</p>
             ) : null}
@@ -2526,9 +2130,7 @@ function FeedRated({
                 ) : null}
               </span>
 
-              {/* Ausente numa nota rápida e numa ficha sem distância entre o
-                  alto e o baixo: apontar extremos ali seria inventar uma
-                  opinião. */}
+              {}
               {e.ends ? (
                 <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
                   <span className="flex items-center gap-1.5 text-ink-dim">
@@ -2547,9 +2149,7 @@ function FeedRated({
           </div>
         </div>
 
-        {/* A linha inteira, embaixo de tudo: uma frase é texto corrido e pede
-            largura. Espremida ao lado do cartaz, ela esticava um cartaz de 54px
-            até virar uma tira. */}
+        {}
         {e.excerpt ? (
           <button
             type="button"
@@ -2606,8 +2206,7 @@ function FeedRated({
             ) : null}
           </button>
 
-          {/* A série como escolha, no fim da barra: lá o episódio aparece entre
-              os outros da temporada, que é a única coisa que o mural não mostra. */}
+          {}
           <button
             type="button"
             onClick={() => onOpenShow(e.showId)}
@@ -2631,11 +2230,6 @@ function FeedRated({
   );
 }
 
-/* ── a noite inteira numa placa só ────────────────────────────────────────
-   Uma moldura, um pôster, um nome de série — e dentro dela uma linha por
-   episódio, cada uma com a nota, o polegar e a conversa que seriam dela numa
-   placa própria. O que a junção economiza é repetição; o que ela não pode
-   economizar é o que cada ficha diz. */
 function FeedRatedRun({
   events,
   takes,
@@ -2648,7 +2242,6 @@ function FeedRatedRun({
   const emOrdem = inOrder(events);
   const primeiro = emOrdem[0];
   const ultimo = emOrdem[emOrdem.length - 1];
-  // O relógio é o do acontecimento mais recente, que é como o mural se ordena.
   const hora = clockOf(events[0].at);
 
   return (
@@ -2676,8 +2269,7 @@ function FeedRatedRun({
           <span className="block font-display text-[22px] leading-none tracking-[0.02em] text-beam transition-colors group-hover:text-beam-hot">
             {events[0].showTitle}
           </span>
-          {/* O trecho, dito como o clube diz: do primeiro ao último. É o que
-              substitui o `T1E05` que cada placa carregava sozinha. */}
+          {}
           <span className="q mt-1.5 block text-[12px] text-ink-dim">
             do {epTag(primeiro.season, primeiro.episode)} ao {epTag(ultimo.season, ultimo.episode)}
           </span>
@@ -2698,9 +2290,6 @@ function FeedRatedRun({
   );
 }
 
-/* Uma ficha dentro do bloco. Tudo o que a placa solta tem, menos o que a
-   moldura já disse: sem pôster, sem nome de série e sem retrato de quem
-   escreveu — são os mesmos três em todas as linhas daqui. */
 function RunEpisode({ e, takes }: { e: ShowFeedEvent; takes: ShowTake[] | null }) {
   const world = useWorld();
   const take = takes?.find(t => t.id === e.takeId) ?? null;
@@ -2808,25 +2397,6 @@ function RunEpisode({ e, takes }: { e: ShowFeedEvent; takes: ShowTake[] | null }
   );
 }
 
-/* ── uma sessão de sofá ───────────────────────────────────────────────────
-   Era uma linha fina, pela mesma razão que tirou o voto em critério do mural de
-   filmes: marcar visto é o gesto barato deste mundo, e dar a ele a superfície
-   de uma ficha faria o mural inteiro pesar igual.
-
-   O argumento estava certo sobre o PESO e errado sobre o assunto. "Fulano viu o
-   episódio de ontem" é exatamente o que o clube comenta — e não havia onde: sem
-   polegar e sem conversa, quem quisesse responder tinha de ir à série, achar o
-   episódio e escrever embaixo da marca de outra pessoa. O mural anunciava o
-   acontecimento e escondia a única coisa a fazer com ele.
-
-   Então virou placa, com o cartaz e a barra de ação da avaliação. O que a separa
-   de uma ficha continua sendo o que ela não tem: nota, critério e detalhamento.
-   Ninguém avaliou nada — a pessoa viu.
-
-   O agrupamento vem do servidor (ver routes/showsFeed.js): um episódio é chamado
-   pelo nome, seis são chamados de trecho. E o polegar e a conversa pousam na
-   marca mais nova da sessão, que é a que a placa nomeia quando conta um só; está
-   escrito lá por quê. */
 function FeedSeen({
   e,
   takes,
@@ -2840,9 +2410,6 @@ function FeedSeen({
   const hora = clockOf(e.at);
   const varios = (e.count ?? 1) > 1;
 
-  /* Do acervo em memória — nada é buscado. Nula entre alguém desmarcar o
-     episódio e o mural recarregar; aí a barra some, porque oferecer um polegar
-     para uma marca morta é prometer um 404. */
   const take = takes?.find(t => t.id === e.takeId) ?? null;
   const quem = take
     ? { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' }
@@ -2889,9 +2456,7 @@ function FeedSeen({
               {e.showTitle}
             </button>
 
-            {/* Um trecho quando foram vários, o episódio pelo nome quando foi um.
-                O check acompanha a frase e não o alto da placa: ali competiria
-                com o rosto de quem viu. */}
+            {}
             <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-dim">
               <Check className="h-3.5 w-3.5 flex-none text-ink-faint" strokeWidth={2} aria-hidden />
               {varios ? (
@@ -2968,9 +2533,6 @@ function FeedSeen({
   );
 }
 
-/* A linha de conversa, e ela abre a ficha embaixo de si com o texto anunciado
-   já aceso — `onAimComment` diz qual é, e a conversa cresce até ele, rola e o
-   acende. Mesmo mecanismo do mural de filmes. */
 function FeedAside({
   e,
   takes,
@@ -2995,8 +2557,6 @@ function FeedAside({
           const proximo = !aberta;
           setAberta(proximo);
           setDesdobrada(true);
-          /* Só ao ABRIR: reapontar ao fechar faria a conversa rolar atrás de um
-             texto que acabou de sair da tela. */
           if (proximo && e.commentId) onAimComment(e.commentId);
         }}
         aria-expanded={take ? aberta : undefined}
@@ -3040,8 +2600,7 @@ function FeedAside({
         ) : null}
       </button>
 
-      {/* Sobre uma superfície própria: a linha não tem placa, e sem uma caixa em
-          volta a ficha flutuaria solta entre duas linhas sem dizer de qual é. */}
+      {}
       <Drawer open={aberta}>
         {desdobrada && take ? (
           <div className="mb-2 ml-6 mr-1 mt-1">
@@ -3053,12 +2612,6 @@ function FeedAside({
   );
 }
 
-/* Os nove critérios, o que a pessoa escreveu, o voto do clube e a conversa —
-   nesta ordem, que é a do acervo de filmes: primeiro o que a ficha DIZ, depois
-   o que se faz com ela.
-
-   Nenhuma destas peças é daqui: são as mesmas do outro universo, com as mesmas
-   regras. O dia em que uma delas mudar, muda nos dois. */
 function TakeCard({ take }: { take: ShowTake }) {
   const quem = { id: take.id, reviewerId: take.reviewerId, reviewerName: take.reviewerName ?? 'alguém' };
   return (
@@ -3075,9 +2628,7 @@ function TakeCard({ take }: { take: ShowTake }) {
         <span className="q text-[10.5px] text-ink-faint" title={take.ratedAt ?? take.watchedAt}>
           {whenOf(take.ratedAt ?? take.watchedAt)}
         </span>
-        {/* Cala quando a ficha não tem nota — uma conversa antiga pendurada
-            numa linha que hoje é só "eu vi". Imprimir 0,0 ali seria a tela
-            inventando um veredito. */}
+        {}
         {take.final != null ? (
           <span className="ml-auto flex items-center gap-2.5">
             <Strip value={take.final} cells={10} className="hidden h-[5px] w-[80px] flex-none sm:block" />
@@ -3087,8 +2638,7 @@ function TakeCard({ take }: { take: ShowTake }) {
         <TakeVotes take={quem} />
       </div>
 
-      {/* A nota rápida não tem carta: ela é um número e mais nada, e o
-          `Breakdown` cala sozinho quando não há critério nem texto. */}
+      {}
       <div className="mt-3">
         <Breakdown r={take} comment={take.comment ?? undefined} />
       </div>

@@ -3,37 +3,7 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── the interface's own scale ──────────────────────────────────────────
-     The product opens a notch above browser default — enough that the cards
-     read at the size a poster wants to be read at, and a row across a laptop
-     is a shelf rather than a contact sheet.
-
-     `zoom` and not a root font size: every size in this design is stated in
-     pixels, deliberately, so a root em would move the spacing and leave the
-     type behind. Zoom is the one property that scales the whole layout the
-     way the browser's own control does, reflow included — nothing here is
-     stretched, it is re-laid-out one and a quarter times larger.
-
-     What it costs: client coordinates (pointer events, client rects) stay in
-     screen pixels while CSS lengths become zoomed pixels, so the two are no
-     longer the same unit. Everywhere the interface measures the screen and
-     writes back a CSS length — the beam that follows the cursor, the card in
-     the air over the queue, the tilt of a poster — the ratio is measured and
-     divided out. It is derived from the element itself (a client width over a
-     layout width) rather than from this number, so it stays right if the
-     visitor zooms the browser on top of it. */
   :root {
-    /* Kept as a variable because anything measured against the viewport has to
-       divide by it. A viewport unit resolves to the window's real height and is
-       only then scaled by the zoom, so `100dvh` under this becomes a quarter
-       taller than the window: a scrollbar over nothing, and everything centred
-       in a box bigger than the screen it is centred on. `min-h-dvh` is written
-       as `calc(100dvh/var(--ui-zoom))` wherever it appears.
-
-       The number below is no longer the whole story: index.html measures the
-       window and writes this property on the root, so the interface holds the
-       same proportions on any monitor. What is left here is the value that
-       stands before that script runs, and the one a touch screen keeps. */
     --ui-zoom: 1.25;
     zoom: var(--ui-zoom);
   }
@@ -41,23 +11,6 @@
     -webkit-text-size-adjust: 100%;
   }
 
-  /* ── a altura da janela, medida pela própria janela ─────────────────────
-     A moldura do telefone tentou `100dvh` primeiro e sobrou um vão preto de uns
-     cento e trinta pixels entre a barra do app e os botões do Android.
-
-     `dvh` responde "quanto a janela pode chegar a ter", e o que a moldura
-     precisa saber é outra coisa: quanto ela TEM agora, com a barra de endereço
-     do navegador na tela e a barra de botões do sistema embaixo. As duas contas
-     dão números diferentes, e a diferença era exatamente o vão.
-
-     `height: 100%` encadeado do `html` até o `#root` não estima nada: ele herda
-     o viewport de layout, que é a área que o navegador de fato entregou. Se o
-     sistema tem três botões, a conta já vem sem eles; se tem barra de gestos,
-     idem; e se um dia o app rodar em tela cheia, o número muda sozinho e o
-     recuo de área segura entra por cima.
-
-     Só no dedo. No computador a página rola e a altura da janela não é a altura
-     de nada — a moldura lá é `min-height`, e limitá-la cortaria a página. */
   @media (pointer: coarse) {
     html,
     body,
@@ -68,24 +21,8 @@
   body {
     @apply bg-house text-ink font-sans antialiased;
     margin: 0;
-    /* ── legibility over the wall ─────────────────────────────────────────
-       Most of this product's text sits straight on the film wall with no plate
-       under it, and the wall is not a still image: the beam lights the celluloid
-       wherever the cursor goes. Over an unlit room the dim ink reads at 5.4:1,
-       but a glyph crossing a frame line with the beam on it falls to about
-       3.4:1, under the 4.5:1 floor — which is exactly the moment the text goes
-       soft, and it goes soft only where the reader is looking.
-
-       So every glyph carries its own piece of the dark room with it. The shadow
-       is the room's own colour, which makes it invisible against the room and
-       visible only where something has lit up behind the text — it costs
-       nothing where nothing is wrong, and it is a hard edge back around the
-       letterforms exactly where the beam falls. Cheaper and truer than dimming
-       the beam, which would fix the text by removing the thing the text is
-       sitting on. */
     text-shadow: 0 1px 2px rgba(4, 5, 10, 0.95), 0 0 10px rgba(4, 5, 10, 0.8);
   }
-  /* The browser surfaces nobody draws still belong to the design. */
   ::selection {
     background: theme('colors.dye.red');
     color: theme('colors.beam.hot');
@@ -115,25 +52,17 @@
 }
 
 @layer components {
-  /* A marquee legend: the small tracked caps that name a region. */
   .legend {
     @apply font-display text-[13px] tracking-[0.18em] text-ink-dim uppercase leading-none;
   }
-  /* Quantities are measured, so they align in columns. */
   .q {
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
   }
-  /* A raised surface in the room. Square, because a film cell is square. */
   .plate {
     @apply bg-house-seat rounded-plate ring-1 ring-white/[0.06];
   }
 
-  /* ── the criterion slider ───────────────────────────────────────────────
-     A native <input type="range"> dressed as a length of film running through
-     a gate: the track is the strip, the thumb is the gate marking the frame
-     that is being read. Native so the keyboard, the screen reader and the
-     0,5 step keep working — the styling never replaces the control. */
   .film-range {
     -webkit-appearance: none;
     appearance: none;
@@ -143,20 +72,10 @@
     cursor: pointer;
     display: block;
   }
-  /* ── a faixa de agarrar, no dedo ──────────────────────────────────────
-     Onze destes é a tela mais usada do produto e a razão de ele existir no
-     telefone. Trinta e quatro pixels de altura é uma faixa confortável para um
-     cursor e apertada para um polegar, e errar por dois pixels aqui não é errar
-     um controle — é lançar a nota errada num critério.
-
-     A altura cresce; o desenho não. O que se vê é a mesma película com a mesma
-     porta, porque o que muda é a área invisível que o dedo pode acertar. */
   @media (pointer: coarse) {
     .film-range {
       height: 46px;
     }
-    /* A porta acompanha, ou ela vira uma marca fina no meio de uma faixa
-       larga — e o que se agarra deixa de ser o que se vê. */
     .film-range::-webkit-slider-thumb {
       width: 28px;
       height: 42px;
@@ -167,10 +86,6 @@
       height: 42px;
     }
   }
-  /* The track is drawn behind the control now, not by it — a pseudo-element
-     cannot be animated from JS, and the light running up the strip has to be.
-     What stays native is the part that matters: the thumb, the arrow keys, the
-     half-point step and the role the screen reader announces. */
   .film-range::-webkit-slider-runnable-track {
     height: 10px;
     background: transparent;
@@ -180,14 +95,6 @@
     background: transparent;
   }
 
-  /* ── o volume, no mesmo idioma e num terço do tamanho ───────────────────
-     Irmão pequeno de `.film-range`. A porta continua sendo uma porta e a
-     película continua sendo película; o que muda é a escala, porque este
-     controle mora dentro de uma barra de 34px sobre a imagem e não numa tela
-     cujo assunto é ele.
-
-     Nativo pela mesma razão de sempre: o passo, as setas do teclado e o papel
-     que o leitor de tela anuncia são do controle, não do desenho. */
   .vol-range {
     -webkit-appearance: none;
     appearance: none;
@@ -205,8 +112,6 @@
     height: 3px;
     background: transparent;
   }
-  /* A porta: um retângulo de luz atravessando a fita, com a mesma sombra e o
-     mesmo brilho quente da porta grande. */
   .vol-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -229,8 +134,6 @@
       0 2px 6px rgba(0, 0, 0, 0.75),
       0 0 10px rgba(255, 214, 150, 0.28);
   }
-  /* O anel de foco na porta, e não um retângulo em volta da faixa inteira —
-     a mesma regra do controle grande. */
   .vol-range:focus-visible {
     outline: none;
   }
@@ -245,7 +148,6 @@
       0 2px 6px rgba(0, 0, 0, 0.75);
   }
 
-  /* Unexposed film: the strip before the beam reaches it. */
   .film-strip {
     border-radius: 1px;
     background-color: theme('colors.house.deep');
@@ -254,28 +156,12 @@
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85);
   }
 
-  /* The exposed length, scaled from the left. A flat wash and a gradient rather
-     than a second run of perforations: a repeating pattern stretched by scaleX
-     would smear its own holes, while this lets the holes of the strip beneath
-     show straight through the light — which is what actually happens when film
-     is lit from behind. */
   .film-strip-lit {
     border-radius: 1px;
     background-image: linear-gradient(90deg, rgba(255, 214, 150, 0.1), rgba(255, 214, 150, 0.28));
     box-shadow: inset 0 0 10px rgba(255, 214, 150, 0.22);
-    /* The scale is stepped, the light is not. The mark can only land on a half
-       point, but nothing says the beam has to arrive there in one frame — it
-       glides the 5% between two steps. Short and hard on the ease-out, so it is
-       still under the hand: at 130ms it reads as the light running to catch the
-       gate, and any longer starts reading as the lag this replaced. */
     transition: width 130ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  /* The native thumb is kept at full size and made invisible. It is still what
-     the hand grabs, what the arrow keys move and what the screen reader reports
-     — it just does not draw anything, because a native thumb jumps from step to
-     step and no CSS can smooth that. The gate you see is drawn below, where a
-     transition can reach it. Keeping the invisible one 16px wide also keeps the
-     grab area generous while the mark itself is a hairline. */
   .film-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 16px;
@@ -292,16 +178,10 @@
     border: 0;
     box-shadow: none;
   }
-  /* The focus ring belongs on the gate, not as a rectangle around the whole
-     34px control. */
   .film-range:focus-visible {
     outline: none;
   }
 
-  /* The gate: the mark the frame is read against. A hairline of hot beam rather
-     than a moulded handle — the control is a length of film, and what marks a
-     frame on film is a line, not a knob. The dark ring is what keeps it legible
-     once it is standing on the lit half of the strip. */
   .film-gate {
     border-radius: 1px;
     background: linear-gradient(180deg, #fff6e6, #f2e6ca 55%, #cbbfa6);
@@ -310,28 +190,6 @@
   }
 }
 
-/* ── ambient motion ───────────────────────────────────────────────────────
-   The room is never quite still. Two loops, both far below the speed at which
-   motion competes for attention.
-
-   The wall runs. Each length of film creeps steadily up or down, its
-   neighbours creeping the other way, and none of them ever turns back. An
-   earlier version had them swing up and down on an ease — it was wrong, and
-   obviously so once seen: nothing made of celluloid oscillates, and the whole
-   wall came to a halt twice a minute to change its mind. Film only ever
-   advances.
-
-   That it can advance forever without a seam is a property of the material.
-   The pattern repeats every frame, so a strip that travels a whole number of
-   frames per loop arrives exactly where it started, and `linear` + `infinite`
-   is then a creep with no beginning and no end. `--creep` is that distance and
-   the direction, `--dur` the time it takes, `--phase` an offset so that strips
-   sharing a plane are never in step across the wall.
-
-   It is a transform and not the background-position this used to be: a moving
-   background repaints a full-screen element on every frame, while a transform
-   on a strip is handed to the compositor and costs nothing to run — as long as
-   the compositor agrees to take it, which is a budget and not a promise. */
 @keyframes strip-creep {
   from {
     transform: translate3d(0, 0, 0);
@@ -345,50 +203,15 @@
   animation-delay: var(--phase, 0s);
 }
 
-/* ── e a parede para quando alguém abre uma folha ─────────────────────────
-   Uma folha modal cobre a tela inteira. A parede atrás dela continuava andando:
-   oito camadas promovidas se mexendo para ninguém, e o compositor recompondo a
-   tela toda a cada quadro para desenhar um resultado que está inteiramente
-   escondido.
-
-   No computador isso passa despercebido. No telefone é o travamento — abrir a
-   ficha de um filme ou os ajustes ficava pesado, e a causa não era nada dentro
-   da folha, era o que sobrou correndo atrás dela.
-
-   `animation-play-state` e não `animation: none`: pausar guarda a posição de
-   cada tira, então fechar a folha devolve a parede onde ela estava em vez de
-   fazer as oito saltarem para o começo do laço de uma vez. */
 html:has(dialog[open]) .strip-creep {
   animation-play-state: paused;
 }
 
-/* ── a parede de cartazes do saguão ───────────────────────────────────────
-   As caixas de cartaz na parede do foyer: elas andam sozinhas devagar e a mão
-   pode pegar, arrastar e arremessar. O motor é JS sobre `scrollLeft` — a
-   mecânica inteira, com o porquê, está em `usePosterRail` (screens/Lobby.tsx).
-
-   O que sobra aqui é o que só o CSS resolve.
-
-   A BARRA SOME, e é o que motivou a troca: uma barra cinza atravessada debaixo
-   dos cartazes era a única peça de interface deste produto que ninguém desenhou.
-   O que se pode arrastar aqui não é conteúdo escondido — a informação da faixa
-   está escrita logo abaixo dela e no pódio —, então nada se perde tirando o
-   indicador. O cursor diz o que dá para fazer.
-
-   `overscroll-behavior-x: contain` porque sem ele, jogar a parede até a ponta
-   entrega o gesto para o navegador e a página inteira volta uma tela.
-
-   A folga entre as caixas é `margin-right` em cada uma, e nunca `gap`: o laço
-   infinito recua exatamente metade da pista, e com `gap` a pista mede
-   `2n·largura + (2n−1)·folga` — metade dela não é um conjunto inteiro de
-   cópias, e sobra meia folga por volta. */
 .poster-rail {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
-  /* No telefone quem rola é o dedo, e o eixo é declarado para o navegador não
-     esperar para decidir se o gesto era vertical. */
   touch-action: pan-x;
   cursor: grab;
 }
@@ -398,43 +221,10 @@ html:has(dialog[open]) .strip-creep {
 .poster-rail[data-grabbing] {
   cursor: grabbing;
 }
-/* Enquanto se arrasta, nada é selecionado: sem isto o gesto pinta a faixa de
-   azul e o cursor vira o de texto no meio do movimento. */
 .poster-rail[data-grabbing] * {
   user-select: none;
 }
 
-/* Reduced motion is an intentional alternative, not a kill switch. What goes is
-   travel that plays on its own: the entrances. What stays is feedback the
-   visitor causes — the film wall still lights under the cursor, because that
-   light is a response to an action, not a performance. Killing it outright is
-   the bug this replaced: the whole backdrop went inert for anyone whose system
-   asks for less motion.
-
-   The one exception is the drift of the strips, kept by an explicit decision of
-   the product's owner: the wall is the room, and a room that has stopped is a
-   different product. It is the slowest thing on the page by an order of
-   magnitude and it carries no information, so nothing is lost by not reading it
-   — but it is a preference being overridden, and it should be named as one.
-   The blanket iteration-count above would otherwise stop it dead after a single
-   pass, which is why the exemption has to be spelled out twice. */
-/* ── the room on a phone ──────────────────────────────────────────────────
-   Everything below exists to answer a pointer, and a touch screen has none.
-   Kept as one media query rather than scattered checks, so what a phone does
-   not build is written down in one place:
-
-   The creep is perpetual compositor work — a promoted layer per strip, running
-   for as long as the tab is open, for motion nobody on a phone is sitting still
-   enough to notice.
-
-   The text shadow was put on every glyph in the product to survive the beam
-   crossing behind it. No beam, no reason: it was two shadows, one of them a
-   10px blur, on every letter on the page.
-
-   And the interface's own zoom comes off. A phone at 1.25 is laying out at
-   about 256 CSS pixels of width — the design is being asked to fit a screen
-   narrower than any it was drawn for, and the browser paints the whole thing
-   scaled on top of that. */
 @media (hover: none), (pointer: coarse) {
   :root {
     --ui-zoom: 1;
@@ -445,75 +235,20 @@ html:has(dialog[open]) .strip-creep {
   .strip-creep {
     animation: none !important;
   }
-  /* A parede de cartazes deixa de convidar o cursor que não existe. Ela
-     continua rolando — com o dedo, pelo navegador, que é quem faz isso melhor.
-     Ver `usePosterRail`: onde não há ponteiro fino, o laço nem é montado. */
   .poster-rail {
     cursor: auto;
   }
 }
 
-/* ── the wall stands still in Gecko ───────────────────────────────────────
-   Firefox will only run a transform animation off the main thread if it can
-   pre-render the whole element, and it measures that against the element's
-   *transformed* bounds. A strip here is taller than the viewport, sits inside a
-   field overscanned by 12%, that field is rotated, and the strip travels a
-   frame or two on top of all that — so the box Gecko has to size up is close to
-   twice the viewport, where its limit is an eighth over. Past it, Gecko refuses
-   the compositor and animates on the main thread: it invalidates as the
-   transform goes, and repaints only the region it has to, so the patch under
-   the halo comes back rasterised at one moment of the animation while the
-   pixels around it are still from an earlier one. That seam, riding the edge of
-   the moving light, is what gets reported as the wall being drawn twice.
-
-   Two things were tried here and neither is worth trying again.
-
-   The first was to blame the second wall. A lit copy drifting out of step with
-   the unlit one is a real way to double a wall, and it was assumed to be this
-   one — but Gecko is already given a single wall (see GECKO in
-   holographic-wall) and the seam is there anyway. It is a repaint fault, not a
-   synchronisation fault, and it shows up exactly where the beam is and nowhere
-   else because that is the only region being repainted.
-
-   The second was `will-change: transform` on each strip, on the reasoning that
-   a strip with a layer of its own would move an already-rasterised texture
-   instead of dirtying the pixels under the beam. It does not help: the seam
-   survives it. Whatever Gecko is doing under the halo, a layerisation hint is
-   not what stops it, and eight forced layers is not a free thing to leave in
-   for nothing.
-
-   What is left is the honest answer. Blink promotes an animated transform by
-   itself and has been running this wall on the compositor all along, so it
-   keeps the creep. Gecko gets the same wall, standing still — the room is the
-   room whether or not the film is advancing, and a wall that tears under the
-   cursor is worse than a wall that is patient. Everything else — the depth, the
-   beam, the halo — is untouched.
-
-   Matched by a property only Gecko implements. */
 @supports (-moz-appearance: none) {
   .strip-creep {
     animation: none;
   }
 }
 
-/* ── and the same wall, standing still, with no GPU ───────────────────────
-   The creep is eight promoted layers moving forever. On a compositor that is
-   the cheapest kind of motion there is; in software it is eight large surfaces
-   recomposited sixty times a second for as long as the tab is open, whether or
-   not anybody is looking at it or touching anything. It is the one thing on
-   this page that costs continuously while nothing is happening, which makes it
-   the first thing to go when there is nothing to run it on.
-
-   Set from index.html, before the first paint, so the wall never starts. */
 [data-render='software'] .strip-creep {
   animation: none;
 }
-/* A parede de cartazes NÃO entra nesta lista, ao contrário da de celuloide. O
-   que custa numa máquina sem GPU é uma superfície do tamanho da janela sendo
-   recomposta para sempre; esta é uma faixa de cento e setenta pixels de altura,
-   e o que ela move é a própria rolagem. Foi justamente numa máquina sem
-   aceleração que a barra feia apareceu — desligar a faixa lá seria consertar o
-   sintoma tirando a coisa. */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -529,9 +264,4 @@ html:has(dialog[open]) .strip-creep {
   .animate-flicker {
     animation: none !important;
   }
-  /* A parede de cartazes para de andar sozinha aqui — mas continua sendo
-     arrastável, e isso não é descuido. O que esta preferência desliga é o
-     movimento que COMEÇA sozinho; um arremesso é resposta a um gesto, como o
-     feixe que segue o cursor na parede de celuloide. Quem decide é
-     `usePosterRail`, em JS, porque quem move a faixa agora é ele. */
 }

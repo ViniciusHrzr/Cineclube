@@ -9,9 +9,6 @@ const crypto = require('node:crypto');
 const dbPath = path.join(os.tmpdir(), `cineclube-push-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
 
-/* As chaves e o segredo do relógio entram ANTES do servidor: os dois são lidos
-   do ambiente na hora do uso, mas a rota de chave pública responde 404 sem
-   eles, e um teste que começasse sem isso estaria testando o servidor errado. */
 const push = require('../push');
 const par = push.generate();
 process.env.VAPID_PUBLIC = par.public;
@@ -19,11 +16,6 @@ process.env.VAPID_PRIVATE = par.private;
 process.env.VAPID_SUBJECT = 'mailto:teste@exemplo.com';
 process.env.CINECLUBE_CRON_SECRET = 'segredo-do-relogio';
 
-/* A conta de serviço do Android aponta para o mesmo servidor de mentira — é o
-   que permite conferir o que sai daqui sem um projeto Firebase de verdade. A
-   chave é gerada agora: ela só precisa assinar um JWT que este teste não
-   verifica, e uma chave de exemplo no repositório seria uma chave a menos de
-   confusão no dia em que alguém a reconhecer como válida em outro lugar. */
 const { privateKey } = require('node:crypto').generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.FCM_PROJECT_ID = 'cineclube-de-teste';
 process.env.FCM_CLIENT_EMAIL = 'robo@cineclube-de-teste.iam.gserviceaccount.com';
@@ -36,32 +28,12 @@ const screening = require('../screening');
 const throttle = require('../throttle');
 const kit = require('../testkit');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O AVISO QUE CHEGA COM O APP FECHADO.
-
-   Quatro coisas, e três delas falham em silêncio:
-
-   1. **A cifra.** Ela é escrita à mão aqui (ver push.js), e um byte fora do
-      lugar produz uma mensagem que o aparelho descarta sem dizer nada a
-      ninguém. O RFC 8291 publica um vetor de teste completo — a mesma entrada
-      tem de dar exatamente a mesma saída — e é ele que segura isto.
-   2. **A inscrição é do APARELHO.** Duas do mesmo navegador são uma; duas de
-      aparelhos diferentes são duas.
-   3. **O aviso não chega duas vezes.** O trabalho da noite pode rodar de novo
-      depois de uma falha no meio.
-   4. **A porta do relógio.** Ela dispara mensagem para todo mundo, e não pode
-      ser aberta por quem passar na frente dela.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
-/* Um serviço de entrega de mentira: é para onde as inscrições deste teste
-   apontam, e é ele que conta o que saiu daqui. */
 let entregas = [];
 let servico;
 let servicoUrl;
-/** O que o serviço responde. 201 é entregue; 410 é "este aparelho não existe". */
 let resposta = 201;
 
 test.before(async () => {
@@ -79,10 +51,6 @@ test.before(async () => {
         headers: req.headers,
         body: Buffer.concat(pedacos),
       });
-      /* O FCM responde JSON; o serviço de Web Push responde vazio. O mesmo
-         servidor faz os dois papéis, e o caminho diz qual. */
-      /* A troca do JWT por um token de acesso, que o FCM exige antes de
-         qualquer envio. */
       if (req.url === '/token') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end('{"access_token":"token-de-acesso-de-teste","expires_in":3600}');
@@ -99,9 +67,6 @@ test.before(async () => {
   servico.listen(0);
   await new Promise(resolve => servico.once('listening', resolve));
   servicoUrl = `http://127.0.0.1:${servico.address().port}`;
-  /* O endereço do FCM e o do OAuth do Google apontam para cá. O segundo não é
-     configurável, então o teste do caminho nativo para antes dele — ver o
-     bloco 5. */
   process.env.FCM_BASE = servicoUrl;
   process.env.FCM_OAUTH = `${servicoUrl}/token`;
 });
@@ -117,7 +82,7 @@ test.after(async () => {
   await new Promise(resolve => servico.close(resolve));
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* arquivo temporário */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -142,13 +107,9 @@ async function req(method, pathname, body, cookie, headers = {}) {
   return { status: res.status, body: parsed };
 }
 
-/* Um aparelho inscrito, gravado direto: a rota exige `https`, e o serviço de
-   mentira deste teste fala `http`. O que a rota valida é testado à parte. */
 let seq = 0;
 async function aparelho(reviewerId) {
   const endpoint = `${servicoUrl}/entrega/${++seq}`;
-  /* Chaves de verdade: a cifra roda de ponta a ponta, e uma chave inventada
-     falharia no ECDH — que é justamente um dos elos sob teste. */
   const ecdh = crypto.createECDH('prime256v1');
   ecdh.generateKeys();
   await db
@@ -163,7 +124,6 @@ async function aparelho(reviewerId) {
   return endpoint;
 }
 
-/** Um aparelho de APLICATIVO: o que ele tem é um token, não um endereço. */
 async function aparelhoApp(reviewerId) {
   const token = `token-do-aparelho-${++seq}`;
   await db
@@ -174,11 +134,6 @@ async function aparelhoApp(reviewerId) {
   return token;
 }
 
-/* ══ 1. A CIFRA ══════════════════════════════════════════════════════════ */
-
-/* O vetor do RFC 8291, seção 5. Com as mesmas chaves, o mesmo sal e o mesmo
-   texto, a saída é ESTA — e é a única forma de saber que a conta está certa sem
-   um aparelho de verdade do outro lado. */
 test('a cifra bate byte a byte com o vetor do RFC 8291', () => {
   const esperado =
     'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLoc' +
@@ -199,8 +154,6 @@ test('a cifra bate byte a byte com o vetor do RFC 8291', () => {
   assert.equal(saida.toString('base64url'), esperado);
 });
 
-/* O sal é sorteado a cada mensagem, e é o que faz duas mensagens iguais não
-   parecerem iguais para quem as carrega. */
 test('a mesma mensagem sai diferente cada vez', () => {
   const sub = {
     p256dh:
@@ -211,8 +164,6 @@ test('a mesma mensagem sai diferente cada vez', () => {
   const b = push.encrypt('oi', sub).toString('base64url');
   assert.notEqual(a, b);
 });
-
-/* ══ 2. A INSCRIÇÃO ══════════════════════════════════════════════════════ */
 
 test('a chave pública é servida para quem vai se inscrever', async () => {
   const { status, body } = await req('GET', '/api/push/key');
@@ -259,11 +210,8 @@ test('um endereço que não é https é recusado', async () => {
   assert.equal(torto.status, 400);
 });
 
-/* ══ 3. O TRABALHO DA NOITE ══════════════════════════════════════════════ */
-
 const hojeBR = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
 
-/** Uma série que a pessoa acompanha, com episódio estreando hoje. */
 async function estreiaHoje(p, club) {
   const showId = 600000 + ++seq;
   await req(
@@ -297,8 +245,6 @@ test('o relógio manda a estreia do dia para quem acompanha', async () => {
   assert.equal(entregas.length, 1);
 
   const entrega = entregas[0];
-  /* O cabeçalho que diz quem está mandando, e o que diz que o corpo está
-     cifrado. Sem os dois, o serviço recusa. */
   assert.match(entrega.headers.authorization || '', /^vapid t=.+, k=.+/);
   assert.equal(entrega.headers['content-encoding'], 'aes128gcm');
   assert.ok(entrega.body.length > 16, 'o corpo cifrado não pode estar vazio');
@@ -317,8 +263,6 @@ test('rodar de novo no mesmo dia não acorda ninguém duas vezes', async () => {
   assert.equal(entregas.length, 0);
 });
 
-/* Acompanhar é de cada um: quem está na mesma sala e não acompanha a série não
-   é avisado da estreia dela. */
 test('quem não acompanha não é avisado', async () => {
   const dono = await kit.signIn();
   const outra = await kit.signIn();
@@ -332,8 +276,6 @@ test('quem não acompanha não é avisado', async () => {
   assert.equal(entregas.length, 0);
 });
 
-/* Um aparelho formatado responde 410 para sempre. Insistir com ele é gastar uma
-   requisição por dia até o fim dos tempos. */
 test('o aparelho que respondeu 410 sai da lista', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -349,8 +291,6 @@ test('o aparelho que respondeu 410 sai da lista', async () => {
   assert.equal(sobrou.length, 0, 'a inscrição morta tinha de sair');
 });
 
-/* ══ 4. A PORTA DO RELÓGIO ═══════════════════════════════════════════════ */
-
 test('sem o segredo, o relógio não dispara nada', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -361,12 +301,6 @@ test('sem o segredo, o relógio não dispara nada', async () => {
   assert.equal((await req('POST', '/api/push/airing')).status, 403);
   assert.equal(entregas.length, 0);
 });
-
-/* ══ 5. A PORTA DO ANDROID ═══════════════════════════════════════════════
-   O WebView de uma casca não tem Push API: quem acorda o aparelho é o serviço
-   do Android. A inscrição é um token, quem cifra é o Google, e o que não pode
-   mudar é o resto — a conta de quem recebe, o texto, e o registro de quem já
-   foi avisado. */
 
 test('o aplicativo se inscreve com um token, e a linha sabe por qual porta sai', async () => {
   const p = await kit.signIn();
@@ -397,12 +331,8 @@ test('a estreia do dia sai pela porta do Android quando a inscrição é de app'
   const token = await aparelhoApp(p.id);
 
   resposta = 200;
-  /* O relógio percorre o produto inteiro, então o número que ele devolve conta
-     também as estreias de outras contas destes testes. O que se afirma aqui é
-     sobre ESTE aparelho: o que saiu, e para quem. */
   await relogio();
 
-  /* Duas requisições: a troca do JWT por um token de acesso, e o envio. */
   const envio = entregas.find(e => e.url.includes('/messages:send'));
   assert.ok(envio, 'nada foi mandado ao FCM');
   assert.equal(envio.headers.authorization, 'Bearer token-de-acesso-de-teste');
@@ -411,8 +341,6 @@ test('a estreia do dia sai pela porta do Android quando a inscrição é de app'
   assert.equal(corpo.message.token, token);
   assert.ok(corpo.message.notification.title, 'o aviso precisa de um título');
   assert.match(corpo.message.notification.body, /T4E02/);
-  /* `notification` e não só `data`: é ela que faz o Android desenhar o aviso
-     com o app fechado, que é o caso inteiro deste recurso. */
   assert.ok(corpo.message.android.notification.tag);
 });
 
@@ -431,7 +359,6 @@ test('o aparelho que o Google diz não existir mais sai da lista', async () => {
   );
 });
 
-/* As duas portas na mesma conta: um navegador e um aplicativo, o mesmo aviso. */
 test('quem tem os dois recebe nos dois', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -439,8 +366,6 @@ test('quem tem os dois recebe nos dois', async () => {
   await aparelho(p.id);
   await aparelhoApp(p.id);
 
-  /* 201 é entrega do Web Push e 200 é a do FCM; o serviço de mentira responde
-     um código só, então este teste mede o que saiu, não o que voltou. */
   resposta = 200;
   await relogio();
   assert.ok(entregas.some(e => e.url.includes('/messages:send')), 'o aplicativo não recebeu');

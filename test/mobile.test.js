@@ -17,27 +17,6 @@ const throttle = require('../throttle');
 const auth = require('../auth');
 const kit = require('../testkit');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O QUE UM APLICATIVO PRECISA DO SERVIDOR, e que o site nunca precisou.
-
-   Três coisas, e nenhuma delas é o aplicativo — são o que fica de pé do lado de
-   cá para que ele exista depois, escrito antes de existir porque cada uma é
-   cara de acrescentar num cliente já instalado.
-
-   1. **Apresentar a sessão sem cookie.** Numa casca com os arquivos
-      embarcados, a origem é `capacitor://localhost` e o cookie do site é
-      cookie de terceiro — o WebView pode nem guardar. Então: `Bearer`, uma
-      sessão curta, e uma chave de noventa dias que a repõe.
-   2. **Falar de outra origem.** Mesma razão: a página não é servida por este
-      servidor, então toda chamada é CORS.
-   3. **Uma API que não encolhe.** Quem baixou o app em março continua com a
-      tela de março, e um campo removido é tela em branco no aparelho de alguém.
-
-   O que estes testes seguram é o que falha em silêncio: uma chave de renovação
-   que continua valendo depois de usada, uma origem estranha recebendo
-   permissão, e um cookie voltando para quem entrou por token.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -57,7 +36,7 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* arquivo temporário */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -80,19 +59,12 @@ async function req(method, pathname, { body, cookie, bearer, origin, headers } =
   return { status: res.status, body: parsed, headers: res.headers };
 }
 
-/** Uma conta com senha, que é como um app entra. */
 async function comSenha(senha = 'senha-de-teste') {
   const p = await kit.signIn();
   await auth.setPassword(p.id, senha);
   const email = (await db.prepare('SELECT email FROM reviewers WHERE id = ?').get(p.id)).email;
   return { ...p, email, senha };
 }
-
-/* ══ 0. INSTALAR ═════════════════════════════════════════════════════════
-   O manifesto e os ícones são o que faz o navegador do celular oferecer
-   "instalar" — e é a base de tudo que vem depois, TWA e casca inclusive. Falham
-   em silêncio de um jeito específico: um caminho de ícone errado não quebra
-   nada, só tira o convite de instalar da tela sem dizer por quê. */
 
 test('o manifesto está servido, e os ícones que ele promete existem', async () => {
   const manifesto = await req('GET', '/manifest.webmanifest', {});
@@ -112,8 +84,6 @@ test('o manifesto está servido, e os ícones que ele promete existem', async ()
   }
 });
 
-/* Um escopo, um registro. Se este arquivo deixar de importar o do WebTorrent,
-   o vídeo da Sessão para de ser servido — e nada no console diz isso. */
 test('o service worker do app carrega o do WebTorrent dentro dele', async () => {
   const res = await fetch(baseUrl + '/app-sw.js');
   assert.equal(res.status, 200);
@@ -121,8 +91,6 @@ test('o service worker do app carrega o do WebTorrent dentro dele', async () => 
   assert.match(code, /importScripts\(['"]\/sw\.min\.js['"]\)/);
   assert.match(code, /addEventListener\(['"]fetch['"]/);
 });
-
-/* ══ 1. A SESSÃO SEM COOKIE ══════════════════════════════════════════════ */
 
 test('e-mail e senha devolvem um par de chaves, e o Bearer vale como sessão', async () => {
   const p = await comSenha();
@@ -140,8 +108,6 @@ test('e-mail e senha devolvem um par de chaves, e o Bearer vale como sessão', a
   assert.equal(me.body.reviewer?.id, p.id);
 });
 
-/* O cookie é HttpOnly de propósito. Devolvê-lo a quem entrou por token daria ao
-   app uma segunda chave que ele não pediu e não sabe apagar. */
 test('quem entra por Bearer não recebe cookie de volta', async () => {
   const p = await comSenha();
   const { body } = await req('POST', '/api/auth/token', {
@@ -161,8 +127,6 @@ test('a senha errada não abre a porta do app', async () => {
   assert.equal(errada.body.access, undefined);
 });
 
-/* O caminho de quem entrou pelo Google numa aba do sistema: a volta cria a
-   sessão de navegador, e o app a troca por um par sem pedir senha nenhuma. */
 test('uma sessão de navegador se troca por um par', async () => {
   const p = await kit.signIn();
   const trocado = await req('POST', '/api/auth/token', { cookie: p.cookie });
@@ -184,8 +148,6 @@ test('o cookie continua entrando, como sempre entrou', async () => {
   assert.equal(me.body.reviewer.id, p.id);
 });
 
-/* ══ 2. A CHAVE DE RENOVAÇÃO ═════════════════════════════════════════════ */
-
 test('renovar devolve um par novo, e a chave usada não serve mais', async () => {
   const p = await comSenha();
   const primeiro = (await req('POST', '/api/auth/token', {
@@ -201,10 +163,6 @@ test('renovar devolve um par novo, e a chave usada não serve mais', async () =>
   assert.equal(nova.body.reviewer.id, p.id);
 });
 
-/* Receber a mesma chave duas vezes quer dizer que existem duas cópias dela no
-   mundo. Não dá para saber qual das duas é o dono, então a família inteira cai
-   e as duas voltam para a tela de entrar — que é o desfecho certo quando uma
-   delas é ladrão. */
 test('apresentar uma chave já gasta derruba a família inteira', async () => {
   const p = await comSenha();
   const primeiro = (await req('POST', '/api/auth/token', {
@@ -214,11 +172,9 @@ test('apresentar uma chave já gasta derruba a família inteira', async () => {
     body: { refresh: primeiro.refresh },
   })).body;
 
-  // O ladrão, com a cópia velha.
   const reuso = await req('POST', '/api/auth/refresh', { body: { refresh: primeiro.refresh } });
   assert.equal(reuso.status, 401);
 
-  // E o dono, com a chave boa, também perde a vez.
   const depois = await req('POST', '/api/auth/refresh', { body: { refresh: segundo.refresh } });
   assert.equal(depois.status, 401, 'a família tinha de cair inteira');
 });
@@ -247,8 +203,6 @@ test('sair no aparelho leva a sessão e a família junto', async () => {
   assert.equal(renovada.status, 401, 'a chave de noventa dias não pode sobreviver ao sair');
 });
 
-/* A sessão do app é curta porque o que o aparelho guarda, ele lê. Deslizar a
-   cada uso desfaria o prazo — e ainda seria uma escrita por toque. */
 test('a sessão do app é de um dia e não desliza', async () => {
   const p = await comSenha();
   const par = (await req('POST', '/api/auth/token', {
@@ -268,8 +222,6 @@ test('a sessão do app é de um dia e não desliza', async () => {
   ).get(sha);
   assert.ok(Number(depois.dias) <= auth.APP_SESSION_DAYS + 0.01, 'a sessão do app não desliza');
 });
-
-/* ══ 3. FALAR DE OUTRA ORIGEM ════════════════════════════════════════════ */
 
 const SHELL = 'capacitor://localhost';
 
@@ -298,15 +250,11 @@ test('uma origem estranha não recebe permissão', async () => {
   assert.equal(direto.headers.get('access-control-allow-origin'), null);
 });
 
-/* Sem `Vary`, um cache na frente serviria a permissão de um pedido para a
-   origem do seguinte. */
 test('a resposta diz que ela depende da origem', async () => {
   const r = await req('GET', '/api/auth/me', { origin: SHELL });
   assert.match(r.headers.get('vary') || '', /Origin/i);
   assert.equal(r.headers.get('access-control-allow-origin'), SHELL);
 });
-
-/* ══ 4. A API QUE NÃO ENCOLHE ════════════════════════════════════════════ */
 
 test('a API diz de que versão ela é, e qual cliente ela ainda atende', async () => {
   const meta = await req('GET', '/api/meta', {});
@@ -318,15 +266,6 @@ test('a API diz de que versão ela é, e qual cliente ela ainda atende', async (
   const qualquer = await req('GET', '/api/auth/me', {});
   assert.equal(qualquer.headers.get('x-api-version'), String(meta.body.api));
 });
-
-/* ══ 5. ATUALIZAR SEM PASSAR PELA LOJA ═══════════════════════════════════
-   O APK carrega os arquivos dentro dele, então um deploy do site não alcança
-   quem já instalou. Estas duas rotas alcançam: o app pergunta se há coisa nova
-   e baixa um zip com o cliente publicado agora.
-
-   O que falha em silêncio aqui é caro em dobro — um pacote quebrado vira tela
-   branca no aparelho de todo mundo de uma vez. Por isso o zip é conferido de
-   verdade: assinatura, índice, e o endereço da API dentro do HTML. */
 
 const APP_INFO = {
   platform: 'android',
@@ -359,10 +298,6 @@ test('quem já está na última não baixa nada', async () => {
   assert.equal(denovo.body.version, primeira.body.version);
 });
 
-/* O pacote é a pasta public/ zipada na hora. Três coisas têm de ser verdade, e
-   cada uma quebra de um jeito diferente: a soma errada faz o plugin recusar, o
-   index fora da raiz faz o app abrir em branco, e o endereço ausente faz o app
-   procurar a API dentro do próprio aparelho. */
 test('o pacote confere com a soma, e carrega o endereço da API dentro', async () => {
   const { body } = await req('POST', '/api/app/update', { body: APP_INFO });
 
@@ -378,9 +313,6 @@ test('o pacote confere com a soma, e carrega o endereço da API dentro', async (
   );
   assert.equal(bytes.subarray(0, 2).toString('ascii'), 'PK', 'isto não é um zip');
 
-  /* O índice do zip fica no fim do arquivo, e é dele que sai a lista de nomes
-     sem descompactar nada. `index.html` tem de estar na RAIZ: é o que o plugin
-     procura para saber o que servir. */
   const nomes = namesIn(bytes);
   assert.ok(nomes.includes('index.html'), 'index.html precisa estar na raiz do zip');
   assert.ok(nomes.some(n => n.startsWith('assets/')), 'o pacote veio sem o cliente');
@@ -398,11 +330,6 @@ test('um pacote que não é o publicado agora não é servido', async () => {
   assert.equal(perdido.status, 404);
 });
 
-/* ── lendo o zip sem descompactador ──────────────────────────────────────
-   Um leitor mínimo, e de propósito: o escritor está em zip.js, e um teste que
-   usasse o escritor para conferir o escrito não conferiria nada. Isto lê o
-   índice central, que é a parte do formato que um descompactador de verdade
-   também lê primeiro. */
 function namesIn(buf) {
   const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   assert.ok(eocd > 0, 'zip sem registro de fim');
@@ -420,7 +347,6 @@ function namesIn(buf) {
   return nomes;
 }
 
-/** O conteúdo de um arquivo do zip, descomprimido pelo caminho do cabeçalho local. */
 function fileIn(buf, alvo) {
   const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   const total = buf.readUInt16LE(eocd + 10);
@@ -445,14 +371,6 @@ function fileIn(buf, alvo) {
   throw new Error(`${alvo} não está no pacote`);
 }
 
-/* ══ 6. O BILHETE DO CANO AO VIVO ════════════════════════════════════════
-   `EventSource` não manda cabeçalho: no site ele se identifica pelo cookie, e
-   num aplicativo não há cookie desta origem. Sem o bilhete, a sala sincronizada
-   e o mural ao vivo simplesmente não existem no APK.
-
-   O que ele não pode ser é uma segunda porta permanente: vale um minuto, é
-   gasto na primeira apresentação, e não abre nada que a sessão já não abrisse. */
-
 test('o bilhete vale como sessão no cano ao vivo, e só uma vez', async () => {
   const p = await comSenha();
   const par = (await req('POST', '/api/auth/token', {
@@ -462,7 +380,6 @@ test('o bilhete vale como sessão no cano ao vivo, e só uma vez', async () => {
   const { body } = await req('POST', '/api/auth/ticket', { bearer: par.access });
   assert.ok(body.ticket, 'sem bilhete não há cano ao vivo no app');
 
-  /* O clube principal, que toda conta nova recebe: é onde o cano existe. */
   const clubes = await req('GET', '/api/clubs', { bearer: par.access });
   const sala = clubes.body.mine[0];
 
@@ -473,8 +390,6 @@ test('o bilhete vale como sessão no cano ao vivo, e só uma vez', async () => {
   assert.match(aberto.headers.get('content-type') || '', /text\/event-stream/);
   await aberto.body.cancel();
 
-  /* Gasto: a segunda apresentação do mesmo bilhete não é sessão nenhuma, e a
-     rota cobra sessão. */
   const denovo = await fetch(
     `${baseUrl}/api/c/${sala.slug}/live/stream?ticket=${encodeURIComponent(body.ticket)}`
   );

@@ -2,37 +2,8 @@ const db = require('./db');
 const airing = require('./airing');
 const { handlesFor, mentionedIn } = require('./handles');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   OS AVISOS DE UMA SALA. A mesma construção serve duas leituras — o sino de um
-   clube e o da REDE, que junta todas as salas de uma pessoa.
-
-   Não existe tabela de notificação: as fontes já são tabelas, com autor e hora
-   em cada linha. Gravar o aviso no momento do evento manteria a mesma verdade
-   em dois lugares, e o segundo é o que envelhece — um comentário apagado
-   deixaria para trás o aviso de que ele existiu. Derivar custa alguns SELECTs
-   por leitura num banco de dezenas de linhas por tabela.
-
-   Todas as consultas excluem o PRÓPRIO ator, e não é higiene: sem isso,
-   responder um comentário na sua avaliação acenderia o sino para você mesmo.
-
-   Um dos avisos não tem ator nenhum: o episódio que estreia hoje numa série que
-   você acompanha. Ele não é reação a coisa nenhuma — é o calendário —, e por
-   isso é o único que chega sem retrato e sem nome de gente. A conta dele mora
-   em airing.js, porque o aviso da noite — que alcança quem está com o app
-   fechado — precisa da mesma resposta.
-
-   As marcas d'água ficam por (clube, pessoa) mesmo na leitura da rede: uma
-   marca só, por pessoa, faria abrir o sino marcar como visto o que aconteceu
-   numa sala que ela nem abriu.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** Quantos eventos o sino carrega, por sala. Passado isto é histórico. */
 const LIMIT = 60;
 
-/* `parent_id IS NULL` porque uma resposta pendurada num comentário da minha
-   ficha já me avisa por outro caminho. Sem isto o dono da ficha receberia dois
-   avisos do mesmo texto — "comentou sua avaliação" e "respondeu você" — sem
-   nem ter escrito o comentário respondido. */
 const commentsOnMine = db.prepare(`
   SELECT c.id, c.created_at, c.body,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot, a.avatar_rev AS actor_avatar_rev,
@@ -45,8 +16,6 @@ const commentsOnMine = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-/* Respostas aos MEUS comentários, em qualquer ficha. O que importa é quem
-   escreveu o comentário respondido, não de quem é a avaliação embaixo. */
 const repliesToMine = db.prepare(`
   SELECT c.id, c.created_at, c.body,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot, a.avatar_rev AS actor_avatar_rev,
@@ -60,12 +29,6 @@ const repliesToMine = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-/* Duas fontes, porque há dois lugares onde se escreve: o comentário numa
-   conversa e o que a pessoa deixa ao avaliar um filme.
-
-   Vem tudo e a filtragem é em JS: quem foi mencionado depende dos apelidos, que
-   dependem de quem mais existe no clube (ver handles.js), e isso não é uma
-   pergunta que SQL responde. */
 const recentWriting = db.prepare(`
   SELECT c.id, c.created_at, c.body, c.reviewer_id,
          a.name AS actor_name, a.dot AS actor_dot, a.avatar_rev AS actor_avatar_rev,
@@ -89,17 +52,11 @@ const recentTakeNotes = db.prepare(`
   LIMIT ${LIMIT * 3}
 `);
 
-/* O apelido é fato sobre o CLUBE: `@bruno` serve enquanto não houver dois
-   Brunos na mesma sala. Calculado sobre a lista da rede, um clube de três
-   pessoas herdaria `@brunosa` por causa de um Bruno que ele não conhece. */
 const rosterStmt = db.prepare(`
   SELECT r.id, r.name FROM club_members m JOIN reviewers r ON r.id = m.reviewer_id
   WHERE m.club_id = ?
 `);
 
-/* A rota de voto já recusa votar na própria ficha, então o segundo termo é
-   cinto e suspensório — e o cinto vale, porque linhas gravadas antes daquela
-   regra não sabem dela. */
 const votesOnMine = db.prepare(`
   SELECT v.value, v.created_at,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot, a.avatar_rev AS actor_avatar_rev,
@@ -112,8 +69,6 @@ const votesOnMine = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-/* Curtidas nos meus comentários — em qualquer ficha, inclusive nas dos outros.
-   O que importa é quem escreveu o texto. */
 const likesOnMine = db.prepare(`
   SELECT l.created_at, c.id AS comment_id, c.body,
          a.id AS actor_id, a.name AS actor_name, a.dot AS actor_dot, a.avatar_rev AS actor_avatar_rev,
@@ -127,9 +82,6 @@ const likesOnMine = db.prepare(`
   LIMIT ${LIMIT}
 `);
 
-/* O único aviso que não é sobre uma ficha, e o único que é só para o ADM. Ele
-   existe porque um pedido ficava numa lista atrás de perfil → engrenagem →
-   Ajustes, e nada dizia que ele estava lá. */
 const knocking = db.prepare(`
   SELECT q.created_at, r.id AS actor_id, r.name AS actor_name, r.dot AS actor_dot, r.avatar_rev AS actor_avatar_rev
   FROM club_join_requests q
@@ -145,17 +97,12 @@ const marksStmt = db.prepare(
 const markSeenStmt = db.prepare(
   "UPDATE club_members SET notifications_seen_at = datetime('now') WHERE club_id = ? AND reviewer_id = ?"
 );
-/* Limpar é também ter visto: sem mover as duas juntas, a lista esvaziaria e o
-   contador continuaria acusando avisos que ninguém consegue mais abrir. */
 const markClearedStmt = db.prepare(
   `UPDATE club_members
    SET notifications_cleared_at = datetime('now'), notifications_seen_at = datetime('now')
    WHERE club_id = ? AND reviewer_id = ?`
 );
 
-/* Um pedaço do que foi escrito, para o aviso ter conteúdo em vez de só contar
-   que alguma coisa aconteceu. Cortado na palavra, não no caractere: um trecho
-   que termina no meio de uma sílaba parece defeito. */
 function excerpt(body, max = 90) {
   const text = String(body || '').replace(/\s+/g, ' ').trim();
   if (text.length <= max) return text;
@@ -164,9 +111,6 @@ function excerpt(body, max = 90) {
   return (space > max * 0.6 ? cut.slice(0, space) : cut) + '…';
 }
 
-/* O texto vem pronto do servidor: montar a frase na tela a partir de um `kind`
-   espalharia a redação do produto por um switch no cliente, e a redação é
-   conteúdo autoral aqui. */
 function say(kind, item) {
   if (kind === 'comment') return `comentou sua avaliação de ${item.movie_title}`;
   if (kind === 'reply') return `respondeu você em ${item.movie_title}`;
@@ -181,11 +125,6 @@ function say(kind, item) {
     : `discordou da sua avaliação de ${item.movie_title}`;
 }
 
-/* O retrato viaja no aviso, repetindo a mesma URL dezenas de vezes na mesma
-   resposta. É de propósito: o sino junta as salas todas, e o elenco carregado
-   na tela é o de uma só — sem o retrato aqui, quem avisa de outra sala vira uma
-   etiqueta colorida, que é a informação que faz a linha ser reconhecida antes
-   de ser lida. */
 const avatarOf = row =>
   row.actor_avatar_rev ? `/api/reviewers/${row.actor_id}/avatar?v=${row.actor_avatar_rev}` : null;
 
@@ -196,9 +135,6 @@ const actorOf = row => ({
   avatar: avatarOf(row),
 });
 
-/* Os avisos de UMA sala, já filtrados pela marca de "limpo" dela. Quem chama
-   decide o que fazer com as marcas: o sino de um clube conta o não lido daquela
-   sala, o da rede soma o de todas. */
 async function forClub({ clubId, me, manda }) {
   const [comments, replies, votes, likes, writing, notes, roster, marks, pedidos, estreias] =
     await Promise.all([
@@ -217,8 +153,6 @@ async function forClub({ clubId, me, manda }) {
   const handles = handlesFor(roster);
   const items = [];
 
-  /* Sem `movieId` e sem `reviewId`: este aviso não aponta para uma ficha, aponta
-     para a porta do clube. A tela sabe o que fazer com ele pelo `kind`. */
   for (const row of pedidos) {
     if (row.actor_id === me) continue;
     items.push({
@@ -230,9 +164,6 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* Meia-noite e não a hora da leitura: a hora decide o que é "não lido", e um
-     aviso carimbado com o instante em que o sino foi aberto nasceria sempre
-     novo. Assim ele acende uma vez no dia e cala depois de visto. */
   for (const estreia of estreias) {
     items.push({
       id: `air:${estreia.showId}:${estreia.season}x${estreia.episode}`,
@@ -247,9 +178,6 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* `commentId` é o que faz o aviso levar ao TEXTO e não só à ficha: sem ele o
-     link abria a avaliação certa e deixava a pessoa procurando qual resposta o
-     sino anunciou. */
   for (const row of comments) {
     items.push({
       id: `c:${row.id}`,
@@ -278,9 +206,6 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* Um texto que menciona alguém pode ser a mesma linha que já virou aviso por
-     outro motivo. Entre "respondeu você" e "mencionou você", a resposta é o
-     fato mais forte e chega primeiro. */
   const already = new Set(items.map(i => i.id));
 
   for (const row of writing) {
@@ -291,8 +216,6 @@ async function forClub({ clubId, me, manda }) {
       id: `m:${row.id}`,
       kind: 'mention',
       at: row.created_at,
-      /* Nas menções o ator é o AUTOR do texto, então o id vem de `reviewer_id`
-         e não do `actor_id` das outras consultas. */
       actor: {
         id: row.reviewer_id,
         name: row.actor_name,
@@ -307,9 +230,6 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* E o comentário que a pessoa deixa na própria ficha ao avaliar: é o outro
-     lugar do produto onde se escreve, então é o outro lugar onde se chama
-     alguém pelo nome. */
   for (const row of notes) {
     if (row.reviewer_id === me) continue;
     if (!mentionedIn(row.comment, handles).includes(me)) continue;
@@ -317,8 +237,6 @@ async function forClub({ clubId, me, manda }) {
       id: `mr:${row.review_id}`,
       kind: 'mention',
       at: row.recorded_at,
-      /* Nas menções o ator é o AUTOR do texto, então o id vem de `reviewer_id`
-         e não do `actor_id` das outras consultas. */
       actor: {
         id: row.reviewer_id,
         name: row.actor_name,
@@ -332,8 +250,6 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* Um por pessoa por ficha, agora que o voto é da ficha inteira: eram até onze
-     avisos da mesma pessoa sobre a mesma avaliação. */
   for (const row of votes) {
     items.push({
       id: `v:${row.review_id}:${row.actor_id}`,
@@ -361,12 +277,8 @@ async function forClub({ clubId, me, manda }) {
     });
   }
 
-  /* Ordenado depois de juntar, e não por consulta: as fontes chegam ordenadas
-     entre si e desordenadas umas com as outras. Comparação de string funciona
-     porque datetime('now') grava YYYY-MM-DD HH:MM:SS, que ordena como texto. */
   items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 
-  /* Dispensado fica de fora da lista, e não só marcado. */
   const clearedAt = marks?.notifications_cleared_at || null;
   const seenAt = marks?.notifications_seen_at || null;
   const visible = (clearedAt ? items.filter(i => String(i.at) > clearedAt) : items).slice(0, LIMIT);
@@ -374,7 +286,6 @@ async function forClub({ clubId, me, manda }) {
   return { items: visible, seenAt, clearedAt };
 }
 
-/** Quantos dos avisos desta sala chegaram depois da última abertura do sino. */
 const unreadIn = (items, seenAt) =>
   seenAt ? items.filter(i => String(i.at) > seenAt).length : items.length;
 

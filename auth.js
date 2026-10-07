@@ -1,65 +1,17 @@
 const crypto = require('node:crypto');
 const db = require('./db');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Quem é você. A identidade é o e-mail, e ela chega por dois caminhos:
-
-   1. **Google.** A porta normal. Não guardamos senha nenhuma nesse caminho, e
-      quem cuida de segundo fator e de conta invadida é o Google.
-   2. **E-mail e senha.** É o que garante que ninguém fique preso a ele: o dia
-      em que a conta Google sumir, o clube continua acessível.
-
-   Três regras seguram este arquivo:
-
-   1. A senha nunca é gravada, logada ou devolvida. Só um hash scrypt e um salt.
-   2. Erros seguidos contam, e a conta descansa por um tempo crescente.
-   3. O cookie carrega um token aleatório; o banco guarda só o SHA-256 dele. Ler
-      a tabela não deixa ninguém se passar por um membro.
-
-   ── e duas formas de apresentar a sessão ─────────────────────────────────
-   **Cookie** no navegador, `Authorization: Bearer` num aplicativo. É a mesma
-   sessão e a mesma tabela; o que muda é onde ela é guardada, e isso muda o
-   prazo:
-
-   · o cookie é `HttpOnly` — o JavaScript da página não o lê —, então trinta
-     dias deslizantes é um risco que o navegador segura.
-   · um aplicativo lê o que guarda. Então a sessão dele vale um DIA e é trocada
-     por uma nova com a chave de renovação, que vale noventa e é gasta a cada
-     uso. Ver `refresh_tokens` em db.js.
-
-   Um Bearer nunca recebe cookie de volta, e um cookie nunca vira Bearer: são
-   duas portas, e misturá-las daria ao navegador uma chave que ele não precisa
-   guardar e ao app um cookie que ele não consegue ler.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const SESSION_COOKIE = 'cc_session';
 
-/* Entrar pelo Google é uma volta inteira ao provedor e de volta, e cobrar isso
-   todo dia de quem só quer ver o que o clube avaliou é o produto pedindo
-   pedágio para ser aberto. Deslizante: cada uso empurra a validade, então quem
-   entra toda semana nunca é deslogado. */
 const SESSION_DAYS = 30;
-/* Renovar só quando falta menos que isto. Uma renovação é uma escrita, e
-   escrever a cada requisição seria um INSERT por clique numa aba que fica
-   aberta a noite inteira. Assim é uma escrita a cada quinze dias por sessão. */
 const RENEW_UNDER_DAYS = 15;
 
-/* A sessão de um aplicativo. Curta porque o que ele guarda, ele lê: um aparelho
-   perdido para de valer sozinho em vinte e quatro horas, sem ninguém precisar
-   revogar nada. Não desliza — é a chave de renovação que a repõe. */
 const APP_SESSION_DAYS = 1;
-/* E a chave que a repõe. Noventa dias é "não pedir senha de novo neste ano", e
-   cada uso gasta a chave e devolve outra: uma que voltou a ser apresentada é
-   sinal de que existem duas cópias dela no mundo. */
 const REFRESH_DAYS = 90;
 
 const MAX_ATTEMPTS = 5;
-const LOCK_SECONDS = 60; // multiplicado por quanto a conta já passou do limite
+const LOCK_SECONDS = 60;
 
-/* Oito é o piso que vale a pena impor: acima disso a força bruta on-line já não
-   é o caminho, e exigir símbolo, número e maiúscula produz `Senha123!` em toda
-   conta do clube. O teto existe porque scrypt trabalha sobre o que recebe, e um
-   megabyte de senha é um jeito de pedir ao servidor que pare de responder. */
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 200;
 
@@ -84,7 +36,6 @@ async function setPassword(reviewerId, pw) {
   ).run(hashPassword(pw, salt), salt, reviewerId);
 }
 
-/** Comparação em tempo constante. Devolve 'ok' | 'bad' | 'unset' | 'locked'. */
 async function checkPassword(reviewer, pw) {
   if (!reviewer.password_hash || !reviewer.password_salt) return 'unset';
   if (reviewer.locked_until) {
@@ -122,18 +73,8 @@ async function lockedSecondsLeft(reviewer) {
   return Math.max(0, row.s || 0);
 }
 
-/* As mesmas cores que a marquise usa nos rostos. Aqui porque é este arquivo
-   que cria uma pessoa vinda do Google, e ela precisa nascer com a sua. */
 const DOTS = ['#b5abfc', '#cfd3e5', '#a7a1db', '#e0b1a4', '#9fd0c0', '#d9c07a'];
 
-/* Nem todo mundo tem, ou quer usar, uma conta Google — e um produto cuja única
-   porta é a de outra empresa decidiu de quem os seus usuários precisam ser
-   clientes.
-
-   O e-mail aqui NÃO é verificado, e a consequência está contida: uma conta
-   assim serve para entrar e usar o produto, e não serve para HERDAR nada. Só um
-   e-mail verificado pelo Google liga uma conta que já existia, e só ele senta na
-   cadeira de administrador da instalação. */
 async function register({ name, email, password }) {
   const mail = String(email || '').trim().toLowerCase();
   const quem = String(name || '').trim().slice(0, 60);
@@ -153,29 +94,13 @@ async function register({ name, email, password }) {
   await db.prepare('INSERT INTO reviewers (id, name, dot, email) VALUES (?, ?, ?, ?)')
     .run(id, quem, dot, mail);
   await setPassword(id, password);
-  /* Nasce dentro do clube principal. Ver joinHomeClub: sem sala nenhuma não há
-     tela que o app possa abrir. */
   await db.joinHomeClub(id);
   return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id) };
 }
 
-/* Deliberadamente frouxo. A validação séria de e-mail é mandar um e para lá:
-   isto evita `João` e ` ` virando login, não uma pessoa determinada a escrever
-   um endereço que não é dela. */
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const isValidEmail = mail => typeof mail === 'string' && mail.length <= 200 && EMAIL_RE.test(mail);
 
-/* Procurada por `sub` ANTES de por e-mail, e a ordem é a regra de segurança
-   inteira: `sub` é o identificador que o Google garante estável para sempre, e
-   o e-mail um dia pode trocar de dono. Casar por e-mail primeiro seria aceitar
-   que quem herdar um endereço herda a conta.
-
-   O e-mail serve para uma coisa, uma vez só: `CINECLUBE_ADMIN_EMAIL` ligar a
-   conta do dono na primeira entrada. Depois de ligada, a conta tem `google_sub`
-   e a variável não faz mais diferença.
-
-   `verified` vem do próprio Google: um e-mail não verificado é uma string que
-   alguém escreveu. */
 async function accountForGoogle({ sub, email, name, verified }) {
   const byGoogle = await db.prepare('SELECT * FROM reviewers WHERE google_sub = ?').get(sub);
   if (byGoogle) return { reviewer: byGoogle, created: false };
@@ -184,9 +109,6 @@ async function accountForGoogle({ sub, email, name, verified }) {
   const mail = (email || '').trim().toLowerCase();
 
   if (mail && verified) {
-    /* Nos dois casos só serve quem AINDA NÃO tem `google_sub`: uma conta já
-       ligada pertence a outro `sub`, e sobrescrever a ligação seria entregar a
-       conta de alguém a quem chegou depois. */
     const byMail = await db
       .prepare('SELECT * FROM reviewers WHERE email = ? COLLATE NOCASE AND google_sub IS NULL')
       .get(mail);
@@ -196,8 +118,6 @@ async function accountForGoogle({ sub, email, name, verified }) {
         ? await db.prepare('SELECT * FROM reviewers WHERE is_admin = 1 AND google_sub IS NULL ORDER BY created_at LIMIT 1').get()
         : null);
     if (heir) {
-      /* Chegar aqui exige `verified` do próprio Google, que é a prova que este
-         produto não tem como produzir sozinho. */
       await db.prepare(
         `UPDATE reviewers SET google_sub = ?, email = COALESCE(email, ?), email_verified = 1
          WHERE id = ?`
@@ -207,64 +127,29 @@ async function accountForGoogle({ sub, email, name, verified }) {
     }
   }
 
-  /* Um endereço não verificado não é gravado, e nulo é melhor que ele de duas
-     formas: gravado, ele viraria a identidade de login por senha de uma conta
-     que ninguém provou ser sua; e se já for de outra pessoa, a escrita bate no
-     índice único e a entrada inteira morre num 500 do lado de fora.
-
-     A conta existe e é identificada pelo `sub`. A rota de senha já sabe recusar
-     cadastrar senha numa conta sem e-mail, com uma frase que diz o porquê. */
   const trusted = mail && verified ? mail : null;
   const free = trusted
     ? !(await db.prepare('SELECT 1 AS x FROM reviewers WHERE email = ? COLLATE NOCASE').get(trusted))
     : false;
 
-  /* O nome vem do Google só como ponto de partida — a pessoa troca no próprio
-     perfil como sempre pôde. */
   const id = 'p' + crypto.randomUUID();
   const dot = DOTS[Math.floor(Math.random() * DOTS.length)];
-  /* `email_verified` acompanha o endereço e nunca o precede: uma conta que
-     nasce sem e-mail nasce não verificada, porque não há endereço a verificar. */
   const verificado = free && trusted ? 1 : 0;
   await db.prepare(
     'INSERT INTO reviewers (id, name, dot, email, google_sub, email_verified) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, (name || mail || 'Alguém').slice(0, 60), dot, free ? trusted : null, sub, verificado);
-  /* A mesma sala de quem entra por e-mail e senha: a porta muda, o lugar onde
-     se chega não. */
   await db.joinHomeClub(id);
   const created = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(id);
   return { reviewer: created, created: true };
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   FUNDIR DUAS CONTAS DA MESMA PESSOA — uma situação que um produto com duas
-   portas de entrada produz sozinho, para sempre.
-
-   Sem rota: quem chama é `scripts/merge-accounts.js`, rodado à mão com os dois
-   ids na frente. Uma fusão é irreversível e escolhe qual das duas pessoas
-   sobrevive, o que não é decisão para um botão num telefone.
-
-   A conta ANTIGA sobrevive e a nova é dissolvida nela: mover as credenciais é
-   mexer em quatro colunas de uma linha, e mover o histórico seria reescrever a
-   chave estrangeira em sete tabelas com restrições de unicidade em cada uma.
-
-   Tudo num lote, que no libSQL é uma transação: se qualquer passo falhar, a
-   conta nova não pode ficar sem as credenciais que já foram tiradas dela —
-   isso trancaria a pessoa para fora das duas.
-   ══════════════════════════════════════════════════════════════════════════ */
 async function claimAccount(newId, oldId) {
   const nova = await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(newId);
   if (!nova) return { error: 'Sessão inválida.' };
 
   const passos = [
-    /* Primeiro liberar os índices únicos de e-mail e de google_sub: as duas
-       linhas não podem carregar o mesmo valor nem por um instante. */
     { sql: 'UPDATE reviewers SET email = NULL, google_sub = NULL WHERE id = ?', args: [newId] },
     {
-      /* `email_verified` acompanha o e-mail e tem de acompanhar: sem isso a
-         conta antiga herda um endereço provado pelo Google e continua marcada
-         como não confirmada, então a pessoa vê o aviso de confirmar e não
-         consegue fundar clube por um endereço que ela já provou. */
       sql: `UPDATE reviewers
             SET email = ?, google_sub = ?, password_hash = ?, password_salt = ?,
                 email_verified = ?, auth_attempts = 0, locked_until = NULL
@@ -280,9 +165,6 @@ async function claimAccount(newId, oldId) {
     },
   ];
 
-  /* O que a conta nova possa ter acumulado antes da fusão. `OR IGNORE` porque a
-     antiga pode já ter a mesma linha — a mesma pessoa no mesmo clube, a mesma
-     ficha do mesmo filme —, e nesse caso vale o que ela já tinha. */
   for (const [tabela, coluna] of [
     ['club_members', 'reviewer_id'],
     ['reviews', 'reviewer_id'],
@@ -296,10 +178,6 @@ async function claimAccount(newId, oldId) {
       args: [oldId, newId],
     });
   }
-  /* As duas filas são de cada um desde que o dono entrou na chave delas, então
-     as duas contas podem querer a mesma obra: o `OR IGNORE` guarda o que a
-     antiga já tinha, e a linha da nova que ficou para trás sai na mão — não há
-     cascade atrás de `added_by`. */
   for (const tabela of ['watchlist', 'show_queue']) {
     passos.push({
       sql: `UPDATE OR IGNORE ${tabela} SET added_by = ? WHERE added_by = ?`,
@@ -307,17 +185,13 @@ async function claimAccount(newId, oldId) {
     });
     passos.push({ sql: `DELETE FROM ${tabela} WHERE added_by = ?`, args: [newId] });
   }
-  // Esta não tem restrição nenhuma, então nunca colide.
   passos.push({ sql: 'UPDATE clubs SET created_by = ? WHERE created_by = ?', args: [oldId, newId] });
 
-  // E a linha nova sai, levando em cascata o que o OR IGNORE deixou para trás.
   passos.push({ sql: 'DELETE FROM reviewers WHERE id = ?', args: [newId] });
 
   await db.batch(passos);
   return { reviewer: await db.prepare('SELECT * FROM reviewers WHERE id = ?').get(oldId) };
 }
-
-/* ── sessions ─────────────────────────────────────────────────────────── */
 
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -331,15 +205,6 @@ async function createSession(reviewerId, kind = 'web') {
   return token;
 }
 
-/* ── a chave de renovação, e a família dela ───────────────────────────────
-   Renovar GASTA a chave e devolve outra da mesma família. Quem apresenta uma
-   chave que já foi gasta está numa de duas situações, e as duas terminam igual:
-   ou é o app repetindo um pedido que se perdeu no caminho, ou é alguém com uma
-   cópia roubada. Não há como distinguir, então a família inteira cai e as duas
-   pessoas voltam para a tela de entrar — que é o desfecho certo quando uma
-   delas é ladrão.
-
-   O par nasce junto: uma sessão de um dia e a chave de noventa que a repõe. */
 async function createTokenPair(reviewerId, family = null) {
   const refresh = crypto.randomBytes(32).toString('base64url');
   const grupo = family || 'f' + crypto.randomUUID();
@@ -352,19 +217,10 @@ async function createTokenPair(reviewerId, family = null) {
   return {
     access,
     refresh,
-    /* Em segundos, que é a unidade que todo cliente de token já espera, e o
-       cliente não precisa saber de dias nem de fuso para decidir quando pedir
-       a próxima. */
     expiresIn: APP_SESSION_DAYS * 86400,
   };
 }
 
-/* Troca uma chave por um par novo. Null quer dizer "não vale", e é a mesma
-   resposta para chave inexistente, vencida e já gasta: distinguir contaria a
-   quem apresenta uma chave errada alguma coisa sobre as certas.
-
-   A chave gasta fica gravada em vez de sumir, e é ela que acusa o reuso: uma
-   linha apagada não sabe dizer de que família era. */
 async function rotateRefresh(token) {
   if (!token || typeof token !== 'string') return null;
   const hash = sha(token);
@@ -385,7 +241,6 @@ async function rotateRefresh(token) {
   return createTokenPair(row.reviewer_id, row.family);
 }
 
-/** Derruba a família inteira. É o que uma saída de app faz, e o que um reuso provoca. */
 async function destroyRefreshFamily(family) {
   if (family) await db.prepare('DELETE FROM refresh_tokens WHERE family = ?').run(family);
 }
@@ -396,9 +251,6 @@ const familyOf = async token =>
         ?.family || null
     : null;
 
-/* Devolve a sessão e diz se ela foi empurrada para frente, porque quem chamou
-   precisa saber: renovar no banco sem reenviar o cookie deixaria o navegador
-   esquecendo a sessão antes de o servidor esquecer. */
 async function readSession(token) {
   if (!token) return null;
   const row = await db
@@ -412,9 +264,6 @@ async function readSession(token) {
     .get(sha(token));
   if (!row) return null;
 
-  /* A do app não desliza: ela é curta de propósito, e empurrá-la a cada
-     requisição desfaria o prazo — e ainda seria uma escrita por toque, porque
-     uma sessão de um dia está sempre "perto" de vencer. */
   if (row.kind === 'app') return row;
 
   const near = await db
@@ -429,29 +278,10 @@ async function readSession(token) {
   return row;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   OS LINKS QUE CHEGAM POR E-MAIL: um segredo de vida curta que só chega a quem
-   lê aquela caixa, e cuja apresentação é a prova de que o endereço é dela.
-
-   1. **256 bits de acaso**, não um código de seis dígitos: um código curto pede
-      trava por tentativa e relógio; um token deste tamanho não é adivinhado.
-   2. **O banco guarda só o SHA-256.** Um vazamento de banco não devolve um
-      único link utilizável. Sem salt, e é correto: salt existe para atrasar
-      quem adivinha senha humana, e aqui não há nada humano a adivinhar.
-   3. **Uso único, por exclusão.** Uma coluna "já usado" seria uma segunda
-      resposta, livre para discordar da primeira.
-
-   As validades diferem pelo que cada link pode fazer: confirmar um endereço não
-   dá acesso a nada; redefinir uma senha É o acesso.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const TOKEN_HOURS = { verify: 24, reset: 1 };
 
-/** Cria um link novo e apaga os anteriores do mesmo tipo para a mesma pessoa. */
 async function createEmailToken(reviewerId, kind, email) {
   const token = crypto.randomBytes(32).toString('base64url');
-  /* Pedir um link novo invalida o anterior: quem pede duas vezes é quase sempre
-     alguém que não recebeu o primeiro, não alguém que queira dois. */
   await db.prepare('DELETE FROM email_tokens WHERE reviewer_id = ? AND kind = ?')
     .run(reviewerId, kind);
   await db.prepare(
@@ -461,12 +291,6 @@ async function createEmailToken(reviewerId, kind, email) {
   return token;
 }
 
-/* Lê e CONSOME. Um null só quer dizer uma coisa para quem chama: o link não
-   vale. Distinguir "não existe" de "expirou" contaria a quem apresenta um token
-   errado alguma coisa sobre os certos.
-
-   `email` é comparado com o da conta AGORA: se a pessoa trocou o endereço entre
-   pedir e clicar, o link antigo confirmaria um endereço que ninguém pediu. */
 async function useEmailToken(token, kind) {
   if (!token || typeof token !== 'string') return null;
   const hash = sha(token);
@@ -476,9 +300,6 @@ async function useEmailToken(token, kind) {
      WHERE t.token_hash = ? AND t.kind = ? AND t.expires_at > datetime('now')`
   ).get(hash, kind);
 
-  /* Apagado mesmo quando não serve: um token apresentado é um token gasto, e
-     deixá-lo vivo depois de uma tentativa daria infinitas tentativas a quem
-     esteja variando alguma outra coisa. */
   await db.prepare('DELETE FROM email_tokens WHERE token_hash = ?').run(hash);
 
   if (!row) return null;
@@ -488,12 +309,10 @@ async function useEmailToken(token, kind) {
   return { id: row.reviewer_id, name: row.name, email: row.conta_email };
 }
 
-/** Marca o endereço como provado. Idempotente: confirmar duas vezes não muda nada. */
 async function markVerified(reviewerId) {
   await db.prepare('UPDATE reviewers SET email_verified = 1 WHERE id = ?').run(reviewerId);
 }
 
-/** A conta de um endereço, para o pedido de redefinição. Null é silêncio. */
 async function accountByEmail(email) {
   const mail = String(email || '').trim().toLowerCase();
   if (!mail) return null;
@@ -510,9 +329,6 @@ async function destroyAllSessions(reviewerId) {
   await db.prepare('DELETE FROM sessions WHERE reviewer_id = ?').run(reviewerId);
 }
 
-/* ── cookie plumbing ──────────────────────────────────────────────────────
-   Express 4 ships no cookie parser and this needs exactly one cookie. */
-
 function readCookie(req, name) {
   const raw = req.headers.cookie;
   if (!raw) return null;
@@ -525,8 +341,6 @@ function readCookie(req, name) {
 }
 
 function sendSessionCookie(res, token) {
-  // `secure` only behind TLS: in development this runs over plain http, and a
-  // Secure cookie there would simply never be sent back.
   const secure = process.env.CINECLUBE_HTTPS === '1' ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
@@ -538,20 +352,6 @@ function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
-/* ── middleware ───────────────────────────────────────────────────────── */
-
-/* ══ o bilhete de um uso ═══════════════════════════════════════════════════
-   Um segredo curto que viaja NA URL, para as duas coisas que não conseguem
-   apresentar uma sessão do jeito normal: o cano ao vivo, que é um
-   `EventSource` e não manda cabeçalho, e a volta do Google dentro de um
-   aplicativo, que acontece noutro navegador.
-
-   Um minuto de vida e um uso só. O token da sessão na URL valeria um dia e
-   seria escrito no log de todo intermediário do caminho; este é gasto antes de
-   qualquer log ser lido.
-
-   `useTicket` devolve a MESMA forma de `readSession`, porque quem o recebe é o
-   mesmo middleware que já sabia ler um cookie. */
 const TICKET_SECONDS = 60;
 
 async function createTicket(reviewerId, kind = 'stream') {
@@ -563,7 +363,6 @@ async function createTicket(reviewerId, kind = 'stream') {
   return token;
 }
 
-/** Gasta o bilhete e devolve a sessão dele. Null é "não vale", sem distinguir. */
 async function useTicket(token, kind = 'stream') {
   if (!token || typeof token !== 'string') return null;
   const hash = sha(token);
@@ -572,8 +371,6 @@ async function useTicket(token, kind = 'stream') {
      FROM tickets WHERE token_hash = ? AND kind = ?`
   ).get(hash, kind);
 
-  /* Apagado mesmo quando não serve: um bilhete apresentado é um bilhete gasto,
-     e deixá-lo vivo daria tentativas infinitas a quem varia outra coisa. */
   await db.prepare('DELETE FROM tickets WHERE token_hash = ?').run(hash);
   if (!row?.viva) return null;
 
@@ -585,15 +382,6 @@ async function useTicket(token, kind = 'stream') {
   ).get(row.reviewer_id);
 }
 
-/* O middleware do bilhete. Roda logo depois de `attachSession` e antes de
-   qualquer coisa que dependa de quem é você — a sala é resolvida com a sessão
-   na mão, e um bilhete lido depois disso chegaria a um clube já marcado como
-   "não é membro".
-
-   Só nas rotas de `EventSource`, que são as únicas que não conseguem mandar
-   cabeçalho: um bilhete não é uma segunda porta para a API inteira. Não recusa
-   nada — quem cobra sessão é quem vem depois — e não toca em quem já chegou
-   identificado por cookie ou por Bearer. */
 async function attachTicket(req, res, next) {
   try {
     if (!req.session && req.query?.ticket && req.path.endsWith('/stream')) {
@@ -605,7 +393,6 @@ async function attachTicket(req, res, next) {
   }
 }
 
-/** O que veio no `Authorization: Bearer`, se veio. */
 function readBearer(req) {
   const raw = req.headers.authorization;
   if (!raw) return null;
@@ -613,24 +400,15 @@ function readBearer(req) {
   return /^Bearer$/i.test(scheme || '') && token ? token.trim() : null;
 }
 
-/* Pendura `req.session` quando a sessão apresentada vale. Nunca recusa: quem
-   cobra é `requireSession`.
-
-   O Bearer tem precedência sobre o cookie, e isso importa numa casca de
-   aplicativo que carrega o site: lá existem os dois, e o que manda é o que o
-   app escolheu apresentar. */
 async function attachSession(req, res, next) {
   try {
     const bearer = readBearer(req);
     req.sessionToken = bearer || readCookie(req, SESSION_COOKIE);
     req.sessionFromBearer = !!bearer;
     req.session = await readSession(req.sessionToken);
-    /* A sessão deslizou no banco; o cookie tem de deslizar junto. Um Bearer não
-       leva cookie de volta: quem o guarda é o app, e ele renova pela chave. */
     if (req.session?.renewed && !bearer) sendSessionCookie(res, req.sessionToken);
     next();
   } catch (e) {
-    // A database failure here is a server error, not a signed-out visitor.
     next(e);
   }
 }
@@ -642,8 +420,6 @@ function requireSession(req, res, next) {
   next();
 }
 
-/* O administrador da INSTALAÇÃO cuida de contas. Quem manda dentro de uma sala
-   é o `role` em club_members, cobrado pelo middleware de clube. */
 function requireAdmin(req, res, next) {
   if (!req.session) return res.status(401).json({ error: SIGN_IN });
   if (!req.session.is_admin) return res.status(403).json({ error: 'Só o administrador pode fazer isso.' });

@@ -5,8 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-// A throwaway database, set before the app is required — db.js opens the file
-// the moment it loads.
 const dbPath = path.join(os.tmpdir(), `cineclube-social-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
 
@@ -15,29 +13,6 @@ const db = require('../db');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A conversa em cima de uma avaliação.
-
-   Duas regras aqui não são detalhe de implementação, são o produto:
-
-   · ninguém vota na própria ficha, porque um placar em que o autor se soma
-     deixa de medir concordância do clube;
-   · quem assina é a sessão, nunca o corpo — a mesma regra da avaliação, e a
-     ameaça real neste clube é um amigo mexendo no que é do outro.
-
-   A terceira é mais sutil e é a que quebraria em silêncio: um voto é em uma
-   nota ("concordo com o teu 9 em fotografia"), então regravar aquele critério
-   com outro número tem que derrubar o voto. Sem isso o placar continua contando
-   concordância com um número que não está mais na tela.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo.
-
-   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
-   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
-   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -56,7 +31,7 @@ test.after(async () => {
   await new Promise(resolve => server.close(resolve));
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -78,17 +53,12 @@ const cookieOf = setCookie => (setCookie ? setCookie.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
   const who = await kit.signIn(name || `Sócio ${++seq}`);
   await kit.join(CLUB.id, who.id);
   return who;
 }
 
-/* O ADM DA SALA, que é quem modera o que se escreve nela. O administrador da
-   instalação continua valendo por cima — as duas coisas passam pela mesma
-   checagem em routes/social.js —, mas quem modera uma conversa é quem cuida da
-   sala em que ela aconteceu. */
 async function newAdmin() {
   const admin = await kit.signIn(`Chefe ${++seq}`);
   await kit.join(CLUB.id, admin.id, 'admin');
@@ -103,7 +73,6 @@ function scoresFor(genre, value) {
   return o;
 }
 
-/** A recorded take by `who`, to hang a conversation off. */
 async function newTake(who, overrides) {
   const m = movie();
   const res = await req('POST', at('/reviews'), {
@@ -114,8 +83,6 @@ async function newTake(who, overrides) {
 }
 
 const social = () => req('GET', at('/social'));
-
-/* ── comentários ─────────────────────────────────────────────────────── */
 
 test('um comentário fica pendurado na avaliação e volta assinado', async () => {
   const author = await newReviewer();
@@ -214,8 +181,6 @@ test('apagar a avaliação leva a conversa sobre ela junto', async () => {
   assert.equal((await social()).body.comments.filter(c => c.reviewId === take.id).length, 0);
 });
 
-/* ── responder um comentário ─────────────────────────────────────────── */
-
 const comment = (take, body, who) =>
   req('POST', at(`/social/reviews/${take.id}/comments`), { body }, who.cookie);
 const reply = (take, parentId, body, who) =>
@@ -305,12 +270,9 @@ test('uma resposta é curtível como qualquer comentário', async () => {
   assert.equal((await req('PUT', at(`/social/comments/${child.id}/like`), { liked: true }, a.cookie)).status, 200);
 });
 
-/* ── curtidas em um comentário ───────────────────────────────────────── */
-
 const like = (comment, liked, who) =>
   req('PUT', at(`/social/comments/${comment.id}/like`), { liked }, who.cookie);
 
-/** Um comentário escrito por `who` na ficha de `author`. */
 async function newComment(author, who, body) {
   const take = await newTake(author);
   const posted = await req(
@@ -360,8 +322,6 @@ test('ninguém curte o próprio comentário', async () => {
 });
 
 test('o dono da ficha pode curtir um comentário na ficha dele', async () => {
-  // Ele não escreveu aquele comentário — a regra é sobre autoria do texto, não
-  // sobre de quem é a avaliação embaixo dele.
   const author = await newReviewer();
   const writer = await newReviewer();
   const comment = await newComment(author, writer);
@@ -407,11 +367,6 @@ test('curtir um comentário que não existe responde 404', async () => {
     (await req('PUT', at('/social/comments/cnaoexiste/like'), { liked: true }, reader.cookie)).status, 404
   );
 });
-
-/* ── o voto na ficha ─────────────────────────────────────────────────────
-   Era por critério — onze polegares por ficha por pessoa — e virou um por
-   ficha. O que o clube diz de verdade é sobre o take: "boa avaliação", "achei
-   alto demais". Ver a nota em db.js. */
 
 const vote = (take, value, who) =>
   req('PUT', at(`/social/reviews/${take.id}/vote`), { value }, who.cookie);
@@ -481,14 +436,6 @@ test('visitante deslogado não vota', async () => {
   assert.equal(refused.status, 401);
 });
 
-/* ── o que a regravação faz com o que já foi dito ────────────────────── */
-
-/* Aqui havia uma limpeza: o voto no critério cuja nota mudou era apagado,
-   porque concordar com um 9 que virou 6 é concordar com uma coisa que não
-   existe mais. Com o voto sendo da ficha inteira isso deixou de valer — o que
-   se aprova é o take, e um take continua sendo o mesmo depois de meio ponto
-   ajustado. Cobrar a concordância do clube a cada retoque faria ninguém mais
-   corrigir uma nota. */
 test('regravar uma nota não derruba a concordância com a ficha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
@@ -496,7 +443,6 @@ test('regravar uma nota não derruba a concordância com a ficha', async () => {
 
   await vote(take, 1, reader);
 
-  // A mesma pessoa, o mesmo filme: um UPDATE, com 'direcao' mudando de 7 para 3.
   const again = await req('POST', at('/reviews'), {
     movie: take.movie, scores: { ...scoresFor('Terror', 7), direcao: 3 }
   }, author.cookie);

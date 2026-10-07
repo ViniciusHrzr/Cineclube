@@ -1,15 +1,7 @@
 const { critsFor, seasonCritsFor, GENRES } = require('./criteria');
 
-/* Regras de LEITURA de uma ficha: qual é o alto e o baixo dela, e quanto do
-   que a pessoa escreveu cabe numa linha. Num módulo próprio porque os dois
-   murais leem as mesmas fichas, e regra escrita duas vezes diverge na
-   terceira. */
-
-/* Meio ponto é o menor passo do controle. Exijo um ponto inteiro: abaixo disso
-   o "mais alto" é ruído de arredondamento e não uma preferência. */
 const SPREAD = 1;
 
-/** Um trecho do que a pessoa escreveu, cortado no espaço e não no meio da palavra. */
 function excerpt(body, max = 120) {
   const text = String(body || '').replace(/\s+/g, ' ').trim();
   if (text.length <= max) return text;
@@ -18,9 +10,6 @@ function excerpt(body, max = 120) {
   return (space > max * 0.6 ? cut.slice(0, space) : cut) + '…';
 }
 
-/* Só quando há distância entre os dois: uma ficha de onze notas iguais não tem
-   alto nem baixo, tem uma nota, e apontar dois critérios ali inventaria uma
-   opinião que a pessoa não teve. */
 function endsWith(crits, genre, raw) {
   let scores;
   try {
@@ -41,9 +30,6 @@ function endsWith(crits, genre, raw) {
 
 const endsOf = (genre, raw) => endsWith(critsFor, genre, raw);
 
-/* O mesmo, sobre os nove critérios de uma temporada: ler uma ficha de série
-   com as onze chaves de filme faria os dois que ela não tem sumirem em
-   silêncio. */
 const seasonEndsOf = (genre, raw) => endsWith(seasonCritsFor, genre, raw);
 
 module.exports = { SPREAD, excerpt, endsOf, seasonEndsOf };

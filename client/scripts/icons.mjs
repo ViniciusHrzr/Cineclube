@@ -1,33 +1,7 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   O ÍCONE DO APP, DESENHADO EM CÓDIGO.
-
-   Ele é a única peça do produto que não é HTML: um PNG, exigido em três
-   tamanhos por quem instala — Android quer 192 e 512, o iPhone quer 180, e a
-   máscara circular do Android precisa de uma quarta versão com o desenho
-   recuado para o corte não comer nada.
-
-   Gerado em vez de versionado, como o service worker do WebTorrent ao lado:
-   são quatro arquivos derivados de quatro cores e três medidas, e um PNG no
-   repositório é uma cópia que ninguém sabe refazer no dia em que a paleta
-   mudar.
-
-   Sem biblioteca de imagem, e não é bravata: o desenho é retângulo e trapézio,
-   e um PNG é `zlib` por cima de linhas de pixel com um byte de filtro na
-   frente. A alternativa era uma dependência de dez megabytes na árvore de
-   build para pintar quatro quadrados.
-
-   O DESENHO é o que o produto é: a sala escura, a moldura de latão de um
-   fotograma, e o facho de luz cruzando de um lado ao outro. Sem letra nenhuma —
-   um "C" de vinte pixels na tela inicial de um telefone não é lido por
-   ninguém. */
-
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-/* A paleta da sala, as mesmas de tailwind.config.ts. Copiadas e não
-   importadas: aquele arquivo é TypeScript e este roda antes do build. Quatro
-   valores que mudam uma vez por ano. */
 const HOUSE = [0x07, 0x09, 0x0e];
 const BRASS = [0xd9, 0xa4, 0x41];
 const BEAM = [0xff, 0xe9, 0xc4];
@@ -53,17 +27,14 @@ function chunk(type, data) {
   return Buffer.concat([len, body, crc]);
 }
 
-/** Um PNG RGB de `size`×`size` a partir de um buffer de pixels. */
 export function png(size, pixels) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
-  header[8] = 8; // bits por canal
-  header[9] = 2; // cor verdadeira, sem alfa: o fundo é a sala, nunca transparente
+  header[8] = 8;
+  header[9] = 2;
   const raw = Buffer.alloc(size * (size * 3 + 1));
   for (let y = 0; y < size; y++) {
-    // O byte de filtro por linha. Zero: nenhum — o desenho tem áreas chapadas,
-    // e o deflate resolve a repetição sozinho.
     raw[y * (size * 3 + 1)] = 0;
     pixels.copy(raw, y * (size * 3 + 1) + 1, y * size * 3, (y + 1) * size * 3);
   }
@@ -75,9 +46,6 @@ export function png(size, pixels) {
   ]);
 }
 
-/* `inset` é o recuo do desenho dentro do quadro, em fração do lado. A máscara
-   do Android corta um círculo de 80% do ícone: com o desenho encostado na
-   borda, a moldura de latão vira quatro cantos cortados. */
 export function draw(size, inset) {
   const px = Buffer.alloc(size * size * 3);
   const put = (x, y, [r, g, b]) => {
@@ -94,10 +62,6 @@ export function draw(size, inset) {
   const side = size - pad * 2;
   const frame = Math.max(2, Math.round(side * 0.075));
 
-  /* ── o facho ─────────────────────────────────────────────────────────────
-     Um trapézio: sai estreito da esquerda, na altura do projetor, e chega
-     aberto na direita. É a luz atravessando a sala, e é o que dá direção ao
-     ícone num tamanho em que nada mais é legível. */
   const x0 = pad + frame;
   const x1 = pad + side - frame;
   const meio = pad + side / 2;
@@ -113,7 +77,6 @@ export function draw(size, inset) {
     for (let y = Math.round(cima); y < Math.round(baixo); y++) put(x, y, BEAM);
   }
 
-  // ── a moldura do fotograma, por cima do facho ──────────────────────────
   for (let y = pad; y < pad + side; y++) {
     for (let x = pad; x < pad + side; x++) {
       const borda =
@@ -122,8 +85,6 @@ export function draw(size, inset) {
     }
   }
 
-  /* E as perfurações: dois pares de furos nas bordas de cima e de baixo, que é
-     o que faz um quadrado virar um FOTOGRAMA. */
   const furo = Math.round(side * 0.09);
   const folga = Math.round((frame - furo) / 2);
   for (const cx of [pad + side * 0.3, pad + side * 0.7]) {
@@ -137,15 +98,10 @@ export function draw(size, inset) {
   return px;
 }
 
-/* O desenho é exportado porque a casca Android precisa dele em cinco densidades
-   e em três formatos — ver mobile/scripts/icons.mjs. Importado, este arquivo é
-   só as duas funções; chamado direto, ele escreve os ícones da web. */
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const out = new URL('../public/', import.meta.url);
   mkdirSync(out, { recursive: true });
 
-  /* O recuo de 6% é margem ótica — o ícone quadrado do iPhone e o atalho do
-     Android já vêm cortados por fora. O de 20% é o que a máscara circular pede. */
   const feitos = [
     ['icon-192.png', 192, 0.06],
     ['icon-512.png', 512, 0.06],

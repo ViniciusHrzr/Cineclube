@@ -13,28 +13,6 @@ const db = require('../db');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O mural.
-
-   Derivado, como o sino: o que estes testes mais protegem é que ele não pode
-   discordar da realidade. Um mural é lido pelo clube inteiro, então uma linha
-   sobre um comentário apagado é o produto mentindo para todo mundo ao mesmo
-   tempo — pior do que no sino, que é privado.
-
-   E a linha rica: onze critérios são o que este produto tem de próprio, e a
-   ficha no mural carrega o mais alto e o mais baixo da pessoa. A regra de
-   quando NÃO carregar é tão importante quanto: uma ficha de notas iguais não
-   tem entusiasmo nem decepção, e apontar dois critérios ali inventaria uma
-   opinião que ninguém teve.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* A sala em que este arquivo inteiro acontece, e o prefixo das rotas dela.
-   Antes dos clubes toda rota era `/api/algo`; agora as que falam de um acervo
-   falam de UM acervo.
-
-   Pública, e isso é o assunto de metade destes testes: ler um clube aberto não
-   exige sessão nenhuma — a versão por sala do "leitura é aberta" que este
-   produto sempre teve. O que o clube fechado faz está provado noutro lugar. */
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
 
@@ -53,7 +31,7 @@ test.after(async () => {
   await new Promise(resolve => server.close(resolve));
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* it is a temp file */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -74,7 +52,6 @@ const cookieOf = s => (s ? s.split(';')[0] : null);
 let seq = 0;
 const PIN = '4321';
 
-/** Uma conta com sessão, já dentro da sala deste arquivo. */
 async function newReviewer(name) {
   const who = await kit.signIn(name || `Sócio ${++seq}`);
   await kit.join(CLUB.id, who.id);
@@ -100,8 +77,6 @@ async function newTake(who, scores, m) {
 
 const feed = () => req('GET', at('/feed'));
 const kindsOf = items => items.map(i => i.kind);
-
-/* ── as quatro coisas que viram linha ────────────────────────────────── */
 
 test('uma avaliação vira linha, com o filme e a nota', async () => {
   const who = await newReviewer('Beren Costa');
@@ -130,16 +105,6 @@ test('um comentário vira linha, e diz de quem é a ficha', async () => {
   assert.equal(line.excerpt, 'discordo');
 });
 
-/* ── e o que o mural recusa ──────────────────────────────────────────────
-   O corte de 26/08/2026, e ele é de proporção: um voto acontece até onze vezes
-   por ficha por pessoa, então uma noite de discussão enterrava a ficha que
-   originou a discussão embaixo de quarenta linhas sobre ela. Estes três testes
-   são o que impede o mural de voltar a se afogar. */
-
-/* O voto continua fora do mural mesmo agora que é um por ficha e não onze. O
-   motivo de origem era proporção, e ele encolheu; o que sobra é outro e basta:
-   concordar é uma reação, e o mural é sobre o que o clube FEZ — avaliou,
-   escreveu. A concordância aparece contada na própria linha da ficha. */
 test('voto não vira linha do mural — é reação, e ela aparece na ficha', async () => {
   const author = await newReviewer();
   const reader = await newReviewer();
@@ -183,8 +148,6 @@ test('o mural carrega exatamente dois tipos de linha', async () => {
   assert.deepEqual([...new Set(kindsOf(body.items))].sort(), ['comment', 'review']);
 });
 
-/* ── o alto e o baixo, que é o que só este produto sabe dizer ─────────── */
-
 test('a ficha carrega onde a pessoa se entusiasmou e onde se decepcionou', async () => {
   const who = await newReviewer();
   const scores = { ...scoresFor('Terror', 6), fotografia: 10, roteiro: 3 };
@@ -215,8 +178,6 @@ test('meio ponto de diferença também não conta como preferência', async () =
   const { body } = await feed();
   assert.equal(body.items.find(i => i.reviewId === take.id).ends, null);
 });
-
-/* ── ordem e verdade ─────────────────────────────────────────────────── */
 
 test('o mural vem do mais novo para o mais velho', async () => {
   const who = await newReviewer();

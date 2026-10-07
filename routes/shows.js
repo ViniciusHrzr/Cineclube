@@ -16,13 +16,6 @@ const {
 
 const router = express.Router({ mergeParams: true });
 
-/* A fila de séries e o que cada pessoa viu. O catálogo — o que o TMDB sabe —
-   mora em routes/series.js e não é de clube nenhum.
-
-   Tudo aqui é escopado pelo clube da URL: "Beren viu S02E05" é um fato sobre a
-   Beren NESTE clube, e é essa frase que faz o Trakt não servir de dono deste
-   dado. */
-
 const throttleQueue = throttle.limit({
   name: 'show-queue',
   max: 60,
@@ -30,9 +23,6 @@ const throttleQueue = throttle.limit({
   message: espera => `Muitas séries postas na fila seguidas. Tente de novo em ${espera}.`,
 });
 
-/* Marcar visto é o gesto mais repetido deste universo — uma maratona são treze
-   toques em vinte minutos, e isso é uso legítimo. O teto existe para o que não
-   é gente. */
 const throttleTake = throttle.limit({
   name: 'episode-take',
   max: 400,
@@ -48,9 +38,6 @@ const queueStmt = db.prepare(`
   ORDER BY q.position IS NULL, q.position ASC, q.added_at DESC
 `);
 
-/* `added_by` é parte da chave: acompanhar é de cada um, como na fila de filmes —
-   o porquê está em routes/watchlist.js. A posição é da SÉRIE, não da linha: quem
-   chega depois entra no lugar que ela já tem na lista do clube. */
 const insertQueue = db.prepare(`
   INSERT INTO show_queue (club_id, show_id, show_title, show_year, show_genre, show_poster, position, added_by)
   VALUES (@clubId, @showId, @showTitle, @showYear, @showGenre, @showPoster,
@@ -61,8 +48,6 @@ const insertQueue = db.prepare(`
   ON CONFLICT(club_id, show_id, added_by) DO NOTHING
 `);
 
-/* Quem acompanha, com os nomes junto: a recusa precisa dizer de quem é a escolha
-   que está sendo protegida, ou vira "não pode" sem sujeito. */
 const queueWantersStmt = db.prepare(`
   SELECT q.show_id, q.show_title, q.added_by, r.name AS added_by_name
   FROM show_queue q
@@ -73,11 +58,6 @@ const queueWantersStmt = db.prepare(`
 const deleteMineQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ? AND added_by = ?');
 const deleteQueue = db.prepare('DELETE FROM show_queue WHERE club_id = ? AND show_id = ?');
 
-/* Contado por episódio distinto e não por linha: quatro pessoas vendo o mesmo
-   episódio é um episódio visto pelo clube, não quatro. A linha da temporada
-   fica de fora da contagem de vistos — ela é uma nota, não uma sessão.
-
-   A média é das fichas de temporada, que são as únicas linhas com nota. */
 const progressStmt = db.prepare(`
   SELECT show_id,
          COUNT(DISTINCT CASE WHEN episode <> ${SEASON_ROW} THEN season || 'x' || episode END) AS seen,
@@ -109,9 +89,6 @@ const getTake = db.prepare(`
   WHERE club_id = ? AND reviewer_id = ? AND show_id = ? AND season = ? AND episode = ?
 `);
 
-/* Marcar não escreve nota nenhuma, e as colunas dela ficam de fora do upsert:
-   uma linha de episódio nunca as teve preenchidas desde que a nota passou a ser
-   da temporada, e listá-las aqui seria abrir um caminho de volta. */
 const markEpisode = db.prepare(`
   INSERT INTO episode_takes
     (id, club_id, reviewer_id, show_id, show_title, show_poster, show_genre,
@@ -163,28 +140,16 @@ function queueDTO(row, progress) {
     status: row.status ?? null,
     totalEpisodes: row.total_episodes ?? null,
     addedAt: row.added_at,
-    /* Quem acompanha — e são vários, porque o cartaz é um só. Vazia na linha que
-       a lista não sabe de quem é: anterior à coluna, ou de quem saiu do clube.
-       Ver `toQueue`. */
     wanters: row.added_by ? [row.added_by] : [],
-    /* O progresso do CLUBE, não o seu. Quem abre a fila está perguntando onde a
-       sala está, e a resposta individual é a da tela da série. */
     seen: p?.seen ?? 0,
     rated: p?.rated ?? 0,
     average: p?.average ?? null,
-    /* O SEU próximo episódio, pendurado adiante por upnext.js. Declarados aqui
-       para a linha ter uma forma só: nulo é "não sei" — sem sessão, ou o TMDB
-       não respondeu —, e é diferente de estar em dia. */
     upNext: null,
     upcoming: null,
     caughtUp: false,
   };
 }
 
-/* Uma linha por pessoa no banco, um cartaz por série na tela: duas pessoas
-   acompanhando a mesma obra não são dois lugares na lista, são o mesmo lugar.
-   Agrupado aqui e não em SQL porque a ordem importa duas vezes — a das séries é
-   a do clube, e a das pessoas dentro de uma série é a da chegada. */
 function toQueue(rows, progress) {
   const shows = new Map();
   for (const row of rows) {
@@ -198,13 +163,6 @@ function toQueue(rows, progress) {
 function takeDTO(row) {
   const genre = GENRES.includes(row.show_genre) ? row.show_genre : 'Drama';
   const scores = row.scores ? JSON.parse(row.scores) : null;
-  /* ── os nove, abertos ────────────────────────────────────────────────────
-     O mesmo que a ficha de um filme manda: sem isto, "T1E05 — 7,4" é a linha de
-     qualquer app.
-
-     Só o que ESTA ficha respondeu — uma ficha antiga tem as chaves que existiam
-     quando foi escrita, e imprimir um critério ausente como 0,0 é pôr uma
-     opinião na boca de alguém. Vazio quando a ficha é só "vi" ou nota rápida. */
   const breakdown = scores
     ? seasonAnsweredIn(genre, scores).map(c => ({
         key: c.key, name: c.name, w: c.w, group: c.group, value: scores[c.key],
@@ -217,9 +175,6 @@ function takeDTO(row) {
     showTitle: row.show_title,
     showPoster: row.show_poster,
     genre: row.show_genre,
-    /* De qual das duas coisas esta linha fala, dito por extenso: o zero é onde
-       a ficha da temporada mora (ver show.js), e um cliente que tivesse de
-       descobrir isso sozinho descobriria errado uma vez. */
     kind: season ? 'season' : 'episode',
     season: row.season,
     episode: season ? null : row.episode,
@@ -227,8 +182,6 @@ function takeDTO(row) {
     reviewerId: row.reviewer_id,
     reviewerName: row.reviewer_name,
     reviewerDot: row.reviewer_dot,
-    /* Os três estados desta linha, ditos por extenso para a tela não ter de
-       deduzi-los de dois nulos. */
     scores,
     quick: row.quick ?? null,
     final: row.final ?? null,
@@ -247,10 +200,6 @@ async function progressMap(clubId) {
   }]));
 }
 
-/* A mesma resposta da grade do catálogo, sobre a mesma tabela: ver
-   providers.js. A lista que o clube acompanha é justamente onde a pergunta
-   volta — "hoje a gente vê qual?" é escolher entre o que dá para ver hoje, e
-   sem isto a resposta morava em outra aba. */
 const fillProviders = providerCache({
   table: 'shows_cache',
   kind: 'show',
@@ -264,8 +213,6 @@ router.get('/', clubs.requireReadable, wrap(async (req, res) => {
   ]);
   const shows = toQueue(rows, progress);
   await fillProviders(shows);
-  /* "O próximo" é uma resposta sobre UMA pessoa, então só existe quando há
-     uma: quem lê um clube aberto de fora vê a lista e o progresso da sala. */
   if (req.session?.reviewer_id) {
     await upnext.fill(shows, { clubId: req.club.id, reviewerId: req.session.reviewer_id });
   }
@@ -287,9 +234,6 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleQueue, wrap(a
   res.status(201).json({ ok: true });
 }));
 
-/* Cada um tira o seu, com o ADM do clube como única exceção — ele tira o cartaz
-   inteiro. A mesma regra da fila de filmes, e o porquê está escrito em
-   routes/watchlist.js. */
 router.delete('/:showId(\\d+)', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const rows = await queueWantersStmt.all(req.club.id, Number(req.params.showId));
   if (!rows.length) return res.status(204).end();
@@ -311,7 +255,6 @@ router.delete('/:showId(\\d+)', auth.requireSession, clubs.requireMember, wrap(a
   res.status(204).end();
 }));
 
-/* Tudo o que o clube gravou, para o acervo de séries. */
 router.get('/takes', clubs.requireReadable, wrap(async (req, res) => {
   const rows = await allTakes.all(req.club.id);
   res.json({ takes: rows.map(takeDTO) });
@@ -322,16 +265,6 @@ router.get('/:showId(\\d+)/takes', clubs.requireReadable, wrap(async (req, res) 
   res.json({ takes: rows.map(takeDTO) });
 }));
 
-/* ── as duas escritas, e a diferença entre elas ───────────────────────────
-   **Um episódio se marca.** A linha existe, e isso quer dizer "eu vi". Nada
-   mais: um episódio não recebe nota.
-
-   **Uma temporada se avalia**, e é onde as duas notas moram — a rápida e a
-   criteriosa, que se substituem nos dois sentidos. A última coisa que a pessoa
-   disse é a que vale, e nenhuma sobra escondida na linha.
-
-   A unidade da nota é a temporada porque é ela que tem uma forma para julgar:
-   um arco que abre e fecha, um elenco que muda, um fôlego. */
 router.put(
   '/:showId(\\d+)/:season(\\d+)/:episode(\\d+)',
   auth.requireSession, clubs.requireMember, throttleTake,
@@ -341,17 +274,12 @@ router.put(
     const { showId, season, episode } = limpo.ref;
 
     const body = req.body || {};
-    /* Recusado e não ignorado: um cliente antigo mandando nota de episódio
-       precisa ouvir que ela não existe mais, ou some em silêncio. */
     if (body.scores || body.quick != null) {
       return res.status(400).json({ error: 'A avaliação agora é da temporada, não do episódio.' });
     }
 
     const genre = GENRES.includes(body.genre) ? body.genre : 'Drama';
 
-    /* O título e o pôster viajam com a escrita e são gravados na linha, como na
-       ficha de um filme: o acervo é lido com o TMDB fora da requisição, e
-       "S02E05" sem o nome da série não é um registro. */
     const showTitle = text(body.showTitle, 300);
     if (!showTitle) return res.status(400).json({ error: 'Série inválida.' });
     const showPoster = text(body.showPoster, 500);
@@ -362,9 +290,6 @@ router.put(
     );
 
     await markEpisode.run({
-      /* O id só é sorteado quando a linha nasce: numa regravação o upsert casa
-         pela chave natural e não toca nele, que é o que faz um endereço de
-         ficha continuar valendo. */
       id: existing?.id || 'e' + crypto.randomUUID(),
       clubId: req.club.id,
       reviewerId: req.session.reviewer_id,
@@ -400,8 +325,6 @@ router.put(
     let final = null;
 
     if (body.scores && typeof body.scores === 'object') {
-      /* Só as chaves que este gênero pergunta, e só números na régua. Uma chave
-         inventada não entra na linha, e um valor fora de 0–10 não é nota. */
       const allowed = new Set(seasonCritsFor(genre).map(c => c.key));
       const clean = {};
       for (const [key, value] of Object.entries(body.scores)) {
@@ -423,9 +346,6 @@ router.put(
       quick = n;
       final = n;
     } else {
-      /* Uma ficha de temporada sem nota seria uma linha que o mural leria como
-         "viu a temporada inteira" — e ninguém vê uma temporada de uma vez.
-         Quem só quer escrever escreve na conversa. */
       return res.status(400).json({ error: 'Uma avaliação de temporada precisa de uma nota.' });
     }
 
@@ -452,7 +372,6 @@ router.put(
   })
 );
 
-/* Desmarcar apaga a linha inteira, e é o certo: a linha É o "eu vi". */
 router.delete(
   '/:showId(\\d+)/:season(\\d+)/:episode(\\d+)',
   auth.requireSession, clubs.requireMember,
@@ -466,8 +385,6 @@ router.delete(
   })
 );
 
-/* Tirar a própria nota da temporada. Não mexe em episódio marcado nenhum: o que
-   se viu continua visto depois de a opinião ser retirada. */
 router.delete(
   '/:showId(\\d+)/:season(\\d+)',
   auth.requireSession, clubs.requireMember,

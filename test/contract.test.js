@@ -16,26 +16,6 @@ const throttle = require('../throttle');
 const kit = require('../testkit');
 const { critsFor } = require('../criteria');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O CONTRATO: A API SÓ CRESCE.
-
-   Enquanto o único cliente é o site, isto não precisa existir — o mesmo deploy
-   troca o servidor e a tela juntos. Um aplicativo instalado quebra a simetria:
-   quem baixou em março continua com a tela de março, e um campo que sumiu é
-   tela em branco no aparelho de alguém que não fez nada.
-
-   Então cada teste daqui congela os NOMES que uma resposta carrega. É uma
-   verificação de subconjunto, de propósito:
-
-   · acrescentar campo passa — é assim que a API cresce, e um cliente velho
-     simplesmente não lê o que não conhece;
-   · remover, renomear ou aninhar de outro jeito falha aqui, antes de virar
-     release.
-
-   Quando um campo PRECISA sair, o caminho é: parar de escrevê-lo, esperar as
-   versões que o liam morrerem, e só então tirá-lo daqui. Ver contract.js.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -55,7 +35,7 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* arquivo temporário */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -76,7 +56,6 @@ async function req(method, pathname, body, cookie) {
   return { status: res.status, body: parsed };
 }
 
-/** Os campos prometidos existem, com este nome. Campo novo não incomoda. */
 function promete(objeto, campos, quem) {
   assert.ok(objeto && typeof objeto === 'object', `${quem}: veio ${objeto}`);
   const tem = Object.keys(objeto);
@@ -96,8 +75,6 @@ function scoresFor(genre, value) {
   critsFor(genre).forEach(c => { o[c.key] = value; });
   return o;
 }
-
-/* ── quem é você ─────────────────────────────────────────────────────────── */
 
 test('a conta que a sessão devolve', async () => {
   const p = await kit.signIn();
@@ -121,8 +98,6 @@ test('a sala', async () => {
   );
 });
 
-/* ── o universo de filmes ────────────────────────────────────────────────── */
-
 test('a ficha de um filme', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -141,8 +116,6 @@ test('a ficha de um filme', async () => {
   promete(body.reviews[0].breakdown[0], ['key', 'name', 'w', 'group', 'value'], 'breakdown');
 });
 
-/* ── o universo de séries ────────────────────────────────────────────────── */
-
 test('a série na lista do clube', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -154,8 +127,6 @@ test('a série na lista do clube', async () => {
     [
       'id', 'title', 'year', 'genre', 'poster', 'addedAt', 'wanters',
       'seen', 'rated', 'average',
-      /* O que a pessoa vê a seguir. Nulo é "não sei" e continua sendo um
-         campo: um cliente que não o encontra não sabe distinguir. */
       'upNext', 'upcoming', 'caughtUp',
     ],
     'queued show'
@@ -180,15 +151,11 @@ test('a marca de um episódio e a ficha de uma temporada', async () => {
   ];
   for (const take of body.takes) promete(take, campos, `take ${take.kind}`);
 
-  /* `kind` é o que diz de qual das duas coisas a linha fala, e some se alguém
-     resolver deduzi-lo de `episode` nulo no cliente. */
   assert.deepEqual(
     body.takes.map(t => t.kind).sort(),
     ['episode', 'season']
   );
 });
-
-/* ── o sino ──────────────────────────────────────────────────────────────── */
 
 test('o sino da rede', async () => {
   const dono = await kit.signIn();
@@ -208,8 +175,6 @@ test('o sino da rede', async () => {
   promete(body.items[0], ['id', 'kind', 'at', 'text', 'club'], 'notice');
   promete(body.items[0].actor, ['id', 'name', 'dot'], 'notice.actor');
 });
-
-/* ── e a própria versão ──────────────────────────────────────────────────── */
 
 test('a versão da API', async () => {
   const { body } = await req('GET', '/api/meta');

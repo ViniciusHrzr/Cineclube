@@ -9,18 +9,6 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A CONVERSA EM CIMA DE UM EPISÓDIO — irmão de routes/social.js, e a palavra é
-   irmão e não cópia: as regras são as MESMAS e estão escritas lá com o porquê
-   de cada uma. O que muda é onde elas penduram, e é isso que obriga o arquivo a
-   existir em vez de a rota ganhar um parâmetro dizendo de que tipo é o alvo.
-
-   Nada aqui tem `club_id`: um comentário pendura numa ficha de episódio, e a
-   ficha já sabe de que sala é. O preço é o mesmo de lá — TODA consulta passa
-   por `episode_takes` para descobrir o clube, e `takeStmt`, o portão de toda
-   escrita, carrega `club_id` na condição.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const throttleComment = throttle.limit({
   name: 'show-comment',
   max: 20,
@@ -28,7 +16,6 @@ const throttleComment = throttle.limit({
   message: espera => `Muitos comentários seguidos. Tente de novo em ${espera}.`,
 });
 
-/** O mesmo teto do outro lado. Um argumento cabe; um ensaio não. */
 const MAX_BODY = 1000;
 
 const commentsStmt = db.prepare(`
@@ -81,11 +68,8 @@ const commentOwnerStmt = db.prepare(`
   WHERE c.id = ? AND t.club_id = ?
 `);
 const deleteCommentStmt = db.prepare('DELETE FROM take_comments WHERE id = ?');
-/* Explícito, além do ON DELETE CASCADE: uma resposta órfã não some da tela,
-   ela fica invisível dentro de um pai que não existe mais. */
 const deleteRepliesStmt = db.prepare('DELETE FROM take_comments WHERE parent_id = ?');
 
-/* O portão. */
 const takeStmt = db.prepare(
   'SELECT id, reviewer_id FROM episode_takes WHERE id = ? AND club_id = ?'
 );
@@ -102,8 +86,6 @@ const clearVoteStmt = db.prepare(
 function toCommentDTO(row) {
   return {
     id: row.id,
-    /* `takeId` e não `reviewId`, e é a única diferença de forma entre os dois
-       lados: a tela que desenha os dois lê o campo pelo nome. */
     takeId: row.take_id,
     reviewerId: row.reviewer_id,
     reviewerName: row.reviewer_name,
@@ -120,8 +102,6 @@ const toVoteDTO = row => ({
   value: Number(row.value),
 });
 
-/* Tudo de uma vez, como no outro lado: o acervo de séries desenha dezenas de
-   fichas, e uma requisição por ficha seria uma tela feita de esperas. */
 router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   const [comments, votes, likes] = await Promise.all([
     commentsStmt.all(req.club.id), votesStmt.all(req.club.id), likesStmt.all(req.club.id),

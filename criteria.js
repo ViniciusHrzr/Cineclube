@@ -1,63 +1,3 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   O que o clube pergunta de um filme: nine criteria asked of every film, two
-   from its genre, and every one of them weighs the same. A card full of tens is
-   a ten.
-
-   `w` survives on every criterion, at 1: it is the arithmetic's own field, the
-   archive prints it, and a future weight is a value change rather than a schema
-   change.
-
-   ── the divisor counts answers, not criteria ────────────────────────────
-   A take recorded before 25/08/2026 answered ten questions and has no mark for
-   Aproveitamento — it was not asked. Dividing those by eleven would read the
-   silence as a zero and drop every historical score by roughly a point, which
-   is the archive lying about what people said. So finalOf() divides by what the
-   take actually answers, and both means land on the same 0–10.
-
-   ── a genre REPLACES a slot in the base, never adds one ─────────────────
-   The count never moves, which is what keeps every film on one scale. It moves
-   at all because a criterion that cannot be answered is worse than a missing
-   one: ask "Atuações" of a Pixar film and whatever number gets typed is a
-   number about something else, at full weight, indistinguishable from a score
-   afterwards.
-
-   ── where these questions come from ─────────────────────────────────────
-   The base is Bordwell & Thompson's division of film form in *Film Art* —
-   narrative form plus the four stylistic systems (mise-en-scène,
-   cinematography, editing, sound) — with performance and invention added,
-   because a club rates films rather than analyses them.
-
-   The pairs are each genre's own literature, each trying to name the thing that
-   genre is FOR:
-
-   · Terror — Noël Carroll, *The Philosophy of Horror*: art-horror needs a
-     threat that is also impure, and needs evaluating on both. Hence a criterion
-     that asks for the two together instead of counting jump scares.
-   · Suspense — Hitchcock to Truffaut, the bomb under the table: suspense is
-     information management, not surprise.
-   · Ficção científica — Darko Suvin: the novum and cognitive estrangement. The
-     new thing is a lens on this world, which is why "a ideia" is scored on what
-     the film thinks with it and not on how clever it sounds.
-   · Ação — Bordwell on intensified continuity, and the "chaos cinema" argument
-     against it: cutting faster is a style, losing the geography is a failure.
-   · Comédia — Steve Kaplan, *The Hidden Tools of Comedy*: the engine is the
-     non-hero. A joke about somebody out of their depth and a joke about
-     somebody being humiliated are not the same craft.
-   · Animação — the Disney principles (timing, weight, anticipation, arcs) and
-     appeal, which is a technical term there and not a compliment.
-   · Documentário — Bill Nichols, *Introduction to Documentary*: the film has a
-     voice and an argument whether or not it admits to one, and ethics is the
-     question the form cannot avoid.
-
-   ── the keys ────────────────────────────────────────────────────────────
-   The string in position 0 goes in the database. A name and a hint can be
-   rewritten freely; a key cannot, because every take ever recorded is a JSON
-   object keyed by these. Where a genre needs the same question in other words,
-   the key is kept. Where it needs a different question, the key changes — and
-   scripts/migrate-criteria-keys.js renames it in the archive.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** The nine a film is asked about unless its genre says otherwise. */
 const BASE = [
   ['direcao', 'Direção',
     'A encenação: o que a câmera escolhe olhar, como o espaço da cena é organizado, o que fica de fora e o ritmo que o filme impõe. É onde se vê se alguém decidiu alguma coisa.'],
@@ -75,37 +15,16 @@ const BASE = [
     'Interpretação e presença: corpo, voz, escuta. Se o elenco está todo no mesmo filme e se o tom de cada um serve ao que o filme é.'],
   ['originalidade', 'Originalidade',
     'O que aqui não veio de outro lugar — ideia, forma ou ponto de vista próprios. Clichê usado com consciência conta a favor; clichê usado por falta de ideia, contra.'],
-  /* ── e o único que não é sobre o filme ─────────────────────────────────
-     Everything above asks what the film does; this asks what it did to *you*,
-     and it is deliberately the last thing on the card.
-
-     It exists because the other ten were quietly getting it anyway: a film
-     somebody loved and could not defend came out at 6,4, and the gap between
-     that and what they said out loud leaked into whichever criterion was
-     closest to hand. A criterion that is honestly personal is what stops the
-     other ten from being dishonestly personal.
-
-     Same weight as the rest: taste is one voice at the table, not the verdict
-     and not a footnote. */
   ['aproveitamento', 'Aproveitamento',
     'O seu, e só o seu: o quanto você aproveitou esse filme. Não é o quanto ele é bom — é se você ficou feliz de ter assistido. Aqui vale gostar do que não se defende e não gostar do que é irretocável; é o único critério em que o argumento é você.']
 ];
 
-/* Keyed by the slot being taken over, so the base keeps its order and its count
-   no matter how many a genre rewrites. A slot may be rewritten in place (same
-   key, new words) or genuinely replaced (new key).
-
-   Only two genres need it, for the same reason: a slot of the default has no
-   referent. Animation has no performances in front of a camera; documentary has
-   no production design and usually nobody performing. */
 const BASE_SWAP = {
   'Animação': {
-    // Nobody acted. What there is, and what the Annies award, is a voice cast.
     atuacoes: ['vozes', 'Vozes',
       'O elenco de voz: entrega, timing e casting, e o quanto a voz e o desenho do personagem parecem a mesma criatura. Voz que só lê a fala é o equivalente a atuação sem presença.']
   },
   'Documentário': {
-    // Same question, different object: there was no script, but there is a form.
     roteiro: ['roteiro', 'Estrutura',
       'Um documentário também é construído: o recorte, a ordem em que os fatos chegam, o que entra e o que ficou de fora. Não houve roteiro antes, mas há uma forma — e ela é uma escolha.'],
     arte: ['material', 'Material & arquivo',
@@ -115,9 +34,6 @@ const BASE_SWAP = {
   }
 };
 
-/* What each genre is actually for. They weigh the same as everything else, and
-   their whole distinction is that the film decides which two they are:
-   atmosfera is asked of a horror film and never of a comedy. */
 const GENRE_CRIT = {
   'Terror': [
     ['atmosfera', 'Atmosfera',
@@ -177,12 +93,10 @@ const GENRE_CRIT = {
 
 const GENRES = Object.keys(GENRE_CRIT);
 
-// TMDB genre ids -> our internal taxonomy. A film matching none of these falls
-// back to 'Drama', same as an unrecognized genre string would.
 const TMDB_GENRE_MAP = {
   27: 'Terror',
   53: 'Suspense',
-  9648: 'Suspense', // Mystery
+  9648: 'Suspense',
   18: 'Drama',
   35: 'Comédia',
   878: 'Ficção científica',
@@ -192,21 +106,6 @@ const TMDB_GENRE_MAP = {
   10749: 'Romance'
 };
 
-/* ── which genre wins when a film carries several ─────────────────────────
-   The order below is the club's, read as a priority: the first one a film has
-   is the one it is rated as. TMDB's own order is NOT a ranking — it is roughly
-   the order the ids were added — and taking it as one filed Frewaka, an Irish
-   folk horror, under Drama, where atmosfera and terror were never asked about.
-
-   What sorts it is how much a genre determines the questions worth asking. A
-   documentary is judged as a documentary whatever it is about; animation brings
-   its own craft; horror and science fiction name what a film is trying to do to
-   you; action and comedy name what it is made of; romance and suspense are more
-   often worn alongside something else than alone.
-
-   Drama is last, and that is the whole fix: it is the widest word here AND the
-   default for anything unrecognised, so letting it win a tie means it wins
-   constantly. */
 const GENRE_PRIORITY = [
   'Documentário',
   'Animação',
@@ -219,15 +118,6 @@ const GENRE_PRIORITY = [
   'Drama'
 ];
 
-/**
- * Every genre in this taxonomy that a film carries, most specific first.
- *
- * The list is what gets offered: the person rating picks, and the card follows
- * the pick. The order is a default, not a verdict.
- *
- * Never empty — a film carrying nothing this taxonomy recognises still has to
- * be rateable, and Drama is where that lands.
- */
 function genresFromTmdbIds(ids) {
   const carried = new Set();
   for (const id of ids || []) {
@@ -238,13 +128,10 @@ function genresFromTmdbIds(ids) {
   return found.length ? found : ['Drama'];
 }
 
-/** The one a film opens on when nobody has chosen yet. */
 function genreFromTmdbIds(ids) {
   return genresFromTmdbIds(ids)[0];
 }
 
-// Reverse of TMDB_GENRE_MAP. Pipe-joined ids mean OR in TMDB's
-// /discover/movie with_genres param.
 const GENRE_TO_TMDB = {
   'Terror': '27',
   'Suspense': '53|9648',
@@ -257,31 +144,19 @@ const GENRE_TO_TMDB = {
   'Romance': '10749'
 };
 
-/** The nine this genre is asked, with its swaps applied in place. */
 function baseFor(genre) {
   const swap = BASE_SWAP[genre] || {};
   return BASE.map(slot => swap[slot[0]] || slot);
 }
 
-/* The card used to be grouped by weight: ×1 the craft, ×2 the genre. With every
-   weight at 1 that proxy says nothing, and the grouping it stood in for is real
-   — the eight about how the film is made, the two its genre brings, and the one
-   about you.
-
-   Sent as a field rather than inferred from the key, so the interface never
-   holds a list of which criteria are which. */
 const CRAFT = 'oficio';
 const GENRE = 'genero';
 const PERSONAL = 'pessoal';
 
-/** The key of the one criterion that asks about the viewer and not the film. */
 const PERSONAL_KEY = 'aproveitamento';
 
 const spell = (t, group) => ({ key: t[0], name: t[1], hint: t[2], w: 1, group });
 
-/* Craft, then genre, then the personal one, which is last on purpose: a card
-   that asks it in the middle invites the other answers to be adjusted to agree
-   with it. */
 function critsFor(genre) {
   const named = GENRE_CRIT[genre] ? genre : 'Drama';
   const base = baseFor(named);
@@ -292,14 +167,6 @@ function critsFor(genre) {
     .concat(base.filter(t => t[0] === PERSONAL_KEY).map(t => spell(t, PERSONAL)));
 }
 
-/* The mean of what this take answers, weighted — which today means the plain
-   mean, because every weight is 1.
-
-   The divisor is COUNTED and not assumed: a take recorded before Aproveitamento
-   existed has ten marks, and the eleventh is not a zero, it is a question
-   nobody asked. An absent criterion and a criterion marked zero are different
-   things here, so the test is on the key being present and not on the value
-   being truthy. */
 function finalOf(genre, scores) {
   let sum = 0;
   let weight = 0;
@@ -312,24 +179,10 @@ function finalOf(genre, scores) {
   return weight ? sum / weight : 0;
 }
 
-/* What a take answers, in the order the card asks it. Criteria the take has no
-   mark for are left out rather than printed as zero: an archive that shows
-   "Aproveitamento 0,0" on a film rated in June is inventing an opinion. */
 function answeredIn(genre, scores) {
   return critsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }
 
-/* ══ a avaliação criteriosa de uma temporada ══════════════════════════════
-   Os nove de `BASE` e nada mais. Os dois do gênero ficam de fora, e não é por
-   tamanho: um gênero é promessa de uma OBRA INTEIRA, e uma temporada é um
-   pedaço dela — a terceira de uma série de terror pode ser a que troca o susto
-   pelo tribunal, e a nota diria mais sobre o rótulo do que sobre o que se viu.
-
-   O `BASE_SWAP` continua valendo, porque ele não acrescenta pergunta — troca o
-   OBJETO de uma que já existe. Numa série animada ninguém atuou diante de uma
-   câmera.
-
-   Mesma fórmula, divisor contado, mesma régua 0–10 da ficha de um filme. */
 function seasonCritsFor(genre) {
   const base = baseFor(GENRE_CRIT[genre] ? genre : 'Drama');
   return base
@@ -338,7 +191,6 @@ function seasonCritsFor(genre) {
     .concat(base.filter(t => t[0] === PERSONAL_KEY).map(t => spell(t, PERSONAL)));
 }
 
-/** A nota da criteriosa. Mesma média contada de `finalOf`, sobre os nove. */
 function seasonFinalOf(genre, scores) {
   let sum = 0;
   let weight = 0;
@@ -351,7 +203,6 @@ function seasonFinalOf(genre, scores) {
   return weight ? sum / weight : 0;
 }
 
-/** O que uma ficha de temporada respondeu, na ordem em que foi perguntado. */
 function seasonAnsweredIn(genre, scores) {
   return seasonCritsFor(genre).filter(c => typeof scores?.[c.key] === 'number');
 }

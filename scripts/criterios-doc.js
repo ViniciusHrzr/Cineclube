@@ -1,16 +1,3 @@
-/* ══════════════════════════════════════════════════════════════════════════
-   Escreve criterios-cineclube.txt a partir de criteria.js.
-
-       npm run doc:criterios
-
-   O documento era escrito à mão, o que só funciona enquanto ninguém mexe nos
-   critérios. Agora nada é digitado duas vezes: um critério renomeado no código
-   sai renomeado no texto na próxima rodada.
-
-   Sai fora de app/ de propósito — é um documento para a mesa, não para o
-   servidor, e precisa estar onde as pessoas mexem.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -23,9 +10,6 @@ const OUT = path.join(__dirname, '..', '..', 'criterios-cineclube.txt');
 const RULE = '-'.repeat(78);
 const HEAVY = '='.repeat(78);
 
-/* Hard-wrapped rather than left to whatever opens it: this is a .txt, and a
-   .txt that relies on the reader's window being wide is a .txt that reads
-   differently for everybody. */
 function wrap(text, width, indent) {
   const words = text.split(/\s+/);
   const lines = [];
@@ -193,16 +177,11 @@ say(wrap(
 ));
 say();
 
-/* One last check against the thing the document is about, in case the shape
-   ever drifts from what the prose above claims. */
 for (const genre of GENRES) {
   const cs = critsFor(genre);
   const total = cs.reduce((sum, c) => sum + c.w, 0);
   if (total !== 11) throw new Error(`${genre} soma ${total} pesos — o texto diria uma mentira`);
 }
 
-/* With a BOM, and CRLF: the file the club opens is opened on Windows, by
-   double-clicking it, and a UTF-8 .txt with neither is a file full of Ã‡ in half
-   the editors that exist. */
 fs.writeFileSync(OUT, '﻿' + out.join('\r\n'), 'utf8');
 console.log(`[critérios] escrito em ${OUT}`);

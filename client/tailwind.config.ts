@@ -1,110 +1,46 @@
 import type { Config } from 'tailwindcss';
 import plugin from 'tailwindcss/plugin';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   SALA DE PROJEÇÃO — the design system.
-
-   A dark auditorium, not a piece of equipment. The image arrives as light
-   thrown through celluloid, and the palette comes from the room it arrives in:
-   the red of the curtain, the cream of the beam and the brass of the marquee,
-   over the blue-black of a house with the lights down. Nothing here is a neon
-   accent on grey; the colour comes from the place.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 export default {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // the room
         house: {
-          DEFAULT: '#07090e', // the auditorium with the lights down
-          deep: '#04050a',    // the screen surround, deeper than the room
-          seat: '#0e121b',    // a raised surface: panels, rows, the slate
-          rail: '#18202e',    // edges and dividers
+          DEFAULT: '#07090e',
+          deep: '#04050a',
+          seat: '#0e121b',
+          rail: '#18202e',
         },
-        // the beam: tungsten through film, warm at the core
         beam: {
           DEFAULT: '#ffe9c4',
           hot: '#fff6e6',
           dim: '#8d8574',
         },
-        /* Technicolor dye. Red has two jobs and they need two values: a dye
-           bright enough to read as text on the dark room is too bright to put
-           cream lettering on top of, and the commit key is the most-pressed
-           control in the product. `red` fills surfaces (cream on it: 4.8:1);
-           `red-lit` is red used AS text (5.5:1 on a plate). Using the wrong one
-           is how the primary button ended up at 4.14:1. */
         dye: {
-          red: '#d12a20',      // fills: the commit key, the REC lamp, the curtain
-          'red-hot': '#e2352a', // the fill under the pointer, one step brighter
-          'red-lit': '#f2564a', // red as text: links, destructive hover
-          'red-glow': '#ff7a6e', // red text under the pointer — the trailer link
+          red: '#d12a20',
+          'red-hot': '#e2352a',
+          'red-lit': '#f2564a',
+          'red-glow': '#ff7a6e',
           'red-deep': '#8c1e18',
-          /* ── latão ────────────────────────────────────────────────────────
-             State and selection: the focus ring, the engaged chip, the genre
-             criteria's legend, the vote you cast, the field you are typing in.
-
-             This was cyan until the owner asked for something that reads as a
-             cinema rather than as a process. Brass is the marquee bulb and the
-             gilding on a proscenium.
-
-             The cost is stated rather than hidden: brass sits in the same family
-             as `beam`, so state and light are no longer separated by hue. What
-             separates them now is saturation and value — beam is a near-white
-             cream at 92% lightness, brass a saturated metal at 55%. If a
-             selected chip ever starts reading as "lit" instead of "chosen", this
-             is the line that caused it, and darkening toward `brass-deep` is the
-             fix.
-
-             8,9:1 on `house`, so it clears the floor for text with room over. */
           brass: '#d9a441',
           'brass-deep': '#7a5a1e',
-          /* Green belongs here more than it looks like it should. Three-strip
-             Technicolor separates an image onto three records — red, green and
-             blue — and the room was already using two of them; this is the one
-             that was missing, not a success colour borrowed from somewhere
-             else. It has one job: saying that something was written. Red says
-             the opposite, and the confirmation of a saved rating was wearing it.
-
-             Two values for the same reason red has two: `green` fills and
-             marks (the lamp, the tint, the ring), `green-lit` is green used AS
-             text, where it reads 9.9:1 on a plate. */
           green: '#2f9e44',
           'green-lit': '#5fd48a',
         },
         ink: {
-          DEFAULT: '#eae4d8',  // text on the room
-          dim: '#9d9686',      // 5.4:1 on house — the floor for real text
-          faint: '#5b564c',    // perforations, ticks, unlit cells. Never text.
+          DEFAULT: '#eae4d8',
+          dim: '#9d9686',
+          faint: '#5b564c',
         },
       },
       fontFamily: {
-        /* Staatliches is the title card: condensed capitals with the weight and
-           the hard corners of a screen-printed poster.
-
-           It is narrow, and that is a requirement and not a preference: this
-           name is on every button label, chip, tab and small tracked caption in
-           the room, all of them in boxes sized against a condensed face. Cinzel
-           was tried first, and being wide made the display type the widest thing
-           on every screen it appeared on. This line cannot be changed alone — a
-           display face comes with the whole scale, or with a rewrite of it. */
         display: ['Staatliches', '"Bebas Neue"', 'system-ui', 'sans-serif'],
-        /* Poppins carries every label, control and paragraph. Geometric and
-           round where the display face is condensed and hard, which is the
-           contrast a title card wants against the copy under it.
-
-           One thing it does not bring is a tabular figure set: `.q` asks for
-           `font-variant-numeric: tabular-nums` so the scores line up in a
-           column, and Poppins has no `tnum` feature for the browser to switch
-           on. Its digits are near enough to the same width that the columns
-           still read, and the request is left in place — it costs nothing and
-           it starts working the day the family ships one. */
         sans: ['Poppins', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
-        cell: '2px',   // a film cell is square
+        cell: '2px',
         plate: '6px',
       },
       transitionTimingFunction: {
@@ -124,52 +60,19 @@ export default {
           '48%': { opacity: '0.86' },
           '52%': { opacity: '1' },
         },
-        /* ── o aviso que chega sozinho ────────────────────────────────────
-           Um distintivo que aparece sem movimento não aparece: são quinze
-           pixels no canto de um ícone, num cabeçalho que ninguém está olhando.
-           Passa do tamanho final e volta — é o que faz o olho subir — e
-           termina em repouso, porque o estado permanente é ter avisos, não
-           estar pulando. */
         pop: {
           '0%': { opacity: '0', transform: 'scale(0.4)' },
           '55%': { opacity: '1', transform: 'scale(1.25)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
-        /* ── a lâmpada de gravação ────────────────────────────────────────
-           Um filamento respirando, não um pisca-pisca. Esta lâmpada fica acesa
-           na beirada do olho de quatro pessoas por duas horas seguidas, e um
-           liga-desliga duro nesse tempo é a versão em interface de alguém
-           batendo no vidro. O brilho é que respira; o ponto nunca apaga.
-
-           Termina em 100% ACESO, e é isto que faz a preferência de menos
-           movimento funcionar de graça: index.css corta todo laço em uma volta,
-           e o que sobra aqui é uma lâmpada acesa e parada — que é exatamente a
-           coisa que se queria dizer. O brilho é declarado nas duas pontas e
-           também na classe do elemento, para o repouso depois dessa única volta
-           ser o mesmo brilho e não a ausência dele. */
         lamp: {
           '0%, 100%': { opacity: '1', boxShadow: '0 0 10px rgba(242,86,74,0.85)' },
           '50%': { opacity: '0.66', boxShadow: '0 0 4px rgba(242,86,74,0.3)' },
         },
-        /* ── a lâmpada da marquise ────────────────────────────────────────
-           A chave da ficha, quando a obra do reel já tem ficha do clube. É um
-           brilho por dentro que respira, e não uma borda piscando: o estado
-           permanente é "tem coisa escrita aqui", e o pulso só serve para o olho
-           achá-lo enquanto passa por vinte trailers.
-
-           Termina em 100% ACESO, pela mesma razão da lâmpada de gravação: com
-           menos movimento pedido, index.css corta o laço em uma volta, e o que
-           sobra é a chave acesa e parada. */
-        /* Opacidade, e nunca `box-shadow`: uma sombra animada é repintada pelo
-           processador principal a cada quadro, e esta lâmpada fica acesa por
-           cima de um vídeo tocando. Opacidade a placa de vídeo resolve sozinha.
-           Quem pulsa é uma camada por cima da tecla, não a tecla. */
         bulb: {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.28' },
         },
-        /* O badalo do sino. Amplitude pequena de propósito: a diferença entre
-           um ícone que avisa e um ícone que implora são uns poucos graus. */
         nudge: {
           '0%, 100%': { transform: 'rotate(0deg)' },
           '15%': { transform: 'rotate(-11deg)' },
@@ -190,24 +93,6 @@ export default {
     },
   },
   plugins: [
-    /* ══════════════════════════════════════════════════════════════════════
-       `coarse:` — o dedo, e não a largura da tela.
-
-       Todo o resto deste arquivo escala por BREAKPOINT, que é sobre quanto
-       espaço existe. Isto é sobre outra coisa: o tamanho de quem aponta. Um
-       notebook com tela sensível ao toque tem 1400px de largura e um dedo; um
-       telefone deitado tem 800px e o mesmo dedo. Medir a mão pela janela erra
-       nos dois.
-
-       Existe porque a interface tinha um defeito sistêmico que só se enxerga
-       somando: ela é desenhada com `zoom: 1.25` no computador e `zoom: 1` no
-       telefone (ver index.css). O aparelho com dedos recebia todo controle 25%
-       MENOR — a chave de 41px virava 33px, o teto de toque é 44px, e isso valia
-       para todo botão do produto de uma vez.
-
-       Escrito como variante e não como uma folha de exceções: assim o tamanho
-       de toque de um controle mora na linha que define o controle, à vista de
-       quem o edita, em vez de numa media query no fim de outro arquivo. */
     plugin(({ addVariant }) => {
       addVariant('coarse', '@media (pointer: coarse)');
       addVariant('fine', '@media (hover: hover) and (pointer: fine)');

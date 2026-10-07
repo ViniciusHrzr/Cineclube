@@ -7,26 +7,17 @@ const { GENRES, GENRE_TO_TMDB, critsFor } = require('../criteria');
 
 const router = express.Router();
 
-/* The runtime only ever arrives from the details endpoint, so a search or a
-   popular page writing over a cached row must not blank out the number a
-   previous detail fetch put there — hence COALESCE rather than excluded. */
-const upsertCache = db.prepare(`
-  INSERT INTO movies_cache (tmdb_id, title, original_title, english_title, year, genre, genres, poster, backdrop, overview, director, runtime, tmdb_score, tmdb_votes, cached_at)
+const upsertCache = db.prepare(`  INSERT INTO movies_cache (tmdb_id, title, original_title, english_title, year, genre, genres, poster, backdrop, overview, director, runtime, tmdb_score, tmdb_votes, cached_at)
   VALUES (@id, @title, @original, @english, @year, @genre, @genres, @poster, @backdrop, @overview, @director, @runtime, @score, @votes, datetime('now'))
   ON CONFLICT(tmdb_id) DO UPDATE SET
     title = excluded.title, year = excluded.year, genre = excluded.genre,
     genres = excluded.genres,
-    -- Written flat rather than COALESCEd: every endpoint carries this one, so a
-    -- null here is TMDB saying the two titles are now the same string, not a
-    -- cheaper endpoint failing to mention it.
+
     original_title = excluded.original_title,
-    -- COALESCEd for the opposite reason: only the details endpoint carries it,
-    -- so a search page writing over this row knows nothing about the English
-    -- name and must not blank out what a detail fetch already found.
+
     english_title = COALESCE(excluded.english_title, movies_cache.english_title),
     poster = excluded.poster, director = excluded.director,
-    -- O quadro deitado e a sinopse: toda rota de lista os carrega, então nenhuma
-    -- delas escreve por cima com menos do que a anterior sabia.
+
     backdrop = COALESCE(excluded.backdrop, movies_cache.backdrop),
     overview = COALESCE(excluded.overview, movies_cache.overview),
     runtime = COALESCE(excluded.runtime, movies_cache.runtime),
@@ -35,7 +26,6 @@ const upsertCache = db.prepare(`
     cached_at = excluded.cached_at
 `);
 
-/** A cached row back into the shape the client speaks. */
 function fromCache(c) {
   return {
     id: c.tmdb_id,
@@ -44,15 +34,9 @@ function fromCache(c) {
     english: c.english_title ?? null,
     year: c.year,
     genre: c.genre,
-    // Rows written before the column existed still know one genre; one is a
-    // list of one, and the screen that offers a choice has nothing to choose
-    // between.
-    // choose between.
     genres: c.genres ? c.genres.split(',') : [c.genre],
     poster: c.poster,
     backdrop: c.backdrop ?? null,
-    // Guardada desde que o reel passou a precisar dela, o que faz a ficha
-    // servida do cache ter sinopse em vez de "sem sinopse disponível".
     overview: c.overview ?? null,
     director: c.director ?? null,
     runtime: c.runtime ?? null,
@@ -62,8 +46,6 @@ function fromCache(c) {
 const getCache = db.prepare('SELECT * FROM movies_cache WHERE tmdb_id = ?');
 const recentCache = db.prepare('SELECT * FROM movies_cache ORDER BY cached_at DESC LIMIT 20');
 
-// The cache is a convenience, not the answer: if writing it fails the visitor
-// still gets what TMDB sent, so the error stops here.
 async function cacheMovie(m) {
   try {
     await upsertCache.run({
@@ -82,7 +64,6 @@ async function cacheMovie(m) {
 
 const cacheAll = results => Promise.all(results.map(cacheMovie));
 
-/** Onde cada filme da grade está passando. As regras estão em providers.js. */
 const fillProviders = providerCache({
   table: 'movies_cache',
   kind: 'movie',
@@ -109,7 +90,6 @@ router.get('/search', wrap(async (req, res) => {
   if (!q) return res.json({ page: 1, totalPages: 0, results: [] });
   try {
     const data = await tmdb.searchMovies(q, Number(req.query.page) || 1);
-    // Cached first: `fillProviders` writes onto rows that have to exist.
     await cacheAll(data.results);
     await fillProviders(data.results);
     res.json(data);
@@ -158,10 +138,6 @@ router.get('/movie/:id', wrap(async (req, res) => {
   try {
     const movie = await tmdb.movieDetails(id);
     await cacheMovie(movie);
-    /* O detalhe já traz `watch` de graça, e mesmo assim ele passa por aqui: é
-       este caminho que pendura o link fundo de cada serviço e que guarda a
-       resposta pelos sete dias. Uma ficha aberta duas vezes na mesma noite não
-       pode custar duas voltas ao JustWatch. */
     await fillProviders([movie]);
     res.json(movie);
   } catch (e) {

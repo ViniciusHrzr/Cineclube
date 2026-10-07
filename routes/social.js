@@ -9,15 +9,6 @@ const live = require('../live');
 
 const router = express.Router({ mergeParams: true });
 
-/* O único texto livre que uma pessoa escreve para as outras aqui, e por isso a
-   superfície mais valiosa para quem quiser despejar qualquer coisa.
-
-   Vinte por minuto é folgado de propósito: uma discussão de clube é rápida e
-   pode ser em rajada. Passar disso não é ter opinião, é ter um laço.
-
-   O voto e a curtida não têm trava própria: os dois são uma linha com chave
-   primária por (alvo, pessoa), então apertar mil vezes cria e apaga a mesma
-   linha. O teto de trás em server.js cuida do custo de bater na porta. */
 const throttleComment = throttle.limit({
   name: 'comment',
   max: 20,
@@ -25,30 +16,6 @@ const throttleComment = throttle.limit({
   message: espera => `Muitos comentários seguidos. Tente de novo em ${espera}.`,
 });
 
-/* ── o clube entra por baixo ──────────────────────────────────────────────
-   Nada aqui tem coluna `club_id`: um comentário pendura numa ficha, e a ficha
-   já sabe de que sala é. Uma coluna própria seria uma segunda resposta para a
-   mesma pergunta, livre para divergir.
-
-   O preço é que TODA consulta deste arquivo passa por `reviews` para descobrir
-   o clube. Uma leitura que esquecer o JOIN mostra a conversa de outro clube, e
-   uma escrita que esquecer deixa alguém comentar numa sala em que não está —
-   por isso `reviewStmt`, o portão de toda escrita daqui, carrega `club_id` na
-   condição. */
-
-/* ══════════════════════════════════════════════════════════════════════════
-   A conversa em cima do que o clube gravou. Duas coisas sobrevivem à chamada de
-   voz, e as duas penduram numa avaliação específica e não no filme, porque é a
-   ficha de alguém que se discute: um comentário, e um voto na ficha.
-
-   Tudo de uma vez: a tela de avaliados desenha o acervo inteiro, e buscar por
-   avaliação seriam quarenta requisições para montar uma tela, com um estado de
-   carregando dentro de cada gaveta. Num clube de quatro pessoas isto é da ordem
-   de centenas de linhas — o dia em que for grande demais é o dia em que este
-   comentário fica errado.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** Longo o bastante para um argumento, curto o bastante para não virar ensaio. */
 const MAX_BODY = 1000;
 
 const commentsStmt = db.prepare(`
@@ -101,14 +68,8 @@ const commentOwnerStmt = db.prepare(`
   WHERE c.id = ? AND rv.club_id = ?
 `);
 const deleteCommentStmt = db.prepare('DELETE FROM review_comments WHERE id = ?');
-/* Explícito, além do ON DELETE CASCADE: a cascata depende de as chaves
-   estrangeiras estarem ligadas. Uma resposta órfã não some da tela, ela fica
-   invisível num pai que não existe mais — pior do que sumir. */
 const deleteRepliesStmt = db.prepare('DELETE FROM review_comments WHERE parent_id = ?');
 
-/* O portão. Toda escrita deste arquivo passa por aqui, e `club_id` na condição
-   é o que impede o id de uma ficha de outra sala de ser um jeito de escrever
-   dentro dela. */
 const reviewStmt = db.prepare(
   'SELECT id, reviewer_id, scores FROM reviews WHERE id = ? AND club_id = ?'
 );
@@ -126,15 +87,11 @@ function toCommentDTO(row) {
   return {
     id: row.id,
     reviewId: row.review_id,
-    /* A conversa e o voto são desenhados pelas MESMAS peças nos dois universos
-       (ver components/social.tsx), e a ficha de um episódio não é uma `review`.
-       `reviewId` continua porque endereços e telas antigas o leem. */
     takeId: row.review_id,
     reviewerId: row.reviewer_id,
     reviewerName: row.reviewer_name,
     reviewerDot: row.reviewer_dot,
     body: row.body,
-    /** Null num comentário de primeiro nível; o id do pai numa resposta. */
     parentId: row.parent_id || null,
     createdAt: row.created_at
   };
@@ -149,8 +106,6 @@ function toVoteDTO(row) {
   };
 }
 
-/* Aberto, como todo o resto da leitura neste app: o que se protege é escrever —
-   a ameaça é um amigo votando no lugar do outro, não sigilo. */
 router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   const [comments, votes, likes] = await Promise.all([
     commentsStmt.all(req.club.id), votesStmt.all(req.club.id), likesStmt.all(req.club.id)
@@ -162,9 +117,6 @@ router.get('/', clubs.canRead('comments'), wrap(async (req, res) => {
   });
 }));
 
-/* Quem assina é a sessão e nunca o corpo. Comentar a própria avaliação é
-   permitido de propósito: responder a quem te respondeu é metade de uma
-   conversa. */
 router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMember, throttleComment, wrap(async (req, res) => {
   const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
@@ -175,11 +127,6 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMem
     return res.status(400).json({ error: `Comentário longo demais (máximo ${MAX_BODY} caracteres).` });
   }
 
-  /* ── responder, e só um nível ──────────────────────────────────────────
-     O pai tem de existir, estar NESTA ficha, e ser de primeiro nível. A terceira
-     condição mantém a profundidade em um; a segunda evita um fio costurado entre
-     duas fichas — uma resposta que aparece numa conversa cujo pai está em
-     outra. */
   const parentId = req.body?.parentId ?? null;
   if (parentId != null) {
     const parent = await commentOwnerStmt.get(String(parentId), req.club.id);
@@ -193,20 +140,13 @@ router.post('/reviews/:reviewId/comments', auth.requireSession, clubs.requireMem
 
   const id = 'c' + crypto.randomUUID();
   await insertCommentStmt.run(id, review.id, req.session.reviewer_id, body, parentId ? String(parentId) : null);
-  /* Depois da escrita, sempre: um aviso antes do commit manda o clube inteiro
-     buscar um estado que ainda não existe, e não há segundo aviso a caminho. */
   live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(201).json(toCommentDTO(await oneCommentStmt.get(id)));
 }));
 
-/* O comentário é de quem escreveu — e do admin, que é quem varre o que não
-   deveria estar aqui. Mesma regra da avaliação, uma linha acima na hierarquia:
-   apagar o que você disse é desdizer, apagar o que outro disse é moderar. */
 router.delete('/comments/:id', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const row = await commentOwnerStmt.get(req.params.id, req.club.id);
   if (!row) return res.status(404).json({ error: 'Comentário não encontrado.' });
-  // Moderar é do ADM da sala em que o texto foi escrito — o da instalação segue
-  // valendo por cima, como em todo lugar.
   if (
     row.reviewer_id !== req.session.reviewer_id &&
     !req.club.isClubAdmin &&
@@ -214,23 +154,12 @@ router.delete('/comments/:id', auth.requireSession, clubs.requireMember, wrap(as
   ) {
     return res.status(403).json({ error: 'Você só pode apagar os seus comentários.' });
   }
-  // As respostas vão junto: uma resposta sem o que ela responde é metade de um
-  // diálogo, e ninguém consegue ler a metade que sobrou.
   await deleteRepliesStmt.run(row.id);
   await deleteCommentStmt.run(row.id);
   live.emit('social', req.session.reviewer_id, req.club.id);
   res.status(204).end();
 }));
 
-/* ── curtir um comentário ─────────────────────────────────────────────────
-   Um estado, não dois: curtido ou não. `liked: false` apaga a linha, que é a
-   diferença entre "não curti" e "curti e desfiz" — o contador não deve saber a
-   segunda.
-
-   Não se curte o próprio comentário, pela mesma aritmética que impede votar na
-   própria ficha: um número que o autor pode somar em si mesmo deixa de contar
-   quem concordou. Aqui é mais barato que lá — é vaidade, não distorção — mas a
-   regra é a mesma e vale ser uma só. */
 router.put('/comments/:id/like', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const comment = await commentAuthorStmt.get(req.params.id, req.club.id);
   if (!comment) return res.status(404).json({ error: 'Comentário não encontrado.' });
@@ -248,20 +177,6 @@ router.put('/comments/:id/like', auth.requireSession, clubs.requireMember, wrap(
   res.json({ liked });
 }));
 
-/* ── concordar com a ficha de alguém ──────────────────────────────────────
-   +1, -1, ou 0 para tirar o voto. Zero apaga a linha em vez de gravar um
-   neutro, porque "não votei" e "votei em cima do muro" não são a mesma
-   informação e o contador não deve inventar a segunda.
-
-   Era um voto por critério, e a rota carregava o `key` na URL. O argumento era
-   bom no papel — concordar com o 9 dela em fotografia e achar o 4 em roteiro
-   absurdo é o que acontece de verdade — e na prática onze polegares por ficha
-   por pessoa não é uma opinião, é um formulário. O que se diz de verdade é
-   sobre o take inteiro. Ver a nota em db.js.
-
-   Não se vota na própria ficha. Não é uma regra moral, é aritmética: um placar
-   em que o autor pode se somar não mede mais concordância do clube, e o único
-   uso de poder fazer isso seria esse. */
 router.put('/reviews/:reviewId/vote', auth.requireSession, clubs.requireMember, wrap(async (req, res) => {
   const review = await reviewStmt.get(req.params.reviewId, req.club.id);
   if (!review) return res.status(404).json({ error: 'Avaliação não encontrada.' });
@@ -269,10 +184,6 @@ router.put('/reviews/:reviewId/vote', auth.requireSession, clubs.requireMember, 
     return res.status(403).json({ error: 'Não dá para votar na sua própria avaliação.' });
   }
 
-  /* Um número de verdade, não algo que vira número. `Number(null)` e
-     `Number('')` são zero, e zero aqui significa "tira o meu voto" — sem esta
-     checagem um corpo malformado apagaria um voto em silêncio em vez de dar
-     erro. */
   const value = req.body?.value;
   if (typeof value !== 'number' || ![1, -1, 0].includes(value)) {
     return res.status(400).json({ error: 'Voto inválido.' });

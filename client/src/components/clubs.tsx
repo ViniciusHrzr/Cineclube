@@ -7,37 +7,10 @@ import { clubs, initialsOf, type Club } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 import { mediaUrl } from '@/lib/session';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   A TROCA DE SALA — o nome do clube na marquise, e o painel que ele abre.
-
-   Havia um saguão: uma tela inteira antes de qualquer clube, com as duas listas
-   de salas e uma vitrine do que a rede andava fazendo. Ele foi apagado por
-   decisão do usuário. Trocar de sala é um gesto de segundos e não um destino:
-   pagar uma tela inteira e o caminho de volta por ele era cobrar uma viagem por
-   um passo.
-
-   O que ele tinha e valia continua aqui — suas salas, as abertas, e fundar uma.
-   O que ele tinha e não valia — parede de cartazes, pódio, ficha da semana —
-   saiu junto com ele.
-
-   ── por que a sala de agora não é um item da lista ───────────────────────
-   Ela é o cabeçalho do painel. Uma linha que leva aonde a pessoa já está é um
-   controle que não faz nada, e ter uma delas acesa obrigaria o painel a
-   explicar qual é a diferença entre a acesa e as outras. Dito no topo, não há o
-   que explicar: isto é onde você está, e embaixo estão os outros lugares.
-
-   ── e por que cada bloco se cala ─────────────────────────────────────────
-   Quem só está no Cineclube e não tem clube aberto para olhar abre um painel de
-   duas linhas: a sala em que está e a chave de fundar. É a regra do placar do
-   critério em escala de bloco — contagem zero não é dado, é ruído com forma de
-   dado.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 export function ClubSwitch({
   club,
   onEnter,
 }: {
-  /** A sala de agora, que a marquise já carrega. É o cabeçalho, não um item. */
   club: Club;
   onEnter: (slug: string) => void;
 }) {
@@ -46,16 +19,9 @@ export function ClubSwitch({
   const [others, setOthers] = useState<Club[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [founding, setFounding] = useState(false);
-  /** Se a sua sala já existe: cada pessoa funda uma. Ver routes/clubs.js. */
   const [founded, setFounded] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
-  /* Só ao abrir, e outra vez a cada abertura. Uma lista de salas buscada no boot
-     é uma requisição por sessão para uma pergunta que quase ninguém faz; e
-     guardada da abertura anterior, mostraria um clube que a pessoa acabou de
-     fundar em outra aba como inexistente. O que já veio fica na tela enquanto a
-     resposta nova não chega — piscar para vazio a cada abertura seria a lista se
-     desmontando debaixo do cursor. */
   const load = useCallback(async () => {
     try {
       const got = await clubs.all();
@@ -73,8 +39,6 @@ export function ClubSwitch({
     if (open) void load();
   }, [open, load]);
 
-  /* Fecha ao clicar fora e no Escape, como o painel do sino: um painel que só
-     fecha pelo próprio botão obriga a mirar de volta no alvo. */
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => {
@@ -91,9 +55,6 @@ export function ClubSwitch({
     };
   }, [open]);
 
-  /* Uma ação, dois desfechos: numa sala aberta você entra, numa fechada vira
-     pedido. Quem diz qual foi é o servidor — a visibilidade pode ter mudado
-     entre a lista e o clique. */
   async function ask(slug: string) {
     try {
       const out = await clubs.join(slug);
@@ -110,9 +71,6 @@ export function ClubSwitch({
   const outras = (mine ?? []).filter(c => c.slug !== club.slug);
 
   return (
-    /* `relative` aqui e não no bloco da marquise: este painel se alinha pela
-       ESQUERDA, junto do nome de que ele fala, enquanto o do sino se alinha pela
-       direita do bloco de ações. Dois donos diferentes, duas âncoras. */
     <div ref={box} className="relative flex min-w-0">
       <button
         type="button"
@@ -129,9 +87,7 @@ export function ClubSwitch({
             className="h-[26px] w-[26px] flex-none rounded-cell object-cover ring-1 ring-white/10"
           />
         ) : null}
-        {/* Menor no telefone, e não por gosto: esta palavra divide uma linha só
-            com o sino, o retrato e a lente, e a 22px um nome de duas palavras
-            consome a barra inteira antes de começar a truncar. */}
+        {}
         <span className="min-w-0 truncate font-display text-[18px] leading-none tracking-[0.08em] text-beam transition-colors group-hover:text-beam-hot sm:text-[22px] sm:tracking-[0.1em]">
           {club.name}
         </span>
@@ -169,10 +125,7 @@ export function ClubSwitch({
                   .join(' · ')}
               </span>
             </span>
-            {/* A marca de onde se está, e é a mesma do produto inteiro: um traço
-                de 2px em vermelho de cortina embaixo da seção em que a pessoa
-                está parada. Aqui ele fica de pé, porque a lista corre para
-                baixo. */}
+            {}
             <span aria-hidden className="h-8 w-[2px] flex-none bg-dye-red" />
           </header>
 
@@ -200,20 +153,13 @@ export function ClubSwitch({
                 <ClubRow
                   key={c.id}
                   club={c}
-                  /* A linha inteira não entra: entrar numa sala que não é sua é
-                     um pedido, e a chave que o faz precisa ser distinguível de
-                     um simples "abrir". Ver a chave dentro da linha. */
                   onAsk={() => void ask(c.slug)}
                 />
               ))}
             </Block>
           ) : null}
 
-          {/* ── a chave de fundar, ou o porquê de ela não estar aqui ──────
-              Cada pessoa funda um clube. Dito onde a chave estaria, e não num
-              erro depois do formulário preenchido: uma regra que só aparece no
-              envio é um trabalho perdido. Quem já fundou entra nos outros pela
-              lista acima. */}
+          {}
           <div className="border-t border-white/[0.07] p-3">
             {founded ? (
               <p className="px-1 py-0.5 text-[12.5px] leading-relaxed text-ink-dim">
@@ -253,10 +199,6 @@ function Block({ legend, children }: { legend: string; children: React.ReactNode
   );
 }
 
-/* Uma sala numa linha. Com `onPick` a linha inteira é o botão — é uma sala sua e
-   abrir é a única coisa a fazer com ela. Com `onAsk` a linha é inerte e a chave
-   é que age: pedir para entrar não é abrir, e uma linha que às vezes navega e às
-   vezes envia um pedido é a mesma superfície com dois significados. */
 function ClubRow({
   club,
   onPick,
@@ -311,8 +253,6 @@ function ClubRow({
     <div className="flex w-full items-center gap-2.5 px-4 py-2.5">
       {face}
       {club.requested ? (
-        /* Sem chave: o pedido já está posto e desfazê-lo é uma decisão maior do
-           que cabe numa linha de painel. A palavra diz em que pé está. */
         <span className="legend flex-none text-[10px] text-dye-brass">Pedido</span>
       ) : (
         <button
@@ -327,8 +267,6 @@ function ClubRow({
   );
 }
 
-/* A foto da sala, ou as iniciais dela. Quadrada como tudo o mais: o retrato
-   redondo deste produto é de gente, e uma sala não é gente. */
 function ClubMark({ club, size }: { club: Club; size: number }) {
   return (
     <span
@@ -349,10 +287,6 @@ function ClubMark({ club, size }: { club: Club; size: number }) {
   );
 }
 
-/* ── fundar ───────────────────────────────────────────────────────────────
-   A mesma folha que ficava no saguão, sem uma vírgula de diferença no que ela
-   pergunta: nome, uma linha, foto, e como se entra. Aberta do painel e não de
-   uma tela, porque não há mais tela. */
 function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (slug: string) => void }) {
   const [name, setName] = useState('');
   const [tagline, setTagline] = useState('');
@@ -395,8 +329,6 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
   }
 
   return (
-    /* Sem desfoque, pela razão em components/film.tsx: a parede atrás nunca para
-       de andar, e um borrão sobre ela é refeito a cada quadro. */
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-house-deep/95 sm:items-center">
       <motion.form
         onSubmit={submit}
@@ -462,8 +394,7 @@ function FoundClub({ onClose, onFounded }: { onClose: () => void; onFounded: (sl
             </div>
           </div>
 
-          {/* A escolha é sobre a PORTA e não sobre a fachada: os dois aparecem na
-              lista com nome e foto. */}
+          {}
           <fieldset className="flex flex-col gap-2">
             <span className="legend text-[10px]">Como se entra</span>
             <div className="flex gap-2">

@@ -1,17 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The last thing standing.
-
-   React 18 unmounts the whole tree when a render throws and nothing catches it.
-   What the club sees then is not an error — it is the app *gone*, a white page
-   with no clue what happened, which is the worst possible failure mode for a
-   bug report: the one person who saw it has nothing to tell.
-
-   This turns that into a sentence. It does not try to resume — a tree that
-   threw during render is not worth continuing from. It says what broke, where,
-   and offers the reload.
-   ══════════════════════════════════════════════════════════════════════════ */
 export class Boundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
@@ -20,7 +8,6 @@ export class Boundary extends Component<{ children: ReactNode }, { error: Error 
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // The console keeps the stack the screen has no room for.
     console.error('[cineclube] a tela quebrou:', error, info.componentStack);
   }
 

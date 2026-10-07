@@ -17,30 +17,6 @@ const { seasonCritsFor, seasonFinalOf, GENRE, CRAFT, PERSONAL } = require('../cr
 const { genresFromTvIds, signedBy } = require('../series');
 const upnext = require('../upnext');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   O universo de séries.
-
-   Quatro coisas que só existem aqui, e cada uma pode falhar em silêncio:
-
-   1. **A ficha é de nove, e nunca de onze.** Os dois critérios do gênero são
-      uma promessa que uma OBRA INTEIRA faz, e uma temporada não a faz. Se um
-      deles vazar para a ficha, ninguém vê um erro — vê uma pergunta a mais, e
-      a nota passa a medir o rótulo da série.
-
-   2. **Marcar é do episódio; avaliar é da temporada.** São duas escritas
-      diferentes sobre a mesma tabela, e uma nota que voltasse a entrar numa
-      linha de episódio não quebraria nada — só espalharia o veredito por
-      quarenta minutos de cada vez.
-
-   3. **A linha É o "eu vi".** Não há tabela de assistido ao lado. Marcar
-      insere; desmarcar apaga. Se as duas notas conseguirem coexistir na mesma
-      ficha de temporada, ela carrega duas respostas para a mesma pergunta e
-      nada quebra até alguém perguntar qual vale.
-
-   4. **A parede entre clubes vale igual.** O acervo de séries é outra tabela,
-      e uma tabela nova é uma parede nova que ninguém testou ainda.
-   ══════════════════════════════════════════════════════════════════════════ */
-
 let baseUrl;
 let server;
 
@@ -59,7 +35,7 @@ test.after(async () => {
   await closed;
   db.close();
   for (const suffix of ['', '-shm', '-wal']) {
-    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* arquivo temporário */ }
+    try { fs.rmSync(dbPath + suffix, { force: true }); } catch { }
   }
 });
 
@@ -94,8 +70,6 @@ function scoresFor(genre, value) {
   return o;
 }
 
-/* ── os nove ────────────────────────────────────────────────────────────── */
-
 test('a ficha de uma temporada tem nove critérios e nenhum é do gênero', () => {
   for (const genre of ['Drama', 'Terror', 'Comédia', 'Animação', 'Documentário']) {
     const crits = seasonCritsFor(genre);
@@ -113,10 +87,8 @@ test('o gênero troca o objeto de uma pergunta, nunca acrescenta uma', () => {
   const doc = seasonCritsFor('Documentário').map(c => c.key);
 
   assert.ok(drama.includes('atuacoes'));
-  // Numa animação ninguém atuou diante de uma câmera: o que existe é voz.
   assert.ok(anima.includes('vozes'));
   assert.ok(!anima.includes('atuacoes'));
-  // Num documentário não houve roteiro nem direção de arte: houve forma e material.
   assert.ok(doc.includes('material'));
   assert.ok(doc.includes('acesso'));
   assert.equal(anima.length, 9);
@@ -132,17 +104,10 @@ test('o Aproveitamento é o último, e é o único pessoal', () => {
 
 test('o divisor é contado, então uma ficha parcial não é punida', () => {
   assert.equal(seasonFinalOf('Drama', scoresFor('Drama', 8)), 8);
-  // Duas respostas de 8 são 8, e não 16/9.
   assert.equal(seasonFinalOf('Drama', { direcao: 8, roteiro: 8 }), 8);
-  // Zero é uma nota; ausência não é.
   assert.equal(seasonFinalOf('Drama', { direcao: 0, roteiro: 10 }), 5);
   assert.equal(seasonFinalOf('Drama', {}), 0);
 });
-
-/* ── o que você vê a seguir ─────────────────────────────────────────────
-   A conta que a lista do clube mostra em cada cartaz. Errar aqui é a tela
-   mandando alguém ver de novo o que já viu, ou anunciar como "o seu próximo"
-   um episódio que ainda não existe. */
 
 const temporadas = [{ season: 1, episodes: 3 }, { season: 2, episodes: 2 }];
 const epsDe = (season, ...datas) =>
@@ -173,8 +138,6 @@ test('uma temporada inteira marcada não é o lugar de procurar', () => {
   assert.equal(got.next.episode, 1);
 });
 
-/* Um episódio com data no futuro não é "o seu próximo": é a estreia. A
-   diferença é a frase que a tela escreve, e são duas frases diferentes. */
 test('o que ainda não foi ao ar vira estreia, e não pendência', () => {
   const shape = { seasons: [{ season: 1, episodes: 2 }], nextAir: null };
   const eps = epsDe(1, '2020-01-01', '2030-01-01');
@@ -204,9 +167,6 @@ test('em dia numa série que acabou, não há nada a dizer', () => {
   assert.equal(got.caughtUp, true);
 });
 
-/* Sem lista de episódios os números da temporada ainda respondem qual é o
-   próximo — e é aí que a data de estreia do TMDB tem de corrigir o palpite,
-   porque uma lista sintética não tem data nenhuma. */
 test('sem a lista da temporada, o número responde e a estreia corrige', () => {
   const shape = { seasons: [{ season: 1, episodes: 3 }], nextAir: null };
   const cego = upnext.decide(shape, vistos('1x1'), [], '2026-09-12');
@@ -219,8 +179,6 @@ test('sem a lista da temporada, o número responde e a estreia corrige', () => {
   assert.deepEqual(corrigido.upcoming, nextAir);
 });
 
-/* "Não sei" é uma quarta resposta, e ela não pode ser confundida com "em dia":
-   uma série que o TMDB não descreveu não vira "você viu tudo". */
 test('sem inventário, o produto cala em vez de chutar', () => {
   const got = upnext.decide(null, vistos(), [], '2026-09-12');
   assert.equal(got.next, null);
@@ -228,25 +186,18 @@ test('sem inventário, o produto cala em vez de chutar', () => {
   assert.equal(got.caughtUp, false);
 });
 
-/* ── a taxonomia de televisão ───────────────────────────────────────────── */
-
 test('os gêneros de TV não são os de cinema', () => {
-  // 10765 é ficção científica E fantasia em série, e não existe em filme.
   assert.deepEqual(genresFromTvIds([10765]), ['Ficção científica']);
-  // 10759 é ação e aventura; 28 (ação em filme) não diz nada aqui.
   assert.deepEqual(genresFromTvIds([10759]), ['Ação']);
   assert.deepEqual(genresFromTvIds([28]), ['Drama'], 'id de filme deveria cair no balde');
 });
 
 test('Drama só ganha quando nada mais específico foi oferecido', () => {
-  // A mesma regra dos filmes: a ordem do TMDB não é um ranking.
   assert.equal(genresFromTvIds([18, 10765])[0], 'Ficção científica');
   assert.equal(genresFromTvIds([18, 99])[0], 'Documentário');
   assert.deepEqual(genresFromTvIds([]), ['Drama']);
   assert.deepEqual(genresFromTvIds(undefined), ['Drama']);
 });
-
-/* ── quem assina o episódio ─────────────────────────────────────────────── */
 
 test('a assinatura é do episódio, e não do elenco fixo da série', () => {
   const crew = [
@@ -258,8 +209,6 @@ test('a assinatura é do episódio, e não do elenco fixo da série', () => {
   assert.deepEqual(assinado.direcao, ['Rian Johnson']);
   assert.deepEqual(assinado.roteiro, ['Moira Walley-Beckett']);
   assert.deepEqual(assinado.atuacoes, ['Convidada']);
-  /* Fotografia e montagem são a equipe da TEMPORADA. Atribuí-las ao episódio
-     seria inventar uma assinatura. */
   assert.equal(assinado.fotografia, undefined);
 });
 
@@ -267,8 +216,6 @@ test('um episódio sem convidado não recebe a chave, em vez de recebê-la vazia
   const assinado = signedBy([{ job: 'Director', name: 'Alguém' }], []);
   assert.equal(assinado.atuacoes, undefined);
 });
-
-/* ── a fila ─────────────────────────────────────────────────────────────── */
 
 test('pôr uma série na fila e tirá-la', async () => {
   const dono = await kit.signIn();
@@ -298,14 +245,10 @@ test('tirar da fila é de quem pôs', async () => {
   const s = show();
 
   await req('POST', at(club, '/shows'), { show: s }, outra.cookie);
-  // O ADM do clube é a única exceção, e o dono aqui é ADM.
   const pelaOutra = await req('DELETE', at(club, `/shows/${s.id}`), null, dono.cookie);
   assert.equal(pelaOutra.status, 204);
 });
 
-/* ── acompanhar é de cada um, e o cartaz é um só ─────────────────────────
-   A mesma regra da fila de filmes, e as duas filas são gêmeas: uma divergência
-   aqui seria "quero ver" significando duas coisas conforme a aba. */
 test('duas pessoas acompanham a mesma série sem duplicar o cartaz', async () => {
   const dono = await kit.signIn();
   const outra = await kit.signIn();
@@ -334,8 +277,6 @@ test('pôr a mesma série duas vezes é uma linha só', async () => {
   assert.deepEqual(body.shows[0].wanters, [dono.id]);
 });
 
-/* Tirar o seu é sempre seu direito, e o seu é só o seu: o cartaz fica enquanto
-   alguém ainda acompanhar. */
 test('quem desiste de uma série leva só o próprio acompanhar', async () => {
   const dono = await kit.signIn();
   const outra = await kit.signIn();
@@ -357,8 +298,6 @@ test('quem desiste de uma série leva só o próprio acompanhar', async () => {
   assert.equal(depois.body.shows.length, 0, 'o cartaz ficou sem ninguém o acompanhando');
 });
 
-/* A recusa tem de dizer de quem é a escolha protegida, ou é um "não pode" sem
-   sujeito. Quem não é ADM e não acompanha não tem o que tirar. */
 test('ninguém tira da lista a série que só outra pessoa acompanha', async () => {
   const dono = await kit.signIn();
   const quemPos = await kit.signIn('Quem Pos');
@@ -378,8 +317,6 @@ test('ninguém tira da lista a série que só outra pessoa acompanha', async () 
   assert.equal(body.shows.length, 1, 'a lista perdeu uma série que ninguém tinha direito de tirar');
 });
 
-/* ── marcar é do episódio; avaliar é da temporada ───────────────────────── */
-
 test('marcar visto grava a linha sem nota nenhuma', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -398,8 +335,6 @@ test('marcar visto grava a linha sem nota nenhuma', async () => {
   assert.equal(marcado.body.take.episodeTitle, 'Ozymandias');
 });
 
-/* Recusado e não ignorado: um cliente antigo mandando nota de episódio tem de
-   ouvir que ela não existe mais, ou a opinião some em silêncio. */
 test('um episódio não recebe nota', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -442,8 +377,6 @@ test('a nota rápida é uma nota, e a criteriosa a substitui', async () => {
   assert.equal(Object.keys(criteriosa.body.take.scores).length, 9);
 });
 
-/* Uma ficha sem nota seria lida pelo mural como "viu a temporada inteira", e
-   ninguém vê uma temporada de uma vez. */
 test('uma avaliação de temporada sem nota é recusada', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -479,7 +412,6 @@ test('uma chave que este gênero não pergunta não entra na linha', async () =>
     {
       showTitle: s.title,
       genre: 'Drama',
-      // `atmosfera` é do gênero Terror e não existe em ficha de série.
       scores: { direcao: 8, atmosfera: 10, inventado: 3 },
     },
     p.cookie
@@ -513,8 +445,6 @@ test('desmarcar apaga a linha, porque a linha é o "eu vi"', async () => {
   assert.equal(acervo.body.takes.length, 0);
 });
 
-/* O que se viu e o que se achou são duas linhas, e é isso que permite retirar
-   uma opinião sem apagar o registro de uma noite. */
 test('apagar a nota da temporada não desmarca episódio nenhum', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });
@@ -541,11 +471,9 @@ test('o progresso do clube conta episódio distinto, não linha', async () => {
 
   await req('POST', at(club, '/shows'), { show: s }, a.cookie);
   const body = { showTitle: s.title, genre: 'Drama' };
-  // As duas pessoas viram o MESMO episódio: o clube viu um.
   await req('PUT', at(club, `/shows/${s.id}/1/1`), body, a.cookie);
   await req('PUT', at(club, `/shows/${s.id}/1/1`), body, b.cookie);
   await req('PUT', at(club, `/shows/${s.id}/1/2`), body, a.cookie);
-  // E as duas avaliaram a MESMA temporada: uma temporada avaliada.
   await req('PUT', at(club, `/shows/${s.id}/1`), { ...body, quick: 10 }, a.cookie);
   await req('PUT', at(club, `/shows/${s.id}/1`), { ...body, quick: 8 }, b.cookie);
 
@@ -554,8 +482,6 @@ test('o progresso do clube conta episódio distinto, não linha', async () => {
   assert.equal(fila.body.shows[0].rated, 1, 'só uma temporada ganhou nota');
   assert.equal(fila.body.shows[0].average, 9);
 });
-
-/* ── a parede entre clubes ──────────────────────────────────────────────── */
 
 test('o acervo de séries de um clube fechado não existe para quem não é dele', async () => {
   const dono = await kit.signIn();
@@ -566,11 +492,6 @@ test('o acervo de séries de um clube fechado não existe para quem não é dele
   await req('POST', at(club, '/shows'), { show: s }, dono.cookie);
   await req('PUT', at(club, `/shows/${s.id}/1`), { showTitle: s.title, genre: 'Drama', quick: 9 }, dono.cookie);
 
-  /* 403 e não 404, e isso é uma decisão registrada em clubs.js: houve uma
-     versão que respondia 404 para não confirmar que a sala existia, e ela
-     deixou de fazer sentido quando o clube passou a aparecer na vitrine com
-     nome e foto. Esconder pela rota o que a tela lista engana só quem escreveu
-     o código. */
   const lido = await req('GET', at(club, '/shows/takes'), null, estranho.cookie);
   assert.equal(lido.status, 403);
 
@@ -599,8 +520,6 @@ test('a mesma pessoa acompanha a mesma série em dois clubes, separadamente', as
   assert.equal(noOutro.body.takes[0].final, 4);
 });
 
-/* ── os critérios servidos ao cliente ───────────────────────────────────── */
-
 test('a rota de critérios entrega nove por gênero', async () => {
   const { status, body } = await req('GET', '/api/series/criteria');
   assert.equal(status, 200);
@@ -609,13 +528,6 @@ test('a rota de critérios entrega nove por gênero', async () => {
   }
 });
 
-/* ── o mural precisa de onde pendurar a conversa ──────────────────────────
-   A linha de "viu" é um agrupamento: seis episódios da mesma noite viram um
-   acontecimento só, e esse acontecimento não existe em tabela nenhuma. A placa
-   dele é curtível e comentável como a de uma avaliação, e o polegar tem de
-   pousar numa marca de verdade — a mais nova da sessão, que é a que a placa
-   nomeia quando conta um só. Sem isso a placa mostra a barra e o voto morre num
-   id que o servidor não conhece. */
 test('a linha de "viu" aponta a marca mais nova da sessão', async () => {
   const p = await kit.signIn();
   const club = await kit.makeClub({ owner: p.id });

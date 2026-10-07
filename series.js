@@ -2,56 +2,33 @@ const { GENRE_PRIORITY } = require('./criteria');
 const { bestVideo } = require('./video');
 const { tmdbGet, posterUrl, backdropUrl, crowdOf, watchIn } = require('./tmdbapi');
 
-/* Irmão de tmdb.js e deliberadamente separado dele: o TMDB trata filme e série
-   como dois mundos — outros caminhos, outra tabela de gêneros, outros nomes de
-   campo para as mesmas coisas (`name` e não `title`). Um arquivo só, com um
-   `if` em cada função, seria os dois mundos disputando as mesmas linhas.
-
-   O que os dois mundos fazem igual — a chamada, os tamanhos de imagem, a
-   leitura de provedores — está em tmdbapi.js. */
-
-/* O quadro de um episódio é 16:9 e mora numa fileira, não numa grade de
-   cartazes: w300 é a largura em que ele é desenhado, e w780 seriam seis vezes
-   os bytes para o mesmo espaço. */
 const STILL_BASE = 'https://image.tmdb.org/t/p/w300';
 const stillUrl = path => (path ? STILL_BASE + path : null);
 
-/* O TMDB mantém duas taxonomias que não se sobrepõem: `878` é ficção científica
-   em filme e não existe em série, que usa `10765` para ficção científica E
-   fantasia juntas. Usar o mapa de filmes aqui mandaria toda série para Drama.
-
-   O destino é a mesma taxonomia interna de nove: o clube não deveria aprender
-   dois vocabulários para a mesma pergunta. */
 const TV_GENRE_MAP = {
-  10759: 'Ação', // Action & Adventure
+  10759: 'Ação',
   16: 'Animação',
   35: 'Comédia',
-  80: 'Suspense', // Crime — o que a série de crime pede é dosagem e tensão
+  80: 'Suspense',
   99: 'Documentário',
   18: 'Drama',
-  10762: 'Animação', // Kids
-  9648: 'Suspense', // Mystery
-  10763: 'Documentário', // News
-  10764: 'Documentário', // Reality
-  10765: 'Ficção científica', // Sci-Fi & Fantasy
-  10766: 'Romance', // Soap
-  10767: 'Documentário', // Talk
-  10768: 'Drama', // War & Politics
-  37: 'Ação' // Western
+  10762: 'Animação',
+  9648: 'Suspense',
+  10763: 'Documentário',
+  10764: 'Documentário',
+  10765: 'Ficção científica',
+  10766: 'Romance',
+  10767: 'Documentário',
+  10768: 'Drama',
+  37: 'Ação'
 };
 
-/* Não dá para reusar o GENRE_TO_TMDB de criteria.js: aquele carrega ids de
-   FILME, e mandá-los para /discover/tv devolve lixo. Construído do mapa acima
-   para os dois nunca discordarem. */
 const GENRE_TO_TV = {};
 for (const [id, genre] of Object.entries(TV_GENRE_MAP)) {
   (GENRE_TO_TV[genre] ||= []).push(id);
 }
 for (const genre of Object.keys(GENRE_TO_TV)) GENRE_TO_TV[genre] = GENRE_TO_TV[genre].join(',');
 
-/* A ordem em que o TMDB devolve os ids é aproximadamente a de cadastro, e
-   tratá-la como ranking faz Drama — que é também o balde do desconhecido —
-   ganhar quase sempre. */
 function genresFromTvIds(ids) {
   const carried = new Set();
   for (const id of ids || []) {
@@ -62,8 +39,6 @@ function genresFromTvIds(ids) {
   return found.length ? found : ['Drama'];
 }
 
-/* O nome com que a série circula lá fora. Null quando é o mesmo string: repetir
-   "Severance" embaixo de "Severance" é uma segunda linha que diz a primeira. */
 const originalOf = s => (s.original_name && s.original_name !== s.name ? s.original_name : null);
 
 function englishOf(s, translations) {
@@ -120,17 +95,8 @@ async function discoverShows(tvGenreIds, page = 1) {
   };
 }
 
-/* O TMDB numera especiais, piloto não exibido e bastidores como temporada 0.
-   Filtrada da lista e ainda alcançável por endereço direto: quem for atrás de
-   um especial acha, quem acompanha a série não tropeça nele. */
 const isRegular = s => s.season_number > 0;
 
-/* Um filme tem um diretor; uma série tem um por episódio, e é comum que o
-   melhor da temporada seja de alguém que dirigiu aquele e mais nenhum.
-
-   Só direção e roteiro: por episódio o TMDB carrega o que mudou naquele.
-   Fotografia e montagem são a equipe da temporada, e atribuí-las ao episódio
-   inventaria uma assinatura. */
 const SIGNED_BY = {
   direcao: ['Director'],
   roteiro: ['Writer', 'Screenplay', 'Teleplay', 'Story']
@@ -148,9 +114,6 @@ function signedBy(crew, guests) {
     }
     if (names.length) out[key] = names.slice(0, MAX_NAMES);
   }
-  /* Os convidados do episódio, e não o elenco fixo: quem está em todos os
-     episódios não diz nada sobre este. Um episódio sem convidado não recebe a
-     chave, que é a resposta certa e não uma lacuna. */
   const players = (guests || []).slice(0, MAX_NAMES).map(c => c.name).filter(Boolean);
   if (players.length) out.atuacoes = players;
   return out;
@@ -170,8 +133,6 @@ async function showDetails(id) {
     english: englishOf(s, s.translations),
     year: s.first_air_date ? Number(s.first_air_date.slice(0, 4)) : null,
     endedYear: s.last_air_date ? Number(s.last_air_date.slice(0, 4)) : null,
-    /* Se ainda vem episódio: é a primeira coisa que se pergunta antes de
-       começar a acompanhar uma série. */
     status: s.status || null,
     inProduction: !!s.in_production,
     genre: genres[0],
@@ -181,8 +142,6 @@ async function showDetails(id) {
     overview: s.overview || null,
     crowd: crowdOf(s),
     creators: (s.created_by || []).slice(0, MAX_NAMES).map(c => c.name),
-    /* A duração típica, que o TMDB dá como uma lista porque uma série muda de
-       formato: os 22 minutos da primeira temporada e os 45 da última. */
     runtime: (s.episode_run_time || [])[0] || null,
     seasons: (s.seasons || []).filter(isRegular).map(x => ({
       season: x.season_number,
@@ -193,9 +152,6 @@ async function showDetails(id) {
       overview: x.overview || null
     })),
     totalEpisodes: s.number_of_episodes || null,
-    /* O próximo episódio a estrear, que o TMDB já manda junto com a série. É a
-       resposta para quem está em dia numa série no ar — a pergunta que essa
-       pessoa faz não é "o que eu vejo agora", é "quando vem o próximo". */
     nextAir: s.next_episode_to_air
       ? {
           season: s.next_episode_to_air.season_number,
@@ -204,14 +160,6 @@ async function showDetails(id) {
           airDate: s.next_episode_to_air.air_date || null,
         }
       : null,
-    /* ── as outras ordens em que esta série existe ──────────────────────
-       Para algumas séries (anime exibido fora de ordem, relançamentos com
-       temporadas recortadas) (temporada, número) não é a única leitura, e o
-       clube precisa escolher uma vez qual está seguindo — ou duas pessoas
-       avaliam "o quinto" e são episódios diferentes.
-
-       Só o cabeçalho de cada grupo: buscar o conteúdo custaria uma requisição
-       por grupo para uma escolha que quase nenhum clube vai fazer. */
     orders: (s.episode_groups?.results || []).map(g => ({
       id: g.id,
       name: g.name,
@@ -223,8 +171,6 @@ async function showDetails(id) {
   };
 }
 
-/* Os episódios de uma temporada, em uma requisição. É o que a tela de
-   acompanhar desenha, e o que o clube marca como visto. */
 async function seasonDetails(showId, season) {
   const data = await tmdbGet(`/tv/${showId}/season/${season}`);
   return {
@@ -241,15 +187,11 @@ async function seasonDetails(showId, season) {
       airDate: e.air_date || null,
       runtime: e.runtime || null,
       crowd: crowdOf(e),
-      /* `finale`, `mid_season` e `standard` vêm do TMDB. Serve para a tela
-         marcar o fim de um arco sem o clube ter de saber de cor. */
       kind: e.episode_type || null
     }))
   };
 }
 
-/* Um episódio sozinho, com quem o assina. É o que a ficha criteriosa abre —
-   e o motivo de ela existir por episódio: os nomes mudam a cada um. */
 async function episodeDetails(showId, season, episode) {
   const e = await tmdbGet(`/tv/${showId}/season/${season}/episode/${episode}`, {
     append_to_response: 'credits'
@@ -272,7 +214,6 @@ async function watchProvidersFor(id) {
   return watchIn(await tmdbGet(`/tv/${id}/watch/providers`));
 }
 
-/** O gêmeo de `recommendations` em tmdb.js, do lado das séries. */
 async function recommendations(id, page = 1) {
   const data = await tmdbGet(`/tv/${id}/recommendations`, { page });
   return {
@@ -287,8 +228,6 @@ async function englishTitleFor(id) {
   return englishOf(s, s.translations);
 }
 
-/** O trailer sozinho, sem o detalhe inteiro. As regras estão em `videosFor` de
-    tmdb.js — duas línguas, e teaser só na falta de trailer. */
 async function videosFor(id) {
   for (const language of ['pt-BR', 'en-US']) {
     const data = await tmdbGet(`/tv/${id}/videos`, { language });
@@ -303,6 +242,5 @@ module.exports = {
   showDetails, seasonDetails, episodeDetails,
   watchProvidersFor, englishTitleFor, videosFor, recommendations,
   GENRE_TO_TV,
-  // Exportados para os testes: são as duas peças puras deste arquivo.
   genresFromTvIds, signedBy
 };

@@ -8,18 +8,6 @@ import { cn, plural } from '@/lib/utils';
 import { useWorld } from '@/lib/world';
 import { goesToService, watchDoor } from '@/lib/watch';
 
-/* ── the film cell ────────────────────────────────────────────────────────
-   A film in the bin is a cell of celluloid on the wall: it tips toward the
-   hand that reaches for it and its layers separate, which is the 3d-card
-   effect doing the work it was written for. The face opens the projection
-   sheet; the action row underneath is its own set of controls, so no button
-   is ever nested inside another. */
-/* The handlers take the film rather than closing over it. A bin holds a hundred
-   of these and every one of them is a 3D card with its own layers, so the whole
-   grid used to be rebuilt on each keystroke in the search field above it — an
-   arrow function per card per render is enough to defeat any memo. Given the
-   film as an argument, the callbacks are the same functions on every render and
-   a card only re-renders when something about that film changed. */
 export const FilmCell = memo(function FilmCell({
   movie,
   avg,
@@ -49,19 +37,7 @@ export const FilmCell = memo(function FilmCell({
             aria-label={`Ver detalhes de ${movie.title}`}
             className="group/cell block w-full text-left"
           >
-            {/* The strip is hidden by a translate, so it has to live inside a
-                positioned box that clips it — otherwise it resolves against a
-                far ancestor and sits permanently over the title.
-
-                This box used to weave like a frame in the gate: two pixels and
-                a fifth of a degree, over twenty seconds. It was the right idea
-                and the wrong budget — one perpetually animated element per
-                poster, twenty per page, each asking the browser for a
-                compositor layer of its own. Chrome grants them all; Gecko has a
-                ceiling, and past it it stops promoting and animates on the main
-                thread instead, repainting every frame whether or not anything
-                is happening. Twenty layers for two pixels nobody consciously
-                sees is not a trade worth making. */}
+            {}
             <span className="relative block overflow-hidden rounded-cell">
               <Poster src={movie.poster} className="aspect-[2/3] w-full" />
               <span className="pointer-events-none absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center gap-1.5 bg-beam px-2 py-2 font-display text-[11px] uppercase tracking-[0.14em] text-house-deep transition-transform duration-200 ease-beam group-hover/cell:translate-y-0 group-focus-visible/cell:translate-y-0 motion-reduce:transition-none">
@@ -74,14 +50,7 @@ export const FilmCell = memo(function FilmCell({
 
         <CardItem translateZ={30} className="mt-3 w-full">
           <h3 className="text-[14px] font-semibold leading-tight text-ink">{movie.title}</h3>
-          {/* ── o nome de procurar ──────────────────────────────────────────
-              A step quieter than the title and a step above the year, because
-              it is the same fact as the title and not a new one — the card must
-              not read as a film with two names. Truncated at one line: a card
-              is 178px wide and a long original title would push the score bar
-              down and break the grid's rhythm; the `title` attribute keeps the
-              whole string for the pointer, and it is selectable text either
-              way, which is the point of putting it here. */}
+          {}
           {movie.original ? (
             <p className="q mt-0.5 truncate text-[11px] text-ink-faint" title={movie.original}>
               {movie.original}
@@ -129,11 +98,6 @@ export const FilmCell = memo(function FilmCell({
   );
 });
 
-/* ── the projection sheet ─────────────────────────────────────────────────
-   A film opened from the bin, shown whole: poster, synopsis, cast, trailer.
-   A native <dialog> rather than a route, because the grid's scroll position is
-   what the club comes back to, and the platform gives the focus trap, Escape
-   and background inertness for free. */
 export function ProjectionSheet({
   movieId,
   clubAvg,
@@ -148,12 +112,10 @@ export function ProjectionSheet({
   movieId: number | null;
   clubAvg?: number;
   clubCount?: number;
-  /** O que o clube já escreveu sobre este filme. Ver `Roster`. */
   takes?: Review[];
   inWatchlist: boolean;
   onClose: () => void;
   onRate: (id: number) => void;
-  /** Levar a uma dessas fichas, no acervo, junto das outras do mesmo filme. */
   onOpenTake?: (reviewId: string) => void;
   onToggleWatch: (m: Movie) => void;
 }) {
@@ -198,26 +160,6 @@ export function ProjectionSheet({
       onClick={e => {
         if (e.target === ref.current) onClose();
       }}
-      /* ── um rolador só, e ele é a placa ────────────────────────────────
-         O `<dialog>` também rolava: o navegador dá a ele `overflow: auto` e um
-         `max-height` próprio, bem menor que a tela. A placa aqui dentro pedia
-         mais que isso, então o conteúdo transbordava e os dois viravam caixa de
-         rolagem, uma dentro da outra.
-
-         No mouse é uma barra feia a mais; no dedo é o travamento — cada toque
-         tem de ser resolvido entre dois roladores aninhados antes de mover um
-         pixel.
-
-         `max-h-[calc(100dvh/var(--ui-zoom))]` derruba o teto do navegador e
-         `overflow-hidden` tira o diálogo da disputa. O teto da placa desconta o
-         recuo do diálogo em cada tamanho — 1rem no telefone, 2rem daí para
-         cima. `overscroll-contain` fecha a última porta: sem ele, chegar ao fim
-         desta lista passa o gesto para a página atrás da folha.
-
-         E o fundo não é desfocado, pelo mesmo motivo da marquise: o
-         `::backdrop` cobre a tela inteira, e atrás dele fica a parede de
-         celuloide, que nunca para. Um `backdrop-filter` sobre conteúdo que muda
-         todo quadro é um borrão de tela cheia refeito todo quadro. */
       className={cn(
         'w-full max-w-[900px] max-h-[calc(100dvh/var(--ui-zoom))] overflow-hidden bg-transparent p-2 text-ink backdrop:bg-house-deep/95 sm:p-4',
         'open:animate-beam-in'
@@ -246,17 +188,11 @@ export function ProjectionSheet({
             <Poster src={movie.poster} alt={`Pôster de ${movie.title}`} className="aspect-[2/3] w-[132px] flex-none sm:w-[190px]" />
             <div className="min-w-0 flex-1">
               <h2 className="pr-10 font-display text-[30px] leading-none tracking-[0.03em] text-beam">{movie.title}</h2>
-              {/* On its own line and not appended to the year, because it is a
-                  name and the line under it is a row of facts. It wraps freely
-                  here — the sheet has the width the card did not. */}
+              {}
               {movie.original ? (
                 <p className="q mt-1.5 pr-10 text-[13px] text-ink-dim">{movie.original}</p>
               ) : null}
-              {/* Year, length, director — the three facts you want before
-                  committing an evening, in the order you want them. The runtime
-                  only comes from the details endpoint, so on the rare sheet
-                  served from cache without one the middle term simply is not
-                  printed rather than showing a dash for it. */}
+              {}
               <p className="q mt-2 text-[12.5px] text-ink-dim">
                 {[
                   movie.year ?? '—',
@@ -267,10 +203,7 @@ export function ProjectionSheet({
                   .join(' · ')}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                {/* Every genre the film carries, and not only the one it would
-                    open on. Which of them a take is rated under is that take's
-                    own decision, so the sheet states what is on offer rather
-                    than pretending the film is one thing. */}
+                {}
                 <span className="flex flex-wrap items-center gap-1.5">
                   {(movie.genres?.length ? movie.genres : [movie.genre]).map(g => (
                     <span
@@ -321,20 +254,6 @@ export function ProjectionSheet({
   );
 }
 
-/* ── quem no clube já avaliou ─────────────────────────────────────────────
-   A média acima é o clube falando com uma voz só, e essa voz é uma conta. Quem
-   chega a esta folha por um mural — onde a linha era de uma pessoa — acabava de
-   ver uma opinião com nome e rosto virar um 7,4 sem dono.
-
-   Então as fichas aparecem por extenso, e cada uma leva à sua: o acervo mostra
-   ela junto das outras do mesmo filme, que é o que nem o mural nem esta folha
-   mostram. Da mais alta para a mais baixa, e não por data — a pergunta aqui é
-   "o que o clube achou", e uma fileira ordenada por nota responde antes de ser
-   lida.
-
-   O rosto é desenhado e não é porta: o retrato clicável levaria ao perfil, e um
-   cartão com dois destinos é um cartão em que o toque é uma aposta. Do perfil
-   se chega pela ficha. */
 function Roster({ takes, onOpen }: { takes?: Review[]; onOpen?: (reviewId: string) => void }) {
   const world = useWorld();
   if (!takes?.length) return null;
@@ -370,14 +289,6 @@ function Roster({ takes, onOpen }: { takes?: Review[]; onOpen?: (reviewId: strin
   );
 }
 
-/* A mesma resposta da folha de projeção, no tamanho que um cartaz aguenta:
-   marcas, sem nomes. Um cartaz é escaneado e não lido — o olho desce a grade
-   procurando o que ver hoje, e nessa velocidade um logo é mais rápido que o
-   próprio nome.
-
-   Os nomes não se perdem, mudam de lugar: cada marca carrega um como `title` e
-   como alt. Cortado em quatro, que é onde uma fileira de marcas deixa de ser um
-   relance — "+2" é legível e um quinto quadrado de 18px não é. */
 export function OnCell({ watch, title }: { watch: Movie['watch']; title: string }) {
   if (!watch?.streaming.length) return null;
   const shown = watch.streaming.slice(0, 4);
@@ -406,18 +317,6 @@ export function OnCell({ watch, title }: { watch: Movie['watch']; title: string 
   );
 }
 
-/* ── a marca é uma porta, e ela abre no serviço ───────────────────────────
-   Um logo de serviço parece clicável desde sempre, e não era: a informação
-   estava ali e o passo seguinte — abrir o filme lá — continuava sendo procurar
-   o título na Netflix à mão.
-
-   Agora cada marca vai para DENTRO do serviço dela, com o título já buscado.
-   Quem sabe montar esse endereço é lib/watch.ts, e o porquê de ser uma busca e
-   não a página do título está escrito lá. Serviço que a tabela não conhece cai
-   na página do TMDB, que lista as lojas de verdade.
-
-   Sem destino nenhum, a marca continua sendo só uma marca: um `<a>` vazio é uma
-   promessa quebrada, e a informação sozinha já valia. */
 function WatchLink({
   provider,
   title,
@@ -428,11 +327,7 @@ function WatchLink({
 }: {
   provider: string;
   title: string;
-  /* O endereço do título dentro do serviço, do JustWatch. Quando ele existe,
-     nada mais é consultado: é a resposta exata, e a busca por nome só existe
-     porque nem sempre há uma. */
   deep?: string | null;
-  /** O link do TMDB, para os serviços que a tabela não cobre. */
   fallback: string | null;
   children: React.ReactNode;
   className?: string;
@@ -457,17 +352,6 @@ function WatchLink({
   );
 }
 
-/* ── o clube contra a multidão ────────────────────────────────────────────
-   Duas médias na mesma régua 0–10, lado a lado, com a distância entre elas dita
-   em voz alta.
-
-   O produto inteiro é a premissa de que o veredito deste clube vale por si. Um
-   número de que discordar é o que torna essa premissa visível: "a gente deu 6,2
-   e o TMDB deu 8,1" é uma discussão esperando para acontecer na mesa.
-
-   Chamado de TMDB e não "o mundo", porque é o que ele é: os votantes de um
-   site. E a contagem não é enfeite — um 9,0 de onze pessoas e um 9,0 de
-   quatrocentas mil são afirmações diferentes. */
 function Verdicts({
   club,
   clubCount,
@@ -477,14 +361,10 @@ function Verdicts({
   clubCount: number | null | undefined;
   crowd: Movie['crowd'];
 }) {
-  /* Compact, in Portuguese: 12.345 votos reads as "12 mil". The exact figure is
-     noise at this size — the order of magnitude is the whole message. */
   const votes = (n: number) =>
     new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
   const gap = club != null && crowd ? club - crowd.score : null;
-  /* Under a quarter of a point is the two agreeing. Naming a gap that small as
-     a disagreement would manufacture a fight out of rounding. */
   const apart = gap != null && Math.abs(gap) >= 0.25;
 
   const verdict = (label: string, score: number, note: string, lit: boolean) => (
@@ -518,27 +398,7 @@ function Verdicts({
   );
 }
 
-/* ── onde a gente assiste isso ────────────────────────────────────────────
-   A pergunta que o clube de fato faz sobre um filme que não viu. O TMDB carrega
-   a resposta, licenciada do JustWatch, separada por COMO se chega ao filme — e
-   essa separação é o ponto: "está incluído em algo que você já paga" e "dá para
-   alugar" são respostas diferentes.
-
-   Ausente num filme vindo do cache: ele deliberadamente não guarda isto, porque
-   um catálogo se move e uma resposta errada com confiança é pior que nenhuma.
-
-   O rodapé de crédito ao JustWatch foi retirado a pedido do dono em 09/09/2026.
-   Fica registrado que nomear a fonte é condição de uso do dado de provedores do
-   TMDB: se ele voltar, é aqui e em `OnCell` que ele entra. */
 export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string }) {
-  /* Três estados, e dois deles são nulos. `undefined` é "ninguém perguntou": o
-     filme veio do cache porque o TMDB estava fora. `null` é "perguntamos, e não
-     passa em lugar nenhum aqui" — uma resposta de verdade.
-
-     Eram desenhados igual até um filme em cartaz tornar a diferença visível: a
-     folha simplesmente terminava depois do trailer, que lê exatamente como o
-     recurso não existir. A resposta negativa é dita em voz alta e a
-     desconhecida fica calada. */
   if (watch === undefined) return null;
 
   if (!watch) {
@@ -554,11 +414,7 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
 
   return (
     <div className="mt-5 border-t border-white/[0.07] pt-4">
-      {/* The caption sits on its own line rather than at the head of the row.
-          Sharing the line meant a fixed-width label with wrapping chips beside
-          it, and the moment the chips wrapped they ran back under the label —
-          which is what was reading as the logos piling on each other. A caption
-          above and a plain wrap below cannot do that at any width. */}
+      {}
       <span className="legend">Onde assistir</span>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {watch.streaming.map(p => (
@@ -568,12 +424,9 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
             title={title}
             deep={p.url}
             fallback={watch.link}
-            /* `shrink-0` so a long name never squeezes the mark next to it into
-               the one after; the row wraps instead, which is what it is for. */
             className="flex shrink-0 items-center gap-2 rounded-cell bg-house-deep/70 py-1 pl-1 pr-2.5 ring-1 ring-house-rail"
           >
-            {/* Decorative: the name is in text right beside it, so a reader who
-                cannot see the mark is not told the same thing twice. */}
+            {}
             {p.logo ? (
               <img
                 src={p.logo}
@@ -592,8 +445,6 @@ export function WatchOn({ watch, title }: { watch: Movie['watch']; title: string
   );
 }
 
-/* A grid of cells, with the list stagger capped so a twenty-poster page never
-   feels like it is loading twice. */
 export function Bin({ children }: { children: React.ReactNode }) {
   const items = Array.isArray(children) ? children : [children];
   return (

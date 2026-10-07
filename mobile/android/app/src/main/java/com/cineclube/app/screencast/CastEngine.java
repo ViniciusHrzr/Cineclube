@@ -56,50 +56,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 
-/**
- * A TELA DESTE APARELHO, INDO PARA A SALA.
- *
- * <p>O porquê de isto existir em Java: uma página não captura a tela de um
- * telefone. {@code getDisplayMedia} não existe no WebView do Android e não vai
- * existir — capturar a tela é permissão de sistema, concedida a um aplicativo e
- * não a um site. E a ponte entre o nativo e a página não serve para vídeo:
- * mandar quadro a quadro por ali daria cinco por segundo e comeria a bateria.
- *
- * <p>Então o WebRTC inteiro do lado de quem transmite mora aqui. Pela ponte
- * passa só TEXTO — a oferta, a resposta, os caminhos de rede — e uma miniatura
- * por segundo, que é a prévia. Para quem assiste, esta transmissão é
- * indistinguível de uma que saiu de um computador.
- *
- * <p><b>UMA PROJEÇÃO SÓ, e é por isso que o capturador é escrito aqui.</b> O
- * {@code ScreenCapturerAndroid} que vem na biblioteca cria a projeção dele por
- * dentro, a partir da autorização — e do Android 14 em diante essa autorização
- * vale UMA vez. Com ele, o áudio do sistema ficaria sem projeção para pedir.
- * Aqui a projeção é criada uma vez e serve às três coisas: o vídeo por um
- * display virtual, o som pela captura de reprodução, e a prévia por um desvio
- * do mesmo quadro que já está indo para o codificador.
- */
 class CastEngine {
   private static final String TAG = "cineclube.cast";
 
-  /** A medida da transmissão: o teto, mantida a proporção da tela. */
   private static final int LADO_MAIOR = 1280;
 
-  /* ── quantos quadros, e quanta banda ──────────────────────────────────────
-     Trinta bastam para um filme — cinema é vinte e quatro. Não bastam para o
-     que mais se transmite de um telefone: um vídeo de sessenta quadros, uma
-     rolagem, um jogo. Ali sessenta é a diferença entre uma coisa que anda e uma
-     que arrasta.
-
-     Sessenta só com banda, e pelo mesmo motivo do lado da página: com pouca
-     banda, sessenta quadros são trinta borrados — o codificador tira dos pixels
-     o que se pediu em tempo.
-
-     E o teto é POR PESSOA. Cada espectador recebe a própria cópia, então o que
-     sai do aparelho é a soma delas: sem repartir, quatro pessoas seriam quatro
-     vezes o teto subindo por um rádio só, e o resultado é a conexão inteira
-     caindo dois segundos depois. Ver o mesmo raciocínio, medido em vez de
-     fixo, em lib/liveshare.ts — aqui ele é fixo porque o motor nativo não lê
-     estatística nenhuma. */
   private static final int ORCAMENTO = 9_000_000;
   private static final int TETO = 4_500_000;
   private static final int PISO = 1_200_000;
@@ -107,30 +68,20 @@ class CastEngine {
   private static final int QUADROS_BASE = 30;
   private static final int QUADROS_MIN = 2_500_000;
 
-  /** A prévia é uma miniatura por segundo, e não um vídeo. Ver `preview`. */
   private static final long PREVIA_MS = 1000;
   private static final int PREVIA_LARGURA = 480;
 
-  /* O formato que o WebRTC pede da entrada de áudio, e o que a captura de
-     reprodução vai entregar: 48 kHz, 16 bits, dois canais. Igualar os três é o
-     que permite trocar um buffer pelo outro sem reamostrar nada. */
   private static final int TAXA = 48_000;
   private static final int CANAIS = 2;
-  /* Quantos blocos de dez milissegundos a fila do som segura. Curta de
-     propósito: som atrasado é pior do que som faltando. */
   private static final int BLOCOS = 8;
 
   interface Sink {
-    /** Um sinal para alguém da sala, que a página entrega pelo caminho de sempre. */
     void signal(String to, String kind, JSONObject data);
 
-    /** Quantas pessoas estão recebendo agora. */
     void peers(int count);
 
-    /** Uma miniatura do que está sendo transmitido, em JPEG base64. */
     void preview(String jpegBase64);
 
-    /** O som do sistema está mesmo chegando? A tela diz isso a quem transmite. */
     void audio(boolean capturando);
   }
 
@@ -152,11 +103,7 @@ class CastEngine {
   private long ultimaPrevia;
 
   private final Map<String, PeerConnection> peers = new HashMap<>();
-  /* Candidatos que chegaram antes de a conexão daquela pessoa existir. A mesma
-     armadilha do lado do navegador: o "ice" pode chegar antes do "want". */
   private final Map<String, List<IceCandidate>> early = new HashMap<>();
-  /* A faixa de vídeo de cada conexão, guardada para o teto poder ser reescrito
-     quando alguém entra ou sai: a fatia de cada um muda com o número deles. */
   private final Map<String, RtpSender> videos = new HashMap<>();
   private List<PeerConnection.IceServer> iceServers = new ArrayList<>();
 
@@ -169,11 +116,6 @@ class CastEngine {
     return projection != null;
   }
 
-  /**
-   * Liga a captura. O {@code permissao} é o Intent que o sistema devolveu ao a
-   * pessoa ter autorizado a projeção — sem ele não há tela nenhuma, e ele vale
-   * uma vez só.
-   */
   void start(Intent permissao, JSONArray ice, boolean comSom) {
     if (running()) return;
 
@@ -187,9 +129,6 @@ class CastEngine {
     MediaProjectionManager manager =
         (MediaProjectionManager) context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
     projection = manager.getMediaProjection(Activity.RESULT_OK, permissao);
-    /* Registrado ANTES de o display virtual existir: o Android 14 recusa uma
-       projeção sem callback, e é por aqui que se sabe que a pessoa apertou
-       "parar" na notificação do sistema. */
     projection.registerCallback(
         new MediaProjection.Callback() {
           @Override
@@ -200,19 +139,11 @@ class CastEngine {
         },
         main);
 
-    /* ── o som do sistema ────────────────────────────────────────────────
-       Montado ANTES da fábrica: o módulo de áudio entra nela, e trocá-lo
-       depois não é possível. Sem som pedido, nem módulo nem faixa existem. */
     JavaAudioDeviceModule adm = null;
     if (comSom && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       playback = new PlaybackAudio(projection);
       adm =
           JavaAudioDeviceModule.builder(context)
-              /* A entrada nominal é o microfone, e o que sai dela é DESCARTADO:
-                 o buffer é sobrescrito pelo som do sistema no callback abaixo.
-                 O WebRTC não tem por onde receber outra fonte de entrada — a
-                 fábrica só aceita este módulo —, e esta é a emenda que a
-                 biblioteca oferece para o caso. */
               .setAudioSource(MediaRecorder.AudioSource.MIC)
               .setSampleRate(TAXA)
               .setUseStereoInput(true)
@@ -227,16 +158,11 @@ class CastEngine {
 
     PeerConnectionFactory.Builder builder =
         PeerConnectionFactory.builder()
-            /* Hardware nos dois: é o que faz 720p a trinta quadros caber no
-               processador de um telefone sem torrá-lo. */
             .setVideoEncoderFactory(new DefaultVideoEncoderFactory(egl.getEglBaseContext(), true, true))
             .setVideoDecoderFactory(new DefaultVideoDecoderFactory(egl.getEglBaseContext()));
     if (adm != null) builder.setAudioDeviceModule(adm);
     factory = builder.createPeerConnectionFactory();
 
-    /* `true` diz ao WebRTC que isto é TELA e não câmera: ele para de cortar
-       para caber numa proporção e passa a preferir qualidade a fluidez quando a
-       rede aperta — o certo quando o que se transmite tem legenda. */
     videoSource = factory.createVideoSource(true);
     videoTrack = factory.createVideoTrack("cineclube-video", videoSource);
     startDisplay();
@@ -247,10 +173,6 @@ class CastEngine {
     }
   }
 
-  /* ── o vídeo ─────────────────────────────────────────────────────────────
-     Um display virtual desenhando na textura que o WebRTC lê. É o que o
-     capturador da biblioteca faz por dentro; escrito aqui porque a projeção
-     precisa ser a MESMA do áudio — ver a nota da classe. */
   private void startDisplay() {
     DisplayMetrics metrics = new DisplayMetrics();
     WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
@@ -258,9 +180,6 @@ class CastEngine {
 
     int largura = metrics.widthPixels;
     int altura = metrics.heightPixels;
-    /* Proporção mantida, lado maior no teto: uma tela de telefone é alta, e
-       forçá-la a 1280×720 entregaria o filme deitado e esticado. Par nos dois
-       lados porque um codificador de vídeo não aceita ímpar. */
     float escala = Math.min(1f, (float) LADO_MAIOR / Math.max(largura, altura));
     largura = par(Math.round(largura * escala));
     altura = par(Math.round(altura * escala));
@@ -290,14 +209,6 @@ class CastEngine {
     return n % 2 == 0 ? n : n - 1;
   }
 
-  /* ── a prévia ────────────────────────────────────────────────────────────
-     Uma miniatura por segundo, e não um espelho do vídeo: quem transmite não
-     precisa ver o próprio filme de novo, precisa saber que a sala está vendo o
-     que ele acha que está. Um quadro por segundo atravessa a ponte sem
-     disputar nada com o codificador; trinta não atravessariam.
-
-     O quadro já está aqui — é o mesmo que vai para o encoder —, então o custo é
-     a conversão de textura para memória, uma vez por segundo. */
   private void preview(VideoFrame frame) {
     long agora = System.currentTimeMillis();
     if (agora - ultimaPrevia < PREVIA_MS) return;
@@ -315,10 +226,6 @@ class CastEngine {
 
     try {
       ByteBuffer nv21 = ByteBuffer.allocateDirect(largura * altura * 3 / 2);
-      /* O ajudante só escreve NV12, e o JPEG do Android só lê NV21 — os dois
-         diferem na ORDEM dos dois planos de cor. Trocar U por V na chamada é o
-         que transforma um no outro; sem isso a prévia sai com azul no lugar de
-         vermelho. */
       YuvHelper.I420ToNV12(
           i420.getDataY(), i420.getStrideY(),
           i420.getDataV(), i420.getStrideV(),
@@ -334,14 +241,12 @@ class CastEngine {
       imagem.compressToJpeg(new Rect(0, 0, largura, altura), 55, saida);
       sink.preview(Base64.encodeToString(saida.toByteArray(), Base64.NO_WRAP));
     } catch (RuntimeException e) {
-      // Uma prévia que falhou não é motivo para derrubar a transmissão.
       Log.w(TAG, "prévia falhou: " + e.getMessage());
     } finally {
       i420.release();
     }
   }
 
-  /** Derruba tudo: as conexões, a captura, o som e a fábrica. */
   void stop() {
     for (PeerConnection pc : peers.values()) pc.close();
     peers.clear();
@@ -392,22 +297,11 @@ class CastEngine {
     }
   }
 
-  /* ── o aperto de mão, vindo da página ───────────────────────────────────
-     São os mesmos nomes do lado do navegador: "want" é alguém pedindo a
-     transmissão, "answer" é a resposta dela à nossa oferta, e "ice" são os
-     caminhos de rede. "offer" não chega aqui: quem transmite é sempre quem
-     oferece. */
   void onSignal(String from, String kind, JSONObject data) {
     if (!running()) return;
 
     switch (kind) {
       case "want":
-        /* Sem pergunta nenhuma: todo pedido que chega aqui remonta a conexão.
-           QUANDO pedir é decisão da página — um pedido repetido enquanto a
-           oferta ainda está a caminho derruba a oferta que está a caminho, e o
-           filtro que separa repetição de tentativa nova mora lá, do lado que
-           conhece o protocolo inteiro. Ver "as armadilhas" em lib/liveshare.ts.
-           Duplicar a regra aqui seria mantê-la em dois lugares. */
         offerTo(from);
         break;
       case "answer": {
@@ -443,19 +337,16 @@ class CastEngine {
         break;
       }
       default:
-        // "offer" e o que mais chegar: não é conversa desta ponta.
         break;
     }
   }
 
-  /** Fecha a conexão com alguém que saiu da sala. */
   void forget(String who) {
     PeerConnection pc = peers.remove(who);
     if (pc != null) pc.close();
     early.remove(who);
     videos.remove(who);
     sink.peers(peers.size());
-    /* Quem sobrou acabou de ganhar a fatia de quem saiu. */
     limitAll();
   }
 
@@ -464,8 +355,6 @@ class CastEngine {
 
     PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
     config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
-    /* Um bundle só: uma porta para vídeo e áudio, que é menos caminho de rede
-       para atravessar e menos coisa para falhar. */
     config.bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE;
 
     final PeerConnection pc =
@@ -502,7 +391,6 @@ class CastEngine {
     RtpSender video = pc.addTrack(videoTrack, streamIds);
     if (audioTrack != null) pc.addTrack(audioTrack, streamIds);
     videos.put(to, video);
-    /* E as que já existiam descem para caber esta. */
     limitAll();
 
     pc.createOffer(
@@ -523,15 +411,11 @@ class CastEngine {
         new MediaConstraints());
   }
 
-  /** A fatia de cada cópia, com este tanto de gente recebendo. */
   private int share() {
     int quantos = Math.max(1, peers.size());
     return Math.max(PISO, Math.min(TETO, ORCAMENTO / quantos));
   }
 
-  /* O teto de banda. Sem ele o WebRTC sobe até onde a rede deixar, e numa rede
-     móvel "até onde deixar" é um pico que derruba a conexão inteira dois
-     segundos depois. */
   private void limitAll() {
     int fatia = share();
     for (RtpSender sender : videos.values()) {
@@ -546,7 +430,6 @@ class CastEngine {
     }
   }
 
-  /** Os candidatos que chegaram cedo demais, aplicados agora que há conexão. */
   private void flush(String from) {
     List<IceCandidate> fila = early.remove(from);
     PeerConnection pc = peers.get(from);
@@ -581,32 +464,6 @@ class CastEngine {
     return saida;
   }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     O SOM DOS OUTROS APLICATIVOS.
-
-     Do Android 10 em diante a mesma projeção que entrega a tela entrega
-     também o que está TOCANDO nela — é a captura de reprodução. O que ela não
-     entrega é o que o dono do som recusou: um aplicativo pode se declarar
-     não-capturável, e tudo que passa por DRM é mudo por construção. Netflix e
-     companhia entregam silêncio aqui pelo mesmo motivo que entregam tela
-     preta lá.
-
-     ── e por que ela é copiada num buffer alheio ──────────────────────────
-     O WebRTC do Android grava o som por um módulo de áudio que só sabe abrir
-     as entradas do sistema — microfone, chamada, câmera. Não há como lhe
-     entregar OUTRA fonte: a fábrica aceita um módulo, e o módulo abre o que
-     ele sabe abrir.
-
-     O que a biblioteca oferece é um gancho no caminho: um callback que recebe
-     cada bloco recém-gravado ANTES de ele seguir para o codificador, e que
-     pode reescrevê-lo. Então o microfone é aberto e imediatamente descartado —
-     o que a sala ouve é o que este bloco escreve por cima.
-
-     A fila existe porque as duas pontas têm relógios diferentes: o WebRTC pede
-     blocos de dez milissegundos no ritmo dele, e a captura entrega no ritmo
-     dela. Curta de propósito — som atrasado é pior que som faltando, e uma
-     fila grande vira atraso permanente.
-     ══════════════════════════════════════════════════════════════════════ */
   private class PlaybackAudio {
     private final MediaProjection projection;
     private final ArrayBlockingQueue<byte[]> fila = new ArrayBlockingQueue<>(BLOCOS);
@@ -625,8 +482,6 @@ class CastEngine {
 
       AudioPlaybackCaptureConfiguration config =
           new AudioPlaybackCaptureConfiguration.Builder(projection)
-              /* Só o que é mídia e jogo. Notificação e toque de chamada ficam
-                 de fora: eles não são o filme, e iriam para a sala inteira. */
               .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
               .addMatchingUsage(AudioAttributes.USAGE_GAME)
               .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
@@ -654,8 +509,6 @@ class CastEngine {
       thread =
           new Thread(
               () -> {
-                /* Dez milissegundos, que é o tamanho do bloco que o WebRTC pede.
-                   Ler no mesmo tamanho evita ter de remontar blocos aqui. */
                 byte[] bloco = new byte[TAXA / 100 * CANAIS * 2];
                 while (vivo) {
                   int lido = record.read(bloco, 0, bloco.length);
@@ -666,9 +519,6 @@ class CastEngine {
                   }
                   byte[] copia = new byte[lido];
                   System.arraycopy(bloco, 0, copia, 0, lido);
-                  /* Quando a fila enche, o mais VELHO sai: som atrasado não
-                     interessa a ninguém, e o que vale é o que está tocando
-                     agora. */
                   if (!fila.offer(copia)) {
                     fila.poll();
                     fila.offer(copia);
@@ -679,16 +529,12 @@ class CastEngine {
       thread.start();
     }
 
-    /** Escreve o som do sistema por cima do bloco que veio do microfone. */
     void fill(ByteBuffer buffer) {
       byte[] bloco = fila.poll();
       int posicao = buffer.position();
       int tamanho = buffer.remaining();
 
       if (bloco == null) {
-        /* Nada capturado neste instante — nada tocando, ou um aplicativo que
-           recusa captura. SILÊNCIO, e não o microfone: a sala ouviria a sala
-           de quem transmite. */
         for (int i = 0; i < tamanho; i++) buffer.put(posicao + i, (byte) 0);
         return;
       }
@@ -708,7 +554,6 @@ class CastEngine {
         try {
           record.stop();
         } catch (IllegalStateException ignored) {
-          // Já estava parado.
         }
         record.release();
         record = null;
@@ -718,7 +563,6 @@ class CastEngine {
     }
   }
 
-  /** Um observador de SDP que só registra o que deu errado. */
   private static class Observer implements SdpObserver {
     private final String what;
 
@@ -743,7 +587,6 @@ class CastEngine {
     }
   }
 
-  /** O resto da interface de PeerConnection, que esta ponta não usa. */
   private abstract static class PeerObserver implements PeerConnection.Observer {
     @Override
     public void onSignalingChange(PeerConnection.SignalingState novo) {}
