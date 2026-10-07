@@ -410,10 +410,9 @@ tela de março. Então campo **não se remove, não se renomeia e não muda de
 tipo** — coisa nova entra como campo novo. Quem segura isso é
 `test/contract.test.js`, que congela os nomes de cada resposta que um app lê.
 
-`GET /api/meta` devolve `{ api, minClient }`, e toda resposta de `/api` carrega
-`X-API-Version`. `minClient` só sobe quando uma versão antiga realmente parou de
-funcionar — e subir isso é dizer a quem não atualizou que o app parou. Ver
-`contract.js`.
+Quando uma versão instalada realmente para de funcionar, quem avisa é o OTA:
+`POST /api/app/update` compara a versão do aparelho com a do pacote e devolve o
+novo. Ver `lib/ota.js` e `client/src/lib/update.ts`.
 
 ---
 
@@ -441,19 +440,44 @@ lista o que está de pé, o que está desligado, e a linha que liga cada um.
 | Máquina que compila | `npm run app:url https://seu-servidor` | token em vez de cookie, o OTA e o domínio do link |
 | Máquina que compila | `mobile/android/keystore.properties` | a assinatura do APK |
 
+No `.env` local entram as mesmas, mais `PORT` (3000 por omissão),
+`CINECLUBE_HTTPS=1` em produção atrás de HTTPS — é o que marca o cookie de
+sessão como `Secure` — e `TURSO_DATABASE_URL` com `TURSO_AUTH_TOKEN` quando o
+banco não é o arquivo local. `FCM_SERVICE_ACCOUNT` aceita o JSON inteiro numa
+linha ou, se o painel não deixar, as três partes separadas: `FCM_PROJECT_ID`,
+`FCM_CLIENT_EMAIL` e `FCM_PRIVATE_KEY`.
+
+### Quando o STUN não basta
+
+Na Sessão a tela vai direto de navegador a navegador, e o servidor só apresenta
+os dois. Sem variável nenhuma sobra o STUN público (Google e Cloudflare), que
+responde "de onde veio este pacote" e é o que basta na maioria das redes —
+`STUN_URLS` só existe para não depender deles.
+
+Atrás de operadora móvel ou CGNAT os dois lados não se acham, e aí precisa de um
+TURN, que carrega o vídeo no meio: `TURN_URLS` mais **uma** credencial. O
+segredo compartilhado é o certo, porque a senha que chega ao navegador expira em
+horas — é o `use-auth-secret` do coturn, e vai em `TURN_SECRET`. Usuário e senha
+fixos (`TURN_USERNAME`, `TURN_PASSWORD`) é o que os serviços prontos entregam no
+painel; funciona igual, só que essa senha não expira e vai para o navegador de
+todo mundo do clube. TURN custa banda: um filme de duas horas são uns 2 GB por
+pessoa que precisar dele. Ver `lib/turn.js`.
+
 ---
 
 ## Instalação
 
 Precisa de **Node 22.5+** e de um *API Read Access Token* (v4) do
-[TMDB](https://www.themoviedb.org/settings/api) — gratuito.
+[TMDB](https://www.themoviedb.org/settings/api) — gratuito. Tem que ser o v4,
+um JWT longo começando com `eyJ`: o app autentica com `Authorization: Bearer`,
+e a API Key v3 (32 caracteres hex) responde "Invalid API key" nesse header.
 
 ```bash
 git clone https://github.com/ViniciusHrzr/Cineclube.git
 cd Cineclube
 npm install
 
-cp .env.example .env      # e cole seu TMDB_TOKEN
+echo TMDB_TOKEN=seu_token_v4 > .env
 npm run build             # instala e compila o cliente para public/
 npm start                 # http://localhost:3000
 ```
