@@ -176,7 +176,3 @@ test('o sino da rede', async () => {
   promete(body.items[0].actor, ['id', 'name', 'dot'], 'notice.actor');
 });
 
-test('a versão da API', async () => {
-  const { body } = await req('GET', '/api/meta');
-  promete(body, ['api', 'minClient'], '/api/meta');
-});

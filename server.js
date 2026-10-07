@@ -24,8 +24,6 @@ app.use('/api/csp-report', require('./routes/csp'));
 
 app.use('/api', require('./lib/cors').middleware());
 
-app.use('/api', require('./lib/contract').middleware());
-app.get('/api/meta', require('./lib/contract').meta);
 
 app.use(express.json({ limit: '1mb' }));
 app.use(auth.attachSession);
@@ -60,12 +58,12 @@ scoped.use('/reviewers', reviewerRoutes.scoped);
 scoped.use('/reviews', require('./routes/reviews'));
 scoped.use('/watchlist', require('./routes/watchlist'));
 scoped.use('/shows', require('./routes/shows'));
-scoped.use('/shows-social', require('./routes/showsSocial'));
-scoped.use('/shows-feed', require('./routes/showsFeed'));
+scoped.use('/shows-social', require('./routes/social').takes());
+scoped.use('/shows-feed', require('./routes/feed').takes());
 scoped.use('/screening', require('./routes/screening'));
-scoped.use('/social', require('./routes/social'));
+scoped.use('/social', require('./routes/social').reviews());
 scoped.use('/notifications', require('./routes/notifications'));
-scoped.use('/feed', require('./routes/feed'));
+scoped.use('/feed', require('./routes/feed').reviews());
 scoped.use('/live', require('./routes/live'));
 scoped.use('/', clubRoutes.scoped);
 

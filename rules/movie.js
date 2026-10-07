@@ -43,4 +43,4 @@ function cleanMovie(raw) {
   };
 }
 
-module.exports = { cleanMovie, MAX_TITLE, MAX_POSTER, MAX_DIRECTOR, MAX_ID };
+module.exports = { cleanMovie, text, whole, MAX_TITLE, MAX_POSTER, MAX_DIRECTOR, MAX_ID };

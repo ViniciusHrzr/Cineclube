@@ -256,16 +256,6 @@ test('a resposta diz que ela depende da origem', async () => {
   assert.equal(r.headers.get('access-control-allow-origin'), SHELL);
 });
 
-test('a API diz de que versão ela é, e qual cliente ela ainda atende', async () => {
-  const meta = await req('GET', '/api/meta', {});
-  assert.equal(meta.status, 200);
-  assert.equal(typeof meta.body.api, 'number');
-  assert.equal(typeof meta.body.minClient, 'number');
-  assert.ok(meta.body.minClient <= meta.body.api);
-
-  const qualquer = await req('GET', '/api/auth/me', {});
-  assert.equal(qualquer.headers.get('x-api-version'), String(meta.body.api));
-});
 
 const APP_INFO = {
   platform: 'android',

@@ -1,24 +1,11 @@
 const { GENRES } = require('./criteria');
-const { MAX_TITLE, MAX_POSTER, MAX_ID } = require('./movie');
+const { MAX_TITLE, MAX_POSTER, MAX_ID, text, whole } = require('./movie');
 
 const MAX_EPISODE_TITLE = 300;
 const MAX_SEASON = 200;
 const MAX_EPISODE = 5000;
 const MIN_YEAR = 1870;
 const MAX_YEAR = 2200;
-
-function text(value, max) {
-  if (typeof value !== 'string') return null;
-  const clean = value.trim().slice(0, max);
-  return clean || null;
-}
-
-function whole(value, { min, max }) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  const round = Math.round(n);
-  return round >= min && round <= max ? round : null;
-}
 
 function cleanShow(raw) {
   if (!raw || typeof raw !== 'object') return { error: 'Série inválida.' };
