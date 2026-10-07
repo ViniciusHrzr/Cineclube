@@ -32,8 +32,8 @@ const JUNCOES = `
 const listStmt = db.prepare(`
   SELECT ${CAMPOS} ${JUNCOES} WHERE ${DA_SALA} ORDER BY rv.date DESC
 `);
-const upsertStmt = db.prepare(`  INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, final, date, comment, recorded_at)
-  VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @final, @date, @comment, datetime('now'))
+const upsertStmt = db.prepare(`  INSERT INTO reviews (id, club_id, reviewer_id, movie_id, movie_title, movie_year, movie_genre, movie_poster, movie_director, movie_runtime, scores, quick, final, date, comment, recorded_at)
+  VALUES (@id, @clubId, @reviewerId, @movieId, @movieTitle, @movieYear, @movieGenre, @moviePoster, @movieDirector, @movieRuntime, @scores, @quick, @final, @date, @comment, datetime('now'))
   ON CONFLICT(reviewer_id, movie_id) DO UPDATE SET
 
     recorded_at = datetime('now'),
@@ -41,7 +41,8 @@ const upsertStmt = db.prepare(`  INSERT INTO reviews (id, club_id, reviewer_id, 
     movie_title = excluded.movie_title, movie_year = excluded.movie_year, movie_genre = excluded.movie_genre,
     movie_poster = excluded.movie_poster, movie_director = excluded.movie_director,
     movie_runtime = COALESCE(excluded.movie_runtime, reviews.movie_runtime),
-    scores = excluded.scores, final = excluded.final, date = excluded.date, comment = excluded.comment
+    scores = excluded.scores, quick = excluded.quick, final = excluded.final,
+    date = excluded.date, comment = excluded.comment
 `);
 const averagesStmt = db.prepare(`
   SELECT rv.movie_id, AVG(rv.final) AS avg, COUNT(*) AS count
@@ -78,6 +79,7 @@ function toReviewDTO(row, clubId) {
     movieRuntime: row.movie_runtime ?? row.cached_runtime ?? null,
     crowd: row.tmdb_votes > 0 ? { score: row.tmdb_score, votes: row.tmdb_votes } : null,
     scores,
+    quick: row.quick ?? null,
     final: row.final,
     date: row.date,
     comment: row.comment || '',
@@ -115,18 +117,29 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
   const limpo = cleanMovie(req.body?.movie);
   if (limpo.error) return res.status(400).json({ error: limpo.error });
   const movie = limpo.movie;
+  const genre = movie.genre;
 
-  if (!scores || typeof scores !== 'object') {
+  let cleanScores = {};
+  let quick = null;
+  let final;
+
+  if (scores && typeof scores === 'object') {
+    for (const c of critsFor(genre)) {
+      const v = Number(scores[c.key]);
+      cleanScores[c.key] = Number.isFinite(v) ? Math.min(10, Math.max(0, v)) : 0;
+    }
+    final = finalOf(genre, cleanScores);
+  } else if (req.body?.quick !== undefined && req.body?.quick !== null) {
+    const n = Number(req.body.quick);
+    if (!Number.isFinite(n) || n < 0 || n > 10) {
+      return res.status(400).json({ error: 'A nota tem de estar entre 0 e 10.' });
+    }
+    quick = n;
+    final = n;
+  } else {
     return res.status(400).json({ error: 'Notas inválidas.' });
   }
-  const genre = movie.genre;
-  const cs = critsFor(genre);
-  const cleanScores = {};
-  for (const c of cs) {
-    const v = Number(scores[c.key]);
-    cleanScores[c.key] = Number.isFinite(v) ? Math.min(10, Math.max(0, v)) : 0;
-  }
-  const final = finalOf(genre, cleanScores);
+
   const id = 'r' + crypto.randomUUID();
   const date = new Date().toISOString().slice(0, 10);
   const cleanComment = typeof comment === 'string' ? comment.trim().slice(0, 2000) : null;
@@ -136,7 +149,7 @@ router.post('/', auth.requireSession, clubs.requireMember, throttleReview, wrap(
     movieTitle: movie.title, movieYear: movie.year, movieGenre: genre,
     moviePoster: movie.poster, movieDirector: movie.director,
     movieRuntime: movie.runtime,
-    scores: JSON.stringify(cleanScores), final, date, comment: cleanComment || null
+    scores: JSON.stringify(cleanScores), quick, final, date, comment: cleanComment || null
   });
   await deleteWatchlistStmt.run(req.club.id, movie.id);
   await fillEnglishTitle(movie.id);

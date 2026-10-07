@@ -540,6 +540,7 @@ export type Review = {
   movieDirector: string | null;
   movieRuntime: number | null;
   scores: Record<string, number>;
+  quick: number | null;
   final: number;
   date: string;
   comment: string;

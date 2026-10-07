@@ -774,3 +774,73 @@ test('avaliar tira da fila mesmo o filme que outra pessoa pôs', async () => {
   const { body } = await req('GET', at('/watchlist'));
   assert.ok(!body.watchlist.some(w => w.id === m.id), 'o filme avaliado continuou na fila');
 });
+
+test('a nota rápida é uma avaliação inteira, com nota e sem critérios', async () => {
+  const quem = await newReviewer();
+  const m = movie();
+
+  const gravada = await req('POST', at('/reviews'), { movie: m, quick: 8.5 }, quem.cookie);
+  assert.equal(gravada.status, 201);
+  assert.equal(gravada.body.quick, 8.5);
+  assert.equal(gravada.body.final, 8.5, 'a nota rápida É a nota final');
+  assert.deepEqual(gravada.body.breakdown, [], 'sem critérios não há o que destrinchar');
+
+  const { body } = await req('GET', at('/reviews'));
+  const achada = body.reviews.find(r => r.movieId === m.id);
+  assert.equal(achada.final, 8.5, 'a ficha rápida entra na lista como qualquer outra');
+});
+
+test('a nota rápida entra na média do clube junto com as criteriosas', async () => {
+  const um = await newReviewer();
+  const dois = await newReviewer();
+  const m = movie();
+
+  await req('POST', at('/reviews'), { movie: m, quick: 10 }, um.cookie);
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 6) }, dois.cookie);
+
+  const { body } = await req('GET', at('/reviews/averages'));
+  assert.equal(body.averages[m.id].count, 2);
+  assert.ok(body.averages[m.id].avg > 6 && body.averages[m.id].avg < 10);
+});
+
+test('trocar de modo regrava a mesma ficha em vez de criar uma segunda', async () => {
+  const quem = await newReviewer();
+  const m = movie();
+
+  await req('POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 4) }, quem.cookie);
+  const depois = await req('POST', at('/reviews'), { movie: m, quick: 9 }, quem.cookie);
+
+  assert.equal(depois.body.quick, 9);
+  assert.deepEqual(depois.body.breakdown, [], 'a ficha criteriosa anterior não sobrou por baixo');
+
+  const { body } = await req('GET', at('/reviews'));
+  const minhas = body.reviews.filter(r => r.movieId === m.id && r.reviewerId === quem.id);
+  assert.equal(minhas.length, 1, 'duas fichas da mesma pessoa no mesmo filme');
+});
+
+test('a volta também vale: de rápida para criteriosa a nota deixa de ser direta', async () => {
+  const quem = await newReviewer();
+  const m = movie();
+
+  await req('POST', at('/reviews'), { movie: m, quick: 9 }, quem.cookie);
+  const depois = await req(
+    'POST', at('/reviews'), { movie: m, scores: scoresFor('Terror', 7) }, quem.cookie
+  );
+
+  assert.equal(depois.body.quick, null, 'a nota direta antiga ficou pendurada na ficha criteriosa');
+  assert.ok(depois.body.breakdown.length > 0);
+});
+
+test('uma nota rápida fora de 0 a 10 é recusada', async () => {
+  const quem = await newReviewer();
+  for (const valor of [-1, 11, 'oito', NaN]) {
+    const r = await req('POST', at('/reviews'), { movie: movie(), quick: valor }, quem.cookie);
+    assert.equal(r.status, 400, `aceitou ${JSON.stringify(valor)} como nota`);
+  }
+});
+
+test('uma avaliação sem critérios e sem nota rápida não é avaliação', async () => {
+  const quem = await newReviewer();
+  const r = await req('POST', at('/reviews'), { movie: movie() }, quem.cookie);
+  assert.equal(r.status, 400);
+});

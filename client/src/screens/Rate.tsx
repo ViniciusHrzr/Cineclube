@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Search } from 'lucide-react';
 import { Bill, Blank, Chip, Fault, Key, Poster, Skeleton, Strip, TrailerKey } from '@/components/bits';
-import { Channels } from '@/components/channels';
+import { Channels, Gauge } from '@/components/channels';
 import { MentionField } from '@/components/mention';
 import {
   api,
@@ -36,6 +36,8 @@ export function RateScreen({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [genre, setGenre] = useState<string>('');
+  const [modo, setModo] = useState<'rapida' | 'criteriosa'>('criteriosa');
+  const [quick, setQuick] = useState(7);
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
 
@@ -54,6 +56,8 @@ export function RateScreen({
         const fresh: Record<string, number> = {};
         club.criteriaFor(opening).forEach(c => (fresh[c.key] = mine?.scores?.[c.key] ?? 5));
         setScores(fresh);
+        setModo(mine?.quick != null ? 'rapida' : 'criteriosa');
+        setQuick(mine?.quick ?? 7);
         setComment(mine?.comment ?? '');
         setSaved(false);
       } catch (e) {
@@ -85,7 +89,8 @@ export function RateScreen({
     }
   }, [pendingRate, selectMovie, onConsumedPending]);
 
-  const final = movie ? finalOf(criteria, scores) : 0;
+  const rapida = modo === 'rapida';
+  const final = movie ? (rapida ? quick : finalOf(criteria, scores)) : 0;
   const sum = movie ? weightedSum(criteria, scores) : 0;
   const weight = movie ? totalWeight(criteria, scores) : 0;
   const existing =
@@ -95,7 +100,8 @@ export function RateScreen({
     if (!movie || saving) return;
     setSaving(true);
     try {
-      const rec = await cpost<Review>('/reviews', { movie: { ...movie, genre }, scores, comment });
+      const nota = rapida ? { quick } : { scores };
+      const rec = await cpost<Review>('/reviews', { movie: { ...movie, genre }, ...nota, comment });
       club.reload({
         reviews: club.reviews
           .filter(r => !(r.reviewerId === rec.reviewerId && r.movieId === rec.movieId))
@@ -113,7 +119,10 @@ export function RateScreen({
   return (
     <section>
       {}
-      <Bill title="Avaliar filme" note={movie ? plural(weight, 'critério', 'critérios') : undefined} />
+      <Bill
+        title="Avaliar filme"
+        note={movie ? (rapida ? 'nota rápida' : plural(weight, 'critério', 'critérios')) : undefined}
+      />
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="min-w-0 space-y-7">
@@ -149,17 +158,64 @@ export function RateScreen({
 
           {movie ? (
             <>
-              <Bay legend="Critérios" note="0–10 · passo 0,5">
-                <Channels
-                  criteria={criteria}
-                  scores={scores}
-                  genre={genre}
-                  crew={movie.crew}
-                  onChange={(k, v) => {
-                    setScores(s => ({ ...s, [k]: v }));
-                    setSaved(false);
-                  }}
-                />
+              <Bay
+                legend="Como avaliar"
+                note={rapida ? 'uma nota, 0–10' : '0–10 · passo 0,5'}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip
+                    size="sm"
+                    on={rapida}
+                    onClick={() => {
+                      setModo('rapida');
+                      setSaved(false);
+                    }}
+                  >
+                    Nota rápida
+                  </Chip>
+                  <Chip
+                    size="sm"
+                    on={!rapida}
+                    onClick={() => {
+                      setModo('criteriosa');
+                      setSaved(false);
+                    }}
+                  >
+                    Avaliação criteriosa
+                  </Chip>
+                </div>
+
+                {rapida ? (
+                  <div className="mt-5">
+                    <Gauge
+                      value={quick}
+                      onChange={v => {
+                        setQuick(v);
+                        setSaved(false);
+                      }}
+                      label={`Nota de ${movie.title}`}
+                    />
+                    {existing && existing.quick == null ? (
+                      <p className="mt-4 text-[12.5px] leading-relaxed text-dye-brass">
+                        Você já avaliou este filme pelos {criteria.length} critérios. Gravar uma nota
+                        rápida substitui aquela ficha.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <Channels
+                      criteria={criteria}
+                      scores={scores}
+                      genre={genre}
+                      crew={movie.crew}
+                      onChange={(k, v) => {
+                        setScores(s => ({ ...s, [k]: v }));
+                        setSaved(false);
+                      }}
+                    />
+                  </div>
+                )}
               </Bay>
 
               <Bay legend="Comentário" note="opcional · @ chama alguém">
@@ -181,6 +237,7 @@ export function RateScreen({
 
         <MasterCard
           hasMovie={!!movie}
+          rapida={rapida}
           final={final}
           sum={sum}
           weight={weight}
@@ -192,9 +249,13 @@ export function RateScreen({
           onSave={() => void save()}
           onReset={() => {
             if (!movie) return;
-            const fresh: Record<string, number> = {};
-            criteria.forEach(c => (fresh[c.key] = 5));
-            setScores(fresh);
+            if (rapida) {
+              setQuick(7);
+            } else {
+              const fresh: Record<string, number> = {};
+              criteria.forEach(c => (fresh[c.key] = 5));
+              setScores(fresh);
+            }
             setSaved(false);
           }}
         />
@@ -374,6 +435,7 @@ function MovieSearch({ onPick }: { onPick: (id: number) => void }) {
 
 function MasterCard({
   hasMovie,
+  rapida,
   final,
   sum,
   weight,
@@ -386,6 +448,7 @@ function MasterCard({
   onSeeHistory,
 }: {
   hasMovie: boolean;
+  rapida: boolean;
   final: number;
   sum: number;
   weight: number;
@@ -415,7 +478,11 @@ function MasterCard({
         </div>
         {}
         <p className="q ml-auto pb-1 text-[11px] text-ink-dim lg:ml-0 lg:mt-3 lg:pb-0">
-          {hasMovie ? `${fmt(sum)} pontos ÷ ${weight} critérios` : '11 critérios, todos iguais'}
+          {!hasMovie
+            ? '11 critérios, todos iguais'
+            : rapida
+              ? 'uma nota, direta'
+              : `${fmt(sum)} pontos ÷ ${weight} critérios`}
         </p>
       </div>
       <Strip value={hasMovie ? final : 0} cells={20} live className="mt-3 h-3 lg:h-4" />
@@ -447,8 +514,7 @@ function MasterCard({
               <strong className="font-semibold">Gravado.</strong>
             </span>
             <p className="mt-1 text-ink-dim">
-              Sua nota entrou no histórico do clube. Mexer nos critérios e gravar de novo substitui esta
-              avaliação.
+              Sua nota entrou no histórico do clube. Gravar de novo substitui esta avaliação.
             </p>
             <button
               type="button"
