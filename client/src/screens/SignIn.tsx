@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { api, auth, fmt, type Criterion, type Review, type SessionUser } from '@/lib/api';
+import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
 import { inShell, openOutside } from '@/lib/shell';
 import { cn } from '@/lib/utils';
 
@@ -44,13 +44,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   const [canMail, setCanMail] = useState(false);
   const [fichas, setFichas] = useState<Ficha[] | null>(null);
   const [acervo, setAcervo] = useState<Acervo | null>(null);
-  const [criterios, setCriterios] = useState<string[]>([]);
-
-  useEffect(() => {
-    void api<{ criteria: Criterion[] }>('/api/catalog/criteria')
-      .then(({ criteria }) => setCriterios(criteria.map(c => c.name)))
-      .catch(() => setCriterios([]));
-  }, []);
 
   useEffect(() => {
     void auth
@@ -140,10 +133,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
 
         <section
           className={cn(
-            'mx-auto grid w-full max-w-[1240px] flex-1 items-center gap-10 px-5 py-8 lg:gap-14 lg:px-6 lg:py-10',
+            'mx-auto grid w-full max-w-[1240px] flex-1 items-center gap-10 px-5 py-8 lg:gap-16 lg:px-6 lg:py-10',
             mostra
-              ? 'grid-cols-[repeat(auto-fit,minmax(min(100%,380px),1fr))]'
-              : 'max-w-[760px] grid-cols-1'
+              ? 'grid-cols-1 lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.7fr)]'
+              : 'max-w-[520px] grid-cols-1'
           )}
         >
           <div className="min-w-0">
@@ -158,7 +151,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                 >
                   <Convite
                     google={google}
-                    criterios={criterios}
                     onCriar={() => abrir('criar')}
                     onEntrar={() => abrir('entrar')}
                   />
@@ -205,60 +197,39 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
 
 function Convite({
   google,
-  criterios,
   onCriar,
   onEntrar,
 }: {
   google: boolean;
-  criterios: string[];
   onCriar: () => void;
   onEntrar: () => void;
 }) {
   return (
-    <>
-      <h1 className="font-display text-[40px] uppercase leading-[0.92] tracking-[0.04em] text-beam [text-wrap:balance] sm:text-[54px] lg:text-[66px]">
-        O filme acaba.
-        <br />
-        <span className="text-dye-red-lit">A conversa continua.</span>
-      </h1>
-
-      {criterios.length ? (
-        <div className="mt-8 max-w-[46ch] border-t border-white/[0.07] pt-5">
-          <p className="font-display text-[11.5px] uppercase leading-[1.7] tracking-[0.13em] text-ink-dim">
-            {criterios.join(' · ')}
-          </p>
-          <p className="q mt-2.5 font-display text-[11.5px] uppercase tracking-[0.13em] text-dye-brass">
-            {criterios.length} critérios por filme
-          </p>
-        </div>
-      ) : null}
-
-      <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Key tone="commit" onClick={onCriar} className="px-6 py-3.5 text-[14px]">
-          Criar minha conta
+    <div className="flex w-full max-w-[340px] flex-col gap-3">
+      <Key tone="commit" onClick={onCriar} className="w-full px-6 py-4 text-[14px]">
+        Criar minha conta
+      </Key>
+      {google ? (
+        <a
+          href={auth.googleUrl}
+          onClick={abrirGoogle}
+          className={cn(
+            'flex w-full items-center justify-center gap-2.5 rounded-cell px-6 py-4 no-underline',
+            'bg-house-seat/70 ring-1 ring-house-rail',
+            'font-display text-[14px] uppercase leading-none tracking-[0.14em] text-ink',
+            'transition-colors duration-150 hover:text-beam hover:ring-beam/70',
+            'coarse:min-h-[44px]'
+          )}
+        >
+          <GoogleMark />
+          Entrar com Google
+        </a>
+      ) : (
+        <Key tone="flush" onClick={onEntrar} className="w-full px-6 py-4 text-[14px]">
+          Já tenho conta
         </Key>
-        {google ? (
-          <a
-            href={auth.googleUrl}
-            onClick={abrirGoogle}
-            className={cn(
-              'inline-flex items-center gap-2.5 rounded-cell px-6 py-3.5 no-underline',
-              'bg-house-seat/70 ring-1 ring-house-rail',
-              'font-display text-[14px] uppercase leading-none tracking-[0.14em] text-ink',
-              'transition-colors duration-150 hover:text-beam hover:ring-beam/70',
-              'coarse:min-h-[44px]'
-            )}
-          >
-            <GoogleMark />
-            Entrar com Google
-          </a>
-        ) : (
-          <Key tone="flush" onClick={onEntrar} className="px-6 py-3.5 text-[14px]">
-            Já tenho conta
-          </Key>
-        )}
-      </div>
-    </>
+      )}
+    </div>
   );
 }
 
@@ -392,7 +363,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
 
   return (
     <div className="min-w-0 py-2 lg:py-6">
-      <div className="relative mx-auto aspect-[1/0.92] w-full max-w-[560px]">
+      <div className="relative mx-auto aspect-[1/0.92] w-full max-w-[680px]">
         {posicoes.map((slot, k) => {
           const ficha = lista[ordem[k]] ?? null;
           const alvo = SLOTS[slot];
@@ -472,7 +443,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
 
       <div
         aria-live="polite"
-        className="mx-auto mt-6 min-h-[58px] max-w-[560px] border-t border-white/[0.06] pt-4"
+        className="mx-auto mt-6 min-h-[58px] max-w-[680px] border-t border-white/[0.06] pt-4"
       >
         {centro ? (
           <motion.div
@@ -493,7 +464,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
       </div>
 
       {acervo?.fichas ? (
-        <p className="mx-auto mt-3 flex max-w-[560px] flex-wrap items-baseline gap-x-2 gap-y-1 font-display text-[11.5px] uppercase leading-none tracking-[0.13em] text-ink-dim">
+        <p className="mx-auto mt-3 flex max-w-[680px] flex-wrap items-baseline gap-x-2 gap-y-1 font-display text-[11.5px] uppercase leading-none tracking-[0.13em] text-ink-dim">
           <Conta n={acervo.fichas} one="ficha gravada" many="fichas gravadas" />
           <span aria-hidden>·</span>
           <Conta n={acervo.filmes} one="filme" many="filmes" />
