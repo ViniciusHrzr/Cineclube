@@ -1,11 +1,11 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { cloneElement, forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, ChevronDown, Plus } from 'lucide-react';
-import { Fault, Key } from '@/components/bits';
+import { Check, ChevronDown, LogOut, Plus, Settings, User } from 'lucide-react';
+import { Fault, Key, Reel } from '@/components/bits';
 import { PortraitGate } from '@/components/portrait';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { clubs, initialsOf, type Club } from '@/lib/api';
-import { cn, plural } from '@/lib/utils';
+import { clubs, initialsOf, reelColor, type Club, type SessionUser } from '@/lib/api';
+import { cn, plural, useAwayClose } from '@/lib/utils';
 import { mediaUrl } from '@/lib/session';
 
 export function ClubSwitch({
@@ -40,21 +40,7 @@ export function ClubSwitch({
     if (open) void load();
   }, [open, load]);
 
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', key);
-    };
-  }, [open]);
+  useAwayClose(open, box, useCallback(() => setOpen(false), []));
 
   async function ask(slug: string) {
     try {
@@ -529,5 +515,116 @@ export function ClubClosed({ detail, onHome }: { detail: string; onHome: () => v
         </div>
       </div>
     </>
+  );
+}
+
+export function SelfMenu({
+  me,
+  onOpenSelf,
+  onOpenSettings,
+  onSignOut,
+}: {
+  me: SessionUser;
+  onOpenSelf: () => void;
+  onOpenSettings: () => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useAwayClose(open, box, useCallback(() => setOpen(false), []));
+
+  const pick = (go: () => void) => () => {
+    setOpen(false);
+    go();
+  };
+
+  return (
+    <div ref={box} className="relative flex">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`${me.name} — minha conta`}
+        title="Minha conta"
+        className="group flex items-center gap-2 rounded-cell py-1 pl-1 pr-0.5 transition-colors sm:pr-1"
+      >
+        <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
+          {initialsOf(me.name)}
+        </Reel>
+        <span className="hidden text-[13px] text-ink-dim transition-colors group-hover:text-ink sm:inline">
+          {me.name}
+        </span>
+        <ChevronDown
+          aria-hidden
+          strokeWidth={1.9}
+          className={cn(
+            'h-4 w-4 flex-none text-ink-dim transition-transform duration-200 group-hover:text-ink',
+            open && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Minha conta"
+          className="plate absolute right-0 top-[calc(100%+8px)] z-40 w-[210px] py-2"
+        >
+          <MenuRow icon={<User />} onClick={pick(onOpenSelf)}>
+            Meu perfil
+          </MenuRow>
+          <MenuRow icon={<Settings />} onClick={pick(onOpenSettings)}>
+            Ajustes
+          </MenuRow>
+          <div aria-hidden className="my-2 border-t border-white/[0.07]" />
+          <MenuRow icon={<LogOut />} tone="exit" onClick={pick(onSignOut)}>
+            Sair
+          </MenuRow>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MenuRow({
+  icon,
+  tone,
+  onClick,
+  children,
+}: {
+  icon: React.ReactElement<{ className?: string; strokeWidth?: number }>;
+  tone?: 'exit';
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const saindo = tone === 'exit';
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        'group flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors duration-150',
+        saindo ? 'hover:bg-dye-red/[0.12]' : 'hover:bg-beam/[0.05]'
+      )}
+    >
+      {cloneElement(icon, {
+        className: cn(
+          'h-[15px] w-[15px] flex-none transition-colors',
+          saindo ? 'text-dye-red-lit' : 'text-ink-dim group-hover:text-beam'
+        ),
+        strokeWidth: 1.9,
+      })}
+      <span
+        className={cn(
+          'font-display text-[15px] leading-none tracking-[0.06em] transition-colors',
+          saindo ? 'text-dye-red-lit group-hover:text-dye-red-glow' : 'text-ink group-hover:text-beam'
+        )}
+      >
+        {children}
+      </span>
+    </button>
   );
 }

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { ProjectionSheet } from '@/components/film';
 import { Notices } from '@/components/notices';
-import { ClubClosed, Projecting, ClubSwitch } from '@/components/clubs';
+import { ClubClosed, ClubSwitch, Projecting, SelfMenu } from '@/components/clubs';
 import { Fault } from '@/components/bits';
 import {
   api,
@@ -11,8 +11,6 @@ import {
   cdel,
   clubs as clubsApi,
   cpost,
-  initialsOf,
-  reelColor,
   setClub,
   social,
   type Club as ClubRow,
@@ -48,7 +46,7 @@ import { ShowScreen } from '@/screens/series/Show';
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
 import { usePulse, type ScreeningMovie, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
-import { Lens, Reel } from '@/components/bits';
+import { Lens } from '@/components/bits';
 import { SettingsSheet } from '@/components/settings';
 import { SetPassword, SignIn } from '@/screens/SignIn';
 import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
@@ -321,6 +319,7 @@ export default function App() {
         onHome={() => {
           location.hash = lensOf('series');
         }}
+        onSignOut={() => void signOut()}
       />
     );
   }
@@ -379,11 +378,13 @@ function SeriesClubApp({
   route,
   me,
   onHome,
+  onSignOut,
 }: {
   slug: string;
   route: Route;
   me: SessionUser;
   onHome: () => void;
+  onSignOut: () => void;
 }) {
   const [club, setClubRow] = useState<ClubRow | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -630,6 +631,10 @@ function SeriesClubApp({
           onOpenRequests={() => {
             location.hash = clubHash(slug, 'ajustes', 'filmes');
           }}
+          onOpenSettings={() => {
+            location.hash = clubHash(slug, 'ajustes', 'filmes');
+          }}
+          onSignOut={onSignOut}
         />
 
         <main
@@ -1233,6 +1238,8 @@ function ClubApp({
           }}
           onEnterClub={slug => { location.hash = clubHash(slug, 'feed', lens); }}
           onOpenRequests={() => setSheetOpen(true)}
+          onOpenSettings={() => setSheetOpen(true)}
+          onSignOut={onSignOut}
         />
 
         {}
@@ -1509,6 +1516,8 @@ function Marquee({
   onUniverse,
   onEnterClub,
   onOpenRequests,
+  onOpenSettings,
+  onSignOut,
 }: {
   tabs: readonly { id: TabId; label: string; hidden?: boolean }[];
   tab: TabId;
@@ -1521,6 +1530,8 @@ function Marquee({
   onUniverse: (u: Universe) => void;
   onEnterClub: (slug: string) => void;
   onOpenRequests: () => void;
+  onOpenSettings: () => void;
+  onSignOut: () => void;
 }) {
   const rec = recOf(room);
 
@@ -1553,18 +1564,12 @@ function Marquee({
           ) : null}
           {}
           <Notices />
-          <button
-            type="button"
-            onClick={onOpenSelf}
-            title={me.isAdmin ? 'Administrador do clube' : 'Meu perfil'}
-            aria-label={`${me.name} — abrir meu perfil`}
-            className="flex items-center gap-2 rounded-cell px-1 py-1 transition-colors hover:[&>span]:text-ink"
-          >
-            <Reel color={reelColor(me.dot, me.id)} src={me.avatar} size="lg">
-              {initialsOf(me.name)}
-            </Reel>
-            <span className="hidden text-[13px] text-ink-dim transition-colors sm:inline">{me.name}</span>
-          </button>
+          <SelfMenu
+            me={me}
+            onOpenSelf={onOpenSelf}
+            onOpenSettings={onOpenSettings}
+            onSignOut={onSignOut}
+          />
         </div>
       </div>
     </header>
