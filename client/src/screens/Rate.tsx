@@ -40,7 +40,7 @@ export function RateScreen({
   const [modo, setModo] = useState<'rapida' | 'criteriosa'>('rapida');
   const [quick, setQuick] = useState(7);
 
-  const [tour, endTour, replayTour] = useFirstVisit('rate', !!movie);
+  const [tour, endTour, replayTour] = useFirstVisit(`rate.${reviewerId}`, !!movie);
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
 
