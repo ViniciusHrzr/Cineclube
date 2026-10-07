@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { Key } from '@/components/bits';
 import { cn } from '@/lib/utils';
 
-const HEAD = 76;
 const BAR = 210;
+
+const uiZoom = () => Number(getComputedStyle(document.documentElement).zoom) || 1;
 
 export type TourStep = { at: string; title: string; text: string };
 
@@ -30,26 +30,18 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
 
   useEffect(() => {
     if (!el) return;
-    const fit = () => {
-      const r = el.getBoundingClientRect();
-      const over = r.bottom - (window.innerHeight - BAR);
-      const under = HEAD - r.top;
-      if (under > 0) window.scrollBy(0, -under);
-      else if (over > 0) window.scrollBy(0, Math.min(over, r.top - HEAD));
-      setBox(el.getBoundingClientRect());
-    };
     el.scrollIntoView({ block: 'center' });
-    fit();
     const measure = () => setBox(el.getBoundingClientRect());
+    measure();
     window.addEventListener('scroll', measure, true);
-    window.addEventListener('resize', fit);
+    window.addEventListener('resize', measure);
     const esc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') done();
     };
     window.addEventListener('keydown', esc);
     return () => {
       window.removeEventListener('scroll', measure, true);
-      window.removeEventListener('resize', fit);
+      window.removeEventListener('resize', measure);
       window.removeEventListener('keydown', esc);
     };
   }, [el, done]);
@@ -59,7 +51,14 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
   const step = steps[n];
   const last = n >= steps.length - 1;
   const pad = 8;
-  const atTop = box.bottom > window.innerHeight - BAR;
+  const z = uiZoom();
+  const hole = {
+    top: box.top / z - pad,
+    left: box.left / z - pad,
+    width: box.width / z + pad * 2,
+    height: box.height / z + pad * 2,
+  };
+  const atTop = hole.top + hole.height > window.innerHeight / z - BAR;
 
   return (
     <div
@@ -70,18 +69,9 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
     >
       <div
         className="pointer-events-none absolute rounded-cell"
-        style={{
-          top: box.top - pad,
-          left: box.left - pad,
-          width: box.width + pad * 2,
-          height: box.height + pad * 2,
-          boxShadow: '0 0 0 2px #d9a441, 0 0 0 9999px rgba(5,5,6,0.86)',
-        }}
+        style={{ ...hole, boxShadow: '0 0 0 2px #d9a441, 0 0 0 9999px rgba(5,5,6,0.86)' }}
       />
-      <motion.div
-        key={step.at}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+      <div
         className={cn(
           'plate fixed left-1/2 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 p-4',
           'shadow-[0_18px_60px_rgba(0,0,0,0.65)]',
@@ -104,7 +94,7 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
             </Key>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
