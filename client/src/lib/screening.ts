@@ -94,6 +94,33 @@ export function samePulse(a: ScreeningPulse, b: ScreeningPulse) {
   );
 }
 
+export function usePulse(ready: boolean) {
+  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+
+  const read = useCallback(() => {
+    void readPulse().then(
+      next => setPulse(prev => (samePulse(prev, next) ? prev : next)),
+      () => {}
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    read();
+    const tick = () => {
+      if (document.visibilityState === 'visible') read();
+    };
+    const id = window.setInterval(tick, 90_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [ready, read]);
+
+  return [pulse, read] as const;
+}
+
 export function positionAt(state: ScreeningState, serverNow: number) {
   if (state.status !== 'playing') return state.position;
   return state.position + Math.max(0, serverNow - state.serverTime) / 1000;

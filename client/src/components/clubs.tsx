@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Check, ChevronDown, Plus } from 'lucide-react';
 import { Fault, Key } from '@/components/bits';
 import { PortraitGate } from '@/components/portrait';
+import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { clubs, initialsOf, type Club } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 import { mediaUrl } from '@/lib/session';
@@ -500,3 +501,33 @@ const ClubField = forwardRef<HTMLInputElement, ClubFieldProps>(function ClubFiel
     </label>
   );
 });
+
+export function Projecting() {
+  return (
+    <>
+      <HolographicWall asBackdrop />
+      <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
+        <span className="legend animate-flicker">Acendendo o projetor</span>
+      </div>
+    </>
+  );
+}
+
+export function ClubClosed({ detail, onHome }: { detail: string; onHome: () => void }) {
+  return (
+    <>
+      <HolographicWall asBackdrop />
+      <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
+        <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
+          Este clube não abre
+        </h1>
+        <div className="mt-5">
+          <Fault detail={detail}>O clube não existe, ou é privado e você não está nele.</Fault>
+        </div>
+        <div className="mt-5">
+          <Key onClick={onHome}>Ir para outro clube</Key>
+        </div>
+      </div>
+    </>
+  );
+}

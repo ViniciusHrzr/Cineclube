@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { ProjectionSheet } from '@/components/film';
 import { Notices } from '@/components/notices';
-import { ClubSwitch } from '@/components/clubs';
+import { ClubClosed, Projecting, ClubSwitch } from '@/components/clubs';
 import { Fault } from '@/components/bits';
 import {
   api,
@@ -39,18 +39,16 @@ import { WorldProvider, type World } from '@/lib/world';
 import { appIsReady } from '@/lib/session';
 import { closeOutside, onDeepLink } from '@/lib/shell';
 import { neighbour, useSwipeTabs } from '@/lib/swipe';
-import {
-  SeasonSheet,
-  SeriesArchiveScreen,
-  SeriesCatalogScreen,
-  SeriesFeedScreen,
-  SeriesQueueScreen,
-  ShowScreen,
-} from '@/screens/Series';
+import { SeriesArchiveScreen } from '@/screens/series/Archive';
+import { SeriesCatalogScreen } from '@/screens/series/Catalog';
+import { SeriesFeedScreen } from '@/screens/series/Feed';
+import { SeriesQueueScreen } from '@/screens/series/Queue';
+import { SeasonSheet } from '@/screens/series/Season';
+import { ShowScreen } from '@/screens/series/Show';
 import { resetLive, useLive, type LiveKind } from '@/lib/live';
-import { DARK, readPulse, samePulse, type ScreeningMovie, type ScreeningPulse } from '@/lib/screening';
+import { usePulse, type ScreeningMovie, type ScreeningPulse } from '@/lib/screening';
 import { UserPlus } from 'lucide-react';
-import { Key, Lens, Reel } from '@/components/bits';
+import { Lens, Reel } from '@/components/bits';
 import { SettingsSheet } from '@/components/settings';
 import { SetPassword, SignIn } from '@/screens/SignIn';
 import { ConfirmEmail, ResetPassword } from '@/screens/EmailLink';
@@ -400,7 +398,7 @@ function SeriesClubApp({
   const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>(() => route.tab ?? 'feed');
   const [showId, setShowId] = useState<number | null>(() => route.show);
-  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+  const [pulse] = usePulse(!!club);
   const [avaliando, setAvaliando] = useState<ScreeningMovie | null>(null);
   const [deServico, setDeServico] = useState(false);
 
@@ -436,27 +434,6 @@ function SeriesClubApp({
   useEffect(() => {
     void boot();
   }, [boot]);
-
-  useEffect(() => {
-    if (!club) return;
-    const read = () => {
-      void readPulse().then(
-        next => setPulse(prev => (samePulse(prev, next) ? prev : next)),
-        () => {
-        }
-      );
-    };
-    read();
-    const tick = () => {
-      if (document.visibilityState === 'visible') read();
-    };
-    const id = window.setInterval(tick, 90_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener('visibilitychange', tick);
-    };
-  }, [club]);
 
   const refresh = useCallback(async () => {
     try {
@@ -625,35 +602,9 @@ function SeriesClubApp({
     ]
   );
 
-  if (bootError && !club) {
-    return (
-      <>
-        <HolographicWall asBackdrop />
-        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
-          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
-            Este clube não abre
-          </h1>
-          <div className="mt-5">
-            <Fault detail={bootError}>O clube não existe, ou é privado e você não está nele.</Fault>
-          </div>
-          <div className="mt-5">
-            <Key onClick={onHome}>Ir para outro clube</Key>
-          </div>
-        </div>
-      </>
-    );
-  }
+  if (bootError && !club) return <ClubClosed detail={bootError} onHome={onHome} />;
 
-  if (!club) {
-    return (
-      <>
-        <HolographicWall asBackdrop />
-        <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
-          <span className="legend animate-flicker">Acendendo o projetor</span>
-        </div>
-      </>
-    );
-  }
+  if (!club) return <Projecting />;
 
   const doShow = showId != null ? (takes ?? []).filter(t => t.showId === showId) : [];
 
@@ -832,7 +783,7 @@ function ClubApp({
   const [pendingRate, setPendingRate] = useState<number | null>(null);
   const [deServico, setDeServico] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [pulse, setPulse] = useState<ScreeningPulse>(DARK);
+  const [pulse, readRoom] = usePulse(booted);
   const [sheetOpen, setSheetOpen] = useState(route.sheet);
 
   useEffect(() => {
@@ -1090,28 +1041,6 @@ function ClubApp({
     [meId]
   );
 
-  const readRoom = useCallback(async () => {
-    try {
-      const next = await readPulse();
-      setPulse(prev => (samePulse(prev, next) ? prev : next));
-    } catch {
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!booted) return;
-    void readRoom();
-    const tick = () => {
-      if (document.visibilityState === 'visible') void readRoom();
-    };
-    const id = window.setInterval(tick, 90_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener('visibilitychange', tick);
-    };
-  }, [booted, readRoom]);
-
   const applyLive = useCallback((kinds: ReadonlySet<LiveKind>) => {
     const quiet = () => {
     };
@@ -1278,37 +1207,9 @@ function ClubApp({
     [ctx]
   );
 
-  if (bootError && !club) {
-    return (
-      <>
-        <HolographicWall asBackdrop />
-        <div className="relative mx-auto flex min-h-[calc(100dvh/var(--ui-zoom))] w-full max-w-[560px] flex-col justify-center px-5">
-          <h1 className="font-display text-[34px] leading-none tracking-[0.04em] text-beam">
-            Este clube não abre
-          </h1>
-          <div className="mt-5">
-            <Fault detail={bootError}>
-              O clube não existe, ou é privado e você não está nele.
-            </Fault>
-          </div>
-          <div className="mt-5">
-            <Key onClick={onLeaveClub}>Ir para outro clube</Key>
-          </div>
-        </div>
-      </>
-    );
-  }
+  if (bootError && !club) return <ClubClosed detail={bootError} onHome={onLeaveClub} />;
 
-  if (!ctx) {
-    return (
-      <>
-        <HolographicWall asBackdrop />
-        <div className="relative flex min-h-[calc(100dvh/var(--ui-zoom))] items-center justify-center">
-          <span className="legend animate-flicker">Acendendo o projetor</span>
-        </div>
-      </>
-    );
-  }
+  if (!ctx) return <Projecting />;
 
   return (
     <ClubContext.Provider value={ctx}>
