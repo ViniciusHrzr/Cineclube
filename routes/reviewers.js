@@ -1,13 +1,13 @@
 const express = require('express');
 const crypto = require('node:crypto');
-const db = require('../db');
-const auth = require('../auth');
-const wrap = require('../wrap');
-const { handlesFor } = require('../handles');
-const clubs = require('../clubs');
-const live = require('../live');
-const { readDataUrl } = require('../image');
-const throttle = require('../throttle');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const wrap = require('../lib/wrap');
+const { handlesFor } = require('../lib/handles');
+const clubs = require('../lib/clubs');
+const live = require('../lib/live');
+const { readDataUrl } = require('../lib/image');
+const throttle = require('../lib/throttle');
 
 const throttleProfile = throttle.limit({
   name: 'profile',

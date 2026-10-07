@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../lib/db');
 
 const AGORA_BR = "datetime('now', '-3 hours')";
 

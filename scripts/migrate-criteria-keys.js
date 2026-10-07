@@ -1,6 +1,6 @@
 try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
-const db = require('../db');
+const db = require('../lib/db');
 
 const DRY = process.argv.includes('--dry');
 

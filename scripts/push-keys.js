@@ -1,4 +1,4 @@
-const { generate } = require('../push');
+const { generate } = require('../lib/push');
 
 const par = generate();
 console.log(`VAPID_PUBLIC=${par.public}`);

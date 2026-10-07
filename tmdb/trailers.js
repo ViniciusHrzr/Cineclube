@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../lib/db');
 
 const HIT_TTL = 180;
 const MISS_TTL = 7;

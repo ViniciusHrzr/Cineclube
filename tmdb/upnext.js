@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../lib/db');
 const series = require('./series');
 const { cacheShow, cacheEpisodes } = require('./showcache');
 

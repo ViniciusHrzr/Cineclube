@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../lib/db');
 
 const upsertShow = db.prepare(`  INSERT INTO shows_cache
     (tmdb_id, title, original_title, english_title, year, genre, genres, poster,

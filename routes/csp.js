@@ -1,5 +1,5 @@
 const express = require('express');
-const throttle = require('../throttle');
+const throttle = require('../lib/throttle');
 
 const router = express.Router();
 

@@ -1,9 +1,9 @@
 const express = require('express');
-const db = require('../db');
-const wrap = require('../wrap');
-const { excerpt, seasonEndsOf } = require('../takes');
-const clubs = require('../clubs');
-const { SEASON_ROW } = require('../show');
+const db = require('../lib/db');
+const wrap = require('../lib/wrap');
+const { excerpt, seasonEndsOf } = require('../rules/takes');
+const clubs = require('../lib/clubs');
+const { SEASON_ROW } = require('../rules/show');
 
 const router = express.Router({ mergeParams: true });
 

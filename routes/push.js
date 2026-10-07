@@ -1,11 +1,11 @@
 const crypto = require('node:crypto');
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const wrap = require('../wrap');
-const push = require('../push');
-const fcm = require('../fcm');
-const airing = require('../airing');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const wrap = require('../lib/wrap');
+const push = require('../lib/push');
+const fcm = require('../lib/fcm');
+const airing = require('../tmdb/airing');
 
 const router = express.Router();
 

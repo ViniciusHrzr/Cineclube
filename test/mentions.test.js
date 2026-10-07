@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { handlesFor, mentionedIn } = require('../handles');
+const { handlesFor, mentionedIn } = require('../lib/handles');
 
 const club = names => names.map((name, i) => ({ id: `p${i + 1}`, name }));
 const handlesOf = names => Object.values(handlesFor(club(names)));

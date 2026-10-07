@@ -9,12 +9,12 @@ const dbPath = path.join(os.tmpdir(), `cineclube-notices-${crypto.randomUUID()}.
 process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
-const db = require('../db');
-const live = require('../live');
-const screening = require('../screening');
-const throttle = require('../throttle');
-const kit = require('../testkit');
-const { critsFor } = require('../criteria');
+const db = require('../lib/db');
+const live = require('../lib/live');
+const screening = require('../lib/screening');
+const throttle = require('../lib/throttle');
+const kit = require('../lib/testkit');
+const { critsFor } = require('../rules/criteria');
 
 let baseUrl;
 let server;

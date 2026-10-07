@@ -1,11 +1,11 @@
 const express = require('express');
-const db = require('../db');
-const series = require('../series');
-const { cacheShow, cacheEpisodes } = require('../showcache');
-const wrap = require('../wrap');
-const { providerCache } = require('../providers');
-const { GENRES, seasonCritsFor } = require('../criteria');
-const { cleanEpisodeRef } = require('../show');
+const db = require('../lib/db');
+const series = require('../tmdb/series');
+const { cacheShow, cacheEpisodes } = require('../tmdb/showcache');
+const wrap = require('../lib/wrap');
+const { providerCache } = require('../tmdb/providers');
+const { GENRES, seasonCritsFor } = require('../rules/criteria');
+const { cleanEpisodeRef } = require('../rules/show');
 
 const router = express.Router();
 

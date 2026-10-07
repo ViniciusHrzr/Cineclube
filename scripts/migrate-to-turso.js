@@ -15,7 +15,7 @@ async function main() {
     throw new Error(`Banco local não encontrado em ${localPath}`);
   }
 
-  const remote = require('../db');
+  const remote = require('../lib/db');
   await remote.ready;
   console.log('[migrate] esquema conferido no destino');
 

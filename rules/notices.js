@@ -1,6 +1,6 @@
-const db = require('./db');
-const airing = require('./airing');
-const { handlesFor, mentionedIn } = require('./handles');
+const db = require('../lib/db');
+const airing = require('../tmdb/airing');
+const { handlesFor, mentionedIn } = require('../lib/handles');
 
 const LIMIT = 60;
 

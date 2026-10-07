@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const screening = require('../screening');
-const turn = require('../turn');
+const screening = require('../lib/screening');
+const turn = require('../lib/turn');
 
 const T0 = 1_700_000_000_000;
 const FILM = { id: 1, title: 'Duna: Parte Dois', year: 2024, genre: 'Ficção', poster: null, runtime: 166 };

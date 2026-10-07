@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { englishOf } = require('../tmdb');
+const { englishOf } = require('../tmdb/tmdb');
 
 const en = title => ({ translations: [{ iso_639_1: 'en', data: { title } }] });
 const withOthers = title => ({

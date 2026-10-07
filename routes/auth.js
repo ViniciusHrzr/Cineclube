@@ -1,10 +1,10 @@
 const crypto = require('node:crypto');
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const mail = require('../mail');
-const throttle = require('../throttle');
-const wrap = require('../wrap');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const mail = require('../lib/mail');
+const throttle = require('../lib/throttle');
+const wrap = require('../lib/wrap');
 
 const router = express.Router();
 

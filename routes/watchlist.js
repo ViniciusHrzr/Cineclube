@@ -1,12 +1,12 @@
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const wrap = require('../wrap');
-const { fillEnglishTitle } = require('../english');
-const { cleanMovie } = require('../movie');
-const throttle = require('../throttle');
-const live = require('../live');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const wrap = require('../lib/wrap');
+const { fillEnglishTitle } = require('../tmdb/english');
+const { cleanMovie } = require('../rules/movie');
+const throttle = require('../lib/throttle');
+const live = require('../lib/live');
 
 const router = express.Router({ mergeParams: true });
 

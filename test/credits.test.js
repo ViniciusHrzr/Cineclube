@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { signedBy } = require('../tmdb');
+const { signedBy } = require('../tmdb/tmdb');
 
 const C = (name, job) => ({ name, job });
 const A = name => ({ name });

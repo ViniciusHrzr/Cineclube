@@ -1,4 +1,4 @@
-const { GENRE_PRIORITY } = require('./criteria');
+const { GENRE_PRIORITY } = require('../rules/criteria');
 const { bestVideo } = require('./video');
 const { tmdbGet, posterUrl, backdropUrl, crowdOf, watchIn } = require('./tmdbapi');
 

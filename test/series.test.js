@@ -9,13 +9,13 @@ const dbPath = path.join(os.tmpdir(), `cineclube-series-${crypto.randomUUID()}.d
 process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
-const db = require('../db');
-const live = require('../live');
-const screening = require('../screening');
-const kit = require('../testkit');
-const { seasonCritsFor, seasonFinalOf, GENRE, CRAFT, PERSONAL } = require('../criteria');
-const { genresFromTvIds, signedBy } = require('../series');
-const upnext = require('../upnext');
+const db = require('../lib/db');
+const live = require('../lib/live');
+const screening = require('../lib/screening');
+const kit = require('../lib/testkit');
+const { seasonCritsFor, seasonFinalOf, GENRE, CRAFT, PERSONAL } = require('../rules/criteria');
+const { genresFromTvIds, signedBy } = require('../tmdb/series');
+const upnext = require('../tmdb/upnext');
 
 let baseUrl;
 let server;

@@ -1,7 +1,7 @@
 const express = require('express');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const live = require('../live');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const live = require('../lib/live');
 
 const router = express.Router({ mergeParams: true });
 

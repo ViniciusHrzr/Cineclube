@@ -1,7 +1,7 @@
 try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
-const db = require('../db');
-const { finalOf, GENRES } = require('../criteria');
+const db = require('../lib/db');
+const { finalOf, GENRES } = require('../rules/criteria');
 
 const DRY = process.argv.includes('--dry');
 

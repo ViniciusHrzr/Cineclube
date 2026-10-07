@@ -1,4 +1,4 @@
-const { genreFromTmdbIds, genresFromTmdbIds } = require('./criteria');
+const { genreFromTmdbIds, genresFromTmdbIds } = require('../rules/criteria');
 const { bestVideo } = require('./video');
 const { tmdbGet, posterUrl, backdropUrl, crowdOf, watchIn } = require('./tmdbapi');
 

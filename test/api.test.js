@@ -9,8 +9,8 @@ const dbPath = path.join(os.tmpdir(), `cineclube-test-${crypto.randomUUID()}.db`
 process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
-const db = require('../db');
-const kit = require('../testkit');
+const db = require('../lib/db');
+const kit = require('../lib/testkit');
 
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;
@@ -80,7 +80,7 @@ function movie(overrides) {
 }
 
 function scoresFor(genre, value) {
-  const { critsFor } = require('../criteria');
+  const { critsFor } = require('../rules/criteria');
   const o = {};
   critsFor(genre).forEach(c => { o[c.key] = value; });
   return o;

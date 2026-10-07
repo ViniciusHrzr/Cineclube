@@ -1,9 +1,9 @@
 const express = require('express');
-const db = require('../db');
-const tmdb = require('../tmdb');
-const wrap = require('../wrap');
-const { providerCache } = require('../providers');
-const { GENRES, GENRE_TO_TMDB, critsFor } = require('../criteria');
+const db = require('../lib/db');
+const tmdb = require('../tmdb/tmdb');
+const wrap = require('../lib/wrap');
+const { providerCache } = require('../tmdb/providers');
+const { GENRES, GENRE_TO_TMDB, critsFor } = require('../rules/criteria');
 
 const router = express.Router();
 

@@ -1,7 +1,7 @@
 const express = require('express');
-const wrap = require('../wrap');
-const ota = require('../ota');
-const throttle = require('../throttle');
+const wrap = require('../lib/wrap');
+const ota = require('../lib/ota');
+const throttle = require('../lib/throttle');
 
 const router = express.Router();
 

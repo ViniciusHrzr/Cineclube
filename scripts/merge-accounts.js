@@ -1,7 +1,7 @@
 try { require('node:process').loadEnvFile('.env'); } catch { }
 
-const db = require('../db');
-const auth = require('../auth');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
 
 const arg = name => {
   const i = process.argv.indexOf(name);

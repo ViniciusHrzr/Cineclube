@@ -1,12 +1,12 @@
 const crypto = require('node:crypto');
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const throttle = require('../throttle');
-const live = require('../live');
-const wrap = require('../wrap');
-const { readDataUrl } = require('../image');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const throttle = require('../lib/throttle');
+const live = require('../lib/live');
+const wrap = require('../lib/wrap');
+const { readDataUrl } = require('../lib/image');
 
 const index = express.Router();
 const scoped = express.Router({ mergeParams: true });

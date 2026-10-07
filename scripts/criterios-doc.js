@@ -4,7 +4,7 @@ const path = require('node:path');
 const {
   BASE, BASE_SWAP, GENRE_CRIT, GENRES, GENRE_PRIORITY, GENRE_TO_TMDB, TMDB_GENRE_MAP,
   PERSONAL_KEY, critsFor
-} = require('../criteria');
+} = require('../rules/criteria');
 
 const OUT = path.join(__dirname, '..', '..', 'criterios-cineclube.txt');
 const RULE = '-'.repeat(78);

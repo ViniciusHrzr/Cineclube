@@ -1,8 +1,8 @@
 const express = require('express');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const notices = require('../notices');
-const wrap = require('../wrap');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const notices = require('../rules/notices');
+const wrap = require('../lib/wrap');
 
 const router = express.Router();
 

@@ -1,14 +1,14 @@
 const crypto = require('node:crypto');
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const wrap = require('../wrap');
-const screening = require('../screening');
-const turn = require('../turn');
-const live = require('../live');
-const { cleanEpisodeRef } = require('../show');
-const { GENRES } = require('../criteria');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const wrap = require('../lib/wrap');
+const screening = require('../lib/screening');
+const turn = require('../lib/turn');
+const live = require('../lib/live');
+const { cleanEpisodeRef } = require('../rules/show');
+const { GENRES } = require('../rules/criteria');
 
 const router = express.Router({ mergeParams: true });
 

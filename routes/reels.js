@@ -1,10 +1,10 @@
 const express = require('express');
-const db = require('../db');
-const tmdb = require('../tmdb');
-const series = require('../series');
-const wrap = require('../wrap');
-const { trailerCache } = require('../trailers');
-const { GENRES, GENRE_TO_TMDB } = require('../criteria');
+const db = require('../lib/db');
+const tmdb = require('../tmdb/tmdb');
+const series = require('../tmdb/series');
+const wrap = require('../lib/wrap');
+const { trailerCache } = require('../tmdb/trailers');
+const { GENRES, GENRE_TO_TMDB } = require('../rules/criteria');
 
 const router = express.Router();
 

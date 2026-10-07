@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../lib/db');
 const tmdb = require('./tmdb');
 
 const knownStmt = db.prepare('SELECT english_title FROM movies_cache WHERE tmdb_id = ?');

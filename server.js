@@ -2,11 +2,11 @@ try { require('node:process').loadEnvFile('.env'); } catch (e) { }
 
 const path = require('node:path');
 const express = require('express');
-const db = require('./db');
+const db = require('./lib/db');
 
-const auth = require('./auth');
+const auth = require('./lib/auth');
 
-const throttle = require('./throttle');
+const throttle = require('./lib/throttle');
 
 const app = express();
 
@@ -19,13 +19,13 @@ app.use((_req, res, next) => {
   next();
 });
 
-app.use(require('./csp').middleware());
+app.use(require('./lib/csp').middleware());
 app.use('/api/csp-report', require('./routes/csp'));
 
-app.use('/api', require('./cors').middleware());
+app.use('/api', require('./lib/cors').middleware());
 
-app.use('/api', require('./contract').middleware());
-app.get('/api/meta', require('./contract').meta);
+app.use('/api', require('./lib/contract').middleware());
+app.get('/api/meta', require('./lib/contract').meta);
 
 app.use(express.json({ limit: '1mb' }));
 app.use(auth.attachSession);
@@ -41,7 +41,7 @@ app.use('/api', (req, res, next) =>
   req.path.endsWith('/stream') ? next() : backstop(req, res, next)
 );
 
-const clubs = require('./clubs');
+const clubs = require('./lib/clubs');
 const clubRoutes = require('./routes/clubs');
 const reviewerRoutes = require('./routes/reviewers');
 

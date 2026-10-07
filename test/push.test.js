@@ -9,7 +9,7 @@ const crypto = require('node:crypto');
 const dbPath = path.join(os.tmpdir(), `cineclube-push-${crypto.randomUUID()}.db`);
 process.env.CINECLUBE_DB = dbPath;
 
-const push = require('../push');
+const push = require('../lib/push');
 const par = push.generate();
 process.env.VAPID_PUBLIC = par.public;
 process.env.VAPID_PRIVATE = par.private;
@@ -22,11 +22,11 @@ process.env.FCM_CLIENT_EMAIL = 'robo@cineclube-de-teste.iam.gserviceaccount.com'
 process.env.FCM_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' });
 
 const app = require('../server');
-const db = require('../db');
-const live = require('../live');
-const screening = require('../screening');
-const throttle = require('../throttle');
-const kit = require('../testkit');
+const db = require('../lib/db');
+const live = require('../lib/live');
+const screening = require('../lib/screening');
+const throttle = require('../lib/throttle');
+const kit = require('../lib/testkit');
 
 let baseUrl;
 let server;

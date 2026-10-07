@@ -1,6 +1,6 @@
 try { require('node:process').loadEnvFile('.env'); } catch { }
 
-const mail = require('../mail');
+const mail = require('../lib/mail');
 
 async function main() {
   const para = process.argv[2];

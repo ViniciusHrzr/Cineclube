@@ -9,10 +9,10 @@ const dbPath = path.join(os.tmpdir(), `cineclube-live-${crypto.randomUUID()}.db`
 process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
-const db = require('../db');
-const live = require('../live');
-const { critsFor } = require('../criteria');
-const kit = require('../testkit');
+const db = require('../lib/db');
+const live = require('../lib/live');
+const { critsFor } = require('../rules/criteria');
+const kit = require('../lib/testkit');
 
 let CLUB;
 const at = p => `/api/c/${CLUB.slug}${p}`;

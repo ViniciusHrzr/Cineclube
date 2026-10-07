@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {
   BASE, BASE_SWAP, GENRES, GENRE_CRIT, TMDB_GENRE_MAP, GENRE_TO_TMDB, PERSONAL_KEY,
   genreFromTmdbIds, genresFromTmdbIds, baseFor, critsFor, finalOf, answeredIn, GENRE_PRIORITY
-} = require('../criteria');
+} = require('../rules/criteria');
 
 test('every genre asks eleven questions, all at the same weight', () => {
   for (const genre of GENRES) {

@@ -9,11 +9,11 @@ const dbPath = path.join(os.tmpdir(), `cineclube-csp-${crypto.randomUUID()}.db`)
 process.env.CINECLUBE_DB = dbPath;
 
 const app = require('../server');
-const db = require('../db');
-const live = require('../live');
-const screening = require('../screening');
-const throttle = require('../throttle');
-const csp = require('../csp');
+const db = require('../lib/db');
+const live = require('../lib/live');
+const screening = require('../lib/screening');
+const throttle = require('../lib/throttle');
+const csp = require('../lib/csp');
 
 let baseUrl;
 let server;

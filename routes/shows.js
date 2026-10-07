@@ -1,18 +1,18 @@
 const crypto = require('node:crypto');
 const express = require('express');
-const db = require('../db');
-const auth = require('../auth');
-const clubs = require('../clubs');
-const wrap = require('../wrap');
-const throttle = require('../throttle');
-const live = require('../live');
-const series = require('../series');
-const upnext = require('../upnext');
-const { providerCache } = require('../providers');
-const { GENRES, seasonCritsFor, seasonFinalOf, seasonAnsweredIn } = require('../criteria');
+const db = require('../lib/db');
+const auth = require('../lib/auth');
+const clubs = require('../lib/clubs');
+const wrap = require('../lib/wrap');
+const throttle = require('../lib/throttle');
+const live = require('../lib/live');
+const series = require('../tmdb/series');
+const upnext = require('../tmdb/upnext');
+const { providerCache } = require('../tmdb/providers');
+const { GENRES, seasonCritsFor, seasonFinalOf, seasonAnsweredIn } = require('../rules/criteria');
 const {
   cleanShow, cleanEpisodeRef, cleanSeasonRef, text, SEASON_ROW, MAX_EPISODE_TITLE,
-} = require('../show');
+} = require('../rules/show');
 
 const router = express.Router({ mergeParams: true });
 

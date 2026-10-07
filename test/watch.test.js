@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { watchIn } = require('../tmdbapi');
+const { watchIn } = require('../tmdb/tmdbapi');
 
 const P = (provider_id, provider_name, display_priority) => ({
   provider_id, provider_name, display_priority, logo_path: `/${provider_id}.jpg`
