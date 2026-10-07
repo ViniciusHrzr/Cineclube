@@ -36,7 +36,7 @@ export function RateScreen({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [genre, setGenre] = useState<string>('');
-  const [modo, setModo] = useState<'rapida' | 'criteriosa'>('criteriosa');
+  const [modo, setModo] = useState<'rapida' | 'criteriosa'>('rapida');
   const [quick, setQuick] = useState(7);
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
@@ -56,7 +56,7 @@ export function RateScreen({
         const fresh: Record<string, number> = {};
         club.criteriaFor(opening).forEach(c => (fresh[c.key] = mine?.scores?.[c.key] ?? 5));
         setScores(fresh);
-        setModo(mine?.quick != null ? 'rapida' : 'criteriosa');
+        setModo(mine && mine.quick == null ? 'criteriosa' : 'rapida');
         setQuick(mine?.quick ?? 7);
         setComment(mine?.comment ?? '');
         setSaved(false);
