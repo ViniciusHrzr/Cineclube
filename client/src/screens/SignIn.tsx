@@ -4,7 +4,7 @@ import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
 import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
 import { inShell, openOutside } from '@/lib/shell';
-import { cn, plural } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 function errorFromHash() {
   const raw = (location.hash || '').replace(/^#/, '');
@@ -118,14 +118,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
               className="inline-block h-[7px] w-[7px] flex-none animate-lamp rounded-full bg-dye-red shadow-[0_0_10px_rgba(242,86,74,0.85)]"
             />
           </div>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Key tone="ghost" onClick={() => abrir('entrar')}>
-              Entrar
-            </Key>
-            <Key tone="commit" onClick={() => abrir('criar')}>
-              Criar conta
-            </Key>
-          </div>
+          <Key tone="ghost" onClick={() => abrir('entrar')}>
+            Entrar
+          </Key>
         </header>
 
         <section
@@ -183,8 +178,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
         </section>
 
         <footer className="border-t border-white/[0.06]">
-          <div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-center justify-between gap-4 px-5 py-5 lg:px-6 lg:py-6">
-            <span className="legend text-[11px]">Cineclube · para quem fica até os créditos</span>
+          <div className="mx-auto w-full max-w-[1240px] px-5 py-5 lg:px-6 lg:py-6">
             <span className="text-[10.5px] text-ink-dim">Imagens e catálogo: TMDB</span>
           </div>
         </footer>
@@ -204,30 +198,14 @@ function Convite({
 }) {
   return (
     <>
-      <div className="mb-6 flex items-center gap-3">
-        <span aria-hidden className="h-px w-[26px] flex-none bg-dye-red" />
-        <span className="legend text-[11px]">Sessão privada · seu clube</span>
-      </div>
-
       <h1 className="font-display text-[40px] uppercase leading-[0.92] tracking-[0.04em] text-beam [text-wrap:balance] sm:text-[54px] lg:text-[66px]">
         O filme acaba.
         <br />
         <span className="text-dye-red-lit">A conversa continua.</span>
       </h1>
 
-      {}
-      <p className="mt-6 max-w-[52ch] text-[14px] leading-relaxed text-ink-dim">
-        Nada de estrelinha solta. Aqui cada filme passa por onze critérios, cada
-        nota fica registrada com quem deu — e a média do clube vira o placar da
-        sessão.
-      </p>
-
-      <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Key
-          tone="commit"
-          onClick={onCriar}
-          className="px-6 py-3.5 text-[14px] shadow-[0_0_26px_-6px_rgba(209,42,32,0.8)] transition-shadow hover:shadow-[0_0_34px_-4px_rgba(226,53,42,0.95)]"
-        >
+      <div className="mt-9 flex flex-wrap items-center gap-3">
+        <Key tone="commit" onClick={onCriar} className="px-6 py-3.5 text-[14px]">
           Criar minha conta
         </Key>
         {google ? (
@@ -251,12 +229,6 @@ function Convite({
           </Key>
         )}
       </div>
-
-      <p className="mt-5 text-[12px] text-ink-dim">
-        {google
-          ? 'Entrar pelo Google já cria sua conta. O clube vem depois.'
-          : 'A conta é sua; o clube vem depois — dá para fundar o seu ou pedir para entrar em um.'}
-      </p>
     </>
   );
 }
@@ -287,13 +259,6 @@ function Porta({
 
   return (
     <div className="w-full max-w-[420px]">
-      <div className="mb-5 flex items-center gap-3">
-        <span aria-hidden className="h-px w-[26px] flex-none bg-dye-red" />
-        <span className="legend text-[11px]">
-          {pedindo ? 'Senha nova' : criando ? 'Criar conta' : 'Entrar'}
-        </span>
-      </div>
-
       <h1 className="font-display text-[32px] uppercase leading-[0.95] tracking-[0.04em] text-beam sm:text-[40px]">
         {pedindo ? 'Volte para dentro.' : criando ? 'Puxe uma cadeira.' : 'De volta à sala.'}
       </h1>
@@ -345,7 +310,7 @@ function Porta({
       <button
         type="button"
         onClick={onClose}
-        className="mt-6 font-display text-[12px] uppercase leading-none tracking-[0.14em] text-ink-faint transition-colors hover:text-beam"
+        className="mt-6 font-display text-[12px] uppercase leading-none tracking-[0.14em] text-ink-dim transition-colors hover:text-beam"
       >
         ← Voltar
       </button>
@@ -404,17 +369,17 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
           const alvo = SLOTS[slot];
           const hover = HOVER[slot];
           const atras = slot !== 1;
+          const noAlto = slot === 2;
 
           return (
             <motion.div
               key={ficha ? `f${ficha.id}` : `vazia-${k}`}
               className={cn(
-                'absolute left-1/2 top-0 aspect-[2/3] w-1/2 overflow-hidden rounded-cell bg-house-deep',
-                !ficha &&
-                  'bg-[repeating-linear-gradient(135deg,rgba(255,233,196,0.05)_0_6px,transparent_6px_12px)]',
+                'absolute left-1/2 top-0 aspect-[2/3] w-1/2 overflow-hidden rounded-cell',
+                ficha ? 'bg-house-deep' : 'bg-house-seat',
                 slot === 1
-                  ? 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_34px_70px_-20px_rgba(0,0,0,0.9),0_0_60px_-18px_rgba(255,233,196,0.4)]'
-                  : 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_24px_50px_-18px_rgba(0,0,0,0.9)]'
+                  ? 'shadow-[0_34px_70px_-20px_rgba(0,0,0,0.92)]'
+                  : 'shadow-[0_24px_50px_-18px_rgba(0,0,0,0.9)]'
               )}
               initial={
                 quieto || !ficha ? alvo : { ...alvo, y: '16%', opacity: 0, rotate: alvo.rotate * 0.3 }
@@ -436,66 +401,49 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
                 />
               ) : null}
 
-              {ficha && atras ? (
+              {ficha ? (
                 <>
-                  {}
                   <span
                     aria-hidden
                     className={cn(
                       'pointer-events-none absolute inset-x-0 h-1/3',
-                      slot === 0
-                        ? 'bottom-0 bg-gradient-to-t from-house-deep/90 to-transparent'
-                        : 'top-0 bg-gradient-to-b from-house-deep/90 to-transparent'
+                      noAlto
+                        ? 'top-0 bg-gradient-to-b from-house-deep/90 to-transparent'
+                        : 'bottom-0 bg-gradient-to-t from-house-deep/90 to-transparent'
                     )}
                   />
                   <span
                     aria-hidden
                     className={cn(
-                      'q pointer-events-none absolute font-display text-[17px] leading-none text-dye-brass sm:text-[19px]',
-                      slot === 0 ? 'bottom-2.5 left-2.5' : 'right-2.5 top-2.5'
+                      'q pointer-events-none absolute font-display leading-none',
+                      atras
+                        ? 'text-[17px] text-dye-brass sm:text-[19px]'
+                        : 'text-[23px] text-beam sm:text-[26px]',
+                      noAlto ? 'right-2.5 top-2.5' : 'bottom-2.5',
+                      slot === 0 ? 'left-2.5' : 'right-2.5'
                     )}
                   >
                     {fmt(ficha.average)}
                   </span>
-                  {}
-                  <button
-                    type="button"
-                    onClick={() => trazer(k)}
-                    aria-label={`Pôr ${ficha.title} em destaque — nota ${fmt(ficha.average)}`}
-                    className="absolute inset-0 cursor-pointer focus-visible:outline-offset-[-4px]"
-                  />
+                  {atras ? (
+                    <button
+                      type="button"
+                      onClick={() => trazer(k)}
+                      aria-label={`Pôr ${ficha.title} em destaque — nota ${fmt(ficha.average)}`}
+                      className="absolute inset-0 cursor-pointer focus-visible:outline-offset-[-4px]"
+                    />
+                  ) : null}
                 </>
               ) : null}
             </motion.div>
           );
         })}
 
-        {}
-        {centro ? (
-          <motion.div
-            key={`placa-${centro.id}`}
-            initial={quieto ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-[8%] right-[2%] z-[4] flex rotate-[-3deg] items-center gap-3 rounded-plate bg-house-seat px-4 py-3 shadow-[inset_0_0_0_1px_rgba(217,164,65,0.4),0_18px_40px_-16px_rgba(0,0,0,0.95)]"
-          >
-            <span className="q font-display text-[32px] leading-none text-beam sm:text-[38px]">
-              {fmt(centro.average)}
-            </span>
-            {}
-            <span className="font-display text-[11px] uppercase leading-[1.5] tracking-[0.12em] text-dye-brass">
-              {centro.takes > 1 ? 'Média' : 'Nota'}
-              <br />
-              do clube
-            </span>
-          </motion.div>
-        ) : null}
       </div>
 
-      {}
       <div
         aria-live="polite"
-        className="mx-auto mt-6 flex min-h-[72px] max-w-[560px] items-end justify-between gap-4 border-t border-white/[0.06] pt-4"
+        className="mx-auto mt-6 min-h-[58px] max-w-[560px] border-t border-white/[0.06] pt-4"
       >
         {centro ? (
           <motion.div
@@ -503,28 +451,16 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
             initial={quieto ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="flex min-w-0 flex-1 items-end justify-between gap-4"
+            className="min-w-0"
           >
-            <div className="min-w-0">
-              <div className="legend text-[11px]">Ficha em destaque</div>
-              <div className="mt-2 truncate font-display text-[24px] uppercase leading-[1.15] tracking-[0.03em] text-beam sm:text-[28px]">
-                {centro.title}
-              </div>
-              <div className="mt-1 truncate text-[11.5px] text-ink-dim">
-                {[centro.director, centro.year].filter(Boolean).join(' · ')}
-              </div>
+            <div className="truncate font-display text-[24px] uppercase leading-[1.15] tracking-[0.03em] text-beam sm:text-[28px]">
+              {centro.title}
             </div>
-            <span className="flex flex-none items-center gap-2 font-display text-[12px] uppercase tracking-[0.12em] text-dye-green-lit">
-              <span
-                aria-hidden
-                className="inline-block h-[6px] w-[6px] rounded-full bg-dye-green shadow-[0_0_10px_rgba(47,158,68,0.9)]"
-              />
-              {plural(centro.takes, 'ficha gravada', 'fichas gravadas')}
-            </span>
+            <div className="mt-1 truncate text-[11.5px] text-ink-dim">
+              {[centro.director, centro.year].filter(Boolean).join(' · ')}
+            </div>
           </motion.div>
-        ) : (
-          <div className="legend text-[11px]">Abrindo o acervo</div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -631,7 +567,7 @@ function PasswordEntry({
         <button
           type="button"
           onClick={() => onForgot(email.trim())}
-          className="mt-1 self-start text-[12.5px] text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
+          className="mt-1 self-start text-[12.5px] text-ink-dim underline underline-offset-4 transition-colors hover:text-ink"
         >
           Esqueci minha senha
         </button>
@@ -669,12 +605,8 @@ function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () 
     return (
       <div className="mt-5">
         <p className="text-[13.5px] leading-relaxed text-ink">
-          Se existir uma conta com <span className="text-beam">{email.trim()}</span>, o link já
-          está a caminho.
-        </p>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-ink-dim">
-          Ele vale por uma hora e só funciona uma vez. Se não chegar em alguns
-          minutos, olhe no spam.
+          Se existir uma conta com <span className="text-beam">{email.trim()}</span>, o link está
+          a caminho. Vale por uma hora.
         </p>
         <div className="mt-5">
           <Key tone="ghost" onClick={onBack}>
@@ -687,11 +619,7 @@ function ForgotPassword({ email: inicial, onBack }: { email: string; onBack: () 
 
   return (
     <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
-      <p className="text-[12.5px] leading-relaxed text-ink-dim">
-        Digite o e-mail da sua conta. Mandamos um link para você escolher uma
-        senha nova.
-      </p>
-      <Field ref={first} label="E-mail" type="email" autoComplete="username" value={email} onChange={setEmail} />
+      <Field ref={first} label="E-mail da conta" type="email" autoComplete="username" value={email} onChange={setEmail} />
       {error ? <Fault>{error}</Fault> : null}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <Key tone="commit" type="submit" disabled={busy || !email.trim()}>
@@ -742,10 +670,8 @@ export function SetPassword({ onDone, onSkip }: { onDone: () => void; onSkip: ()
           <h1 className="font-display text-[34px] leading-none tracking-[0.06em] text-beam">
             Guarde uma segunda chave
           </h1>
-          <p className="mx-auto mt-4 max-w-[46ch] text-[13.5px] leading-relaxed text-ink-dim">
-            Você entrou pelo Google, e isso basta para hoje. Uma senha é o
-            caminho de volta no dia em que aquela conta não estiver mais à mão —
-            e o clube não é uma coisa que se possa perder por causa dela.
+          <p className="mx-auto mt-4 max-w-[42ch] text-[13.5px] leading-relaxed text-ink-dim">
+            O caminho de volta no dia em que a conta do Google não estiver à mão.
           </p>
         </header>
 
@@ -815,7 +741,7 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         )}
       />
       {hint ? (
-        <span className={cn('text-[12px]', bad ? 'text-dye-red-lit' : 'text-ink-faint')}>{hint}</span>
+        <span className={cn('text-[12px]', bad ? 'text-dye-red-lit' : 'text-ink-dim')}>{hint}</span>
       ) : null}
     </label>
   );
