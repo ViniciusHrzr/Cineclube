@@ -22,7 +22,7 @@ const BASE = [
 const BASE_SWAP = {
   'Animação': {
     atuacoes: ['vozes', 'Vozes',
-      'O elenco de voz: entrega, timing e casting, e o quanto a voz e o desenho parecem a mesma criatura. A fala foi gravada antes de o personagem existir, e o movimento foi construído em cima dela — quando dá certo, não dá para imaginar outra voz ali.']
+      'O elenco de voz: casting, entrega e timing, e o quanto a voz e o desenho parecem a mesma criatura. A fala foi gravada antes de o personagem se mexer e o movimento foi construído em cima dela — quando dá certo, não dá para imaginar outra voz ali. Voz que só lê a fala é atuação sem presença.']
   },
   'Documentário': {
     roteiro: ['roteiro', 'Estrutura',
@@ -73,9 +73,9 @@ const GENRE_CRIT = {
   ],
   'Animação': [
     ['expressividade', 'Animação',
-      'O movimento em si: timing e espaçamento, peso, antecipação, arcos e o que continua se mexendo depois que o corpo para. Se o personagem tem massa e intenção, ou se é um desenho sendo arrastado pela tela.'],
+      'O movimento em si: timing é onde a batida cai, espaçamento é o quanto o desenho anda entre uma batida e outra — e é o espaçamento que entrega o peso. Peso só aparece na ação: antecipação antes do esforço, as partes do corpo chegando atrasadas umas às outras, o que ainda se mexe depois que o personagem já parou. Tem massa e intenção, ou é um desenho sendo arrastado pela tela?'],
     ['encanto', 'Encanto',
-      'Appeal, no sentido técnico do ofício: o que faz querer olhar. Desenho que se lê na silhueta, expressão e carisma — e isso vale para o vilão tanto quanto para o herói.']
+      'Appeal, no sentido técnico do ofício: o que prende o olho e não larga. Desenho que se lê na hora, pela silhueta, sem depender de cor nem de luz; e personagens que se distinguem por forma, tamanho e voz antes de abrirem a boca. Vale para o vilão tanto quanto para o herói.']
   ],
   'Documentário': [
     ['argumento', 'Argumento & ponto de vista',
