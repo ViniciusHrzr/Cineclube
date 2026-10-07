@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Key } from '@/components/bits';
+import { cn } from '@/lib/utils';
+
+const HEAD = 76;
+const BAR = 210;
 
 export type TourStep = { at: string; title: string; text: string };
 
@@ -8,7 +12,6 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
   const [n, setN] = useState(0);
   const [box, setBox] = useState<DOMRect | null>(null);
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const [tip, setTip] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let i = n;
@@ -27,18 +30,26 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
 
   useEffect(() => {
     if (!el) return;
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const fit = () => {
+      const r = el.getBoundingClientRect();
+      const over = r.bottom - (window.innerHeight - BAR);
+      const under = HEAD - r.top;
+      if (under > 0) window.scrollBy(0, -under);
+      else if (over > 0) window.scrollBy(0, Math.min(over, r.top - HEAD));
+      setBox(el.getBoundingClientRect());
+    };
+    el.scrollIntoView({ block: 'center' });
+    fit();
     const measure = () => setBox(el.getBoundingClientRect());
-    measure();
     window.addEventListener('scroll', measure, true);
-    window.addEventListener('resize', measure);
+    window.addEventListener('resize', fit);
     const esc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') done();
     };
     window.addEventListener('keydown', esc);
     return () => {
       window.removeEventListener('scroll', measure, true);
-      window.removeEventListener('resize', measure);
+      window.removeEventListener('resize', fit);
       window.removeEventListener('keydown', esc);
     };
   }, [el, done]);
@@ -48,25 +59,16 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
   const step = steps[n];
   const last = n >= steps.length - 1;
   const pad = 8;
-  const vh = window.innerHeight;
-  const high = tip?.offsetHeight ?? 190;
-  const width = Math.min(340, window.innerWidth - 32);
-  const left = Math.min(Math.max(box.left - pad, 16), window.innerWidth - width - 16);
-  const top =
-    box.bottom + pad + 12 + high + 16 <= vh
-      ? box.bottom + pad + 12
-      : box.top - pad - 12 - high >= 16
-        ? box.top - pad - 12 - high
-        : Math.max(16, vh - high - 16);
+  const atTop = box.bottom > window.innerHeight - BAR;
 
   return (
     <div
       className="fixed inset-0 z-[60]"
       role="dialog"
-      aria-label="Dicas da tela de avaliar"
+      aria-label="Dicas da tela"
       onClick={() => (last ? done() : setN(n + 1))}
     >
-      <motion.div
+      <div
         className="pointer-events-none absolute rounded-cell"
         style={{
           top: box.top - pad,
@@ -78,11 +80,13 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
       />
       <motion.div
         key={step.at}
-        ref={setTip}
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="plate absolute p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)]"
-        style={{ width, left, top }}
+        className={cn(
+          'plate fixed left-1/2 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 p-4',
+          'shadow-[0_18px_60px_rgba(0,0,0,0.65)]',
+          atTop ? 'top-[76px]' : 'bottom-5'
+        )}
         onClick={e => e.stopPropagation()}
       >
         <span className="legend">{step.title}</span>
