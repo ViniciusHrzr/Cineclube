@@ -16,6 +16,7 @@ import {
   type Movie,
   type Review,
 } from '@/lib/api';
+import { Tour, TourKey, useFirstVisit, type TourStep } from '@/components/tour';
 import { plural } from '@/lib/utils';
 import { useClub } from '@/App';
 
@@ -38,6 +39,8 @@ export function RateScreen({
   const [genre, setGenre] = useState<string>('');
   const [modo, setModo] = useState<'rapida' | 'criteriosa'>('rapida');
   const [quick, setQuick] = useState(7);
+
+  const [tour, endTour, replayTour] = useFirstVisit('rate', !!movie);
 
   const criteria = useMemo(() => (genre ? club.criteriaFor(genre) : []), [genre, club]);
 
@@ -118,6 +121,8 @@ export function RateScreen({
 
   return (
     <section>
+      {movie ? <TourKey onClick={replayTour} /> : null}
+      {tour ? <Tour steps={TIPS} done={endTour} /> : null}
       {}
       <Bill
         title="Avaliar filme"
@@ -162,7 +167,7 @@ export function RateScreen({
                 legend="Como avaliar"
                 note={rapida ? 'uma nota, 0–10' : '0–10 · passo 0,5'}
               >
-                <div className="flex flex-wrap items-center gap-2">
+                <div data-tour="modo" className="flex flex-wrap items-center gap-2">
                   <Chip
                     size="sm"
                     on={rapida}
@@ -186,7 +191,7 @@ export function RateScreen({
                 </div>
 
                 {rapida ? (
-                  <div className="mt-5">
+                  <div data-tour="nota" className="mt-5">
                     <Gauge
                       value={quick}
                       onChange={v => {
@@ -203,7 +208,7 @@ export function RateScreen({
                     ) : null}
                   </div>
                 ) : (
-                  <div className="mt-5">
+                  <div data-tour="nota" className="mt-5">
                     <Channels
                       criteria={criteria}
                       scores={scores}
@@ -264,6 +269,34 @@ export function RateScreen({
   );
 }
 
+const TIPS: TourStep[] = [
+  {
+    at: 'genero',
+    title: 'Gênero',
+    text: 'O gênero decide duas das perguntas da ficha. Quando o filme tem mais de um, dá pra trocar aqui.',
+  },
+  {
+    at: 'trocar',
+    title: 'Trocar de filme',
+    text: 'Volta para a busca e começa outra avaliação do zero.',
+  },
+  {
+    at: 'modo',
+    title: 'Como avaliar',
+    text: 'Nota rápida é uma nota só, de 0 a 10. Criteriosa abre a ficha inteira e a nota vira a média dos critérios.',
+  },
+  {
+    at: 'nota',
+    title: 'Sua nota',
+    text: 'Arraste para dar a nota. Na criteriosa, cada critério tem seu próprio controle e sua explicação.',
+  },
+  {
+    at: 'final',
+    title: 'Nota final',
+    text: 'O resultado aparece aqui. Gravar manda a avaliação para o clube — gravar de novo substitui a anterior.',
+  },
+];
+
 function Bay({ legend, note, children }: { legend: string; note?: string; children: React.ReactNode }) {
   return (
     <div className="border-t border-white/[0.07] pt-5 first:border-0 first:pt-0">
@@ -310,7 +343,7 @@ function Slate({
           </p>
 
           {}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div data-tour="genero" className="mt-3 flex flex-wrap items-center gap-2">
             {}
             {choices.length > 1 ? (
               choices.map(g => (
@@ -323,7 +356,7 @@ function Slate({
                 {genre || movie.genre}
               </span>
             )}
-            <button type="button" onClick={onSwap} className="text-[12.5px] text-ink-dim underline underline-offset-4 hover:text-beam">
+            <button type="button" data-tour="trocar" onClick={onSwap} className="text-[12.5px] text-ink-dim underline underline-offset-4 hover:text-beam">
               trocar de filme
             </button>
           </div>
@@ -461,7 +494,7 @@ function MasterCard({
   onSeeHistory: () => void;
 }) {
   return (
-    <aside className="plate sticky bottom-0 z-20 -mx-4 rounded-none p-4 sm:-mx-6 sm:px-6 lg:top-24 lg:bottom-auto lg:mx-0 lg:rounded-plate lg:p-6">
+    <aside data-tour="final" className="plate sticky bottom-0 z-20 -mx-4 rounded-none p-4 sm:-mx-6 sm:px-6 lg:top-24 lg:bottom-auto lg:mx-0 lg:rounded-plate lg:p-6">
       <span className="legend">Nota final</span>
       <div className="mt-2 flex items-end gap-3 lg:flex-col lg:items-start lg:gap-0">
         <div className="flex items-baseline gap-2">
