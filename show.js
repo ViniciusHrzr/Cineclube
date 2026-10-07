@@ -78,5 +78,5 @@ function cleanSeasonRef(params) {
 
 module.exports = {
   cleanShow, cleanEpisodeRef, cleanSeasonRef, text,
-  SEASON_ROW, MAX_EPISODE_TITLE, MAX_SEASON, MAX_EPISODE,
+  SEASON_ROW, MAX_EPISODE_TITLE,
 };

@@ -651,15 +651,10 @@ function requireAdmin(req, res, next) {
 }
 
 module.exports = {
-  SESSION_COOKIE,
-  SESSION_DAYS,
   APP_SESSION_DAYS,
-  REFRESH_DAYS,
-  MAX_ATTEMPTS,
   MIN_PASSWORD,
   MAX_PASSWORD,
   isValidPassword,
-  isValidEmail,
   setPassword,
   checkPassword,
   lockedSecondsLeft,
@@ -670,7 +665,6 @@ module.exports = {
   useEmailToken,
   markVerified,
   accountByEmail,
-  TOKEN_HOURS,
   createSession,
   createTicket,
   useTicket,

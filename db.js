@@ -396,8 +396,7 @@ async function migrate() {
 
   /* O nome em inglês, quando não é nenhum dos dois acima: Parasita não é
      achável por "Parasite" sem esta coluna. Só chega pelo endpoint de UM filme,
-     então é preenchido quando o filme vira algo que o clube guarda. O que veio
-     antes, `npm run backfill:ingles` cura. */
+     então é preenchido quando o filme vira algo que o clube guarda. */
   if (!movieCols.includes('english_title')) {
     await exec('ALTER TABLE movies_cache ADD COLUMN english_title TEXT');
   }
@@ -1268,7 +1267,6 @@ module.exports = {
   batch,
   ready,
   HOME_CLUB,
-  slugify,
   freeSlug,
   ensureHomeClub,
   joinHomeClub,

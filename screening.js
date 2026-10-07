@@ -249,7 +249,6 @@ function open(room, movie, host = null, now = Date.now()) {
   // E a transmissão pela mesma razão: quem estava com a tela no ar estava com
   // ela para o filme anterior.
   room.live = null;
-  room.liveAwol = null;
   stamp(room, now);
   broadcastState(room);
 }
@@ -318,6 +317,7 @@ function setSubtitle(room, subtitle, now = Date.now()) {
 /** Assumir a transmissão. Falha se outra pessoa já está com ela. */
 function startLive(room, session, now = Date.now()) {
   if (room.live && room.live.hostId !== session.reviewer_id) return false;
+  room.liveAwol = null;
   room.live = {
     hostId: session.reviewer_id,
     hostName: session.name,
@@ -335,7 +335,6 @@ function startLive(room, session, now = Date.now()) {
 function stopLive(room, reviewerId, now = Date.now()) {
   if (!room.live || room.live.hostId !== reviewerId) return false;
   room.live = null;
-  room.liveAwol = null;
   stamp(room, now);
   broadcastState(room);
   return true;
@@ -366,7 +365,6 @@ function close(room, now = Date.now()) {
   /* Encerrar a sessão derruba a transmissão junto. Uma tela ao vivo sem filme
      aberto seria uma sala escura com alguém ainda no ar dentro dela. */
   room.live = null;
-  room.liveAwol = null;
   // The viewers survive: they are the people with a connection open, and
   // closing the film does not disconnect anybody.
   for (const viewer of room.viewers.values()) {
@@ -618,6 +616,7 @@ function startTimers() {
     }, PING_MS),
     setInterval(() => {
       const now = Date.now();
+      expireAwol(now);
       for (const room of rooms.values()) {
         if (!room.streams.size || !room.open) continue;
         const frame = {
@@ -630,7 +629,6 @@ function startTimers() {
         for (const res of room.streams) write(res, frame);
       }
     }, SYNC_MS),
-    setInterval(() => expireAwol(), SYNC_MS),
   ];
   // Timers must not be the reason the process refuses to exit — the tests
   // import this module and then expect `node --test` to finish.
@@ -703,10 +701,7 @@ module.exports = {
   MAX_STREAMS_PER_VIEWER,
   MAX_STREAMS_TOTAL,
   COMMANDS,
-  rooms,
   roomFor,
-  blankRoom,
-  totalStreams,
   positionAt,
   clampPosition,
   text,
@@ -739,6 +734,5 @@ module.exports = {
   withinRate,
   withinSignalRate,
   MAX_SIGNAL,
-  SIGNALS,
   reset,
 };

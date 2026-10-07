@@ -1,46 +1,20 @@
 const { GENRE_PRIORITY } = require('./criteria');
 const { bestVideo } = require('./video');
+const { tmdbGet, posterUrl, backdropUrl, crowdOf, watchIn } = require('./tmdbapi');
 
 /* Irmão de tmdb.js e deliberadamente separado dele: o TMDB trata filme e série
    como dois mundos — outros caminhos, outra tabela de gêneros, outros nomes de
    campo para as mesmas coisas (`name` e não `title`). Um arquivo só, com um
-   `if` em cada função, seria os dois mundos disputando as mesmas linhas. */
+   `if` em cada função, seria os dois mundos disputando as mesmas linhas.
 
-const API_BASE = 'https://api.themoviedb.org/3';
-const POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
+   O que os dois mundos fazem igual — a chamada, os tamanhos de imagem, a
+   leitura de provedores — está em tmdbapi.js. */
+
 /* O quadro de um episódio é 16:9 e mora numa fileira, não numa grade de
    cartazes: w300 é a largura em que ele é desenhado, e w780 seriam seis vezes
    os bytes para o mesmo espaço. */
 const STILL_BASE = 'https://image.tmdb.org/t/p/w300';
-/* O quadro deitado da série, atrás do trailer no reel — ver o gêmeo em
-   tmdb.js. */
-const BACKDROP_BASE = 'https://image.tmdb.org/t/p/w780';
-const LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
-const REGION = 'BR';
-
-const TOKEN = process.env.TMDB_TOKEN;
-
-async function tmdbGet(pathname, params) {
-  const url = new URL(API_BASE + pathname);
-  url.searchParams.set('language', 'pt-BR');
-  for (const [k, v] of Object.entries(params || {})) {
-    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
-  }
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/json' }
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const err = new Error(`TMDB ${res.status} ${res.statusText}: ${body}`);
-    err.status = res.status;
-    throw err;
-  }
-  return res.json();
-}
-
-const posterUrl = path => (path ? POSTER_BASE + path : null);
 const stillUrl = path => (path ? STILL_BASE + path : null);
-const backdropUrl = path => (path ? BACKDROP_BASE + path : null);
 
 /* O TMDB mantém duas taxonomias que não se sobrepõem: `878` é ficção científica
    em filme e não existe em série, que usa `10765` para ficção científica E
@@ -87,8 +61,6 @@ function genresFromTvIds(ids) {
   const found = GENRE_PRIORITY.filter(genre => carried.has(genre));
   return found.length ? found : ['Drama'];
 }
-
-const crowdOf = s => (s.vote_count > 0 ? { score: s.vote_average, votes: s.vote_count } : null);
 
 /* O nome com que a série circula lá fora. Null quando é o mesmo string: repetir
    "Severance" embaixo de "Severance" é uma segunda linha que diz a primeira. */
@@ -148,40 +120,6 @@ async function discoverShows(tvGenreIds, page = 1) {
   };
 }
 
-const RESELLER = /\s(?:Amazon|Apple TV|Roku|Player|Channel)s?\s*Channel$/i;
-const WITH_ADS = /\s(?:with Ads|Ad[- ]Supported|Basic with Ads)$/i;
-const MAX_PROVIDERS = 6;
-
-/* A mesma poda de tmdb.js, explicada lá. Repetida e não importada porque é a
-   única coisa que os dois arquivos compartilham, e um módulo terceiro para
-   trinta linhas puras seria mais encanamento do que a duplicação custa. */
-function tidyProviders(list) {
-  const kept = [];
-  const clean = (list || [])
-    .filter(p => !RESELLER.test(p.provider_name))
-    .map(p => ({ ...p, provider_name: p.provider_name.replace(WITH_ADS, '').trim() }))
-    .sort((a, b) => a.display_priority - b.display_priority);
-  for (const p of clean) {
-    const variant = kept.some(k => p.provider_name.startsWith(k.provider_name + ' '));
-    if (variant || kept.some(k => k.provider_name === p.provider_name)) continue;
-    kept.push(p);
-    if (kept.length === MAX_PROVIDERS) break;
-  }
-  return kept.map(p => ({
-    id: p.provider_id,
-    name: p.provider_name,
-    logo: p.logo_path ? LOGO_BASE + p.logo_path : null
-  }));
-}
-
-function watchIn(providers) {
-  const here = providers?.results?.[REGION];
-  if (!here) return null;
-  const streaming = tidyProviders([...(here.flatrate || []), ...(here.free || []), ...(here.ads || [])]);
-  if (!streaming.length) return null;
-  return { link: here.link || null, streaming };
-}
-
 /* O TMDB numera especiais, piloto não exibido e bastidores como temporada 0.
    Filtrada da lista e ainda alcançável por endereço direto: quem for atrás de
    um especial acha, quem acompanha a série não tropeça nele. */
@@ -223,9 +161,7 @@ async function showDetails(id) {
     append_to_response: 'credits,videos,watch/providers,translations,episode_groups'
   });
   const genres = genresFromTvIds((s.genres || []).map(g => g.id));
-  const trailer = (s.videos?.results || [])
-    .filter(v => v.site === 'YouTube' && v.type === 'Trailer')
-    .sort((a, b) => (b.official === a.official ? 0 : b.official ? 1 : -1))[0];
+  const trailer = bestVideo(s.videos?.results);
 
   return {
     id: s.id,
@@ -367,6 +303,6 @@ module.exports = {
   showDetails, seasonDetails, episodeDetails,
   watchProvidersFor, englishTitleFor, videosFor, recommendations,
   GENRE_TO_TV,
-  // Exportados para os testes: são as três peças puras deste arquivo.
-  genresFromTvIds, signedBy, watchIn
+  // Exportados para os testes: são as duas peças puras deste arquivo.
+  genresFromTvIds, signedBy
 };

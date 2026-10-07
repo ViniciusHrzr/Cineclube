@@ -178,7 +178,6 @@ const mineStmt = db.prepare(`
 `);
 
 module.exports = {
-  findClub,
   resolve,
   requireVisible,
   canRead,

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { watchIn } = require('../tmdb');
+const { watchIn } = require('../tmdbapi');
 
 /* ── one service, one logo ───────────────────────────────────────────────
    JustWatch is a catalogue of ways to pay and the club asks a much smaller
