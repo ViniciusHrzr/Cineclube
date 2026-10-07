@@ -34,8 +34,8 @@ mobile/android/app/src/main/res/values/deeplink.xml
 # Sem o arquivo, o Gradle não aplica o plugin e o app compila sem push.
 mobile/android/app/google-services.json
 # A chave que assina o aplicativo, e o arquivo que diz onde ela está e com que
-# senha. Quem a tem publica atualização no seu nome. Ver
-# mobile/android/keystore.properties.example.
+# senha. Quem a tem publica atualização no seu nome. Como escrever: README,
+# "Assinar o APK".
 mobile/android/keystore.properties
 *.jks
 *.keystore

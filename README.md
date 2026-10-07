@@ -250,7 +250,7 @@ O porquê está escrito em `mobile/capacitor.config.js`.
 
 ```bash
 npm --prefix mobile install        # uma vez
-cp client/.env.app.example client/.env.app   # e ponha o endereço do servidor
+npm run app:url https://seu-servidor         # onde a API mora, para o build de dentro
 npm run app                        # compila o cliente, desenha os ícones, sincroniza
 npm --prefix mobile run open       # abre o projeto no Android Studio
 ```
@@ -331,8 +331,13 @@ houver. Criar a de release:
 ```bash
 keytool -genkey -v -keystore cineclube.jks -alias cineclube -keyalg RSA -keysize 2048 -validity 10000
 
-cp mobile/android/keystore.properties.example mobile/android/keystore.properties
-# e preencha caminho e senhas
+cat > mobile/android/keystore.properties <<'FIM'
+storeFile=../../cineclube.jks
+storePassword=
+keyAlias=cineclube
+keyPassword=
+FIM
+# `storeFile` é relativo a mobile/android/, ou absoluto. Preencha as senhas.
 
 npm --prefix mobile run apk          # release
 npm --prefix mobile run apk debug    # para instalar e testar
