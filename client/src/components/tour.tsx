@@ -8,6 +8,7 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
   const [n, setN] = useState(0);
   const [box, setBox] = useState<DOMRect | null>(null);
   const [el, setEl] = useState<HTMLElement | null>(null);
+  const [tip, setTip] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let i = n;
@@ -47,12 +48,16 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
   const step = steps[n];
   const last = n >= steps.length - 1;
   const pad = 8;
-  const below = box.bottom + 190 < window.innerHeight;
-  const width = Math.min(320, window.innerWidth - 32);
+  const vh = window.innerHeight;
+  const high = tip?.offsetHeight ?? 190;
+  const width = Math.min(340, window.innerWidth - 32);
   const left = Math.min(Math.max(box.left - pad, 16), window.innerWidth - width - 16);
-  const room = window.innerHeight - 220;
-  const top = Math.min(Math.max(box.bottom + pad + 12, 16), room);
-  const bottom = Math.min(Math.max(window.innerHeight - box.top + pad + 12, 16), room);
+  const top =
+    box.bottom + pad + 12 + high + 16 <= vh
+      ? box.bottom + pad + 12
+      : box.top - pad - 12 - high >= 16
+        ? box.top - pad - 12 - high
+        : Math.max(16, vh - high - 16);
 
   return (
     <div
@@ -62,26 +67,22 @@ export function Tour({ steps, done }: { steps: TourStep[]; done: () => void }) {
       onClick={() => (last ? done() : setN(n + 1))}
     >
       <motion.div
-        className="pointer-events-none absolute rounded-cell ring-2 ring-dye-brass"
+        className="pointer-events-none absolute rounded-cell"
         style={{
           top: box.top - pad,
           left: box.left - pad,
           width: box.width + pad * 2,
           height: box.height + pad * 2,
-          boxShadow: '0 0 0 9999px rgba(5,5,6,0.86)',
+          boxShadow: '0 0 0 2px #d9a441, 0 0 0 9999px rgba(5,5,6,0.86)',
         }}
       />
       <motion.div
         key={step.at}
+        ref={setTip}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="plate absolute p-4"
-        style={{
-          width,
-          left,
-          top: below ? top : undefined,
-          bottom: below ? undefined : bottom,
-        }}
+        className="plate absolute p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)]"
+        style={{ width, left, top }}
         onClick={e => e.stopPropagation()}
       >
         <span className="legend">{step.title}</span>
