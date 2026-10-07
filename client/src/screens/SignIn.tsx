@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Fault, Key } from '@/components/bits';
 import { HolographicWall } from '@/components/ui/holographic-wall-shadcnui';
-import { api, auth, fmt, type Review, type SessionUser } from '@/lib/api';
+import { api, auth, fmt, type Criterion, type Review, type SessionUser } from '@/lib/api';
 import { inShell, openOutside } from '@/lib/shell';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +24,8 @@ type Ficha = {
   takes: number;
 };
 
+type Acervo = { fichas: number; filmes: number; pessoas: number };
+
 const MAX_MOSTRA = 3;
 
 const CLUBE = 'cineclube';
@@ -41,6 +43,14 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
   const [forgot, setForgot] = useState<string | null>(null);
   const [canMail, setCanMail] = useState(false);
   const [fichas, setFichas] = useState<Ficha[] | null>(null);
+  const [acervo, setAcervo] = useState<Acervo | null>(null);
+  const [criterios, setCriterios] = useState<string[]>([]);
+
+  useEffect(() => {
+    void api<{ criteria: Criterion[] }>('/api/catalog/criteria')
+      .then(({ criteria }) => setCriterios(criteria.map(c => c.name)))
+      .catch(() => setCriterios([]));
+  }, []);
 
   useEffect(() => {
     void auth
@@ -57,6 +67,11 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
     void api<{ reviews: Review[] }>(`/api/c/${CLUBE}/reviews`)
       .then(({ reviews }) => {
         if (!vivo) return;
+        setAcervo({
+          fichas: reviews.length,
+          filmes: new Set(reviews.map(r => r.movieId)).size,
+          pessoas: new Set(reviews.map(r => r.reviewerId)).size,
+        });
         const por = new Map<number, Ficha & { soma: number }>();
         for (const r of reviews) {
           if (!r.moviePoster) continue;
@@ -143,6 +158,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
                 >
                   <Convite
                     google={google}
+                    criterios={criterios}
                     onCriar={() => abrir('criar')}
                     onEntrar={() => abrir('entrar')}
                   />
@@ -174,7 +190,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
             </AnimatePresence>
           </div>
 
-          {mostra ? <Mostra fichas={fichas} /> : null}
+          {mostra ? <Mostra fichas={fichas} acervo={acervo} /> : null}
         </section>
 
         <footer className="border-t border-white/[0.06]">
@@ -189,10 +205,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
 
 function Convite({
   google,
+  criterios,
   onCriar,
   onEntrar,
 }: {
   google: boolean;
+  criterios: string[];
   onCriar: () => void;
   onEntrar: () => void;
 }) {
@@ -204,7 +222,18 @@ function Convite({
         <span className="text-dye-red-lit">A conversa continua.</span>
       </h1>
 
-      <div className="mt-9 flex flex-wrap items-center gap-3">
+      {criterios.length ? (
+        <div className="mt-8 max-w-[46ch] border-t border-white/[0.07] pt-5">
+          <p className="font-display text-[11.5px] uppercase leading-[1.7] tracking-[0.13em] text-ink-dim">
+            {criterios.join(' · ')}
+          </p>
+          <p className="q mt-2.5 font-display text-[11.5px] uppercase tracking-[0.13em] text-dye-brass">
+            {criterios.length} critérios por filme
+          </p>
+        </div>
+      ) : null}
+
+      <div className="mt-8 flex flex-wrap items-center gap-3">
         <Key tone="commit" onClick={onCriar} className="px-6 py-3.5 text-[14px]">
           Criar minha conta
         </Key>
@@ -336,7 +365,7 @@ function posicoesDe(n: number) {
   return [1];
 }
 
-function Mostra({ fichas }: { fichas: Ficha[] | null }) {
+function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | null }) {
   const quieto = useReducedMotion();
 
   const carregando = fichas === null;
@@ -462,7 +491,26 @@ function Mostra({ fichas }: { fichas: Ficha[] | null }) {
           </motion.div>
         ) : null}
       </div>
+
+      {acervo?.fichas ? (
+        <p className="mx-auto mt-3 flex max-w-[560px] flex-wrap items-baseline gap-x-2 gap-y-1 font-display text-[11.5px] uppercase leading-none tracking-[0.13em] text-ink-dim">
+          <Conta n={acervo.fichas} one="ficha gravada" many="fichas gravadas" />
+          <span aria-hidden>·</span>
+          <Conta n={acervo.filmes} one="filme" many="filmes" />
+          <span aria-hidden>·</span>
+          <Conta n={acervo.pessoas} one="pessoa" many="pessoas" />
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+function Conta({ n, one, many }: { n: number; one: string; many: string }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className="q text-[13px] text-beam">{n}</span>
+      {n === 1 ? one : many}
+    </span>
   );
 }
 
