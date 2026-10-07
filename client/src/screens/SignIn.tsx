@@ -36,6 +36,31 @@ function abrirGoogle(e: React.MouseEvent<HTMLAnchorElement>) {
   openOutside(e.currentTarget.href);
 }
 
+function Marca({ size }: { size: 'sm' | 'lg' }) {
+  const grande = size === 'lg';
+  return (
+    <div className="flex items-baseline gap-3">
+      <span
+        className={cn(
+          'font-display leading-none text-beam',
+          grande
+            ? 'text-[46px] tracking-[0.1em] sm:text-[62px] lg:text-[74px]'
+            : 'text-[30px] tracking-[0.16em] sm:text-[38px]'
+        )}
+      >
+        CINECLUBE
+      </span>
+      <span
+        aria-hidden
+        className={cn(
+          'inline-block flex-none animate-lamp rounded-full bg-dye-red shadow-[0_0_10px_rgba(242,86,74,0.85)]',
+          grande ? 'h-[11px] w-[11px]' : 'h-[7px] w-[7px]'
+        )}
+      />
+    </div>
+  );
+}
+
 export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void }) {
   const [google, setGoogle] = useState(true);
   const [error] = useState<string | null>(() => errorFromHash());
@@ -116,26 +141,21 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: SessionUser) => void })
 
       <div className="relative z-[1] flex flex-1 flex-col">
         <header className="mx-auto flex w-full max-w-[1240px] items-center justify-between gap-6 px-5 py-5 lg:px-6 lg:py-6">
-          <div className="flex items-baseline gap-3">
-            <span className="font-display text-[30px] leading-none tracking-[0.16em] text-beam sm:text-[38px]">
-              CINECLUBE
-            </span>
-            {}
-            <span
-              aria-hidden
-              className="inline-block h-[7px] w-[7px] flex-none animate-lamp rounded-full bg-dye-red shadow-[0_0_10px_rgba(242,86,74,0.85)]"
-            />
-          </div>
-          <Key tone="ghost" onClick={() => abrir('entrar')}>
-            Entrar
-          </Key>
+          {door === null ? <span /> : <Marca size="sm" />}
+          {door === null ? (
+            <Key tone="ghost" onClick={() => abrir('entrar')}>
+              Entrar
+            </Key>
+          ) : (
+            <span />
+          )}
         </header>
 
         <section
           className={cn(
             'mx-auto grid w-full max-w-[1240px] flex-1 items-center gap-10 px-5 py-8 lg:gap-16 lg:px-6 lg:py-10',
             mostra
-              ? 'grid-cols-1 lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.7fr)]'
+              ? 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]'
               : 'max-w-[520px] grid-cols-1'
           )}
         >
@@ -205,7 +225,9 @@ function Convite({
   onEntrar: () => void;
 }) {
   return (
-    <div className="flex w-full max-w-[340px] flex-col gap-3">
+    <div className="flex w-full max-w-[420px] flex-col gap-3">
+      <Marca size="lg" />
+      <div className="mt-9" />
       <Key tone="commit" onClick={onCriar} className="w-full px-6 py-4 text-[14px]">
         Criar minha conta
       </Key>
@@ -319,9 +341,9 @@ function Porta({
 }
 
 const SLOTS = [
-  { x: '-106%', y: '8.7%', rotate: -9, scale: 0.879, zIndex: 1, opacity: 0.9 },
+  { x: '-140%', y: '8.7%', rotate: -9, scale: 0.879, zIndex: 1, opacity: 0.9 },
   { x: '-50%', y: '0%', rotate: -2, scale: 1, zIndex: 3, opacity: 1 },
-  { x: '6%', y: '3.8%', rotate: 8, scale: 0.879, zIndex: 1, opacity: 0.9 },
+  { x: '40%', y: '3.8%', rotate: 8, scale: 0.879, zIndex: 1, opacity: 0.9 },
 ];
 
 const HOVER: ({ rotate: number; y: string } | null)[] = [
@@ -363,7 +385,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
 
   return (
     <div className="min-w-0 py-2 lg:py-6">
-      <div className="relative mx-auto aspect-[1/0.92] w-full max-w-[680px]">
+      <div className="relative mx-auto aspect-[1/0.58] w-full max-w-[680px]">
         {posicoes.map((slot, k) => {
           const ficha = lista[ordem[k]] ?? null;
           const alvo = SLOTS[slot];
@@ -375,7 +397,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
             <motion.div
               key={ficha ? `f${ficha.id}` : `vazia-${k}`}
               className={cn(
-                'absolute left-1/2 top-0 aspect-[2/3] w-1/2 overflow-hidden rounded-cell',
+                'absolute left-1/2 top-0 aspect-[2/3] w-[35%] overflow-hidden rounded-cell',
                 ficha ? 'bg-house-deep' : 'bg-house-seat',
                 slot === 1
                   ? 'shadow-[0_34px_70px_-20px_rgba(0,0,0,0.92)]'
@@ -443,7 +465,7 @@ function Mostra({ fichas, acervo }: { fichas: Ficha[] | null; acervo: Acervo | n
 
       <div
         aria-live="polite"
-        className="mx-auto mt-6 min-h-[58px] max-w-[680px] border-t border-white/[0.06] pt-4"
+        className="mx-auto mt-5 min-h-[52px] max-w-[680px] border-t border-white/[0.06] pt-4"
       >
         {centro ? (
           <motion.div
